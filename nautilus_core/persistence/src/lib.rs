@@ -34,7 +34,7 @@ struct PythonParquetReader {
 
 /// pyo3 automatically calls drop on the underlying rust struct when
 /// the python object is deallocated
-/// 
+///
 /// so answer: https://stackoverflow.com/q/66401814
 impl Drop for PythonParquetReader {
     fn drop(&mut self) {
@@ -184,7 +184,7 @@ impl PythonParquetReader {
     /// leak memory and resources. Also drop the current chunk if it exists.
     ///
     /// # Safety: Do not use the reader after it's been dropped
-    /// 
+    ///
     /// May not be necessary as Drop is automatically called on the rust struct
     /// when the object is deallocated on the python side
     unsafe fn drop(slf: PyRefMut<'_, Self>) {

@@ -20,6 +20,12 @@ import time
 import pandas as pd
 import pytest
 
+# build and load pyo3 module using maturin
+from nautilus_persistence import ParquetReader
+from nautilus_persistence import ParquetReaderType
+from nautilus_persistence import ParquetType
+
+from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
@@ -29,15 +35,11 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
+from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
-
 from tests import TEST_DATA_DIR
-from nautilus_trader import PACKAGE_ROOT
 
-# build and load pyo3 module using maturin
-from nautilus_persistence import ParquetType, ParquetReader, ParquetReaderType
 
 def test_parquet_writer_vs_legacy_wrangler():
     # Arrange: Load CSV quote ticks
@@ -81,7 +83,7 @@ def test_parquet_writer_vs_legacy_wrangler():
     timer=time.time,
     disable_gc=True,
     min_rounds=5,
-    warmup=False
+    warmup=False,
 )
 def test_parquet_reader_quote_ticks(benchmark):
     @benchmark
@@ -109,7 +111,7 @@ def test_parquet_reader_quote_ticks(benchmark):
 def test_buffer_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
     reader = None
-    
+
     with open(parquet_data_path, "rb") as f:
         data = f.read()
         reader = ParquetBufferReader(data, QuoteTick)
@@ -135,13 +137,18 @@ def test_buffer_parquet_reader_quote_ticks():
     timer=time.time,
     disable_gc=True,
     min_rounds=5,
-    warmup=False
+    warmup=False,
 )
 def test_pyo3_parquet_reader_quote_ticks(benchmark):
     @benchmark
     def get_ticks():
         parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-        reader = ParquetReader(parquet_data_path, 1000, ParquetType.QuoteTick, ParquetReaderType.File)
+        reader = ParquetReader(
+            parquet_data_path,
+            1000,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
+        )
 
         data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
         ticks = list(itertools.chain(*data))
@@ -160,6 +167,7 @@ def test_pyo3_parquet_reader_quote_ticks(benchmark):
     # assert df.dates.equals(
     #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
     # )
+
 
 def test_pyo3_buffer_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
@@ -183,6 +191,7 @@ def test_pyo3_buffer_parquet_reader_quote_ticks():
     # assert df.dates.equals(
     #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
     # )
+
 
 def test_parquet_writer_round_trip_quote_ticks():
     # Arrange

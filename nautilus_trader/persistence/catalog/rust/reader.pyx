@@ -18,7 +18,8 @@ import os
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
 
 from cpython.object cimport PyObject
-from libc.stdint cimport uint64_t, uint8_t
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport CVec
@@ -28,17 +29,15 @@ from nautilus_trader.core.rust.model cimport quote_tick_copy
 from nautilus_trader.core.rust.model cimport trade_tick_copy
 from nautilus_trader.core.rust.persistence cimport ParquetReaderType
 from nautilus_trader.core.rust.persistence cimport ParquetType
+from nautilus_trader.core.rust.persistence cimport parquet_reader_buffer_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop_chunk
 from nautilus_trader.core.rust.persistence cimport parquet_reader_file_new
-from nautilus_trader.core.rust.persistence cimport parquet_reader_buffer_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_free
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
-from nautilus_trader.core.rust.model cimport quote_tick_copy
-from nautilus_trader.core.rust.model cimport trade_tick_copy
 
 cdef class ParquetReader:
     """

@@ -1,14 +1,17 @@
 import itertools
 import os
 import time
+
 import pytest
 
-from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
-from nautilus_trader.model.data.tick import QuoteTick
-from tests import TEST_DATA_DIR
-
 # build and load pyo3 module using maturin
-from nautilus_persistence import ParquetType, ParquetReader, ParquetReaderType
+from nautilus_persistence import ParquetReader
+from nautilus_persistence import ParquetReaderType
+from nautilus_persistence import ParquetType
+
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
+from tests import TEST_DATA_DIR
 
 
 @pytest.mark.benchmark(
@@ -16,7 +19,7 @@ from nautilus_persistence import ParquetType, ParquetReader, ParquetReaderType
     min_rounds=5,
     timer=time.time,
     disable_gc=True,
-    warmup=True
+    warmup=True,
 )
 def test_cython_benchmark_parquet_buffer_reader(benchmark):
     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
@@ -30,15 +33,16 @@ def test_cython_benchmark_parquet_buffer_reader(benchmark):
         ticks = list(itertools.chain(*list(reader)))
 
         print(len(ticks))
-        
+
     run
+
 
 @pytest.mark.benchmark(
     group="parquet-reader",
     min_rounds=5,
     timer=time.time,
     disable_gc=True,
-    warmup=True
+    warmup=True,
 )
 def test_pyo3_benchmark_parquet_buffer_reader(benchmark):
     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
@@ -53,5 +57,5 @@ def test_pyo3_benchmark_parquet_buffer_reader(benchmark):
         ticks = list(itertools.chain(*data))
 
         print(len(ticks))
-        
+
     run

@@ -13,17 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.core cimport cvec_drop
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport quote_tick_copy
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
-from nautilus_trader.core.rust.model cimport quote_tick_copy
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
@@ -40,11 +43,6 @@ from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from cpython.pycapsule cimport PyCapsule_GetPointer
-
-from nautilus_trader.core.rust.core cimport cvec_drop
-from nautilus_trader.core.rust.core cimport CVec
 
 
 cdef class QuoteTick(Data):
@@ -290,7 +288,7 @@ cdef class QuoteTick(Data):
         return quote_tick
 
     # Safety: Do NOT deallocate the capsule here
-    # 
+    #
     # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_quote_tick_list(object capsule):
