@@ -13,14 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::correctness;
-
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_SCALAR: f64 = 1000000000.0; // 10.0**FIXED_PRECISION
 
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
-    correctness::u8_in_range_inclusive(precision, 0, 9, "precision");
-
+    assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
     let pow1 = 10_i64.pow(precision as u32);
     let pow2 = 10_i64.pow((FIXED_PRECISION - precision) as u32);
     let rounded = (value * pow1 as f64).round() as i64;
@@ -28,8 +25,7 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
 }
 
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
-    correctness::u8_in_range_inclusive(precision, 0, 9, "precision");
-
+    assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
     let pow1 = 10_u64.pow(precision as u32);
     let pow2 = 10_u64.pow((FIXED_PRECISION - precision) as u32);
     let rounded = (value * pow1 as f64).round() as u64;
