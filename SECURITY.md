@@ -1,12 +1,23 @@
 # Security Policy
 
-We welcome all security reports.
+At NautilusTrader, we take security seriously and appreciate your efforts in 
+helping us identify and fix any vulnerabilities. If you have discovered a 
+security vulnerability, please follow the guidelines outlined below.
 
-There is no formal bug bounty program.
+## Responsible Disclosure
+We encourage responsible disclosure of any security vulnerabilities you may 
+discover. If you believe you have found a security vulnerability in our platform, 
+please email us at info@nautechsystems.io. We ask that you provide us with a 
+reasonable amount of time (at least one week) to fix the issue before 
+disclosing it publicly.
 
-We only support the latest version (because this is beta software).
+## Supported Versions
 
-If you find a security vulnerability please email us directly at info@nautechsystems.io
+We only support the latest version of NautilusTrader. If you are using an older 
+version, it is possible that vulnerabilities may have been fixed in a later 
+release.
 
-We would appreciate a 1 week delay on disclosure (and are happy to jointly announce
-the bug/fix) to afford us time to patch the latest prior to disclosure.
+## Bug Bounty Program
+At this time, we do not have a formal bug bounty program. However, we 
+appreciate any efforts to help us improve the security of our platform and will 
+do our best to properly recognize and credit your contributions.
