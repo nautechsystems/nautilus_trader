@@ -13,9 +13,7 @@
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
 
-use std::fs::File;
-
-use pyo3::{prelude::*, types::*, AsPyPointer};
+use std::{ffi::CString, fs::File};
 
 use nautilus_core::cvec::CVec;
 use nautilus_model::data::tick::QuoteTick;
@@ -29,15 +27,11 @@ mod test_util;
 #[test]
 #[allow(unused_assignments)]
 fn test_parquet_reader_ffi() {
-    pyo3::prepare_freethreaded_python();
-
-    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let file_path = CString::new("../../tests/test_data/quote_tick_data.parquet").unwrap();
 
     // return an opaque reader pointer
-    let reader = Python::with_gil(|py| {
-        let file_path = PyString::new(py, file_path);
-        unsafe { parquet_reader_file_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) }
-    });
+    let reader =
+        unsafe { parquet_reader_file_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) };
 
     let mut total = 0;
     let mut chunk = CVec::empty();
