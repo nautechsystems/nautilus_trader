@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
@@ -42,11 +44,6 @@ class BinanceHttpEndpoint:
         self.decoder = msgspec.json.Decoder()
         self.encoder = msgspec.json.Encoder()
 
-        self.get_resp_decoder = msgspec.json.Decoder(self.GetResponse)
-        self.post_resp_decoder = msgspec.json.Decoder(self.PostResponse)
-        self.put_resp_decoder = msgspec.json.Decoder(self.PutResponse)
-        self.delete_resp_decoder = msgspec.json.Decoder(self.DeleteResponse)
-
         self._method_request = {
             BinanceSecurityType.NONE: self.client.send_request,
             BinanceSecurityType.USER_STREAM: self.client.send_request,
@@ -56,47 +53,8 @@ class BinanceHttpEndpoint:
             BinanceSecurityType.USER_DATA: self.client.sign_request,
         }
 
-    class GetParameters(msgspec.Struct):
-        """Endpoint specific parameters schema to be implemented in child class if necessary"""
-
-        None
-
-    class GetResponse(msgspec.Struct):
-        """Endpoint specific response schema to be implemented in child class if necessary"""
-
-        None
-
-    class PostParameters(msgspec.Struct):
-        """Endpoint specific parameters schema to be implemented in child class if necessary"""
-
-        None
-
-    class PostResponse(msgspec.Struct):
-        """Endpoint specific response schema to be implemented in child class if necessary"""
-
-        None
-
-    class PutParameters(msgspec.Struct):
-        """Endpoint specific parameters schema to be implemented in child class if necessary"""
-
-        None
-
-    class PutResponse(msgspec.Struct):
-        """Endpoint specific response schema to be implemented in child class if necessary"""
-
-        None
-
-    class DeleteParameters(msgspec.Struct):
-        """Endpoint specific parameters schema to be implemented in child class if necessary"""
-
-        None
-
-    class DeleteResponse(msgspec.Struct):
-        """Endpoint specific response schema to be implemented in child class if necessary"""
-
-        None
-
-    async def _method(self, method_type: BinanceMethodType, payload: dict) -> bytes:
+    async def _method(self, method_type: BinanceMethodType, parameters: Any) -> bytes:
+        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
         if self.methods_desc[method_type] is None:
             raise RuntimeError(
                 f"{method_type.name} not available for {self.url_path}",
@@ -107,27 +65,3 @@ class BinanceHttpEndpoint:
             payload=payload,
         )
         return raw
-
-    async def _get(self, parameters: GetParameters = GetParameters()) -> GetResponse:
-        method_type = BinanceMethodType.GET
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
-        raw = await self._method(method_type, payload)
-        return self.get_resp_decoder.decode(raw)
-
-    async def _post(self, parameters: PostParameters = PostParameters()) -> PostResponse:
-        method_type = BinanceMethodType.POST
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
-        raw = await self._method(method_type, payload)
-        return self.post_resp_decoder.decode(raw)
-
-    async def _put(self, parameters: PutParameters = PutParameters()) -> PutResponse:
-        method_type = BinanceMethodType.PUT
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
-        raw = await self._method(method_type, payload)
-        return self.put_resp_decoder.decode(raw)
-
-    async def _delete(self, parameters: DeleteParameters = DeleteParameters()) -> DeleteResponse:
-        method_type = BinanceMethodType.DELETE
-        payload: dict = self.decoder.decode(self.encoder.encode(parameters))
-        raw = await self._method(method_type, payload)
-        return self.delete_resp_decoder.decode(raw)
