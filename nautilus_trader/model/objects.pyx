@@ -31,6 +31,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport precision_from_cstr
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR as RUST_FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
@@ -52,7 +53,7 @@ from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
 from nautilus_trader.core.string cimport cstr_to_pystr
-from nautilus_trader.core.string cimport precision_from_str
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -334,7 +335,7 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity from_str_c(str value):
-        return Quantity(float(value), precision=precision_from_str(value))
+        return Quantity(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
 
     @staticmethod
     cdef Quantity from_int_c(int value):
@@ -720,7 +721,7 @@ cdef class Price:
 
     @staticmethod
     cdef Price from_str_c(str value):
-        return Price(float(value), precision=precision_from_str(value))
+        return Price(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
 
     @staticmethod
     cdef Price from_int_c(int value):
