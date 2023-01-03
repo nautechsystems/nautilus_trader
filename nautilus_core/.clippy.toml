@@ -1,9 +1,2 @@
-# Enable additional Clippy lints
-suspicious_else_formatting = true
-suspicious_arithmetic_impl = true
-
-# Set the cognitive complexity threshold
 cognitive-complexity-threshold = 15
-
-# Disable the allow-expect-in-tests lint
 allow-expect-in-tests = false
