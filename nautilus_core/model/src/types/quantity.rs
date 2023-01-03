@@ -36,14 +36,14 @@ impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
-        Quantity {
+        Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        Quantity { raw, precision }
+        Self { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {

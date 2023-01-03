@@ -40,12 +40,12 @@ impl Currency {
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> Currency {
+    ) -> Self {
         correctness::valid_string(code, "`Currency` code");
         correctness::valid_string(name, "`Currency` name");
         correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
 
-        Currency {
+        Self {
             code: Box::new(Rc::new(code.to_string())),
             precision,
             iso4217,
