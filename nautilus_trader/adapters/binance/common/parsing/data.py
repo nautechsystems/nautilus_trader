@@ -15,65 +15,28 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
-from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
-from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteData
-from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
-from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceCandlestick
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrderBookData
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceQuoteData
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceTickerData
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
-from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
-
-
-def parse_trade_tick_http(
-    instrument_id: InstrumentId,
-    trade: BinanceTrade,
-    ts_init: int,
-) -> TradeTick:
-    return TradeTick(
-        instrument_id=instrument_id,
-        price=Price.from_str(trade.price),
-        size=Quantity.from_str(trade.qty),
-        aggressor_side=AggressorSide.SELLER if trade.isBuyerMaker else AggressorSide.BUYER,
-        trade_id=TradeId(str(trade.id)),
-        ts_event=millis_to_nanos(trade.time),
-        ts_init=ts_init,
-    )
-
-
-def parse_bar_http(bar_type: BarType, values: list, ts_init: int) -> BinanceBar:
-    return BinanceBar(
-        bar_type=bar_type,
-        open=Price.from_str(values[1]),
-        high=Price.from_str(values[2]),
-        low=Price.from_str(values[3]),
-        close=Price.from_str(values[4]),
-        volume=Quantity.from_str(values[5]),
-        quote_volume=Decimal(values[7]),
-        count=values[8],
-        taker_buy_base_volume=Decimal(values[9]),
-        taker_buy_quote_volume=Decimal(values[10]),
-        ts_event=millis_to_nanos(values[0]),
-        ts_init=ts_init,
-    )
 
 
 def parse_diff_depth_stream_ws(
