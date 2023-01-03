@@ -19,7 +19,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::enums::{LogColor, LogFormat, LogLevel};
+use crate::enums::{LogColor, LogLevel};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use nautilus_core::uuid::UUID4;
@@ -50,7 +50,9 @@ impl Logger {
             instance_id,
             level_stdout,
             is_bypassed,
-            log_template: String::from("\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n"),
+            log_template: String::from(
+                "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
+            ),
             out: BufWriter::new(io::stdout()),
             err: BufWriter::new(io::stderr()),
         }
@@ -66,10 +68,11 @@ impl Logger {
         msg: &str,
     ) -> Result<(), io::Error> {
         if level < self.level_stdout {
-            return Ok(())
+            return Ok(());
         }
 
-        let fmt_line = self.log_template
+        let fmt_line = self
+            .log_template
             .replace("{ts}", &unix_nanos_to_iso8601(timestamp_ns))
             .replace("{color}", &color.to_string())
             .replace("{level}", &level.to_string())
