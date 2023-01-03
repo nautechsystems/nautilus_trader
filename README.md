@@ -354,28 +354,37 @@ Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer_g
 
 ## Contributing
 
-Involvement from the trading community is a goal for this project, all help is welcome!
-Developers can open [issues](https://github.com/nautechsystems/nautilus_trader/issues) on GitHub to discuss proposed enhancements, changes, or
-to make bug reports. Questions and more general thoughts are best directed to a [discussions](https://github.com/nautechsystems/nautilus_trader/discussions) thread.
+Thank you for considering contributing to Nautilus Trader! We welcome any and all help to improve 
+the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues) 
+on GitHub to discuss it with the team. This helps to ensure that your contribution will be 
+well-aligned with the goals of the project and avoids duplication of effort.
 
-Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
+Once you're ready to start working on your contribution, please make sure to follow the guidelines 
+outlined in the CONTRIBUTING.md file. This includes signing a Contributor License Agreement (CLA) 
+to ensure that your contributions can be included in the project.
 
-Please make all pull requests to the `develop` branch.
+Please note that all pull requests should be made to the `develop` branch. This is where new features 
+and improvements are integrated before being released to the public.
+
+Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.
 
 ## Community
-Chat with contributors and active users of NautilusTrader on our [Discord](https://discord.gg/AUWVs3XaCS) server!
-This is also the best place to monitor announcements, and learn about the latest features as they become available.
+Join our community of users and contributors on [Discord](https://discord.gg/AUWVs3XaCS) to chat 
+and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a 
+developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
 
 ## License
 
-NautilusTrader is licensed under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-
-Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
+The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
+Contributions to the project are welcome and require the completion of a standard Contributor License Agreement (CLA).
 
 ---
 
+NautilusTrader is developed and maintained by Nautech Systems, a technology 
+company specializing in the development of high-performance trading systems. 
+For more information, visit https://nautilustrader.io.
+
 Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
-https://nautilustrader.io
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
 <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">
