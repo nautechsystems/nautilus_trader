@@ -1,3 +1,9 @@
-avoid-breaking-exported-api = false
+# Enable additional Clippy lints
+suspicious_else_formatting = true
+suspicious_arithmetic_impl = true
+
+# Set the cognitive complexity threshold
 cognitive-complexity-threshold = 15
-allow-expect-in-tests = true
+
+# Disable the allow-expect-in-tests lint
+allow-expect-in-tests = false
