@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import Counter
 from unittest.mock import patch
 
 import msgspec
@@ -34,6 +35,15 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_betfair_starting_prices,
+)
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_instrument_closes,
+)
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_instrument_status_updates,
+)
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -41,7 +51,9 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
@@ -65,14 +77,65 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestBetfairParsingStreaming:
-    def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.clock = LiveClock()
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-        self.instrument = TestInstrumentProvider.betting_instrument()
-        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
-        self.provider = BetfairTestStubs.instrument_provider(self.client)
+    # def setup(self):
+    #     # Fixture Setup
+    #     self.loop = asyncio.get_event_loop()
+    #     self.clock = LiveClock()
+    #     self.logger = LiveLogger(loop=self.loop, clock=self.clock)
+    #     self.instrument = TestInstrumentProvider.betting_instrument()
+    #     self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
+    #     self.provider = BetfairTestStubs.instrument_provider(self.client)
+
+    def test_market_definition_to_instrument_status_updates(self, market_definition_open):
+        # Arrange, Act
+        updates = market_definition_to_instrument_status_updates(
+            market_definition_open,
+            "1.205822330",
+            0,
+            0,
+        )
+
+        # Assert
+        result = [
+            upd
+            for upd in updates
+            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
+        ]
+        assert len(result) == 17
+
+    def test_market_definition_to_instrument_close_price(self, market_definition_close):
+        # Arrange, Act
+        updates = market_definition_to_instrument_closes(
+            market_definition_close,
+            "1.205822330",
+            0,
+            0,
+        )
+
+        # Assert
+        result = [
+            upd
+            for upd in updates
+            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
+        ]
+        assert len(result) == 17
+
+    def test_market_definition_to_betfair_starting_price(self, market_definition_close):
+        # Arrange, Act
+        updates = market_definition_to_betfair_starting_prices(
+            market_definition_close,
+            "1.205822330",
+            0,
+            0,
+        )
+
+        # Assert
+        result = [
+            upd
+            for upd in updates
+            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
+        ]
+        assert len(result) == 17
 
     @pytest.mark.parametrize(
         "market_id, num_msgs",
@@ -83,6 +146,13 @@ class TestBetfairParsingStreaming:
         parser = BetfairParser()
         updates = [x for mcm in mcms for x in parser.parse(mcm)]
         assert len(updates) == num_msgs
+
+    def test_parsing_streaming_file_message_counts(self, market_id, num_msgs):
+        mcms = BetfairDataProvider.market_updates(market_id)
+        parser = BetfairParser()
+        updates = Counter([x.__class__.__name__ for mcm in mcms for x in parser.parse(mcm)])
+        expected = Counter({})
+        assert updates == expected
 
 
 class TestBetfairParsing:

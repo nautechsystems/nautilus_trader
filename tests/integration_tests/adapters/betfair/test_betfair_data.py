@@ -461,11 +461,22 @@ class TestBetfairDataClient:
         assert ticker.traded_volume == 364.45
 
     def test_betfair_ticker_sp(self):
-        self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
-        ticker: BetfairTicker = self.messages[1]
+        # Arrange
+        lines = BetfairDataProvider.read_lines("1.205822330")
 
-        assert ticker.starting_price_near is None
-        assert ticker.starting_price_far is None
+        # Act
+        for line in lines:
+            self.client.on_market_update(line)
+
+        # Assert
+        starting_prices_near = [
+            t for t in self.messages if isinstance(t, BetfairTicker) if t.starting_price_near
+        ]
+        starting_prices_far = [
+            t for t in self.messages if isinstance(t, BetfairTicker) if t.starting_price_far
+        ]
+        assert len(starting_prices_near) == 1
+        assert len(starting_prices_far) == 1
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import itertools
 from collections import defaultdict
 from typing import Optional, Union
 
@@ -29,12 +28,12 @@ from betfair_parser.spec.streaming.mcm import MarketChange
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 from betfair_parser.spec.streaming.mcm import Runner
 from betfair_parser.spec.streaming.mcm import RunnerChange
+from betfair_parser.spec.streaming.mcm import RunnerStatus
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
@@ -42,6 +41,9 @@ from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.parsing.constants import CLOSE_PRICE_LOSER
+from nautilus_trader.adapters.betfair.parsing.constants import CLOSE_PRICE_WINNER
+from nautilus_trader.adapters.betfair.parsing.constants import MARKET_STATUS_MAPPING
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
@@ -55,7 +57,6 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -63,17 +64,163 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import BookOrder
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
-def _handle_market_snapshot(
+PARSE_TYPES = Union[
+    InstrumentStatusUpdate,
+    InstrumentClose,
+    OrderBookSnapshot,
+    OrderBookDeltas,
+    TradeTick,
+    BetfairTicker,
+    BSPOrderBookDelta,
+    BSPOrderBookDeltas,
+]
+
+
+def market_change_to_updates(mc: MarketChange, ts_event: int, ts_init: int) -> list[PARSE_TYPES]:
+    updates: list[PARSE_TYPES] = []
+    if mc.marketDefinition is not None:
+        updates.extend(
+            market_definition_to_instrument_status_updates(
+                mc.marketDefinition,
+                mc.id,
+                ts_event,
+                ts_init,
+            ),
+        )
+        updates.extend(
+            market_definition_to_instrument_closes(mc.marketDefinition, mc.id, ts_event, ts_init),
+        )
+        updates.extend(
+            market_definition_to_instrument_closes(mc.marketDefinition, mc.id, ts_event, ts_init),
+        )
+    return updates
+
+
+def market_definition_to_instrument_status_updates(
+    market_definition: MarketDefinition,
+    market_id: str,
+    ts_event: int,
+    ts_init: int,
+) -> list[InstrumentStatusUpdate]:
+    updates = []
+    for runner in market_definition.runners:
+        instrument_id = betfair_instrument_id(
+            market_id=market_id,
+            runner_id=str(runner.runner_id),
+            runner_handicap=parse_handicap(runner.handicap),
+        )
+        status = InstrumentStatusUpdate(
+            instrument_id=instrument_id,
+            status=MARKET_STATUS_MAPPING[(market_definition.status, market_definition.inPlay)],
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        updates.append(status)
+    return updates
+
+
+def market_definition_to_instrument_closes(
+    market_definition: MarketDefinition,
+    market_id: str,
+    ts_event: int,
+    ts_init: int,
+) -> list[InstrumentClose]:
+    updates = []
+    for runner in market_definition.runners:
+        updates.append(runner_to_instrument_close(runner, market_id, ts_event, ts_init))
+    return updates
+
+
+def runner_to_instrument_close(
+    runner: Runner,
+    market_id: str,
+    ts_event: int,
+    ts_init: int,
+) -> InstrumentClose:
+    instrument_id = betfair_instrument_id(
+        market_id=market_id,
+        runner_id=str(runner.runner_id),
+        runner_handicap=parse_handicap(runner.handicap),
+    )
+
+    if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED):
+        return InstrumentClose(
+            instrument_id=instrument_id,
+            close_price=CLOSE_PRICE_LOSER,
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+    elif runner.status in (RunnerStatus.WINNER, RunnerStatus.PLACED):
+        return InstrumentClose(
+            instrument_id=instrument_id,
+            close_price=CLOSE_PRICE_WINNER,
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+    else:
+        raise ValueError(f"Unknown runner close status: {runner.status}")
+
+
+def market_definition_to_betfair_starting_prices(
+    market_definition: MarketDefinition,
+    market_id: str,
+    ts_event: int,
+    ts_init: int,
+) -> list[BetfairStartingPrice]:
+    updates: list[BetfairStartingPrice] = []
+    for runner in market_definition.runners:
+        sp = runner_to_betfair_starting_price(runner, market_id, ts_event, ts_init)
+        if sp is not None:
+            return updates
+    return updates
+
+
+def runner_to_betfair_starting_price(
+    runner: Runner,
+    market_id: str,
+    ts_event: int,
+    ts_init: int,
+) -> Optional[BetfairStartingPrice]:
+    if runner.bsp is not None:
+        instrument_id = betfair_instrument_id(
+            market_id=market_id,
+            runner_id=str(runner.runner_id),
+            runner_handicap=parse_handicap(runner.handicap),
+        )
+        return BetfairStartingPrice(
+            instrument_id=make_bsp_instrument_id(instrument_id),
+            bsp=runner.bsp,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+    else:
+        return None
+
+
+def runner_change_to_order_book_snapshot(
+    mc: MarketChange,
     rc: RunnerChange,
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
 ):
+    pass
+
+
+def _handle_orderbook_snapshot(
+    rc: RunnerChange,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
+) -> list[OrderBookSnapshot]:
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
     bid_keys = [k for k in B_BID_KINDS if getattr(rc, k)] or ["atb"]
@@ -185,7 +332,12 @@ def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event,
     return updates
 
 
-def _handle_book_updates(runner: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
+def _handle_order_book_updates(
+    runner: RunnerChange,
+    instrument_id: InstrumentId,
+    ts_event,
+    ts_init,
+) -> list[OrderBookData]:
     deltas = []
     for side in B_SIDE_KINDS:
         for upd in getattr(runner, side, []):
@@ -223,126 +375,6 @@ def _handle_book_updates(runner: RunnerChange, instrument_id: InstrumentId, ts_e
         return []
 
 
-def _handle_market_close(
-    runner: Runner,
-    instrument_id: InstrumentId,
-    ts_event,
-    ts_init,
-) -> tuple[InstrumentClose, Optional[BetfairStartingPrice]]:
-    if runner.status in ("LOSER", "REMOVED"):
-        close_price = InstrumentClose(
-            instrument_id=instrument_id,
-            close_price=Price(0.0, precision=BETFAIR_PRICE_PRECISION),
-            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    elif runner.status in ("WINNER", "PLACED"):
-        close_price = InstrumentClose(
-            instrument_id=instrument_id,
-            close_price=Price(1.0, precision=BETFAIR_PRICE_PRECISION),
-            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    else:
-        raise ValueError(f"Unknown runner close status: {runner.status}")
-    if runner.bsp is not None:
-        bsp = BetfairStartingPrice(
-            instrument_id=make_bsp_instrument_id(instrument_id),
-            bsp=runner.bsp,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    else:
-        bsp = None
-
-    return close_price, bsp
-
-
-def _handle_instrument_status(
-    mc: MarketChange,
-    runner: Runner,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-):
-    market_def = mc.marketDefinition
-    if not market_def.status:
-        return []
-    if runner.status == "REMOVED":
-        status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
-            status=MarketStatus.CLOSED,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    elif market_def.status == "OPEN" and not market_def.inPlay:
-        status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
-            status=MarketStatus.PRE_OPEN,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    elif market_def.status == "OPEN" and market_def.inPlay:
-        status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
-            status=MarketStatus.OPEN,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    elif market_def.status == "SUSPENDED":
-        status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
-            status=MarketStatus.PAUSE,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    elif market_def.status == "CLOSED":
-        status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
-            status=MarketStatus.CLOSED,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-    else:
-        raise ValueError("Unknown market status")
-    return [status]
-
-
-def _handle_market_runners_status(mc: MarketChange, ts_event: int, ts_init: int):
-    updates = []
-    for runner in mc.marketDefinition.runners:
-        instrument_id = betfair_instrument_id(
-            market_id=mc.id,
-            selection_id=str(runner.id),
-            selection_handicap=parse_handicap(runner.hc),
-        )
-        updates.extend(
-            _handle_instrument_status(
-                mc=mc,
-                runner=runner,
-                instrument_id=instrument_id,
-                ts_event=ts_event,
-                ts_init=ts_init,
-            ),
-        )
-        if mc.marketDefinition.status == "CLOSED":
-            updates.extend(
-                [
-                    x
-                    for x in _handle_market_close(
-                        runner=runner,
-                        instrument_id=instrument_id,
-                        ts_event=ts_event,
-                        ts_init=ts_init,
-                    )
-                    if x is not None
-                ],
-            )
-    return updates
-
-
 def _handle_ticker(runner: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
     last_traded_price, traded_volume, starting_price_far, starting_price_near = (
         None,
@@ -369,34 +401,6 @@ def _handle_ticker(runner: RunnerChange, instrument_id: InstrumentId, ts_event, 
     )
 
 
-def build_market_snapshot_messages(
-    mc: MarketChange,
-    ts_event: int,
-    ts_init: int,
-) -> list[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
-    updates = []
-    # OrderBook snapshots
-    if mc.img is True:
-        for _, runners in itertools.groupby(mc.rc, lambda x: (x.id, x.hc)):
-            runners: list[RunnerChange]  # type: ignore
-            for rc in list(runners):
-                instrument_id = betfair_instrument_id(
-                    market_id=mc.id,
-                    selection_id=str(rc.id),
-                    selection_handicap=parse_handicap(rc.hc),
-                )
-
-                updates.extend(
-                    _handle_market_snapshot(
-                        rc=rc,
-                        instrument_id=instrument_id,
-                        ts_event=ts_event,
-                        ts_init=ts_init,
-                    ),
-                )
-    return updates
-
-
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
@@ -418,77 +422,79 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     ]
 
 
-def build_market_update_messages(
-    mc: MarketChange,
-    ts_event: int,
-    ts_init: int,
-) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClose]]:
-    updates = []
-    book_updates = []
-    bsp_book_updates = []
-
-    for rc in mc.rc:
-        instrument_id = betfair_instrument_id(
-            market_id=mc.id,
-            selection_id=str(rc.id),
-            selection_handicap=parse_handicap(rc.hc),
-        )
-
-        # Delay appending book updates until we can merge at the end
-        book_updates.extend(
-            _handle_book_updates(
-                runner=rc,
-                instrument_id=instrument_id,
-                ts_event=ts_event,
-                ts_init=ts_init,
-            ),
-        )
-
-        if rc.trd:
-            updates.extend(
-                _handle_market_trades(
-                    rc=rc,
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                ),
-            )
-        if rc.ltp or rc.tv:
-            updates.append(
-                _handle_ticker(
-                    runner=rc,
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                ),
-            )
-
-        if rc.spb or rc.spl:
-            bsp_book_updates.extend(
-                _handle_bsp_updates(
-                    rc=rc,
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                ),
-            )
-    if book_updates:
-        updates.extend(_merge_order_book_deltas(book_updates))
-    if bsp_book_updates:
-        updates.extend(_merge_order_book_deltas(bsp_book_updates))
-    return updates
-
-
-PARSE_TYPES = Union[
-    InstrumentStatusUpdate,
-    InstrumentClose,
-    OrderBookSnapshot,
-    OrderBookDeltas,
-    TradeTick,
-    BetfairTicker,
-    BSPOrderBookDelta,
-    BSPOrderBookDeltas,
-]
+#
+# def market_change_to_updates(mc: MarketChange, ts_event: int, ts_init: int) -> list[PARSE_TYPES]:
+#     updates: list[PARSE_TYPES] = []
+#     book_updates: list[OrderBookData] = []
+#     bsp_book_updates: list[BSPOrderBookDeltas] = []
+#
+#     # Emit market change events first
+#     updates.extend(_handle_market_runners_status(mc, ts_event, ts_init))
+#
+#     for rc in mc.rc:
+#
+#         instrument_id = betfair_instrument_id(
+#             market_id=mc.id,
+#             runner_id=str(rc.id),
+#             runner_handicap=parse_handicap(rc.hc),
+#         )
+#
+#         # OrderBook updates
+#         # Delay appending book updates until we can merge at the end
+#         if mc.img:
+#             # Full snapshot
+#             book_updates.extend(
+#                 _handle_orderbook_snapshot(
+#                     runner=rc,
+#                     instrument_id=instrument_id,
+#                     ts_event=ts_event,
+#                     ts_init=ts_init,
+#                 ),
+#             )
+#         else:
+#             book_updates.extend(
+#                 _handle_order_book_updates(
+#                     runner=rc,
+#                     instrument_id=instrument_id,
+#                     ts_event=ts_event,
+#                     ts_init=ts_init,
+#                 ),
+#             )
+#
+#         # TradeTicks
+#         if rc.trd:
+#             updates.extend(
+#                 _handle_market_trades(
+#                     rc=rc,
+#                     instrument_id=instrument_id,
+#                     ts_event=ts_event,
+#                     ts_init=ts_init,
+#                 ),
+#             )
+#
+#         # Ticker
+#         if rc.ltp or rc.tv or rc.spn or rc.spf:
+#             updates.append(
+#                 _handle_ticker(
+#                     runner=rc,
+#                     instrument_id=instrument_id,
+#                     ts_event=ts_event,
+#                     ts_init=ts_init,
+#                 ),
+#             )
+#
+#         # BSP Orderbook
+#         if rc.spb or rc.spl:
+#             bsp_book_updates.extend(
+#                 _handle_bsp_updates(
+#                     rc=rc,
+#                     instrument_id=instrument_id,
+#                     ts_event=ts_event,
+#                     ts_init=ts_init,
+#                 ),
+#             )
+#
+#     return updates
 
 
 class BetfairParser:
@@ -508,12 +514,8 @@ class BetfairParser:
         for mc in mcm.mc:
             if mc.marketDefinition is not None:
                 self.market_definitions[mc.id] = mc.marketDefinition
-                updates.extend(_handle_market_runners_status(mc, ts_event, ts_init))
-            if mc.img:
-                updates.extend(build_market_snapshot_messages(mc, ts_event, ts_init))
-            else:
-                upd = build_market_update_messages(mc, ts_event, ts_init)
-                updates.extend(upd)
+            mc_updates = market_change_to_updates(mc, ts_event, ts_init)
+            updates.extend(mc_updates)
         return updates
 
 
