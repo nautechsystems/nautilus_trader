@@ -35,20 +35,14 @@ jobs:
 
       # Build project
       - name: Build project
-        run: poetry install --with docs
+        run: poetry install --with docs --all-extras
 
       - name: Get branch name
         id: branch-name
-        uses: tj-actions/branch-names@v5.2
+        uses: tj-actions/branch-names@v6
 
-      # Build docs (develop)
-      - name: Build docs (develop)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        run: make docs
-
-      # Build docs (latest)
-      - name: Build docs (latest)
-        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+      # Build docs
+      - name: Build docs
         run: make docs
 
       # Add nojeckyll
@@ -59,8 +53,21 @@ jobs:
       - name: Add CNAME
         run: echo "docs.nautilustrader.io" >> docs/build/html/CNAME
 
-      # Publish docs
-      - name: Publish docs
+      # Publish docs (develop)
+      - name: Publish docs (develop)
+        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: self
+          BRANCH: gh-pages
+          FOLDER: docs/build/html
+          SQUASH_HISTORY: false
+          GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
+          TARGET_DIR: develop
+
+      # Publish docs (latest)
+      - name: Publish docs (latest)
+        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         uses: s0/git-publish-subdir-action@develop
         env:
           REPO: self

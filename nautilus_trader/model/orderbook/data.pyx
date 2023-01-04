@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,19 +21,20 @@ import msgspec
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport BookAction
-from nautilus_trader.core.rust.enums cimport BookType
-from nautilus_trader.core.rust.enums cimport book_action_from_str
-from nautilus_trader.core.rust.enums cimport book_action_to_str
-from nautilus_trader.core.rust.enums cimport book_type_from_str
-from nautilus_trader.core.rust.enums cimport book_type_to_str
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.enums_c cimport BookAction
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport book_action_from_str
+from nautilus_trader.model.enums_c cimport book_action_to_str
+from nautilus_trader.model.enums_c cimport book_type_from_str
+from nautilus_trader.model.enums_c cimport book_type_to_str
+from nautilus_trader.model.enums_c cimport order_side_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
 
 
 cdef class OrderBookData(Data):
     """
-    The abstract base class for all `OrderBook` data.
+    The base class for all `OrderBook` data.
 
     Parameters
     ----------
@@ -370,7 +371,7 @@ cdef class OrderBookDelta(OrderBookData):
             "action": book_action_to_str(obj.action),
             "order_price": obj.order.price if obj.order else None,
             "order_size": obj.order.size if obj.order else None,
-            "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,
+            "order_side": order_side_to_str(obj.order.side) if obj.order else None,
             "order_id": obj.order.id if obj.order else None,
             "update_id": obj.update_id,
             "ts_event": obj.ts_event,
@@ -442,7 +443,7 @@ cdef class BookOrder:
         return hash(frozenset(BookOrder.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return f"{BookOrder.__name__}({self.price}, {self.size}, {OrderSideParser.to_str(self.side)}, {self.id})"
+        return f"{BookOrder.__name__}({self.price}, {self.size}, {order_side_to_str(self.side)}, {self.id})"
 
     cpdef void update_price(self, double price) except *:
         """
@@ -511,7 +512,7 @@ cdef class BookOrder:
         return BookOrder(
             price=values["price"],
             size=values["size"],
-            side=OrderSideParser.from_str(values["side"]),
+            side=order_side_from_str(values["side"]),
             id=values["id"],
         )
 
@@ -522,7 +523,7 @@ cdef class BookOrder:
             "type": "Order",
             "price": obj.price,
             "size": obj.size,
-            "side": OrderSideParser.to_str(obj.side),
+            "side": order_side_to_str(obj.side),
             "id": str(obj.id),
         }
 

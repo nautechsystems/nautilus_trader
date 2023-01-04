@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,8 @@ from typing import Any, Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrder
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceUserTrade
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
@@ -40,6 +42,9 @@ class BinanceSpotAccountHttpAPI:
 
         # Decoders
         self._decoder_account_info = msgspec.json.Decoder(BinanceSpotAccountInfo)
+        self._decoder_order = msgspec.json.Decoder(BinanceOrder)
+        self._decoder_orders = msgspec.json.Decoder(list[BinanceOrder])
+        self._decorder_user_trades = msgspec.json.Decoder(list[BinanceUserTrade])
 
     async def new_order_test(
         self,
@@ -328,7 +333,7 @@ class BinanceSpotAccountHttpAPI:
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> dict[str, Any]:
+    ) -> BinanceOrder:
         """
         Check an order's status.
 
@@ -369,13 +374,13 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw)
+        return self._decoder_order.decode(raw)
 
     async def get_open_orders(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[BinanceOrder]:
         """
         Get all open orders for a symbol.
 
@@ -410,7 +415,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw)
+        return self._decoder_orders.decode(raw)
 
     async def get_orders(
         self,
@@ -420,7 +425,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[BinanceOrder]:
         """
         Get all account orders (open, or closed).
 
@@ -469,7 +474,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw)
+        return self._decoder_orders.decode(raw)
 
     async def new_oco_order(
         self,
@@ -807,7 +812,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[BinanceUserTrade]:
         """
         Get trades for a specific account and symbol.
 
@@ -859,7 +864,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw)
+        return self._decorder_user_trades.decode(raw)
 
     async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> dict[str, Any]:
         """

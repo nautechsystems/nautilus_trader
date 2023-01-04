@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,10 +16,10 @@
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.schemas import BinanceExchangeFilter
-from nautilus_trader.adapters.binance.common.schemas import BinanceRateLimit
-from nautilus_trader.adapters.binance.common.schemas import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
 
@@ -38,7 +38,7 @@ class BinanceSpotSymbolInfo(msgspec.Struct):
     quoteAsset: str
     quotePrecision: int
     quoteAssetPrecision: int
-    orderTypes: list[BinanceSpotOrderType]
+    orderTypes: list[BinanceOrderType]
     icebergAllowed: bool
     ocoAllowed: bool
     quoteOrderQtyMarketAllowed: bool

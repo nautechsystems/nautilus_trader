@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,9 +24,9 @@ from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
@@ -41,7 +41,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
@@ -241,7 +241,7 @@ class TestRedisCacheDatabase:
         result = self.database.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_update_account(self):
         # Arrange
@@ -787,7 +787,7 @@ class TestRedisCacheDatabase:
         result = self.cache.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_load_submit_order_list_command(self):
         order_factory = OrderFactory(
@@ -829,7 +829,7 @@ class TestRedisCacheDatabase:
         result = self.cache.load_submit_order_list_command(bracket.id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_flush(self):
         # Arrange
@@ -888,7 +888,7 @@ class TestRedisCacheDatabaseIntegrity:
         self.engine = BacktestEngine(config=config)
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,10 @@
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
-from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
-from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
-from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceCandlestick
+from nautilus_trader.adapters.binance.spot.parsing.execution import BinanceSpotExecutionParser
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
@@ -33,20 +33,23 @@ BTCUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceCommonParsing:
+    def __init__(self) -> None:
+        self._execution_parser = BinanceSpotExecutionParser()
+
     @pytest.mark.parametrize(
         "order_type, expected",
         [
-            [BinanceSpotOrderType.MARKET, OrderType.MARKET],
-            [BinanceSpotOrderType.LIMIT, OrderType.LIMIT],
-            [BinanceSpotOrderType.STOP, OrderType.STOP_MARKET],
-            [BinanceSpotOrderType.STOP_LOSS, OrderType.STOP_MARKET],
-            [BinanceSpotOrderType.TAKE_PROFIT, OrderType.LIMIT],
-            [BinanceSpotOrderType.TAKE_PROFIT_LIMIT, OrderType.STOP_LIMIT],
+            [BinanceOrderType.MARKET, OrderType.MARKET],
+            [BinanceOrderType.LIMIT, OrderType.LIMIT],
+            [BinanceOrderType.STOP, OrderType.STOP_MARKET],
+            [BinanceOrderType.STOP_LOSS, OrderType.STOP_MARKET],
+            [BinanceOrderType.TAKE_PROFIT, OrderType.LIMIT],
+            [BinanceOrderType.TAKE_PROFIT_LIMIT, OrderType.STOP_LIMIT],
         ],
     )
     def test_parse_order_type(self, order_type, expected):
         # Arrange, # Act
-        result = parse_order_type(order_type)
+        result = self._execution_parser.parse_binance_order_type(order_type)
 
         # Assert
         assert result == expected

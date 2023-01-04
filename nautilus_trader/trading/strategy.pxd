@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,13 +22,13 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -54,8 +54,8 @@ cdef class Strategy(Actor):
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
-    cdef readonly OMSType oms_type
-    """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly str order_id_tag
     """The order ID tag for the strategy.\n\n:returns: `str`"""
 
@@ -92,6 +92,7 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
+        bint manage_gtd_expiry=*,
         ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
     ) except *
@@ -99,6 +100,7 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id=*,
+        bint manage_gtd_expiry=*,
         list exec_algorithm_specs=*,
         ClientId client_id=*,
     ) except *

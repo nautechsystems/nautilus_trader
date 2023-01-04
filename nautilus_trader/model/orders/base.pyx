@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,18 +17,18 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport ContingencyType
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.core.rust.enums cimport contingency_type_to_str
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport contingency_type_to_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport order_status_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.model.enums_c cimport time_in_force_to_str
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -117,7 +117,7 @@ cdef dict _ORDER_STATE_TABLE = {
 
 cdef class Order:
     """
-    The abstract base class for all orders.
+    The base class for all orders.
 
     Parameters
     ----------
@@ -138,8 +138,8 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,
-            state_parser=OrderStatusParser.to_str,
+            trigger_parser=order_status_to_str,
+            state_parser=order_status_to_str,
         )
         self._previous_status = OrderStatus.INITIALIZED
         self._triggered_price = None  # Can be None
@@ -257,13 +257,13 @@ cdef class Order:
         return self._fsm.state_string_c()
 
     cdef str type_string_c(self):
-        return OrderTypeParser.to_str(self.order_type)
+        return order_type_to_str(self.order_type)
 
     cdef str side_string_c(self):
-        return OrderSideParser.to_str(self.side)
+        return order_side_to_str(self.side)
 
     cdef str tif_string_c(self):
-        return TimeInForceParser.to_str(self.time_in_force)
+        return time_in_force_to_str(self.time_in_force)
 
     cdef bint has_price_c(self) except *:
         raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
@@ -284,7 +284,7 @@ cdef class Order:
         return self.order_type == OrderType.MARKET
 
     cdef bint is_emulated_c(self) except *:
-        return self.emulation_trigger != TriggerType.NONE
+        return self.emulation_trigger != TriggerType.NO_TRIGGER
 
     cdef bint is_contingency_c(self) except *:
         return self.contingency_type != ContingencyType.NO_CONTINGENCY
@@ -296,7 +296,7 @@ cdef class Order:
         return self.parent_order_id is not None
 
     cdef bint is_open_c(self) except *:
-        if self.emulation_trigger != TriggerType.NONE:
+        if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
         return (
             self._fsm.state == OrderStatus.ACCEPTED
@@ -319,7 +319,7 @@ cdef class Order:
         )
 
     cdef bint is_inflight_c(self) except *:
-        if self.emulation_trigger != TriggerType.NONE:
+        if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
         return (
             self._fsm.state == OrderStatus.SUBMITTED
@@ -540,7 +540,7 @@ cdef class Order:
     @property
     def is_contingency(self):
         """
-        Return whether the order has a contingency (`contingency_type` is not ``NONE``).
+        Return whether the order has a contingency (`contingency_type` is not ``NO_CONTINGENCY``).
 
         Returns
         -------
@@ -684,7 +684,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {OrderSideParser.to_str(side)}",  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {order_side_to_str(side)}",  # pragma: no cover (design-time error)
             )
 
     @staticmethod
@@ -695,7 +695,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
+                f"invalid `PositionSide`, was {position_side_to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
             )
 
     @staticmethod
@@ -807,8 +807,8 @@ cdef class Order:
         if isinstance(event, OrderInitialized):
             Condition.true(len(self._events) <= 1, "Reinitialized with more than one previous event")
             Condition.true(isinstance(self.last_event_c(), OrderInitialized), "Reinitialized last event was not `OrderInitialized`")
-            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NONE, "Reinitialized order not an emulated order")
-            Condition.true(event.emulation_trigger == TriggerType.NONE, "Reinitialized order not transforming an emulated order")
+            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NO_TRIGGER, "Reinitialized order not an emulated order")
+            Condition.true(event.emulation_trigger == TriggerType.NO_TRIGGER, "Reinitialized order not transforming an emulated order")
             self.emulation_trigger = event.emulation_trigger
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)

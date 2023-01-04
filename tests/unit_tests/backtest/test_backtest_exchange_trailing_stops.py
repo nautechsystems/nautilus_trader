@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,7 +34,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -108,7 +108,7 @@ class TestSimulatedExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -195,7 +195,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(200000),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
-            trigger_type=TriggerType.LAST,
+            trigger_type=TriggerType.LAST_TRADE,
         )
         self.strategy.submit_order(trailing_stop)
 
@@ -282,14 +282,14 @@ class TestSimulatedExchange:
                 OrderSide.BUY,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST,
+                TriggerType.LAST_TRADE,
                 Price.from_str("15.000"),
             ],
             [
                 OrderSide.SELL,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST,
+                TriggerType.LAST_TRADE,
                 Price.from_str("13.000"),
             ],
             [
@@ -549,7 +549,7 @@ class TestSimulatedExchange:
                 OrderSide.BUY,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST,
+                TriggerType.LAST_TRADE,
                 Price.from_str("15.000"),
                 Price.from_str("15.000"),
             ],
@@ -557,7 +557,7 @@ class TestSimulatedExchange:
                 OrderSide.SELL,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST,
+                TriggerType.LAST_TRADE,
                 Price.from_str("13.000"),
                 Price.from_str("13.000"),
             ],
@@ -581,7 +581,7 @@ class TestSimulatedExchange:
                 OrderSide.BUY,
                 TrailingOffsetType.BASIS_POINTS,
                 Decimal("100"),
-                TriggerType.LAST,
+                TriggerType.LAST_TRADE,
                 Price.from_str("14.140"),
                 Price.from_str("14.140"),
             ],
@@ -589,7 +589,7 @@ class TestSimulatedExchange:
                 OrderSide.SELL,
                 TrailingOffsetType.BASIS_POINTS,
                 Decimal("100"),
-                TriggerType.LAST,
+                TriggerType.LAST_TRADE,
                 Price.from_str("13.860"),
                 Price.from_str("13.860"),
             ],
@@ -931,7 +931,7 @@ class TestSimulatedExchange:
             trailing_offset_type=TrailingOffsetType.TICKS,
             trailing_offset=Decimal("20"),
             limit_offset=Decimal("20"),
-            trigger_type=TriggerType.LAST,
+            trigger_type=TriggerType.LAST_TRADE,
         )
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
@@ -1001,7 +1001,7 @@ class TestSimulatedExchange:
             trailing_offset_type=TrailingOffsetType.TICKS,
             trailing_offset=Decimal("20"),
             limit_offset=Decimal("20"),
-            trigger_type=TriggerType.LAST,
+            trigger_type=TriggerType.LAST_TRADE,
         )
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)

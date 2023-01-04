@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,7 +28,7 @@ pub type Timedelta = i64;
 lazy_static! {
     pub static ref INIT_SINCE_EPOCH: Duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time");
+        .unwrap_or_else(|_| panic!("invalid system time"));
 }
 
 // A static reference to an instant of system time
@@ -39,7 +39,6 @@ lazy_static! {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
 /// Returns the current seconds since the UNIX epoch.
 /// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
@@ -87,7 +86,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000.0);
+        assert!(result1 > 1_650_000_000.0);
     }
 
     #[test]
@@ -102,7 +101,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 >= 1650000000000);
+        assert!(result1 >= 1_650_000_000_000);
     }
 
     #[test]
@@ -117,7 +116,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000000);
+        assert!(result1 > 1_650_000_000_000_000);
     }
 
     #[test]
@@ -138,6 +137,6 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000000000);
+        assert!(result1 > 1_650_000_000_000_000_000);
     }
 }

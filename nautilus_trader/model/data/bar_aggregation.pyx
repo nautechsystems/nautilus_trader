@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,18 +14,4 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum InstrumentStatus:
-    CLOSED = 1
-    PRE_OPEN = 2
-    OPEN = 3
-    PAUSE = 4
-    PRE_CLOSE = 5  # Auction
-
-
-cdef class InstrumentStatusParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef InstrumentStatus from_str(str value) except *
+from nautilus_trader.model.data.bar_aggregation cimport BarAggregation  # type: ignore

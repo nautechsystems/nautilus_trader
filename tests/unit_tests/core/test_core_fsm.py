@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,10 @@
 
 import pytest
 
-from nautilus_trader.common.c_enums.component_state import ComponentState
-from nautilus_trader.common.c_enums.component_state import ComponentStateParser
-from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger
 from nautilus_trader.common.component import ComponentFSMFactory
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.enums import ComponentTrigger
+from nautilus_trader.common.enums import component_state_to_str
 from nautilus_trader.core.fsm import FiniteStateMachine
 from nautilus_trader.core.fsm import InvalidStateTrigger
 
@@ -28,27 +28,27 @@ class TestFiniteStateMachine:
         # Fixture Setup
         self.fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
-            initial_state=ComponentState.INITIALIZED,
-            state_parser=ComponentStateParser.to_str_py,  # Calls python function wrapper
+            initial_state=ComponentState.READY,
+            state_parser=component_state_to_str,
         )
 
     def test_fsm_initialization(self):
         # Arrange, Act, Assert
-        assert self.fsm.state == ComponentState.INITIALIZED
-        assert self.fsm.state_string == "INITIALIZED"
+        assert self.fsm.state == ComponentState.READY
+        assert self.fsm.state_string == "READY"
 
     def test_trigger_with_invalid_transition_raises_exception(self):
         # Arrange
         fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
-            initial_state=ComponentState.INITIALIZED,
+            initial_state=ComponentState.READY,
             state_parser=None,
             trigger_parser=None,
         )  # Invalid trigger will call parsers for ex msg
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
-            fsm.trigger(ComponentTrigger.RUNNING)
+            fsm.trigger(ComponentState.RUNNING)
 
     def test_trigger_with_valid_transition_results_in_expected_state(self):
         # Arrange, Act

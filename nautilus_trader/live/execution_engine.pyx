@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,6 @@ from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
-from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport QueryOrder
@@ -42,11 +41,12 @@ from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.enums_c cimport trailing_offset_type_to_str
+from nautilus_trader.model.enums_c cimport trigger_type_to_str
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -720,13 +720,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["price"] = str(report.price)
         if report.trigger_price is not None:
             options["trigger_price"] = str(report.trigger_price)
-            options["trigger_type"] = TriggerTypeParser.to_str(report.trigger_type)
+            options["trigger_type"] = trigger_type_to_str(report.trigger_type)
         if report.limit_offset is not None:
             options["limit_offset"] = str(report.limit_offset)
-            options["trailing_offset_type"] =  TrailingOffsetTypeParser.to_str(report.trailing_offset_type)
+            options["trailing_offset_type"] =  trailing_offset_type_to_str(report.trailing_offset_type)
         if report.trailing_offset is not None:
             options["trailing_offset"] = str(report.trailing_offset)
-            options["trailing_offset_type"] = TrailingOffsetTypeParser.to_str(report.trailing_offset_type)
+            options["trailing_offset_type"] = trailing_offset_type_to_str(report.trailing_offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
 
@@ -744,7 +744,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             post_only=report.post_only,
             reduce_only=report.reduce_only,
             options=options,
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=TriggerType.NO_TRIGGER,
             contingency_type=report.contingency_type,
             order_list_id=report.order_list_id,
             linked_order_ids=None,

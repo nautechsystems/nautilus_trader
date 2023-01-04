@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,21 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport CurrencyType
-from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_code_to_cstr
 from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport currency_free
 from nautilus_trader.core.rust.model cimport currency_from_py
 from nautilus_trader.core.rust.model cimport currency_hash
-from nautilus_trader.core.rust.model cimport currency_name_to_pystr
-from nautilus_trader.core.rust.model cimport currency_to_pystr
-from nautilus_trader.core.string cimport pyobj_to_str
+from nautilus_trader.core.rust.model cimport currency_name_to_cstr
+from nautilus_trader.core.rust.model cimport currency_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
+from nautilus_trader.model.enums_c cimport CurrencyType
 
 
 cdef class Currency:
@@ -75,10 +75,10 @@ cdef class Currency:
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
 
         self._mem = currency_from_py(
-            <PyObject *>code,
+            pystr_to_cstr(code),
             precision,
             iso4217,
-            <PyObject *>name,
+            pystr_to_cstr(name),
             currency_type,
         )
 
@@ -97,10 +97,10 @@ cdef class Currency:
 
     def __setstate__(self, state):
         self._mem = currency_from_py(
-            <PyObject *>state[0],
+            pystr_to_cstr(state[0]),
             state[1],
             state[2],
-            <PyObject *>state[3],
+            pystr_to_cstr(state[3]),
             state[4],
         )
 
@@ -111,10 +111,10 @@ cdef class Currency:
         return currency_hash(&self._mem)
 
     def __str__(self) -> str:
-        return pyobj_to_str(currency_code_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_code_to_cstr(&self._mem))
 
     def __repr__(self) -> str:
-        return pyobj_to_str(currency_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_to_cstr(&self._mem))
 
     @property
     def code(self) -> int:
@@ -126,7 +126,7 @@ cdef class Currency:
         str
 
         """
-        return pyobj_to_str(currency_code_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_code_to_cstr(&self._mem))
 
     @property
     def name(self) -> int:
@@ -138,7 +138,7 @@ cdef class Currency:
         str
 
         """
-        return pyobj_to_str(currency_name_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_name_to_cstr(&self._mem))
 
     @property
     def precision(self) -> int:

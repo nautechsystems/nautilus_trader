@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,8 +18,8 @@ from decimal import Decimal
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.schemas import BinanceOrder
-from nautilus_trader.adapters.binance.common.schemas import BinanceUserTrade
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrder
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceUserTrade
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -158,14 +158,14 @@ class BinanceExecutionParser:
         )
 
         trigger_price = Decimal(data.stopPrice)
-        trigger_type = TriggerType.NONE
+        trigger_type = TriggerType.NO_TRIGGER
         if data.workingType is not None:
             trigger_type = self.parse_binance_trigger_type(data.workingType)
         elif trigger_price > 0:
-            trigger_type = TriggerType.LAST if trigger_price > 0 else TriggerType.NONE
+            trigger_type = TriggerType.LAST_TRADE if trigger_price > 0 else TriggerType.NO_TRIGGER
 
         trailing_offset = None
-        trailing_offset_type = TrailingOffsetType.NONE
+        trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
         if data.priceRate is not None:
             trailing_offset = Decimal(data.priceRate)
             trailing_offset_type = TrailingOffsetType.BASIS_POINTS

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,43 +13,52 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ffi::{c_char, CStr, CString};
+
 use pyo3::types::PyString;
-use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
+use pyo3::{ffi, FromPyPointer, Python};
 
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
-/// - Panics if `ptr` is null.
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-#[inline(always)]
+/// # Panics
+/// - If `ptr` is null.
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
-    assert!(!ptr.is_null(), "pointer was NULL");
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
+/// Convert a C string pointer into an owned `String`.
 ///
 /// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
-#[inline(always)]
-pub unsafe fn string_to_pystr(s: &str) -> *mut ffi::PyObject {
-    let py = Python::assume_gil_acquired();
-    let pystr: Py<PyString> = PyString::new(py, s).into();
-    pystr.into_ptr()
+/// - Assumes `ptr` is a valid C string pointer.
+/// # Panics
+/// - If `ptr` is null.
+pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    CStr::from_ptr(ptr)
+        .to_str()
+        .expect("CStr::from_ptr failed")
+        .to_string()
 }
 
-pub fn precision_from_str(s: &str) -> u8 {
-    let lower_s = s.to_lowercase();
-    // Handle scientific notation
-    if lower_s.contains("e-") {
-        return lower_s.split("e-").last().unwrap().parse::<u8>().unwrap();
-    }
-    if !lower_s.contains('.') {
-        return 0;
-    }
-    return lower_s.split('.').last().unwrap().len() as u8;
+/// Create a C string pointer to newly allocated memory from a [&str].
+pub fn string_to_cstr(s: &str) -> *const c_char {
+    CString::new(s).expect("CString::new failed").into_raw()
+}
+
+/// Drops the C string memory at the pointer.
+///
+/// # Safety
+/// - Assumes `ptr` is a valid C string pointer.
+/// # Panics
+/// - If `ptr` is null.
+#[no_mangle]
+pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    let cstring = CString::from_raw(ptr as *mut i8);
+    drop(cstring);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -58,46 +67,55 @@ pub fn precision_from_str(s: &str) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pyo3::types::PyString;
-    use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
+    use pyo3::AsPyPointer;
 
     #[test]
     fn test_pystr_to_string() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let pystr = PyString::new(py, "hello, world").into_ptr();
-
-            let string = unsafe { pystr_to_string(pystr) };
-
-            assert_eq!(string, "hello, world");
-        });
+        pyo3::prepare_freethreaded_python();
+        // Test with valid Python object pointer
+        let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
+        let result = unsafe { pystr_to_string(ptr) };
+        assert_eq!(result, "test string1");
     }
 
     #[test]
-    fn test_string_to_pystr() {
-        prepare_freethreaded_python();
-        Python::with_gil(|_| {
-            let string = String::from("hello, world");
-            let ptr = unsafe { string_to_pystr(&string) };
-
-            let s = unsafe { pystr_to_string(ptr) };
-
-            assert_eq!(s, "hello, world");
-        });
+    #[should_panic]
+    fn test_pystr_to_string_with_null_ptr() {
+        // Test with null Python object pointer
+        let ptr: *mut ffi::PyObject = std::ptr::null_mut();
+        unsafe { pystr_to_string(ptr) };
     }
 
     #[test]
-    fn test_precision_from_str() {
-        assert_eq!(precision_from_str(""), 0);
-        assert_eq!(precision_from_str("0"), 0);
-        assert_eq!(precision_from_str("1"), 0);
-        assert_eq!(precision_from_str("1.0"), 1);
-        assert_eq!(precision_from_str("2.1"), 1);
-        assert_eq!(precision_from_str("2.204622"), 6);
-        assert_eq!(precision_from_str("0.000000001"), 9);
-        assert_eq!(precision_from_str("1e-8"), 8);
-        assert_eq!(precision_from_str("2e-9"), 9);
-        assert_eq!(precision_from_str("1e8"), 0);
-        assert_eq!(precision_from_str("2e8"), 0);
+    fn test_cstr_to_string() {
+        // Test with valid C string pointer
+        let c_string = CString::new("test string2").expect("CString::new failed");
+        let ptr = c_string.as_ptr();
+        let result = unsafe { cstr_to_string(ptr) };
+        assert_eq!(result, "test string2");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_cstr_to_string_with_null_ptr() {
+        // Test with null C string pointer
+        let ptr: *const c_char = std::ptr::null();
+        unsafe { cstr_to_string(ptr) };
+    }
+
+    #[test]
+    fn test_string_to_cstr() {
+        let s = "test string";
+        let c_str_ptr = string_to_cstr(s);
+        let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
+        let result = c_str.to_str().expect("CStr::from_ptr failed");
+        assert_eq!(result, s);
+    }
+
+    #[test]
+    fn test_cstr_free() {
+        let c_string = CString::new("test string3").expect("CString::new failed");
+        let ptr = c_string.into_raw(); // <-- pointer _must_ be obtained this way
+        unsafe { cstr_free(ptr) };
     }
 }

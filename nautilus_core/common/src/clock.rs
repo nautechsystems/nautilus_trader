@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::ffi::c_char;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null;
 
@@ -24,7 +25,7 @@ use pyo3::{ffi, AsPyPointer};
 use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
 use nautilus_core::correctness;
 use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::cstr_to_string;
 use nautilus_core::time::Timestamp;
 
 /// Represents a type of clock.
@@ -306,28 +307,28 @@ pub extern "C" fn test_clock_timer_count(clock: &mut CTestClock) -> usize {
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     clock: &mut CTestClock,
-    name: *mut ffi::PyObject,
+    name_ptr: *const c_char,
     alert_time_ns: Timestamp,
 ) {
-    let name = pystr_to_string(name);
+    let name = cstr_to_string(name_ptr);
     clock.set_time_alert_ns(name, alert_time_ns, None);
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock: &mut CTestClock,
-    name: *mut ffi::PyObject,
+    name_ptr: *const c_char,
     interval_ns: u64,
     start_time_ns: Timestamp,
     stop_time_ns: Timestamp,
 ) {
-    let name = pystr_to_string(name);
+    let name = cstr_to_string(name_ptr);
     let stop_time_ns = match stop_time_ns {
         0 => None,
         _ => Some(stop_time_ns),
@@ -361,22 +362,22 @@ pub extern "C" fn vec_time_events_drop(v: Vec_TimeEvent) {
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_next_time_ns(
     clock: &mut CTestClock,
-    name: *mut ffi::PyObject,
+    name_ptr: *const c_char,
 ) -> Timestamp {
-    let name = pystr_to_string(name);
-    clock.next_time_ns(name.as_str())
+    let name = cstr_to_string(name_ptr);
+    clock.next_time_ns(&name)
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name: *mut ffi::PyObject) {
-    let name = pystr_to_string(name);
-    clock.cancel_timer(name.as_str());
+pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name_ptr: *const c_char) {
+    let name = cstr_to_string(name_ptr);
+    clock.cancel_timer(&name);
 }
 
 #[no_mangle]
@@ -395,7 +396,6 @@ mod tests {
     fn test_set_timer_ns() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
-
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
     }
@@ -404,9 +404,7 @@ mod tests {
     fn test_advance_within_stop_time() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
-
         clock.advance_time(2, true);
-
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
     }
@@ -415,9 +413,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_true() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
-
         clock.advance_time(3, true);
-
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);
         assert_eq!(clock.time_ns, 3);
@@ -427,9 +423,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_false() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
-
         clock.advance_time(3, false);
-
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);
         assert_eq!(clock.time_ns, 0);

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,6 +37,10 @@ class BinanceSpotPermissions(Enum):
     TRD_GRP_003 = "TRD_GRP_003"
     TRD_GRP_004 = "TRD_GRP_004"
     TRD_GRP_005 = "TRD_GRP_005"
+    TRD_GRP_006 = "TRD_GRP_006"
+    TRD_GRP_007 = "TRD_GRP_007"
+    TRD_GRP_008 = "TRD_GRP_008"
+    TRD_GRP_009 = "TRD_GRP_009"
 
 
 @unique

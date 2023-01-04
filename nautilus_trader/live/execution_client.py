@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,9 +44,9 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -57,7 +57,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class LiveExecutionClient(ExecutionClient):
     """
-    The abstract base class for all live execution clients.
+    The base class for all live execution clients.
 
     Parameters
     ----------
@@ -87,7 +87,7 @@ class LiveExecutionClient(ExecutionClient):
     Raises
     ------
     ValueError
-        If `oms_type` is ``NONE`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` (must be specified).
 
     Warnings
     --------
@@ -99,7 +99,7 @@ class LiveExecutionClient(ExecutionClient):
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
         venue: Optional[Venue],
-        oms_type: OMSType,
+        oms_type: OmsType,
         account_type: AccountType,
         base_currency: Optional[Currency],
         instrument_provider: InstrumentProvider,
@@ -138,7 +138,7 @@ class LiveExecutionClient(ExecutionClient):
         actions: Optional[Callable],
         success: Optional[str],
         task: Task,
-    ):
+    ) -> None:
         if task.exception():
             self._log.error(
                 f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
@@ -184,15 +184,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def submit_order(self, command: SubmitOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._submit_order(command),
@@ -203,15 +194,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._submit_order_list(command),
@@ -222,15 +204,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : ModifyOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._modify_order(command),
@@ -241,15 +214,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : CancelOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._cancel_order(command),
@@ -260,15 +224,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : CancelAllOrders
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._cancel_all_orders(command),
@@ -279,15 +234,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def query_order(self, command: QueryOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : QueryOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._query_order(command),
@@ -484,35 +430,37 @@ class LiveExecutionClient(ExecutionClient):
     ############################################################################
     # Coroutines to implement
     ############################################################################
-    async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine")  # pragma: no cover
+    async def _connect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_connect` coroutine",  # pragma: no cover
+        )
 
-    async def _disconnect(self):
-        raise NotImplementedError(
-            "please implement the `_disconnect` coroutine",
-        )  # pragma: no cover
+    async def _disconnect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_disconnect` coroutine",  # pragma: no cover
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        raise NotImplementedError(
-            "please implements the `_submit_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_submit_order` coroutine",  # pragma: no cover
+        )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        raise NotImplementedError(
-            "please implements the `_submit_order_list` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_submit_order_list` coroutine",  # pragma: no cover
+        )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        raise NotImplementedError(
-            "please implements the `_modify_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_modify_order` coroutine",  # pragma: no cover
+        )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        raise NotImplementedError(
-            "please implements the `_cancel_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_cancel_order` coroutine",  # pragma: no cover
+        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        raise NotImplementedError(
-            "please implements the `_cancel_all_orders` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_cancel_all_orders` coroutine",  # pragma: no cover
+        )

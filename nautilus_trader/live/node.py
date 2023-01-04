@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,9 +20,9 @@ from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common import Environment
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LiveDataEngineConfig
@@ -77,7 +77,7 @@ class TradingNode:
             loop=loop,
             loop_debug=config.loop_debug,
             loop_sig_callback=self._loop_sig_handler,
-            log_level=LogLevelParser.from_str_py(config.log_level.upper()),
+            log_level=log_level_from_str(config.log_level.upper()),
         )
 
         self._builder = TradingNodeBuilder(
@@ -415,7 +415,6 @@ class TradingNode:
                     f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}",
                 )
                 return
-            self.kernel.log.info("Connected.", color=LogColor.GREEN)
 
             # Await execution state reconciliation
             self.kernel.log.info(

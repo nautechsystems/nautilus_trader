@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1823,7 +1823,7 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act
@@ -2336,7 +2336,7 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act
@@ -2396,7 +2396,7 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act

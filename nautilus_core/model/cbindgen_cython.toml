@@ -16,10 +16,6 @@ header = '"../includes/model.h"'
     "int64_t",
 ]
 
-"cpython.object" = [
-    "PyObject"
-]
-
 [enum]
 rename_variants = "ScreamingSnakeCase"
 

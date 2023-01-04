@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,10 @@ from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.bet cimport Bet
 from nautilus_trader.model.data.bet cimport nautilus_to_bet
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price

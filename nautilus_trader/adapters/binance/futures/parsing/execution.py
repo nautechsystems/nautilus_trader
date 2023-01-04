@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,11 +37,11 @@ class BinanceFuturesExecutionParser(BinanceExecutionParser):
 
     def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
         if trigger_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
-            return TriggerType.LAST
+            return TriggerType.LAST_TRADE
         elif trigger_type == BinanceFuturesWorkingType.MARK_PRICE:
-            return TriggerType.MARK
+            return TriggerType.MARK_PRICE
         else:
-            return TriggerType.NONE  # pragma: no cover (design-time error)
+            return TriggerType.NO_TRIGGER  # pragma: no cover (design-time error)
 
     def parse_futures_position_report_http(
         self,

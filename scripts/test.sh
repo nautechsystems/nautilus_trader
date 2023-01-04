@@ -1,4 +1,4 @@
 #!/bin/bash
 
-poetry install --with test --extras "betfair docker ib redis"
+poetry install --with test --all-extras
 poetry run pytest --ignore=tests/performance_tests --new-first --failed-first 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
@@ -33,9 +32,10 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
+from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -71,7 +71,7 @@ cdef class Actor(Component):
     cpdef void on_fault(self) except *
     cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void on_instrument_close(self, InstrumentClose update) except *
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
@@ -125,7 +125,7 @@ cdef class Actor(Component):
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*) except *
     cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*) except *
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*) except *
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
@@ -182,7 +182,7 @@ cdef class Actor(Component):
     cpdef void handle_data(self, Data data) except *
     cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void handle_instrument_close(self, InstrumentClose update) except *
     cpdef void handle_historical_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 

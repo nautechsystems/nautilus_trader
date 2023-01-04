@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,14 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -50,14 +49,13 @@ impl ClientOrderId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn client_order_id_new(ptr: *mut ffi::PyObject) -> ClientOrderId {
-    ClientOrderId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
+    ClientOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -71,22 +69,15 @@ pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
     drop(client_order_id); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [`ClientOrderId`] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn client_order_id_to_pystr(
-    client_order_id: &ClientOrderId,
-) -> *mut ffi::PyObject {
-    string_to_pystr(client_order_id.value.as_str())
+pub extern "C" fn client_order_id_to_cstr(client_order_id: &ClientOrderId) -> *const c_char {
+    string_to_cstr(&client_order_id.value)
 }
 
 #[no_mangle]
 pub extern "C" fn client_order_id_eq(lhs: &ClientOrderId, rhs: &ClientOrderId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
@@ -108,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = ClientOrderId::new("O-20200814-102234-001-001-1");
         let id2 = ClientOrderId::new("O-20200814-102234-001-001-2");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -116,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = ClientOrderId::new("O-20200814-102234-001-001-1");
-
         assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
         assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
     }

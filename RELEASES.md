@@ -2,7 +2,8 @@
 
 Released on TBD (UTC).
 
-A range of enum variant names have been changed in favour of explicitness, and also to avoid collisions.
+A number of enum variant names have been changed in favour of explicitness, 
+and also to avoid C naming collisions.
 
 ### Breaking Changes
 - Renamed `AggressorSide.NONE` to `NO_AGGRESSOR`
@@ -10,12 +11,25 @@ A range of enum variant names have been changed in favour of explicitness, and a
 - Renamed `AggressorSide.SELL` to `SELLER`
 - Renamed `AssetClass.CRYPTO` to `CRYPTOCURRENCY`
 - Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
+- Renamed `OMSType` to `OmsType`
+- Renamed `OmsType.NONE` to `UNSPECIFIED`
+- Renamed `OrderSide.NONE` to `NO_ORDER_SIDE`
+- Renamed `PositionSide.NONE` to `NO_POSITION_SIDE`
+- Renamed `TrailingOffsetType.NONE` to `NO_TRAILING_OFFSET`
+- Removed `TrailingOffsetType.DEFAULT`
+- Renamed `TriggerType.NONE` to `NO_TRIGGER`
+- Renamed `TriggerType.LAST` to `LAST_TRADE`
+- Renamed `TriggerType.MARK` to `MARK_PRICE`
+- Renamed `TriggerType.INDEX` to `INDEX_PRICE`
+- Renamed `ComponentState.INITIALIZED` to `READY`
+- Moved `manage_gtd_expiry` to `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
+- Added `DataEngineConfig.build_time_bars_with_no_updates` option
 
 ### Fixes
-None
+- Added `TRD_GRP_*` enum variants for Binance spot permissions
 
 ---
 
@@ -203,7 +217,7 @@ This will be the final release with support for Python 3.8.
 
 ### Breaking Changes
 - Added `OrderSide.NONE` enum variant
-- Added `PositionSide.NONE` enum variant
+- Added `PositionSide.NO_POSITION_SIDE` enum variant
 - Changed order of `TriggerType` enum variants
 - Renamed `AggressorSide.UNKNOWN` to `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
@@ -1465,8 +1479,8 @@ for `OrderFill` events, as well as additional order states and events.
 
 ### Fixes
 - `ExecutionCache` positions open queries
-- Exchange accounting for exchange `OMSType.NETTING`
-- Position flipping logic for exchange `OMSType.NETTING`
+- Exchange accounting for exchange `OmsType.NETTING`
+- Position flipping logic for exchange `OmsType.NETTING`
 - Multi-currency account terminology
 - Windows wheel packaging
 - Windows path errors
@@ -1564,7 +1578,7 @@ being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 - Rename `Order.id` to `Order.venue_order_id`
 - Rename `Order.cl_ord_id` to `Order.client_order_id`
 - Rename `AssetClass.STOCK` to `AssetClass.EQUITY`
-- Remove redundant flag `generate_position_ids` (handled by `OMSType`)
+- Remove redundant flag `generate_position_ids` (handled by `OmsType`)
 
 ### Enhancements
 - Introduce integration for Betfair.

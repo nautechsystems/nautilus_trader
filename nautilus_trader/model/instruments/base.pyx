@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,13 +21,13 @@ import msgspec
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport asset_class_from_str
-from nautilus_trader.core.rust.enums cimport asset_class_to_str
-from nautilus_trader.core.rust.enums cimport asset_type_from_str
-from nautilus_trader.core.rust.enums cimport asset_type_to_str
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport asset_class_from_str
+from nautilus_trader.model.enums_c cimport asset_class_to_str
+from nautilus_trader.model.enums_c cimport asset_type_from_str
+from nautilus_trader.model.enums_c cimport asset_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES

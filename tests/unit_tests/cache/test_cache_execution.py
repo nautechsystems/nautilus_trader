@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,7 +36,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
@@ -395,7 +395,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -471,7 +471,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         # Act
         result = self.cache.load_position(position.id)
@@ -527,7 +527,7 @@ class TestCache:
         result = self.cache.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_add_and_load_submit_order_list_command(self):
         order_factory = OrderFactory(
@@ -570,7 +570,7 @@ class TestCache:
 
         # Assert
         assert command.has_emulated_order
-        assert command == result
+        assert result == command
 
     def test_update_order_for_submitted_order(self):
         # Arrange
@@ -772,7 +772,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         # Act
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -820,7 +820,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -897,7 +897,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -920,7 +920,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2, OMSType.HEDGING)
+        self.cache.add_position(position2, OmsType.HEDGING)
 
         # Assert
         assert position1.is_open
@@ -979,7 +979,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -1002,7 +1002,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2, OMSType.HEDGING)
+        self.cache.add_position(position2, OmsType.HEDGING)
 
         order3 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
@@ -1095,7 +1095,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1144,7 +1144,7 @@ class TestCache:
         )
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1198,7 +1198,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1235,7 +1235,7 @@ class TestExecutionCacheIntegrityCheck:
         # Setup venue
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

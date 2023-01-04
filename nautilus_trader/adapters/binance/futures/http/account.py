@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,9 +19,9 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrder
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceUserTrade
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountTrade
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
@@ -57,8 +57,8 @@ class BinanceFuturesAccountHttpAPI:
 
         # Decoders
         self._decoder_account = msgspec.json.Decoder(BinanceFuturesAccountInfo)
-        self._decoder_order = msgspec.json.Decoder(list[BinanceFuturesOrder])
-        self._decoder_trade = msgspec.json.Decoder(list[BinanceFuturesAccountTrade])
+        self._decoder_order = msgspec.json.Decoder(list[BinanceOrder])
+        self._decoder_trade = msgspec.json.Decoder(list[BinanceUserTrade])
         self._decoder_position = msgspec.json.Decoder(list[BinanceFuturesPositionRisk])
 
     async def change_position_mode(
@@ -349,7 +349,7 @@ class BinanceFuturesAccountHttpAPI:
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Optional[BinanceFuturesOrder]:
+    ) -> Optional[BinanceOrder]:
         """
         Check an order's status.
 
@@ -392,13 +392,13 @@ class BinanceFuturesAccountHttpAPI:
         if raw is None:
             return None
 
-        return msgspec.json.decode(raw, type=BinanceFuturesOrder)
+        return msgspec.json.decode(raw, type=BinanceOrder)
 
     async def get_open_orders(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> list[BinanceFuturesOrder]:
+    ) -> list[BinanceOrder]:
         """
         Get all open orders for a symbol.
 
@@ -442,7 +442,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> list[BinanceFuturesOrder]:
+    ) -> list[BinanceOrder]:
         """
         Get all account orders (open, or closed).
 
@@ -534,7 +534,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> list[BinanceFuturesAccountTrade]:
+    ) -> list[BinanceUserTrade]:
         """
         Get trades for a specific account and symbol.
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,7 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
-from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceTickerData
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 

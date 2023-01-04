@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,16 +34,16 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -138,7 +138,7 @@ cdef class Cache(CacheFacade):
         self._index_positions_closed = set()   # type: set[PositionId]
         self._index_strategies = set()         # type: set[StrategyId]
 
-        self._log.info("INITIALIZED.")
+        self._log.info("READY.")
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -1259,7 +1259,7 @@ cdef class Cache(CacheFacade):
             strategy_orders.add(order.client_order_id)
 
         # Update emulation
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
@@ -1332,7 +1332,7 @@ cdef class Cache(CacheFacade):
             f"strategy_id={strategy_id}).",
         )
 
-    cpdef void add_position(self, Position position, OMSType oms_type) except *:
+    cpdef void add_position(self, Position position, OmsType oms_type) except *:
         """
         Add the given position to the cache.
 
@@ -1340,7 +1340,7 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to add.
-        oms_type : OMSType
+        oms_type : OmsType
             The order management system type for the position.
 
         Raises
@@ -1350,7 +1350,7 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(position, "position")
-        if oms_type == OMSType.HEDGING and position.id.is_virtual_c():
+        if oms_type == OmsType.HEDGING and position.id.is_virtual_c():
             Condition.not_in(position.id, self._positions, "position.id", "_positions")
             Condition.not_in(position.id, self._index_positions, "position.id", "_index_positions")
             Condition.not_in(position.id, self._index_positions_open, "position.id", "_index_positions_open")
@@ -1498,20 +1498,22 @@ cdef class Cache(CacheFacade):
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
 
-        # Update state
+        # Update in-flight state
         if order.is_inflight_c():
             self._index_orders_inflight.add(order.client_order_id)
-        elif order.is_open_c():
+        else:
             self._index_orders_inflight.discard(order.client_order_id)
+
+        # Update open/closed state
+        if order.is_open_c():
             self._index_orders_closed.discard(order.client_order_id)
             self._index_orders_open.add(order.client_order_id)
         elif order.is_closed_c():
-            self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_open.discard(order.client_order_id)
             self._index_orders_closed.add(order.client_order_id)
 
         # Update emulation
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
@@ -2294,7 +2296,7 @@ cdef class Cache(CacheFacade):
         try:
             for client_order_id in client_order_ids:
                 order = self._orders[client_order_id]
-                if side == OrderSide.NONE or side == order.side:
+                if side == OrderSide.NO_ORDER_SIDE or side == order.side:
                     orders.append(order)
         except KeyError as e:
             self._log.error(f"Cannot find `Order` object in cached orders {e}")
@@ -2310,7 +2312,7 @@ cdef class Cache(CacheFacade):
         try:
             for position_id in position_ids:
                 position = self._positions[position_id]
-                if side == PositionSide.NONE or side == position.side:
+                if side == PositionSide.NO_POSITION_SIDE or side == position.side:
                     positions.append(position)
         except KeyError as e:
             self._log.error(f"Cannot find `Position` object in cached positions {e}")
@@ -2622,7 +2624,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all orders with the given query filters.
@@ -2637,7 +2639,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2653,7 +2655,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all open orders with the given query filters.
@@ -2668,7 +2670,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2684,7 +2686,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all closed orders with the given query filters.
@@ -2699,7 +2701,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2715,7 +2717,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all emulated orders with the given query filters.
@@ -2730,7 +2732,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2746,7 +2748,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all in-flight orders with the given query filters.
@@ -2761,7 +2763,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2889,7 +2891,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of open orders with the given query filters.
@@ -2902,7 +2904,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2917,7 +2919,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of closed orders with the given query filters.
@@ -2930,7 +2932,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2945,7 +2947,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of emulated orders with the given query filters.
@@ -2958,7 +2960,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2973,7 +2975,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of in-flight orders with the given query filters.
@@ -2986,7 +2988,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -3001,7 +3003,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the total count of orders with the given query filters.
@@ -3014,7 +3016,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -3115,7 +3117,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ):
         """
         Return all positions with the given query filters.
@@ -3130,7 +3132,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns
@@ -3146,7 +3148,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ):
         """
         Return all open positions with the given query filters.
@@ -3161,7 +3163,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns
@@ -3198,7 +3200,7 @@ cdef class Cache(CacheFacade):
 
         """
         cdef set position_ids = self.position_closed_ids(venue, instrument_id, strategy_id)
-        return self._get_positions_for_ids(position_ids, PositionSide.NONE)
+        return self._get_positions_for_ids(position_ids, PositionSide.NO_POSITION_SIDE)
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
@@ -3261,7 +3263,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ) except *:
         """
         Return the count of open positions with the given query filters.
@@ -3274,7 +3276,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns
@@ -3314,7 +3316,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ) except *:
         """
         Return the total count of positions with the given query filters.
@@ -3327,7 +3329,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns

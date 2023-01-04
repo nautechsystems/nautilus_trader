@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,8 +17,8 @@ import inspect
 from typing import Optional
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 from nautilus_trader.trading.strategy import Strategy

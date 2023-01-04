@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,12 @@ from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.schemas import BinanceExchangeFilter
-from nautilus_trader.adapters.binance.common.schemas import BinanceRateLimit
-from nautilus_trader.adapters.binance.common.schemas import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 
 
 ################################################################################
@@ -63,8 +63,8 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
     liquidationFee: str
     marketTakeBound: str
     filters: list[BinanceSymbolFilter]
-    orderTypes: list[BinanceFuturesOrderType]
-    timeInForce: list[BinanceFuturesTimeInForce]
+    orderTypes: list[BinanceOrderType]
+    timeInForce: list[BinanceTimeInForce]
 
 
 class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
@@ -129,7 +129,7 @@ class BinanceFuturesTradeData(msgspec.Struct):
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity
-    X: BinanceFuturesOrderType  # Buyer order type
+    X: BinanceOrderType  # Buyer order type
     m: bool  # Is the buyer the market maker?
 
 

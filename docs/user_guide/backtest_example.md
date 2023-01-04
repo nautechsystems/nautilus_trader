@@ -161,11 +161,11 @@ strategies = [
     ImportableStrategyConfig(
         strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
         config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-        config=EMACrossConfig(
+        config=dict(
             instrument_id=instrument.id.value,
             bar_type="EUR/USD.SIM-15-MINUTE-BID-INTERNAL",
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
             trade_size=Decimal(1_000_000),
         ),
     ),

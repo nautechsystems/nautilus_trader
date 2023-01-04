@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,19 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
-
 from cpython.datetime cimport timedelta
-from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport AggregationSource
-from nautilus_trader.core.rust.enums cimport BarAggregation
-from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
-from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
-from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -41,8 +33,8 @@ from nautilus_trader.core.rust.model cimport bar_specification_hash
 from nautilus_trader.core.rust.model cimport bar_specification_le
 from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
-from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
-from nautilus_trader.core.rust.model cimport bar_to_pystr
+from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
+from nautilus_trader.core.rust.model cimport bar_to_cstr
 from nautilus_trader.core.rust.model cimport bar_type_copy
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_free
@@ -52,12 +44,18 @@ from nautilus_trader.core.rust.model cimport bar_type_hash
 from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
-from nautilus_trader.core.rust.model cimport bar_type_to_pystr
+from nautilus_trader.core.rust.model cimport bar_type_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
-from nautilus_trader.core.string cimport pyobj_to_str
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.enums_c cimport AggregationSource
+from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.enums_c cimport aggregation_source_from_str
+from nautilus_trader.model.enums_c cimport bar_aggregation_from_str
+from nautilus_trader.model.enums_c cimport bar_aggregation_to_str
+from nautilus_trader.model.enums_c cimport price_type_from_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -116,7 +114,7 @@ cdef class BarSpecification:
         bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return pyobj_to_str(bar_specification_to_pystr(&self._mem))
+        return cstr_to_pystr(bar_specification_to_cstr(&self._mem))
 
     def __eq__(self, BarSpecification other) -> bool:
         return bar_specification_eq(&self._mem, &other._mem)
@@ -159,13 +157,13 @@ cdef class BarSpecification:
 
         if len(pieces) != 3:
             raise ValueError(
-                f"The BarSpecification string value was malformed, was {value}",
+                f"The `BarSpecification` string value was malformed, was {value}",
             )
 
         return BarSpecification(
             int(pieces[0]),
             bar_aggregation_from_str(pieces[1]),
-            PriceTypeParser.from_str(pieces[2]),
+            price_type_from_str(pieces[2]),
         )
 
     @staticmethod
@@ -448,8 +446,7 @@ cdef class BarType:
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.spec.step,
             self._mem.spec.aggregation,
             self._mem.spec.price_type,
@@ -458,16 +455,15 @@ cdef class BarType:
 
     def __setstate__(self, state):
         self._mem = bar_type_new(
-            instrument_id_new_from_pystr(
-                <PyObject *>state[0],
-                <PyObject *>state[1]
+            instrument_id_new_from_cstr(
+                pystr_to_cstr(state[0]),
             ),
             bar_specification_new(
+                state[1],
                 state[2],
-                state[3],
-                state[4]
+                state[3]
             ),
-            state[5],
+            state[4],
         )
 
     def __del__(self) -> None:
@@ -475,7 +471,7 @@ cdef class BarType:
             bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return pyobj_to_str(bar_type_to_pystr(&self._mem))
+        return cstr_to_pystr(bar_type_to_cstr(&self._mem))
 
     def __eq__(self, BarType other) -> bool:
         return bar_type_eq(&self._mem, &other._mem)
@@ -514,13 +510,13 @@ cdef class BarType:
         cdef list pieces = value.rsplit('-', maxsplit=4)
 
         if len(pieces) != 5:
-            raise ValueError(f"The BarType string value was malformed, was {value}")
+            raise ValueError(f"The `BarType` string value was malformed, was {value}")
 
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
             bar_aggregation_from_str(pieces[2]),
-            PriceTypeParser.from_str(pieces[3]),
+            price_type_from_str(pieces[3]),
         )
         cdef AggregationSource aggregation_source = aggregation_source_from_str(pieces[4])
 
@@ -674,8 +670,7 @@ cdef class Bar(Data):
         )
     def __getstate__(self):
         return (
-            self.bar_type.instrument_id.symbol.value,
-            self.bar_type.instrument_id.venue.value,
+            self.bar_type.instrument_id.value,
             self._mem.bar_type.spec.step,
             self._mem.bar_type.spec.aggregation,
             self._mem.bar_type.spec.price_type,
@@ -694,17 +689,17 @@ cdef class Bar(Data):
     def __setstate__(self, state):
         self._mem = bar_new_from_raw(
             bar_type_new(
-                instrument_id_new_from_pystr(
-                    <PyObject *> state[0],
-                    <PyObject *> state[1]
+                instrument_id_new_from_cstr(
+                    pystr_to_cstr(state[0]),
                 ),
                 bar_specification_new(
+                    state[1],
                     state[2],
                     state[3],
-                    state[4]
                 ),
-                state[5],
+                state[4],
             ),
+            state[5],
             state[6],
             state[7],
             state[8],
@@ -713,10 +708,9 @@ cdef class Bar(Data):
             state[11],
             state[12],
             state[13],
-            state[14],
         )
-        self.ts_event = state[13]
-        self.ts_init = state[14]
+        self.ts_event = state[12]
+        self.ts_init = state[13]
 
     def __del__(self) -> None:
         if self._mem.bar_type.instrument_id.symbol.value != NULL:
@@ -729,7 +723,7 @@ cdef class Bar(Data):
         return bar_hash(&self._mem)
 
     cdef str to_str(self):
-        return pyobj_to_str(bar_to_pystr(&self._mem))
+        return cstr_to_pystr(bar_to_cstr(&self._mem))
 
     def __str__(self) -> str:
         return self.to_str()

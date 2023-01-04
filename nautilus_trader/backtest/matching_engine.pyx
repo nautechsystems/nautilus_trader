@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,27 +25,28 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AggressorSide
-from nautilus_trader.core.rust.enums cimport BookType
-from nautilus_trader.core.rust.enums cimport ContingencyType
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
-from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport AggressorSide
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport DepthType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport liquidity_side_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -99,11 +100,9 @@ cdef class OrderMatchingEngine:
         The fill model for the matching engine.
     book_type : BookType
         The order book type for the engine.
-    oms_type : OMSType
+    oms_type : OmsType
         The order management system type for the matching engine. Determines
         the generation and handling of venue position IDs.
-    reject_stop_orders : bool
-        If stop orders are rejected if already in the market on submitting.
     msgbus : MessageBus
         The message bus for the matching engine.
     cache : CacheFacade
@@ -112,6 +111,10 @@ cdef class OrderMatchingEngine:
         The clock for the matching engine.
     logger : Logger
         The logger for the matching engine.
+    reject_stop_orders : bool, default True
+        If stop orders are rejected if already in the market on submitting.
+    support_gtd_orders : bool, default True
+        If orders with GTD time in force will be supported by the venue.
     """
 
     def __init__(
@@ -120,12 +123,13 @@ cdef class OrderMatchingEngine:
         int product_id,
         FillModel fill_model not None,
         BookType book_type,
-        OMSType oms_type,
-        bint reject_stop_orders,
+        OmsType oms_type,
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
         Logger logger not None,
+        bint reject_stop_orders = True,
+        bint support_gtd_orders = True,
     ):
         self._clock = clock
         self._log = LoggerAdapter(
@@ -142,6 +146,7 @@ cdef class OrderMatchingEngine:
         self.oms_type = oms_type
 
         self._reject_stop_orders = reject_stop_orders
+        self._support_gtd_orders = support_gtd_orders
         self._fill_model = fill_model
         self._book = OrderBook.create(
             instrument=instrument,
@@ -417,7 +422,7 @@ cdef class OrderMatchingEngine:
             tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = AggressorSide.BUYER  # Direct memory assignment
             trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.high.raw)
@@ -427,7 +432,7 @@ cdef class OrderMatchingEngine:
             tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = AggressorSide.SELLER
             trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.low.raw)
@@ -437,7 +442,7 @@ cdef class OrderMatchingEngine:
             tick._mem.price = bar._mem.close  # Direct memory assignment
             tick._mem.aggressor_side = AggressorSide.BUYER if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELLER
             trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.close.raw)
@@ -542,7 +547,7 @@ cdef class OrderMatchingEngine:
             self._process_trailing_stop_limit_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"{OrderTypeParser.to_str(order.order_type)} "  # pragma: no cover
+                f"{order_type_to_str(order.order_type)} "  # pragma: no cover
                 f"orders are not supported for backtesting in this version",  # pragma: no cover
             )
 
@@ -587,7 +592,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id) except *:
         cdef Order order
         for order in self._core.get_orders():
-            if command.order_side != OrderSide.NONE and command.order_side != order.side:
+            if command.order_side != OrderSide.NO_ORDER_SIDE and command.order_side != order.side:
                 continue
             if order.is_inflight_c() or order.is_open_c():
                 self._generate_order_pending_cancel(order)
@@ -971,10 +976,11 @@ cdef class OrderMatchingEngine:
                 continue
 
             # Check expiry
-            if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
-                self._core.delete_order(order)
-                self._expire_order(order)
-                continue
+            if self._support_gtd_orders:
+                if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
+                    self._core.delete_order(order)
+                    self._expire_order(order)
+                    continue
 
             # Manage trailing stop
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
@@ -1187,7 +1193,7 @@ cdef class OrderMatchingEngine:
         if not fills:
             return  # No fills
 
-        if self.oms_type == OMSType.NETTING:
+        if self.oms_type == OmsType.NETTING:
             venue_position_id = None  # No position IDs generated by the venue
 
         if not self._log.is_bypassed:
@@ -1408,7 +1414,7 @@ cdef class OrderMatchingEngine:
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
-        if OMSType.HEDGING:
+        if OmsType.HEDGING:
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is not None:
                 return position_id

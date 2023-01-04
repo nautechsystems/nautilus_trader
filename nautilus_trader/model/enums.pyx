@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,7 +15,6 @@
 
 """Defines the enums of the trading domain model."""
 
-from nautilus_trader.core.rust.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.core.rust.model import AggressorSide
@@ -26,60 +25,72 @@ from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import DepthType
+from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
-from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.oms_type import OMSType
-from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
-from nautilus_trader.model.c_enums.option_kind import OptionKind
-from nautilus_trader.model.c_enums.option_kind import OptionKindParser
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
-from nautilus_trader.model.c_enums.order_status import OrderStatus
-from nautilus_trader.model.c_enums.order_status import OrderStatusParser
-from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
-from nautilus_trader.model.c_enums.position_side import PositionSide
-from nautilus_trader.model.c_enums.position_side import PositionSideParser
-from nautilus_trader.model.c_enums.price_type import PriceType
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
-from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
-from nautilus_trader.model.c_enums.trading_state import TradingState
-from nautilus_trader.model.c_enums.trading_state import TradingStateParser
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetTypeParser
-from nautilus_trader.model.c_enums.trigger_type import TriggerType
-from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
-from nautilus_trader.model.c_enums.venue_status import VenueStatus
-from nautilus_trader.model.c_enums.venue_status import VenueStatusParser
+from nautilus_trader.core.rust.model import MarketStatus
+from nautilus_trader.core.rust.model import OmsType
+from nautilus_trader.core.rust.model import OptionKind
+from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.core.rust.model import OrderStatus
+from nautilus_trader.core.rust.model import OrderType
+from nautilus_trader.core.rust.model import PositionSide
+from nautilus_trader.core.rust.model import PriceType
+from nautilus_trader.core.rust.model import TimeInForce
+from nautilus_trader.core.rust.model import TradingState
+from nautilus_trader.core.rust.model import TrailingOffsetType
+from nautilus_trader.core.rust.model import TriggerType
+from nautilus_trader.model.data.bar_aggregation import BarAggregation
 
-from nautilus_trader.core.rust.enums cimport account_type_from_str
-from nautilus_trader.core.rust.enums cimport account_type_to_str
-from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
-from nautilus_trader.core.rust.enums cimport aggregation_source_to_str
-from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
-from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
-from nautilus_trader.core.rust.enums cimport asset_class_from_str
-from nautilus_trader.core.rust.enums cimport asset_class_to_str
-from nautilus_trader.core.rust.enums cimport asset_type_from_str
-from nautilus_trader.core.rust.enums cimport asset_type_to_str
-from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
-from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
-from nautilus_trader.core.rust.enums cimport book_action_from_str
-from nautilus_trader.core.rust.enums cimport book_action_to_str
-from nautilus_trader.core.rust.enums cimport book_type_from_str
-from nautilus_trader.core.rust.enums cimport book_type_to_str
-from nautilus_trader.core.rust.enums cimport contingency_type_from_str
-from nautilus_trader.core.rust.enums cimport contingency_type_to_str
-from nautilus_trader.core.rust.enums cimport currency_type_from_str
-from nautilus_trader.core.rust.enums cimport currency_type_to_str
-from nautilus_trader.core.rust.enums cimport depth_type_from_str
-from nautilus_trader.core.rust.enums cimport depth_type_to_str
-from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
-from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.model.enums_c cimport account_type_from_str
+from nautilus_trader.model.enums_c cimport account_type_to_str
+from nautilus_trader.model.enums_c cimport aggregation_source_from_str
+from nautilus_trader.model.enums_c cimport aggregation_source_to_str
+from nautilus_trader.model.enums_c cimport aggressor_side_from_str
+from nautilus_trader.model.enums_c cimport aggressor_side_to_str
+from nautilus_trader.model.enums_c cimport asset_class_from_str
+from nautilus_trader.model.enums_c cimport asset_class_to_str
+from nautilus_trader.model.enums_c cimport asset_type_from_str
+from nautilus_trader.model.enums_c cimport asset_type_to_str
+from nautilus_trader.model.enums_c cimport bar_aggregation_from_str
+from nautilus_trader.model.enums_c cimport bar_aggregation_to_str
+from nautilus_trader.model.enums_c cimport book_action_from_str
+from nautilus_trader.model.enums_c cimport book_action_to_str
+from nautilus_trader.model.enums_c cimport book_type_from_str
+from nautilus_trader.model.enums_c cimport book_type_to_str
+from nautilus_trader.model.enums_c cimport contingency_type_from_str
+from nautilus_trader.model.enums_c cimport contingency_type_to_str
+from nautilus_trader.model.enums_c cimport currency_type_from_str
+from nautilus_trader.model.enums_c cimport currency_type_to_str
+from nautilus_trader.model.enums_c cimport depth_type_from_str
+from nautilus_trader.model.enums_c cimport depth_type_to_str
+from nautilus_trader.model.enums_c cimport instrument_close_type_from_str
+from nautilus_trader.model.enums_c cimport instrument_close_type_to_str
+from nautilus_trader.model.enums_c cimport liquidity_side_from_str
+from nautilus_trader.model.enums_c cimport liquidity_side_to_str
+from nautilus_trader.model.enums_c cimport market_status_from_str
+from nautilus_trader.model.enums_c cimport market_status_to_str
+from nautilus_trader.model.enums_c cimport oms_type_from_str
+from nautilus_trader.model.enums_c cimport oms_type_to_str
+from nautilus_trader.model.enums_c cimport option_kind_from_str
+from nautilus_trader.model.enums_c cimport option_kind_to_str
+from nautilus_trader.model.enums_c cimport order_side_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport order_status_from_str
+from nautilus_trader.model.enums_c cimport order_status_to_str
+from nautilus_trader.model.enums_c cimport order_type_from_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.enums_c cimport position_side_from_str
+from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.model.enums_c cimport price_type_from_str
+from nautilus_trader.model.enums_c cimport price_type_to_str
+from nautilus_trader.model.enums_c cimport time_in_force_from_str
+from nautilus_trader.model.enums_c cimport time_in_force_to_str
+from nautilus_trader.model.enums_c cimport trading_state_from_str
+from nautilus_trader.model.enums_c cimport trading_state_to_str
+from nautilus_trader.model.enums_c cimport trailing_offset_type_from_str
+from nautilus_trader.model.enums_c cimport trailing_offset_type_to_str
+from nautilus_trader.model.enums_c cimport trigger_type_from_str
+from nautilus_trader.model.enums_c cimport trigger_type_to_str
 
 
 __all__ = [
@@ -90,40 +101,24 @@ __all__ = [
     "AssetType",
     "BarAggregation",
     "BookAction",
+    "BookType",
     "ContingencyType",
     "CurrencyType",
     "DepthType",
     "InstrumentCloseType",
-    "InstrumentCloseTypeParser",
-    "InstrumentStatus",
-    "InstrumentStatusParser",
     "LiquiditySide",
-    "LiquiditySideParser",
-    "OMSType",
-    "OMSTypeParser",
+    "MarketStatus",
+    "OmsType",
     "OptionKind",
-    "OptionKindParser",
     "OrderSide",
-    "OrderSideParser",
     "OrderStatus",
-    "OrderStatusParser",
     "OrderType",
-    "OrderTypeParser",
-    "BookType",
     "PositionSide",
-    "PositionSideParser",
     "PriceType",
-    "PriceTypeParser",
     "TimeInForce",
-    "TimeInForceParser",
-    "TriggerType",
-    "TriggerTypeParser",
     "TradingState",
-    "TradingStateParser",
     "TrailingOffsetType",
-    "TrailingOffsetTypeParser",
-    "VenueStatus",
-    "VenueStatusParser",
+    "TriggerType",
     "account_type_to_str",
     "account_type_from_str",
     "aggregation_source_to_str",
@@ -146,6 +141,32 @@ __all__ = [
     "currency_type_from_str",
     "depth_type_to_str",
     "depth_type_from_str",
+    "instrument_close_type_to_str",
+    "instrument_close_type_from_str",
     "liquidity_side_to_str",
     "liquidity_side_from_str",
+    "market_status_to_str",
+    "market_status_from_str",
+    "oms_type_to_str",
+    "oms_type_from_str",
+    "option_kind_to_str",
+    "option_kind_from_str",
+    "order_side_to_str",
+    "order_side_from_str",
+    "order_status_to_str",
+    "order_status_from_str",
+    "order_type_to_str",
+    "order_type_from_str",
+    "position_side_to_str",
+    "position_side_from_str",
+    "price_type_to_str",
+    "price_type_from_str",
+    "time_in_force_to_str",
+    "time_in_force_from_str",
+    "trading_state_to_str",
+    "trading_state_from_str",
+    "trailing_offset_type_to_str",
+    "trailing_offset_type_from_str",
+    "trigger_type_to_str",
+    "trigger_type_from_str",
 ]

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,9 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData
+from nautilus_trader.adapters.binance.spot.schemas.market import (
+    BinanceSpotOrderBookPartialDepthData,
+)
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -36,7 +38,7 @@ class TestBinanceHttpParsing:
         # Act
         result = parse_spot_book_snapshot(
             instrument_id=ETHUSDT.id,
-            data=msgspec.json.decode(raw, type=BinanceSpotOrderBookDepthData),
+            data=msgspec.json.decode(raw, type=BinanceSpotOrderBookPartialDepthData),
             ts_init=2,
         )
 

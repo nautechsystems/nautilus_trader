@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,19 +32,19 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.core.rust.enums cimport BookType
-from nautilus_trader.core.rust.enums cimport account_type_to_str
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport account_type_to_str
+from nautilus_trader.model.enums_c cimport oms_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -65,14 +65,14 @@ cdef class SimulatedExchange:
     ----------
     venue : Venue
         The venue to simulate.
-    oms_type : OMSType {``HEDGING``, ``NETTING``}
+    oms_type : OmsType {``HEDGING``, ``NETTING``}
         The order management system type used by the exchange.
     account_type : AccountType
         The account type for the client.
-    base_currency : Currency, optional
-        The account base currency for the client. Use ``None`` for multi-currency accounts.
     starting_balances : list[Money]
         The starting balances for the exchange.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
     default_leverage : Decimal
         The account default leverage (for margin accounts).
     leverages : dict[InstrumentId, Decimal]
@@ -95,6 +95,8 @@ cdef class SimulatedExchange:
         If the account for this exchange is frozen (balances will not change).
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
+    support_gtd_orders : bool, default True
+        If orders with GTD time in force will be supported by the venue.
 
     Raises
     ------
@@ -115,10 +117,10 @@ cdef class SimulatedExchange:
     def __init__(
         self,
         Venue venue not None,
-        OMSType oms_type,
+        OmsType oms_type,
         AccountType account_type,
-        Currency base_currency: Optional[Currency],
         list starting_balances not None,
+        Currency base_currency: Optional[Currency],
         default_leverage not None: Decimal,
         leverages not None: dict[InstrumentId, Decimal],
         list instruments not None,
@@ -132,6 +134,7 @@ cdef class SimulatedExchange:
         BookType book_type = BookType.L1_TBBO,
         bint frozen_account = False,
         bint reject_stop_orders = True,
+        bint support_gtd_orders = True,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -150,7 +153,7 @@ cdef class SimulatedExchange:
 
         self.id = venue
         self.oms_type = oms_type
-        self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
+        self._log.info(f"OmsType={oms_type_to_str(oms_type)}")
         self.book_type = book_type
 
         self.msgbus = msgbus
@@ -167,6 +170,7 @@ cdef class SimulatedExchange:
 
         # Execution
         self.reject_stop_orders = reject_stop_orders
+        self.support_gtd_orders = support_gtd_orders
         self.fill_model = fill_model
         self.latency_model = latency_model
 
@@ -194,7 +198,7 @@ cdef class SimulatedExchange:
         return (
             f"{type(self).__name__}("
             f"id={self.id}, "
-            f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
+            f"oms_type={oms_type_to_str(self.oms_type)}, "
             f"account_type={account_type_to_str(self.account_type)})"
         )
 
@@ -301,11 +305,12 @@ cdef class SimulatedExchange:
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
-            reject_stop_orders=self.reject_stop_orders,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self._clock,
             logger=self._log.get_logger(),
+            reject_stop_orders=self.reject_stop_orders,
+            support_gtd_orders=self.support_gtd_orders,
         )
 
         self._matching_engines[instrument.id] = matching_engine

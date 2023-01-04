@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,9 +19,9 @@ from itertools import permutations
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -92,7 +92,7 @@ cdef class ExchangeRateCalculator:
             }  # type: dict[str, Decimal]
         else:
             raise ValueError(f"Cannot calculate exchange rate for PriceType."
-                             f"{PriceTypeParser.to_str(price_type)}")
+                             f"{price_type_to_str(price_type)}")
 
         cdef str symbol
         cdef tuple pieces

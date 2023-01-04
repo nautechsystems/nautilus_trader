@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,10 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport liquidity_side_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -471,7 +471,7 @@ cdef class MarginAccount(Account):
         Raises
         ------
         ValueError
-            If `liquidity_side` is NONE.
+            If `liquidity_side` is ``NO_LIQUIDITY_SIDE``.
 
         """
         Condition.not_none(instrument, "instrument")

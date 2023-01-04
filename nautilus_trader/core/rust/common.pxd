@@ -2,11 +2,44 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.core cimport UUID4_t, MessageCategory
 
 cdef extern from "../includes/common.h":
 
-    cdef enum LogColor:
+    cpdef enum ComponentState:
+        PRE_INITIALIZED # = 0,
+        READY # = 1,
+        STARTING # = 2,
+        RUNNING # = 3,
+        STOPPING # = 4,
+        STOPPED # = 5,
+        RESUMING # = 6,
+        RESETTING # = 7,
+        DISPOSING # = 8,
+        DISPOSED # = 9,
+        DEGRADING # = 10,
+        DEGRADED # = 11,
+        FAULTING # = 12,
+        FAULTED # = 13,
+
+    cpdef enum ComponentTrigger:
+        INITIALIZE # = 1,
+        START # = 2,
+        START_COMPLETED # = 3,
+        STOP # = 4,
+        STOP_COMPLETED # = 5,
+        RESUME # = 6,
+        RESUME_COMPLETED # = 7,
+        RESET # = 8,
+        RESET_COMPLETED # = 9,
+        DISPOSE # = 10,
+        DISPOSE_COMPLETED # = 11,
+        DEGRADE # = 12,
+        DEGRADE_COMPLETED # = 13,
+        FAULT # = 14,
+        FAULT_COMPLETED # = 15,
+
+    cpdef enum LogColor:
         NORMAL # = 0,
         GREEN # = 1,
         BLUE # = 2,
@@ -15,19 +48,12 @@ cdef extern from "../includes/common.h":
         YELLOW # = 5,
         RED # = 6,
 
-    cdef enum LogLevel:
+    cpdef enum LogLevel:
         DEBUG # = 10,
         INFO # = 20,
         WARNING # = 30,
         ERROR # = 40,
         CRITICAL # = 50,
-
-    cdef enum MessageCategory:
-        COMMAND,
-        DOCUMENT,
-        EVENT,
-        REQUEST,
-        RESPONSE,
 
     cdef struct Logger_t:
         pass
@@ -77,13 +103,15 @@ cdef extern from "../includes/common.h":
     uintptr_t test_clock_timer_count(CTestClock *clock);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    void test_clock_set_time_alert_ns(CTestClock *clock, PyObject *name, uint64_t alert_time_ns);
+    # - Assumes `name_ptr` is a valid C string pointer.
+    void test_clock_set_time_alert_ns(CTestClock *clock,
+                                      const char *name_ptr,
+                                      uint64_t alert_time_ns);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name_ptr` is a valid C string pointer.
     void test_clock_set_timer_ns(CTestClock *clock,
-                                 PyObject *name,
+                                 const char *name_ptr,
                                  uint64_t interval_ns,
                                  uint64_t start_time_ns,
                                  uint64_t stop_time_ns);
@@ -95,24 +123,56 @@ cdef extern from "../includes/common.h":
     void vec_time_events_drop(Vec_TimeEvent v);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    uint64_t test_clock_next_time_ns(CTestClock *clock, PyObject *name);
+    # - Assumes `name_ptr` is a valid C string pointer.
+    uint64_t test_clock_next_time_ns(CTestClock *clock, const char *name_ptr);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    void test_clock_cancel_timer(CTestClock *clock, PyObject *name);
+    # - Assumes `name_ptr` is a valid C string pointer.
+    void test_clock_cancel_timer(CTestClock *clock, const char *name_ptr);
 
     void test_clock_cancel_timers(CTestClock *clock);
 
-    # Creates a logger from a valid Python object pointer and a defined logging level.
+    const char *component_state_to_cstr(ComponentState value);
+
+    # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-    CLogger logger_new(PyObject *trader_id_ptr,
-                       PyObject *machine_id_ptr,
-                       PyObject *instance_id_ptr,
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentState component_state_from_cstr(const char *ptr);
+
+    const char *component_trigger_to_cstr(ComponentTrigger value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+    const char *log_level_to_cstr(LogLevel value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogLevel log_level_from_cstr(const char *ptr);
+
+    const char *log_color_to_cstr(LogColor value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogColor log_color_from_cstr(const char *ptr);
+
+    # Creates a new logger.
+    #
+    # # Safety
+    # - Assumes `trader_id_ptr` is a valid C string pointer.
+    # - Assumes `machine_id_ptr` is a valid C string pointer.
+    # - Assumes `instance_id_ptr` is a valid C string pointer.
+    CLogger logger_new(const char *trader_id_ptr,
+                       const char *machine_id_ptr,
+                       const char *instance_id_ptr,
                        LogLevel level_stdout,
                        uint8_t is_bypassed);
 
@@ -120,41 +180,29 @@ cdef extern from "../includes/common.h":
 
     void flush(CLogger *logger);
 
-    # Return the loggers trader ID.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *logger_get_trader_id(const CLogger *logger);
+    const char *logger_get_trader_id_cstr(const CLogger *logger);
 
-    # Return the loggers machine ID.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *logger_get_machine_id(const CLogger *logger);
+    const char *logger_get_machine_id_cstr(const CLogger *logger);
 
     UUID4_t logger_get_instance_id(const CLogger *logger);
 
     uint8_t logger_is_bypassed(const CLogger *logger);
 
-    # Log a message from valid Python object pointers.
+    # Log a message.
     #
     # # Safety
-    # - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `component_ptr` is a valid C string pointer.
+    # - Assumes `msg_ptr` is a valid C string pointer.
     void logger_log(CLogger *logger,
                     uint64_t timestamp_ns,
                     LogLevel level,
                     LogColor color,
-                    PyObject *component_ptr,
-                    PyObject *msg_ptr);
+                    const char *component_ptr,
+                    const char *msg_ptr);
 
     # # Safety
     # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    TimeEvent_t time_event_new(PyObject *name,
+    TimeEvent_t time_event_new(const char *name,
                                UUID4_t event_id,
                                uint64_t ts_event,
                                uint64_t ts_init);
@@ -163,10 +211,4 @@ cdef extern from "../includes/common.h":
 
     void time_event_free(TimeEvent_t event);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *time_event_name(const TimeEvent_t *event);
+    const char *time_event_name_cstr(const TimeEvent_t *event);

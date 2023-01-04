@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,7 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
+from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_book_snapshot
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_mark_price_ws
@@ -112,7 +112,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType) -> None:
         if data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
@@ -128,13 +128,12 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                 )
                 return
             self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
-            self._add_subscription(data_type)
         else:
             self._log.error(
                 f"Cannot subscribe to {data_type.type} (not implemented).",
             )
 
-    def subscribe_order_book_deltas(
+    async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -145,18 +144,14 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         if "update_speed" in kwargs:
             update_speed = kwargs["update_speed"]
 
-        self._loop.create_task(
-            self._subscribe_order_book(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                update_speed=update_speed,
-                depth=depth,
-            ),
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            update_speed=update_speed,
+            depth=depth,
         )
 
-        self._add_subscription_order_book_deltas(instrument_id)
-
-    def subscribe_order_book_snapshots(
+    async def _subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -167,26 +162,21 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         if "update_speed" in kwargs:
             update_speed = kwargs["update_speed"]
 
-        self._loop.create_task(
-            self._subscribe_order_book(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                update_speed=update_speed,
-                depth=depth,
-            ),
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            update_speed=update_speed,
+            depth=depth,
         )
 
-        self._add_subscription_order_book_snapshots(instrument_id)
-
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.warning(
             "Trade ticks have been requested from a `Binance Futures` exchange. "
             "This functionality is not officially documented or supported.",
         )
         self._ws_client.subscribe_trades(instrument_id.symbol.value)
-        self._add_subscription_trade_ticks(instrument_id)
 
-    def unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType) -> None:
         if data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
@@ -200,7 +190,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                     "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
                 )
                 return
-            self._remove_subscription(data_type)
         else:
             self._log.error(
                 f"Cannot unsubscribe from {data_type.type} (not implemented).",

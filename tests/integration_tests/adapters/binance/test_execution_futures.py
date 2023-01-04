@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -313,7 +313,7 @@ class TestBinanceFuturesExecutionClient:
             quantity=Quantity.from_int(10),
             price=Price.from_str("10050.80"),
             trigger_price=Price.from_str("10050.00"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
         )
         self.cache.add_order(order, None)
 
@@ -448,7 +448,7 @@ class TestBinanceFuturesExecutionClient:
             trailing_offset=Decimal(100),
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             trigger_price=Price.from_str("10000.00"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             reduce_only=True,
         )
         self.cache.add_order(order, None)

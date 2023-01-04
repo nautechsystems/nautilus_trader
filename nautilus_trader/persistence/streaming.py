@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -158,6 +158,8 @@ class StreamingFeatherWriter:
                 return
         writer: RecordBatchStreamWriter = self._writers[table]
         serialized = ParquetSerializer.serialize(obj)
+        if not serialized:
+            return
         if isinstance(serialized, dict):
             serialized = [serialized]
         original = list_dicts_to_dict_lists(

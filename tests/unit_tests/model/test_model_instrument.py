@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,7 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import OptionKindParser
+from nautilus_trader.model.enums import option_kind_from_str
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
@@ -439,7 +439,7 @@ class TestInstrument:
 
     def test_option_attributes(self):
         assert AAPL_OPTION.underlying == "AAPL"
-        assert AAPL_OPTION.kind == OptionKindParser.from_str_py("CALL")
+        assert AAPL_OPTION.kind == option_kind_from_str("CALL")
 
 
 class TestBettingInstrument:

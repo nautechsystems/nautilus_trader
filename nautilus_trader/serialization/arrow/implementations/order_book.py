@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -74,7 +74,8 @@ def serialize(data: OrderBookData):
     else:  # pragma: no cover (design-time error)
         raise TypeError(f"invalid `OrderBookData`, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages
-    result[-1]["_last"] = True
+    if result:
+        result[-1]["_last"] = True
     return result
 
 

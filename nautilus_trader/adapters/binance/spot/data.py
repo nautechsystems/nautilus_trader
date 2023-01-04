@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -106,7 +106,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe_order_book_deltas(
+    async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -117,18 +117,14 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         if "update_speed" in kwargs:
             update_speed = kwargs["update_speed"]
 
-        self._loop.create_task(
-            self._subscribe_order_book(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                update_speed=update_speed,
-                depth=depth,
-            ),
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            update_speed=update_speed,
+            depth=depth,
         )
 
-        self._add_subscription_order_book_deltas(instrument_id)
-
-    def subscribe_order_book_snapshots(
+    async def _subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -139,20 +135,15 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         if "update_speed" in kwargs:
             update_speed = kwargs["update_speed"]
 
-        self._loop.create_task(
-            self._subscribe_order_book(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                update_speed=update_speed,
-                depth=depth,
-            ),
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            update_speed=update_speed,
+            depth=depth,
         )
 
-        self._add_subscription_order_book_snapshots(instrument_id)
-
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._ws_client.subscribe_trades(instrument_id.symbol.value)
-        self._add_subscription_trade_ticks(instrument_id)
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 

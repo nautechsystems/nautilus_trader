@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,8 +16,8 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -58,8 +58,8 @@ cdef class MatchingCore:
     cpdef void reset(self) except *
     cpdef void add_order(self, Order order) except *
     cdef void _add_order(self, Order order) except *
-    cdef void _sort_bid_orders(self) except *
-    cdef void _sort_ask_orders(self) except *
+    cdef void sort_bid_orders(self) except *
+    cdef void sort_ask_orders(self) except *
     cpdef void delete_order(self, Order order) except *
     cpdef void iterate(self, uint64_t timestamp_ns) except *
 

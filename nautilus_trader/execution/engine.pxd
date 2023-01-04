@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,7 @@ from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -97,11 +97,11 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *
-    cdef OMSType _determine_oms_type(self, OrderFilled fill) except *
-    cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
+    cdef OmsType _determine_oms_type(self, OrderFilled fill) except *
+    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type) except *
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
-    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
-    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
-    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
+    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type) except *
+    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
