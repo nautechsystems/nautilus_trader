@@ -669,6 +669,8 @@ class BetfairDataProvider:
             return bz2.open(path).readlines()
         elif path.suffix == ".gz":
             return gzip.open(path).readlines()
+        elif path.suffix == ".log":
+            return open(path, "rb").readlines()
         else:
             raise ValueError(filename)
 
