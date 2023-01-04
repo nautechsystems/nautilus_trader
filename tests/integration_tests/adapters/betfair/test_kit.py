@@ -15,6 +15,7 @@
 
 import bz2
 import contextlib
+import gzip
 import pathlib
 from asyncio import Future
 from ssl import SSLContext
@@ -662,25 +663,34 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
-    def read_lines(market: str = "1.166811431") -> list[bytes]:
-        return bz2.open(DATA_PATH / f"{market}.bz2").readlines()
+    def read_lines(filename: str = "1.166811431.bz2") -> list[bytes]:
+        path = DATA_PATH / filename
+        if path.suffix == ".bz2":
+            return bz2.open(path).readlines()
+        elif path.suffix == ".gz":
+            return gzip.open(path).readlines()
+        else:
+            raise ValueError(filename)
 
     @staticmethod
-    def read_mcm(market: str) -> list[MCM]:
-        return [STREAM_DECODER.decode(line) for line in BetfairDataProvider.read_lines(market)]
+    def read_mcm(filename: str) -> list[MCM]:
+        return [STREAM_DECODER.decode(line) for line in BetfairDataProvider.read_lines(filename)]
 
     @staticmethod
-    def market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
+    def market_updates(filename="1.166811431.bz2", runner1="60424", runner2="237478") -> list:
+        market_id = pathlib.Path(filename).name
+        assert market_id.startswith("1.")
+
         def _fix_ids(r):
             return (
-                r.replace(market.encode(), b"1.180737206")
+                r.replace(market_id.encode(), b"1.180737206")
                 .replace(runner1.encode(), b"19248890")
                 .replace(runner2.encode(), b"38848248")
             )
 
         return [
             STREAM_DECODER.decode(_fix_ids(line.strip()))
-            for line in BetfairDataProvider.read_lines(market)
+            for line in BetfairDataProvider.read_lines(filename)
         ]
 
     @staticmethod
