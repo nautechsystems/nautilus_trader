@@ -151,12 +151,14 @@ class DeribitHttpClient(HttpClient):
             return
 
         try:
-            data = msgspec.json.decode(resp.data)
+            data = msgspec.json.decode(resp.data)  # type: ignore  # (data attribute added)
             if not data["success"]:
                 return data["error"]
             return data["result"]
         except msgspec.MsgspecError:
-            self._log.error(f"Could not decode data to JSON: {resp.data}.")
+            self._log.error(
+                f"Could not decode data to JSON: {resp.data}.",  # type: ignore  # (data attribute added)
+            )
 
     async def _handle_exception(self, error: ClientResponseError) -> None:
         if error.status < 400:
