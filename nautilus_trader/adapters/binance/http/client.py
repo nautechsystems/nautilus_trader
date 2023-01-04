@@ -172,9 +172,9 @@ class BinanceHttpClient(HttpClient):
                     limit_usage[key] = resp.headers[key]
 
         try:
-            return resp.data
+            return resp.data  # type: ignore  # data attribute added
         except msgspec.MsgspecError:
-            self._log.error(f"Could not decode data to JSON: {resp.data}.")
+            self._log.error(f"Could not decode data to JSON: {resp.data}.")  # type: ignore  # data attribute added
 
     def _get_sign(self, data) -> str:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
@@ -182,7 +182,7 @@ class BinanceHttpClient(HttpClient):
 
     async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
         has_json = hasattr(error, "json")
-        message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"
+        message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"  # type: ignore
         if error.status < 400:
             return
         elif 400 <= error.status < 500:
