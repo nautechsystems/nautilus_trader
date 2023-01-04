@@ -72,39 +72,15 @@ repos:
         args: ["--config", "pyproject.toml"]
         exclude: "docs/_pygments/monokai.py"
 
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v0.991
-  #   hooks:
-  #     - id: mypy
-  #       types_or: [python, pyi]
-  #       entry: "poetry"
-  #       args: ["run", "mypy", "--config", "pyproject.toml"]
-  #       require_serial: true
-  #       exclude: "^nautilus_core/"
-
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v0.991
     hooks:
       - id: mypy
-        args: [
-            --no-strict-optional,
-            --ignore-missing-imports,
-            --warn-no-return,
-        ]
-        additional_dependencies: [
-            msgspec,
-            types-frozendict,
-            types-pytz,
-            types-redis,
-            types-requests,
-            types-toml,
-        ]
-
-  - repo: https://github.com/john-hen/Flake8-pyproject
-    rev: 1.2.2
-    hooks:
-      - id: Flake8-pyproject
-        name: flake8-pyproject
+        types_or: [python, pyi]
+        entry: "poetry"
+        args: ["run", "mypy", "--config", "pyproject.toml"]
+        require_serial: true
+        exclude: "^nautilus_core/"
 
   - repo: https://github.com/pycqa/flake8
     rev: 6.0.0
@@ -117,7 +93,7 @@ repos:
           - Flake8-pyproject
 
   - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.1.1
+    rev: 6.2.2
     hooks:
       - id: pydocstyle
         files: ^nautilus_trader/
