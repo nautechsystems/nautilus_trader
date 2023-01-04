@@ -100,7 +100,7 @@ class BetfairClient(HttpClient):
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
-            data = msgspec.json.decode(resp.data)  # type: ignore  # (data attribute added)
+            data = msgspec.json.decode(resp.data)
             if "error" in data:
                 self._log.error(str(data))
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
