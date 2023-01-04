@@ -36,7 +36,7 @@ IB_TICK_TYPE = {
 }
 
 
-def generate_trade_id(ts_event: int, price: str, size: str) -> TradeId:
+def generate_trade_id(ts_event: int, price: float, size: float) -> TradeId:
     id = TradeId(f"{int(nanos_to_secs(ts_event))}-{price}-{size}")
     assert len(id.value) < 36, f"TradeId too long, was {len(id.value)}"
     return id
