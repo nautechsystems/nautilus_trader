@@ -330,6 +330,26 @@ class TestDataStubs:
         )
 
     @staticmethod
+    def make_book(
+        instrument: Instrument,
+        book_type: BookType,
+        bids: Optional[list[tuple]] = None,
+        asks: Optional[list[tuple]] = None,
+    ) -> OrderBook:
+        book = OrderBook.create(
+            book_type=book_type,
+            instrument=instrument,
+        )
+
+        for price, size in bids or []:
+            order = BookOrder(price=price, size=size, side=OrderSide.BUY)
+            book.add(order)
+        for price, size in asks or []:
+            order = BookOrder(price=price, size=size, side=OrderSide.SELL)
+            book.add(order)
+        return book
+
+    @staticmethod
     def venue_status_update(
         venue: Venue = None,
         status: MarketStatus = None,
