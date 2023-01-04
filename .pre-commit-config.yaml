@@ -80,7 +80,14 @@ repos:
         entry: "poetry"
         args: ["run", "mypy", "--config", "pyproject.toml"]
         require_serial: true
-        exclude: "^nautilus_core/"
+        additional_dependencies: [
+          msgspec,
+          types-frozendict,
+          types-pytz,
+          types-redis,
+          types-requests,
+          types-toml,
+        ]
 
   - repo: https://github.com/pycqa/flake8
     rev: 6.0.0
