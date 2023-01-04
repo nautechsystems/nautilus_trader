@@ -25,7 +25,6 @@ from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
@@ -113,12 +112,16 @@ class BetfairTicker(Ticker):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        last_traded_price: Price = None,
-        traded_volume: Quantity = None,
+        last_traded_price: float = None,
+        traded_volume: float = None,
+        starting_price_near: float = None,
+        starting_price_far: float = None,
     ):
         super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
+        self.starting_price_near = starting_price_near
+        self.starting_price_far = starting_price_far
 
     @classmethod
     def schema(cls):
@@ -127,8 +130,10 @@ class BetfairTicker(Ticker):
                 "instrument_id": pa.dictionary(pa.int8(), pa.string()),
                 "ts_event": pa.uint64(),
                 "ts_init": pa.uint64(),
-                "last_traded_price": pa.string(),
-                "traded_volume": pa.string(),
+                "last_traded_price": pa.float64(),
+                "traded_volume": pa.float64(),
+                "starting_price_near": pa.float64(),
+                "starting_price_far": pa.float64(),
             },
             metadata={"type": "BetfairTicker"},
         )
@@ -139,11 +144,13 @@ class BetfairTicker(Ticker):
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            last_traded_price=Price.from_str(values["last_traded_price"])
-            if values["last_traded_price"]
+            last_traded_price=values["last_traded_price"] if values["last_traded_price"] else None,
+            traded_volume=values["traded_volume"] if values["traded_volume"] else None,
+            starting_price_near=values["starting_price_near"]
+            if values["starting_price_near"]
             else None,
-            traded_volume=Quantity.from_str(values["traded_volume"])
-            if values["traded_volume"]
+            starting_price_far=values["starting_price_far"]
+            if values["starting_price_far"]
             else None,
         )
 
@@ -153,8 +160,10 @@ class BetfairTicker(Ticker):
             "instrument_id": self.instrument_id.value,
             "ts_event": self.ts_event,
             "ts_init": self.ts_init,
-            "last_traded_price": str(self.last_traded_price) if self.last_traded_price else None,
-            "traded_volume": str(self.traded_volume) if self.traded_volume else None,
+            "last_traded_price": self.last_traded_price,
+            "traded_volume": self.traded_volume,
+            "starting_price_near": self.starting_price_near,
+            "starting_price_far": self.starting_price_far,
         }
 
 

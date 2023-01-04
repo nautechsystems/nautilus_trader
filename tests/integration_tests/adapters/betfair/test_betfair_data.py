@@ -50,8 +50,6 @@ from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -459,8 +457,15 @@ class TestBetfairDataClient:
     def test_betfair_ticker(self):
         self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
-        assert ticker.last_traded_price == Price.from_str("0.3174603")
-        assert ticker.traded_volume == Quantity.from_str("364.45")
+        assert ticker.last_traded_price == 0.3174603
+        assert ticker.traded_volume == 364.45
+
+    def test_betfair_ticker_sp(self):
+        self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
+        ticker: BetfairTicker = self.messages[1]
+
+        assert ticker.starting_price_near is None
+        assert ticker.starting_price_far is None
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(

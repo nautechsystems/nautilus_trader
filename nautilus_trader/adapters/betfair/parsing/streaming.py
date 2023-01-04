@@ -344,15 +344,26 @@ def _handle_market_runners_status(mc: MarketChange, ts_event: int, ts_init: int)
 
 
 def _handle_ticker(runner: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
-    last_traded_price, traded_volume = None, None
+    last_traded_price, traded_volume, starting_price_far, starting_price_near = (
+        None,
+        None,
+        None,
+        None,
+    )
     if runner.ltp:
-        last_traded_price = price_to_probability(str(runner.ltp))
+        last_traded_price = price_to_probability(str(runner.ltp)).as_double()
     if runner.tv:
-        traded_volume = Quantity(value=runner.tv, precision=BETFAIR_QUANTITY_PRECISION)
+        traded_volume = Quantity(value=runner.tv, precision=BETFAIR_QUANTITY_PRECISION).as_double()
+    if runner.spn and runner.spn not in ("NaN", "Infinity"):
+        starting_price_near = runner.spn
+    if runner.spf and runner.spf not in ("NaN", "Infinity"):
+        starting_price_far = runner.spf
     return BetfairTicker(
         instrument_id=instrument_id,
         last_traded_price=last_traded_price,
         traded_volume=traded_volume,
+        starting_price_far=starting_price_far,
+        starting_price_near=starting_price_near,
         ts_init=ts_init,
         ts_event=ts_event,
     )
