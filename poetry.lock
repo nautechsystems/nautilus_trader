@@ -99,7 +99,7 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.1.8"
+version = "0.1.9"
 description = ""
 category = "main"
 optional = true
@@ -1450,7 +1450,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9,<3.12"
-content-hash = "6fe3303436da7fea08d4719c895d8bd54a3abed5e6884b8b9ec2d7872bae6fef"
+content-hash = "73b7cc82cb7b57dffcf8f230a7e88d6f494b360d5375cd43c8c0ca07ab68f3bc"
 
 [metadata.files]
 aiodns = [
@@ -1571,8 +1571,8 @@ beautifulsoup4 = [
     {file = "beautifulsoup4-4.11.1.tar.gz", hash = "sha256:ad9aa55b65ef2808eb405f46cf74df7fcb7044d5cbc26487f96eb2ef2e436693"},
 ]
 betfair-parser = [
-    {file = "betfair_parser-0.1.8-py3-none-any.whl", hash = "sha256:99f2c103b5ae4609056ebf0a3ef1d99eb4bbd526ef09d22cfceb131e84fe21a0"},
-    {file = "betfair_parser-0.1.8.tar.gz", hash = "sha256:d10bd76f47948ba74c396f7f3622c29386e8889dde818f5d51f4ab9ac8d6b1de"},
+    {file = "betfair_parser-0.1.9-py3-none-any.whl", hash = "sha256:7c0b1fbdbe5b036a40200335a74ce6ee4a8746d28f6f3e4a4084a6494281e448"},
+    {file = "betfair_parser-0.1.9.tar.gz", hash = "sha256:f9cbfe6438f2978b9c9778ddbf9ab0d212aec36a89f923418295ad8944c9afab"},
 ]
 black = [
     {file = "black-22.12.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9eedd20838bd5d75b80c9f5487dbcb06836a43833a37846cf1d8c1cc01cef59d"},

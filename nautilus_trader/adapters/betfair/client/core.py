@@ -27,6 +27,8 @@ from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.client.enums import MarketSort
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
+from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
+from nautilus_trader.adapters.betfair.client.spec import ClearedOrdersResponse
 from nautilus_trader.adapters.betfair.client.util import parse_params
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HttpClient
@@ -262,7 +264,7 @@ class BetfairClient(HttpClient):
         index = from_record or 0
         while more_available:
             params["fromRecord"] = index
-            resp = await self.rpc_post(
+            resp: dict = await self.rpc_post(
                 url=self.BETTING_URL,
                 method="SportsAPING/v1.0/listCurrentOrders",
                 params=params,
@@ -291,7 +293,7 @@ class BetfairClient(HttpClient):
         locale: str = None,
         from_record: int = None,
         record_count: int = None,
-    ) -> list[dict]:
+    ) -> list[ClearedOrder]:
         params = parse_params(**locals())
         cleared_orders = []
         more_available = True
@@ -300,13 +302,15 @@ class BetfairClient(HttpClient):
             params["fromRecord"] = index
             if settled_date_from or settled_date_to:
                 params["settledDateRange"] = {"from": settled_date_from, "to": settled_date_to}
-            resp = await self.rpc_post(
+            data = await self.rpc_post(
                 url=self.BETTING_URL,
                 method="SportsAPING/v1.0/listClearedOrders",
                 params=params,
             )
-            order_chunk = resp["clearedOrders"]
+            raw = msgspec.json.encode(data)
+            response: ClearedOrdersResponse = msgspec.json.decode(raw, type=ClearedOrdersResponse)
+            order_chunk = response.clearedOrders
             cleared_orders.extend(order_chunk)
-            more_available = resp["moreAvailable"]
+            more_available = response.moreAvailable
             index += len(order_chunk)
         return cleared_orders

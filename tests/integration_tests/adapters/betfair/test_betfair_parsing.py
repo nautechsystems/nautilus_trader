@@ -51,6 +51,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import MarketStatus
@@ -77,15 +78,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestBetfairParsingStreaming:
-    # def setup(self):
-    #     # Fixture Setup
-    #     self.loop = asyncio.get_event_loop()
-    #     self.clock = LiveClock()
-    #     self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-    #     self.instrument = TestInstrumentProvider.betting_instrument()
-    #     self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
-    #     self.provider = BetfairTestStubs.instrument_provider(self.client)
-
     def test_market_definition_to_instrument_status_updates(self, market_definition_open):
         # Arrange, Act
         updates = market_definition_to_instrument_status_updates(
@@ -113,11 +105,7 @@ class TestBetfairParsingStreaming:
         )
 
         # Assert
-        result = [
-            upd
-            for upd in updates
-            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
-        ]
+        result = [upd for upd in updates if isinstance(upd, InstrumentClose)]
         assert len(result) == 17
 
     def test_market_definition_to_betfair_starting_price(self, market_definition_close):
@@ -130,16 +118,17 @@ class TestBetfairParsingStreaming:
         )
 
         # Assert
-        result = [
-            upd
-            for upd in updates
-            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
-        ]
-        assert len(result) == 17
+        result = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
+        assert len(result) == 14
 
     @pytest.mark.parametrize(
         "market_id, num_msgs",
-        [("1.166564490", 2531), ("1.166811431", 17846), ("1.180305278", 15734)],
+        [
+            ("1.166564490", 2531),
+            ("1.166811431", 17846),
+            ("1.180305278", 15734),
+            ("1.206225146", 14366),
+        ],
     )
     def test_parsing_streaming_file(self, market_id, num_msgs):
         mcms = BetfairDataProvider.market_updates(market_id)
@@ -147,11 +136,21 @@ class TestBetfairParsingStreaming:
         updates = [x for mcm in mcms for x in parser.parse(mcm)]
         assert len(updates) == num_msgs
 
-    def test_parsing_streaming_file_message_counts(self, market_id, num_msgs):
-        mcms = BetfairDataProvider.market_updates(market_id)
+    def test_parsing_streaming_file_message_counts(self):
+        mcms = BetfairDataProvider.read_mcm("1.206225146")
         parser = BetfairParser()
         updates = Counter([x.__class__.__name__ for mcm in mcms for x in parser.parse(mcm)])
-        expected = Counter({})
+        expected = Counter(
+            {
+                "OrderBookDeltas": 12094,
+                "BetfairTicker": 1131,
+                "TradeTick": 901,
+                "BSPOrderBookDeltas": 180,
+                "InstrumentStatusUpdate": 42,
+                "BetfairStartingPrice": 12,
+                "InstrumentClose": 6,
+            },
+        )
         assert updates == expected
 
 

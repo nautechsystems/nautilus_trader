@@ -26,6 +26,7 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
 from betfair_parser.spec.streaming.ocm import MatchedOrder
@@ -663,6 +664,10 @@ class BetfairDataProvider:
     @staticmethod
     def read_lines(market: str = "1.166811431") -> list[bytes]:
         return bz2.open(DATA_PATH / f"{market}.bz2").readlines()
+
+    @staticmethod
+    def read_mcm(market: str) -> list[MCM]:
+        return [STREAM_DECODER.decode(line) for line in BetfairDataProvider.read_lines(market)]
 
     @staticmethod
     def market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
