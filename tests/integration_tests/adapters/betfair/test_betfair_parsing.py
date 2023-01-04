@@ -127,7 +127,7 @@ class TestBetfairParsingStreaming:
             ("1.166564490.bz2", 2531),
             ("1.166811431.bz2", 17846),
             ("1.180305278.bz2", 15734),
-            ("1.206063952.bz2", 41271),
+            ("1.206123906.bz2", 18903),
         ],
     )
     def test_parsing_streaming_file(self, filename, num_msgs):
@@ -137,18 +137,18 @@ class TestBetfairParsingStreaming:
         assert len(updates) == num_msgs
 
     def test_parsing_streaming_file_message_counts(self):
-        mcms = BetfairDataProvider.read_mcm("1.206063952.bz2")
+        mcms = BetfairDataProvider.read_mcm("1.206123906.bz2")
         parser = BetfairParser()
         updates = Counter([x.__class__.__name__ for mcm in mcms for x in parser.parse(mcm)])
         expected = Counter(
             {
-                "OrderBookDeltas": 31355,
-                "BetfairTicker": 4335,
-                "TradeTick": 4311,
-                "BSPOrderBookDeltas": 677,
-                "InstrumentStatusUpdate": 416,
-                "InstrumentClose": 135,
-                "BetfairStartingPrice": 42,
+                "OrderBookDeltas": 14793,
+                "BetfairTicker": 1864,
+                "TradeTick": 1839,
+                "BSPOrderBookDeltas": 327,
+                "InstrumentStatusUpdate": 48,
+                "BetfairStartingPrice": 24,
+                "InstrumentClose": 8,
             },
         )
         assert updates == expected
