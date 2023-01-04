@@ -387,6 +387,7 @@ def build_market_snapshot_messages(
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
+    cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
     book_type = one({deltas.book_type for deltas in all_deltas})
     ts_event = one({deltas.ts_event for deltas in all_deltas})
@@ -395,7 +396,7 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
     return [
-        OrderBookDeltas(
+        cls(
             instrument_id=instrument_id,
             deltas=deltas,
             book_type=book_type,
@@ -413,6 +414,7 @@ def build_market_update_messages(
 ) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClose]]:
     updates = []
     book_updates = []
+    bsp_book_updates = []
 
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
@@ -451,7 +453,7 @@ def build_market_update_messages(
             )
 
         if rc.spb or rc.spl:
-            updates.extend(
+            bsp_book_updates.extend(
                 _handle_bsp_updates(
                     rc=rc,
                     instrument_id=instrument_id,
@@ -461,6 +463,8 @@ def build_market_update_messages(
             )
     if book_updates:
         updates.extend(_merge_order_book_deltas(book_updates))
+    if bsp_book_updates:
+        updates.extend(_merge_order_book_deltas(bsp_book_updates))
     return updates
 
 
