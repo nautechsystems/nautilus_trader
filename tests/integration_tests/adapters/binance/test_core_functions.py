@@ -45,7 +45,8 @@ class TestBinanceCoreFunctions:
         "account_type, expected",
         [
             [BinanceAccountType.SPOT, True],
-            [BinanceAccountType.MARGIN, False],
+            [BinanceAccountType.MARGIN_CROSS, False],
+            [BinanceAccountType.MARGIN_ISOLATED, False],
             [BinanceAccountType.FUTURES_USDT, False],
             [BinanceAccountType.FUTURES_COIN, False],
         ],
@@ -58,7 +59,8 @@ class TestBinanceCoreFunctions:
         "account_type, expected",
         [
             [BinanceAccountType.SPOT, False],
-            [BinanceAccountType.MARGIN, True],
+            [BinanceAccountType.MARGIN_CROSS, True],
+            [BinanceAccountType.MARGIN_ISOLATED, True],
             [BinanceAccountType.FUTURES_USDT, False],
             [BinanceAccountType.FUTURES_COIN, False],
         ],
@@ -71,7 +73,8 @@ class TestBinanceCoreFunctions:
         "account_type, expected",
         [
             [BinanceAccountType.SPOT, False],
-            [BinanceAccountType.MARGIN, False],
+            [BinanceAccountType.MARGIN_CROSS, False],
+            [BinanceAccountType.MARGIN_ISOLATED, False],
             [BinanceAccountType.FUTURES_USDT, True],
             [BinanceAccountType.FUTURES_COIN, True],
         ],
