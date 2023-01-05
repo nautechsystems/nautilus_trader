@@ -206,7 +206,8 @@ cdef class OrderFactory:
         OrderType tp_order_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        bint post_only=*,
+        bint post_only_entry=*,
+        bint post_only_tp=*,
         TriggerType emulation_trigger=*,
         ContingencyType contingency_type=*,
     )
