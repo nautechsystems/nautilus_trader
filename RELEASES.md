@@ -23,10 +23,12 @@ and also to avoid C naming collisions.
 - Renamed `TriggerType.INDEX` to `INDEX_PRICE`
 - Renamed `ComponentState.INITIALIZED` to `READY`
 - Moved `manage_gtd_expiry` to `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)`
+- Renamed `OrderFactory.bracket(post_only)` to `post_only_entry`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
 - Added `DataEngineConfig.build_time_bars_with_no_updates` option
+- Added `OrderFactory.bracket(post_only_tp)` param
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions
