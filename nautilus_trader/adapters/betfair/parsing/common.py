@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Optional
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -28,10 +29,11 @@ def make_symbol(
     return Symbol(value)
 
 
+@lru_cache
 def betfair_instrument_id(
     market_id: str,
-    selection_id: str,
-    selection_handicap: Optional[str],
+    runner_id: str,
+    runner_handicap: Optional[str],
 ) -> InstrumentId:
     """
     Create an instrument ID from betfair fields
@@ -41,5 +43,5 @@ def betfair_instrument_id(
 
     """
     PyCondition.not_empty(market_id, "market_id")
-    symbol = make_symbol(market_id, selection_id, selection_handicap)
+    symbol = make_symbol(market_id, runner_id, runner_handicap)
     return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)
