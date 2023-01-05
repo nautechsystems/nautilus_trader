@@ -1,3 +1,5 @@
+import os
+
 from betfair_parser.spec.streaming.mcm import MarketStatus as BetfairMarketStatus
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
@@ -17,3 +19,5 @@ MARKET_STATUS_MAPPING: dict[tuple[BetfairMarketStatus, bool], MarketStatus] = {
     (BetfairMarketStatus.CLOSED, False): MarketStatus.CLOSED,
     (BetfairMarketStatus.CLOSED, True): MarketStatus.CLOSED,
 }
+
+STRICT_MARKET_DATA_HANDLING = os.environ.get("BETFAIR_STRICT_MARKET_DATA_HANDLING", "1")

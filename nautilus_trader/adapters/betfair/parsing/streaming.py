@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import warnings
 from collections import defaultdict
+from enum import Enum
 from typing import Literal, Optional, Union
 
 import pandas as pd
@@ -43,6 +43,7 @@ from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_i
 from nautilus_trader.adapters.betfair.parsing.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.parsing.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.parsing.constants import MARKET_STATUS_MAPPING
+from nautilus_trader.adapters.betfair.parsing.constants import STRICT_MARKET_DATA_HANDLING
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
@@ -56,6 +57,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -124,14 +126,14 @@ def market_change_to_updates(  # noqa: C901
         # Order book data
         if mc.img:
             # Full snapshot, replace order book
-            snapshot = runner_change_full_depth_to_order_book_snapshot(
+            snapshot = runner_change_to_order_book_snapshot(
                 rc,
                 instrument_id,
                 ts_event,
                 ts_init,
             )
             if snapshot is not None:
-                book_updates.append(snapshot)
+                updates.append(snapshot)
         else:
             # Delta update
             deltas = runner_change_to_order_book_deltas(rc, instrument_id, ts_event, ts_init)
@@ -177,9 +179,18 @@ def market_definition_to_instrument_status_updates(
             runner_id=str(runner.runner_id),
             runner_handicap=parse_handicap(runner.handicap),
         )
+        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
+        if runner.status == RunnerStatus.ACTIVE:
+            status = MARKET_STATUS_MAPPING[key]
+        elif runner.status == RunnerStatus.REMOVED:
+            status = MarketStatus.CLOSED
+        else:
+            raise ValueError(
+                f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
+            )
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=MARKET_STATUS_MAPPING[(market_definition.status, market_definition.inPlay)],
+            status=status,
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -271,21 +282,62 @@ def runner_to_betfair_starting_price(
         return None
 
 
-def runner_change_full_depth_to_order_book_snapshot(
+class MarketDataKind(Enum):
+    """MarketDataKind"""
+
+    ALL = "ALL"
+    BEST = "BEST"
+    DISPLAY = "DISPLAY"
+
+
+def runner_change_to_market_data_kind(rc: RunnerChange) -> MarketDataKind:
+    if rc.atb or rc.atl:
+        if STRICT_MARKET_DATA_HANDLING:
+            assert not any((rc.batb, rc.batl, rc.bdatb, rc.bdatl)), "Mixed market data kinds"
+        return MarketDataKind.ALL
+    elif rc.batl or rc.batb:
+        if STRICT_MARKET_DATA_HANDLING:
+            assert not any((rc.atb, rc.atl, rc.bdatb, rc.bdatl)), "Mixed market data kinds"
+        return MarketDataKind.BEST
+    elif rc.bdatb or rc.bdatl:
+        if STRICT_MARKET_DATA_HANDLING:
+            assert not any((rc.atb, rc.atl, rc.batb, rc.batl)), "Mixed market data kinds"
+        return MarketDataKind.DISPLAY
+    else:
+        raise ValueError("rc contains no valid market data")
+
+
+def runner_change_to_order_book_snapshot(
     rc: RunnerChange,
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
 ) -> Optional[OrderBookSnapshot]:
-    if not (rc.atb or rc.atl):
-        warnings.warn("empty order book update")
+    try:
+        market_data_kind = runner_change_to_market_data_kind(rc)
+    except ValueError:
         return None
+    if market_data_kind == MarketDataKind.ALL:
+        return runner_change_all_depth_to_order_book_snapshot(rc, instrument_id, ts_event, ts_init)
+    elif market_data_kind == MarketDataKind.BEST:
+        return runner_change_best_depth_to_order_book_snapshot(rc, instrument_id, ts_event, ts_init)
+    elif market_data_kind == MarketDataKind.DISPLAY:
+        return runner_change_display_depth_to_order_book_snapshot(
+            rc,
+            instrument_id,
+            ts_event,
+            ts_init,
+        )
+    else:
+        raise ValueError("Unknown market data kind")
 
-    # Check we're only using full depth, not level based updates.
-    if rc.atb:
-        assert not (rc.batb or rc.bdatb)
-    if rc.atl:
-        assert not (rc.batl or rc.bdatl)
+
+def runner_change_all_depth_to_order_book_snapshot(
+    rc: RunnerChange,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
+) -> Optional[OrderBookSnapshot]:
 
     # Bids are available to lay (atl)
     if rc.atl:
@@ -302,6 +354,78 @@ def runner_change_full_depth_to_order_book_snapshot(
         asks: list = [
             (price_to_probability(str(order.price)), order.volume)
             for order in rc.atb
+            if order.price
+        ]
+    else:
+        asks = []
+
+    return OrderBookSnapshot(
+        book_type=BookType.L2_MBP,
+        instrument_id=instrument_id,
+        bids=bids,
+        asks=asks,
+        ts_event=ts_event,
+        ts_init=ts_init,
+    )
+
+
+def runner_change_best_depth_to_order_book_snapshot(
+    rc: RunnerChange,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
+) -> Optional[OrderBookSnapshot]:
+    # Bids are best available to lay (batl)
+    if rc.batl:
+        bids = [
+            (price_to_probability(str(order.price)), order.volume)
+            for order in rc.batl
+            if order.price
+        ]
+    else:
+        bids = []
+
+    # Asks are best available to back (batb)
+    if rc.batb:
+        asks: list = [
+            (price_to_probability(str(order.price)), order.volume)
+            for order in rc.batb
+            if order.price
+        ]
+    else:
+        asks = []
+
+    return OrderBookSnapshot(
+        book_type=BookType.L2_MBP,
+        instrument_id=instrument_id,
+        bids=bids,
+        asks=asks,
+        ts_event=ts_event,
+        ts_init=ts_init,
+    )
+
+
+def runner_change_display_depth_to_order_book_snapshot(
+    rc: RunnerChange,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
+) -> Optional[OrderBookSnapshot]:
+    # Bids are best display available to lay (bdatl)
+    if rc.bdatl:
+        bids = [
+            (price_to_probability(str(order.price)), order.volume)
+            for order in rc.bdatl
+            if order.price
+        ]
+    else:
+        bids = []
+
+    # Asks are best display available to back (bdatb)
+    if rc.bdatb:
+        asks: list = [
+            (price_to_probability(str(order.price)), order.volume)
+            for order in rc.bdatb
             if order.price
         ]
     else:
