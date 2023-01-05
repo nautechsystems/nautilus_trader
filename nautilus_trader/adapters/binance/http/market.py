@@ -209,21 +209,6 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
 
     """
 
-    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
-        """
-        GET parameters for recent trades
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-        """
-
-        symbol: str
-        limit: Optional[int] = None
-
     def __init__(
         self,
         client: BinanceHttpClient,
@@ -239,6 +224,21 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
             url_path,
         )
         self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for recent trades
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+        """
+
+        symbol: str
+        limit: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> BinanceTrades:
         method_type = BinanceMethodType.GET
@@ -275,6 +275,22 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
 
     """
 
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.MARKET_DATA,
+        }
+        url_path = base_endpoint + "historicalTrades"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
+
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
         GET parameters for historical trades
@@ -292,22 +308,6 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         symbol: str
         limit: Optional[int] = None
         fromId: Optional[str] = None
-
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.MARKET_DATA,
-        }
-        url_path = base_endpoint + "historicalTrades"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
 
     async def _get(self, parameters: GetParameters) -> BinanceTrades:
         method_type = BinanceMethodType.GET
@@ -345,6 +345,22 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/delivery/en/#compressed-aggregate-trades-list
     """
 
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "aggTrades"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceAggTrades)
+
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
         GET parameters for aggregate trades
@@ -369,22 +385,6 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
         startTime: Optional[str] = None
         endTime: Optional[str] = None
 
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
-        }
-        url_path = base_endpoint + "aggTrades"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceAggTrades)
-
     async def _get(self, parameters: GetParameters) -> BinanceAggTrades:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
@@ -407,6 +407,22 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/delivery/en/#kline-candlestick-data
 
     """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "klines"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceKlines)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -431,22 +447,6 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
         limit: Optional[int] = None
         startTime: Optional[str] = None
         endTime: Optional[str] = None
-
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
-        }
-        url_path = base_endpoint + "klines"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceKlines)
 
     async def _get(self, parameters: GetParameters) -> BinanceKlines:
         method_type = BinanceMethodType.GET
@@ -487,6 +487,22 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/delivery/en/#24hr-ticker-price-change-statistics
     """
 
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ticker/24hr"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTicker24hrs)
+
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
         GET parameters for 24hr ticker
@@ -507,22 +523,6 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         symbol: Optional[str] = None
         symbols: Optional[str] = None  # SPOT/MARGIN only
         type: Optional[str] = None  # SPOT/MARIN only
-
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
-        }
-        url_path = base_endpoint + "ticker/24hr"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTicker24hrs)
 
     async def _get(self, parameters: GetParameters) -> BinanceTicker24hrs:
         method_type = BinanceMethodType.GET
@@ -545,6 +545,22 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
     """
 
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ticker/price"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerPrices)
+
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
         GET parameters for price ticker
@@ -561,22 +577,6 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
 
         symbol: Optional[str] = None
         symbols: Optional[str] = None  # SPOT/MARGIN only
-
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
-        }
-        url_path = base_endpoint + "ticker/price"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerPrices)
 
     async def _get(self, parameters: GetParameters) -> BinanceTickerPrices:
         method_type = BinanceMethodType.GET
@@ -599,6 +599,22 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/delivery/en/#symbol-order-book-ticker
     """
 
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ticker/price"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerBooks)
+
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
         GET parameters for order book ticker
@@ -615,22 +631,6 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
 
         symbol: Optional[str] = None
         symbols: Optional[str] = None  # SPOT/MARGIN only
-
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
-        }
-        url_path = base_endpoint + "ticker/price"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerBooks)
 
     async def _get(self, parameters: GetParameters) -> BinanceTickerBooks:
         method_type = BinanceMethodType.GET
