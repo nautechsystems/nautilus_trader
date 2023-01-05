@@ -16,8 +16,8 @@
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
-from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 
 
 class TestBinanceCoreFunctions:
@@ -26,7 +26,7 @@ class TestBinanceCoreFunctions:
         symbol = "ethusdt-perp"
 
         # Act
-        result = format_symbol(symbol)
+        result = BinanceSymbol(symbol)
 
         # Assert
         assert result == "ETHUSDT"
@@ -36,7 +36,7 @@ class TestBinanceCoreFunctions:
         symbols = ["BTCUSDT", "ETHUSDT-PERP", " XRDUSDT"]
 
         # Act
-        result = convert_symbols_list_to_json_array(symbols)
+        result = BinanceSymbols(symbols)
 
         # Assert
         assert result == '["BTCUSDT","ETHUSDT","XRDUSDT"]'
