@@ -25,10 +25,10 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.functions import format_symbol
-from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceUserTrade
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKey
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
@@ -216,7 +216,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._update_account_state(info=info)
 
         # Get listen keys
-        response = await self._http_user.create_listen_key()
+        endpoint = self._http_user.endpoint_listenkey
+        response: BinanceListenKey = await endpoint.create_listen_key()
 
         self._listen_key = response.listenKey
         self._log.info(f"Listen key {self._listen_key}")
@@ -257,7 +258,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
                 self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
-                await self._http_user.ping_listen_key(self._listen_key)
+                endpoint = self._http_user.endpoint_listenkey
+                parameters = endpoint.PutDeleteParameters(listenKey=self._listen_key)
+                await endpoint.keepalive_listen_key(parameters)
 
     async def _sync_clock_with_binance_server(self) -> None:
         while True:
@@ -352,9 +355,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: set[str] = {
-            format_symbol(o.instrument_id.symbol.value) for o in open_orders
-        }
+        active_symbols: list[BinanceSymbol] = [
+            BinanceSymbol(o.instrument_id.symbol.value) for o in open_orders
+        ]
 
         order_msgs: list[BinanceOrder] = []
         reports: dict[VenueOrderId, OrderStatusReport] = {}
@@ -367,7 +370,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 order_msgs.extend(open_order_msgs)
                 # Add to active symbols
                 for o in open_order_msgs:
-                    active_symbols.add(o.symbol)
+                    active_symbols.append(o.symbol)
 
             for symbol in active_symbols:
                 response: list[BinanceOrder] = await self._http_account.get_orders(
@@ -417,9 +420,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: set[str] = {
-            format_symbol(o.instrument_id.symbol.value) for o in open_orders
-        }
+        active_symbols: list[BinanceSymbol] = [
+            BinanceSymbol(o.instrument_id.symbol.value) for o in open_orders
+        ]
 
         reports_raw: list[BinanceUserTrade] = []
         reports: list[TradeReport] = []
@@ -536,7 +539,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
-            symbol=format_symbol(order.instrument_id.symbol.value),
+            symbol=BinanceSymbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type="MARKET",
             quantity=str(order.quantity),
@@ -550,7 +553,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             time_in_force_str = None
 
         await self._http_account.new_order(
-            symbol=format_symbol(order.instrument_id.symbol.value),
+            symbol=BinanceSymbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=self._exec_parser.parse_binance_order_type(order).value,
             time_in_force=time_in_force_str,
@@ -565,7 +568,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         time_in_force_str: str = self._convert_time_in_force_to_str(order.time_in_force)
 
         await self._http_account.new_order(
-            symbol=format_symbol(order.instrument_id.symbol.value),
+            symbol=BinanceSymbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=self._exec_parser.parse_binance_order_type(order).value,
             time_in_force=time_in_force_str,
@@ -635,7 +638,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         try:
             if open_orders_total_count == len(open_orders_strategy):
                 await self._http_account.cancel_open_orders(
-                    symbol=format_symbol(command.instrument_id.symbol.value),
+                    symbol=BinanceSymbol(command.instrument_id.symbol.value),
                 )
             else:
                 for order in open_orders_strategy:
@@ -656,12 +659,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         try:
             if venue_order_id is not None:
                 await self._http_account.cancel_order(
-                    symbol=format_symbol(instrument_id.symbol.value),
+                    symbol=BinanceSymbol(instrument_id.symbol.value),
                     order_id=venue_order_id.value,
                 )
             else:
                 await self._http_account.cancel_order(
-                    symbol=format_symbol(instrument_id.symbol.value),
+                    symbol=BinanceSymbol(instrument_id.symbol.value),
                     orig_client_order_id=client_order_id.value,
                 )
         except BinanceError as e:
@@ -681,9 +684,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             time_in_force_str = TimeInForce.GTC.name
         return time_in_force_str
 
-    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: BinanceSymbol) -> InstrumentId:
         # Parse instrument ID
-        nautilus_symbol: str = parse_symbol(symbol, account_type=self._binance_account_type)
+        nautilus_symbol: str = symbol.parse_binance_to_internal(self._binance_account_type)
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)

@@ -18,6 +18,7 @@ from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarType
@@ -50,7 +51,7 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     bids: list[tuple[str, str]]
     asks: list[tuple[str, str]]
 
-    symbol: Optional[str] = None  # COIN-M FUTURES only
+    symbol: Optional[BinanceSymbol] = None  # COIN-M FUTURES only
     pair: Optional[str] = None  # COIN-M FUTURES only
 
     E: Optional[int] = None  # FUTURES only, Message output time
@@ -207,7 +208,7 @@ class BinanceKlines(msgspec.Struct, frozen=True):
 class BinanceTicker24hr(msgspec.Struct, frozen=True):
     """Schema of single Binance 24hr ticker (FULL/MINI)"""
 
-    symbol: Optional[str]
+    symbol: Optional[BinanceSymbol]
     lastPrice: Optional[str]
     openPrice: Optional[str]
     highPrice: Optional[str]
@@ -249,7 +250,7 @@ class BinanceTicker24hrs(BinanceTicker24hr):
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
     """Schema of single Binance Price Ticker"""
 
-    symbol: Optional[str]
+    symbol: Optional[BinanceSymbol]
     price: Optional[str]
     time: Optional[int] = None  # FUTURES only
     ps: Optional[str] = None  # COIN-M FUTURES only, pair
@@ -268,7 +269,7 @@ class BinanceTickerPrices(BinanceTickerPrice):
 class BinanceTickerBook(msgspec.Struct, frozen=True):
     """Schema of a single Binance Order Book Ticker"""
 
-    symbol: Optional[str]
+    symbol: Optional[BinanceSymbol]
     bidPrice: Optional[str]
     bidQty: Optional[str]
     askPrice: Optional[str]

@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceExchangeFilter
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceRateLimit
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
 
 
@@ -41,7 +42,7 @@ class BinanceFuturesAsset(msgspec.Struct):
 class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
-    symbol: str
+    symbol: BinanceSymbol
     pair: str
     contractType: str  # Can be '' empty string
     deliveryDate: int
@@ -81,7 +82,7 @@ class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
 class BinanceFuturesMarkFunding(msgspec.Struct):
     """HTTP response from `Binance Future` GET /fapi/v1/premiumIndex."""
 
-    symbol: str
+    symbol: BinanceSymbol
     markPrice: str  # Mark price
     indexPrice: str  # Index price
     estimatedSettlePrice: str  # Estimated Settle Price (only useful in the last hour before the settlement starts)
@@ -94,7 +95,7 @@ class BinanceFuturesMarkFunding(msgspec.Struct):
 class BinanceFuturesFundRate(msgspec.Struct):
     """HTTP response from `Binance Future` GET /fapi/v1/fundingRate."""
 
-    symbol: str
+    symbol: BinanceSymbol
     fundingRate: str
     fundingTime: str
 
@@ -125,7 +126,7 @@ class BinanceFuturesTradeData(msgspec.Struct):
     e: str  # Event type
     E: int  # Event time
     T: int  # Trade time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity
@@ -145,7 +146,7 @@ class BinanceFuturesMarkPriceData(msgspec.Struct):
 
     e: str  # Event type
     E: int  # Event time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     p: str  # Mark price
     i: str  # Index price
     P: str  # Estimated Settle Price, only useful in the last hour before the settlement starts

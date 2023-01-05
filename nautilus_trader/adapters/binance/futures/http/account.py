@@ -18,9 +18,9 @@ from typing import Any, Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceUserTrade
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -209,7 +209,7 @@ class BinanceFuturesAccountHttpAPI:
 
         """
         payload: dict[str, str] = {
-            "symbol": format_symbol(symbol),
+            "symbol": BinanceSymbol(symbol),
             "side": side,
             "type": type,
         }
@@ -286,7 +286,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-order-trade
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_id is not None:
             payload["orderId"] = str(order_id)
         if orig_client_order_id is not None:
@@ -331,7 +331,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -376,7 +376,7 @@ class BinanceFuturesAccountHttpAPI:
         TBD
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if orig_client_order_id is not None:
@@ -422,7 +422,7 @@ class BinanceFuturesAccountHttpAPI:
         """
         payload: dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
+            payload["symbol"] = BinanceSymbol(symbol)
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -472,7 +472,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if start_time is not None:
@@ -566,7 +566,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if from_id is not None:
             payload["fromId"] = from_id
         if order_id is not None:
@@ -618,7 +618,7 @@ class BinanceFuturesAccountHttpAPI:
         """
         payload: dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
+            payload["symbol"] = BinanceSymbol(symbol)
         if recv_window is not None:
             payload["recv_window"] = str(recv_window)
 

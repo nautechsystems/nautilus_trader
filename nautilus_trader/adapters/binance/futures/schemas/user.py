@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
@@ -53,7 +54,7 @@ class BinanceFuturesUserMsgWrapper(msgspec.Struct):
 class MarginCallPosition(msgspec.Struct):
     """Inner struct position for `Binance Futures` Margin Call events."""
 
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     ps: BinanceFuturesPositionSide  # Position Side
     pa: str  # Position  Amount
     mt: str  # Margin Type
@@ -84,7 +85,7 @@ class BinanceFuturesBalance(msgspec.Struct):
 class BinanceFuturesPosition(msgspec.Struct):
     """Inner struct position for `Binance Futures` Balance and Position update event."""
 
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     pa: str  # Position amount
     ep: str  # Entry price
     cr: str  # (Pre-free) Accumulated Realized
@@ -127,7 +128,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
      - starts with "adl_autoclose": ADL auto close order/
     """
 
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     c: str  # Client Order ID
     S: BinanceOrderSide
     o: BinanceOrderType

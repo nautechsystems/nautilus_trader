@@ -25,6 +25,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterv
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 
 
 ################################################################################
@@ -116,7 +117,7 @@ class BinanceOrder(msgspec.Struct):
         `GET /dapi/v1/order`
     """
 
-    symbol: str
+    symbol: BinanceSymbol
     orderId: int
     clientOrderId: str
     price: str
@@ -168,7 +169,7 @@ class BinanceUserTrade(msgspec.Struct):
         `GET /dapi/v1/userTrades`
     """
 
-    symbol: str
+    symbol: BinanceSymbol
     id: int
     orderId: int
     commission: str
@@ -212,7 +213,7 @@ class BinanceOrderBookData(msgspec.Struct, kw_only=True):
 
     e: str  # Event type
     E: int  # Event time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     U: int  # First update ID in event
     u: int  # Final update ID in event
     b: list[tuple[str, str]]  # Bids to be updated
@@ -234,7 +235,7 @@ class BinanceOrderBookMsg(msgspec.Struct):
 class BinanceQuoteData(msgspec.Struct):
     """WebSocket message from `Binance` Individual Symbol Book Ticker Streams."""
 
-    s: str  # symbol
+    s: BinanceSymbol  # symbol
     u: int  # order book updateId
     b: str  # best bid price
     B: str  # best bid qty
@@ -254,7 +255,7 @@ class BinanceAggregatedTradeData(msgspec.Struct):
 
     e: str  # Event type
     E: int  # Event time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     a: int  # Aggregate trade ID
     p: str  # Price
     q: str  # Quantity
@@ -304,7 +305,7 @@ class BinanceTickerData(msgspec.Struct, kw_only=True):
 
     e: str  # Event type
     E: int  # Event time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     p: str  # Price change
     P: str  # Price change percent
     w: str  # Weighted average price
@@ -361,7 +362,7 @@ class BinanceCandlestick(msgspec.Struct):
 
     t: int  # Kline start time
     T: int  # Kline close time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     i: str  # Interval
     f: int  # First trade ID
     L: int  # Last trade ID
@@ -383,7 +384,7 @@ class BinanceCandlestickData(msgspec.Struct):
 
     e: str
     E: int
-    s: str
+    s: BinanceSymbol
     k: BinanceCandlestick
 
 

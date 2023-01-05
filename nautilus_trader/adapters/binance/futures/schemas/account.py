@@ -17,6 +17,7 @@ from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 
 
@@ -90,7 +91,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     markPrice: str
     maxNotionalValue: Optional[str] = None
     positionAmt: str
-    symbol: str
+    symbol: BinanceSymbol
     unRealizedProfit: str
     positionSide: BinanceFuturesPositionSide
     updateTime: int

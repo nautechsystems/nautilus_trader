@@ -18,8 +18,8 @@ from typing import Any, Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
-from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
@@ -88,9 +88,9 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
 
         payload: dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
+            payload["symbol"] = BinanceSymbol(symbol)
         if symbols is not None:
-            payload["symbols"] = convert_symbols_list_to_json_array(symbols)
+            payload["symbols"] = BinanceSymbols(symbols)
 
         raw: bytes = await self.client.query(
             url_path=self.base_endpoint + "exchangeInfo",
@@ -119,7 +119,7 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         https://binance-docs.github.io/apidocs/spot/en/#current-average-price
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
 
         raw: bytes = await self.client.query(
             url_path=self.base_endpoint + "avgPrice",

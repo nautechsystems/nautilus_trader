@@ -17,9 +17,9 @@ from typing import Any, Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceUserTrade
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
@@ -110,7 +110,7 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: dict[str, str] = {
-            "symbol": format_symbol(symbol),
+            "symbol": BinanceSymbol(symbol),
             "side": side,
             "type": type,
         }
@@ -203,7 +203,7 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: dict[str, str] = {
-            "symbol": format_symbol(symbol),
+            "symbol": BinanceSymbol(symbol),
             "side": side,
             "type": type,
         }
@@ -270,7 +270,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-order-trade
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_id is not None:
             payload["orderId"] = str(order_id)
         if orig_client_order_id is not None:
@@ -315,7 +315,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -360,7 +360,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-order-user_data
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if orig_client_order_id is not None:
@@ -405,7 +405,7 @@ class BinanceSpotAccountHttpAPI:
         """
         payload: dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
+            payload["symbol"] = BinanceSymbol(symbol)
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -456,7 +456,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if start_time is not None:
@@ -541,7 +541,7 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: dict[str, str] = {
-            "symbol": format_symbol(symbol),
+            "symbol": BinanceSymbol(symbol),
             "side": side,
             "quantity": quantity,
             "price": price,
@@ -612,7 +612,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-oco-trade
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if order_list_id is not None:
             payload["orderListId"] = order_list_id
         if list_client_order_id is not None:
@@ -844,7 +844,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
 
         """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
         if from_id is not None:
             payload["fromId"] = from_id
         if order_id is not None:

@@ -22,7 +22,6 @@ import pandas as pd
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
-from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_depth_stream_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tick_ws
@@ -32,6 +31,7 @@ from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceDataM
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceTickerMsg
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -535,9 +535,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: BinanceSymbol) -> InstrumentId:
         # Parse instrument ID
-        nautilus_symbol: str = parse_symbol(symbol, account_type=self._binance_account_type)
+        nautilus_symbol: str = symbol.parse_binance_to_internal(self._binance_account_type)
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)

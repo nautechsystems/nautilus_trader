@@ -13,12 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
-
-import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 
@@ -49,103 +45,3 @@ class BinanceSpotUserDataHttpAPI(BinanceUserDataHttpAPI):
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover (design-time error)  # noqa
             )
-
-    async def create_listen_key_isolated_margin(self, symbol: str) -> dict[str, Any]:
-        """
-        Create a new listen key for the ISOLATED MARGIN API.
-
-        Start a new user data stream. The stream will close after 60 minutes
-        unless a keepalive is sent. If the account has an active listenKey,
-        that listenKey will be returned and its validity will be extended for 60
-        minutes.
-
-        Create a ListenKey (USER_STREAM).
-        `POST /api/v3/userDataStream `.
-
-        Parameters
-        ----------
-        symbol : str
-            The symbol for the listen key request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#listen-key-isolated-margin
-
-        """
-        raw: bytes = await self.client.send_request(
-            http_method="POST",
-            url_path=self.listen_key_endpoint + "/isolated",
-            payload={"symbol": format_symbol(symbol)},
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> dict[str, Any]:
-        """
-        Ping/Keep-alive a listen key for the ISOLATED MARGIN API.
-
-        Keep-alive a user data stream to prevent a time-out. User data streams
-        will close after 60 minutes. It's recommended to send a ping about every
-        30 minutes.
-
-        Ping/Keep-alive a ListenKey (USER_STREAM).
-        `PUT /api/v3/userDataStream`.
-
-        Parameters
-        ----------
-        symbol : str
-            The symbol for the listen key request.
-        key : str
-            The listen key for the request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#listen-key-isolated-margin
-
-        """
-        raw: bytes = await self.client.send_request(
-            http_method="PUT",
-            url_path=self.listen_key_endpoint + "/isolated",
-            payload={"listenKey": key, "symbol": format_symbol(symbol)},
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> dict[str, Any]:
-        """
-        Close a listen key for the ISOLATED MARGIN API.
-
-        Close a ListenKey (USER_STREAM).
-        `DELETE /sapi/v1/userDataStream`.
-
-        Parameters
-        ----------
-        symbol : str
-            The symbol for the listen key request.
-        key : str
-            The listen key for the request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#listen-key-isolated-margin
-
-        """
-        raw: bytes = await self.client.send_request(
-            http_method="DELETE",
-            url_path=self.listen_key_endpoint + "/isolated",
-            payload={"listenKey": key, "symbol": format_symbol(symbol)},
-        )
-
-        return msgspec.json.decode(raw)

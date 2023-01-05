@@ -21,7 +21,6 @@ import msgspec
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
-from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
@@ -74,7 +73,7 @@ def parse_perpetual_instrument_http(
     )
 
     native_symbol = Symbol(symbol_info.symbol)
-    symbol = parse_symbol(symbol_info.symbol, BinanceAccountType.FUTURES_USDT)
+    symbol = symbol_info.symbol.parse_binance_to_internal(BinanceAccountType.FUTURES_USDT)
     instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
@@ -165,7 +164,7 @@ def parse_futures_instrument_http(
     )
 
     native_symbol = Symbol(symbol_info.symbol)
-    symbol = parse_symbol(symbol_info.symbol, BinanceAccountType.FUTURES_USDT)
+    symbol = symbol_info.symbol.parse_binance_to_internal(BinanceAccountType.FUTURES_USDT)
     instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters

@@ -29,6 +29,8 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceTicker
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerPrices
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTime
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTrades
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
@@ -149,7 +151,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
                 Valid limits:[5, 10, 20, 50, 100, 500, 1000].
         """
 
-        symbol: str
+        symbol: BinanceSymbol
         limit: Optional[int] = None
 
     def __init__(
@@ -237,7 +239,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
             The limit for the response. Default 500; max 1000.
         """
 
-        symbol: str
+        symbol: BinanceSymbol
         limit: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> BinanceTrades:
@@ -305,7 +307,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
             Trade id to fetch from. Default gets most recent trades
         """
 
-        symbol: str
+        symbol: BinanceSymbol
         limit: Optional[int] = None
         fromId: Optional[str] = None
 
@@ -379,7 +381,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
             Timestamp in ms to get aggregate trades until INCLUSIVE
         """
 
-        symbol: str
+        symbol: BinanceSymbol
         limit: Optional[int] = None
         fromId: Optional[str] = None
         startTime: Optional[str] = None
@@ -442,7 +444,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
             Timestamp in ms to get klines until INCLUSIVE
         """
 
-        symbol: str
+        symbol: BinanceSymbol
         interval: BinanceKlineInterval
         limit: Optional[int] = None
         startTime: Optional[str] = None
@@ -520,8 +522,8 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
             Select between FULL and MINI 24hr ticker responses to save bandwidth.
         """
 
-        symbol: Optional[str] = None
-        symbols: Optional[str] = None  # SPOT/MARGIN only
+        symbol: Optional[BinanceSymbol] = None
+        symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
         type: Optional[str] = None  # SPOT/MARIN only
 
     async def _get(self, parameters: GetParameters) -> BinanceTicker24hrs:
@@ -575,8 +577,8 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
             List of trading pairs. When given, endpoint will return a list of BinanceTickerPrice
         """
 
-        symbol: Optional[str] = None
-        symbols: Optional[str] = None  # SPOT/MARGIN only
+        symbol: Optional[BinanceSymbol] = None
+        symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
 
     async def _get(self, parameters: GetParameters) -> BinanceTickerPrices:
         method_type = BinanceMethodType.GET
@@ -629,8 +631,8 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
             List of trading pairs. When given, endpoint will return a list of BinanceTickerBook
         """
 
-        symbol: Optional[str] = None
-        symbols: Optional[str] = None  # SPOT/MARGIN only
+        symbol: Optional[BinanceSymbol] = None
+        symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
 
     async def _get(self, parameters: GetParameters) -> BinanceTickerBooks:
         method_type = BinanceMethodType.GET

@@ -20,6 +20,7 @@ import msgspec
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKey
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
@@ -86,7 +87,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
             The trading pair. Only required for ISOLATED MARGIN accounts!
         """
 
-        symbol: Optional[str] = None  # MARGIN_ISOLATED only, mandatory
+        symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
 
     class PutDeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -100,7 +101,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
             The listenkey to manage. Only required for SPOT/MARGIN accounts!
         """
 
-        symbol: Optional[str] = None  # MARGIN_ISOLATED only, mandatory
+        symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
         listenKey: Optional[BinanceListenKey] = None  # SPOT/MARGIN only, mandatory
 
     async def _post(self, parameters: Optional[PostParameters] = None) -> BinanceListenKey:
@@ -118,7 +119,10 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self.delete_resp_decoder.decode(raw)
 
-    async def create_listen_key(self, parameters: Optional[PostParameters]) -> BinanceListenKey:
+    async def create_listen_key(
+        self,
+        parameters: Optional[PostParameters] = None,
+    ) -> BinanceListenKey:
         key = await self._post(parameters)
         return key
 
