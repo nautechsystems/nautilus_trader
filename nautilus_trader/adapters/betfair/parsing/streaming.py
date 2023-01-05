@@ -180,14 +180,15 @@ def market_definition_to_instrument_status_updates(
             runner_handicap=parse_handicap(runner.handicap),
         )
         key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
-        if runner.status == RunnerStatus.ACTIVE:
-            status = MARKET_STATUS_MAPPING[key]
-        elif runner.status == RunnerStatus.REMOVED:
+        if runner.status == RunnerStatus.REMOVED:
             status = MarketStatus.CLOSED
         else:
-            raise ValueError(
-                f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
-            )
+            try:
+                status = MARKET_STATUS_MAPPING[key]
+            except KeyError:
+                raise ValueError(
+                    f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
+                )
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
             status=status,
