@@ -687,8 +687,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
-                    selection_id=str(selection.id),
-                    selection_handicap=selection.hc,
+                    runner_id=str(selection.id),
+                    runner_handicap=selection.hc,
                 )
                 orders = self._cache.orders()
                 venue_orders = {o.venue_order_id: o for o in orders}
