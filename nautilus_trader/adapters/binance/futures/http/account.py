@@ -42,7 +42,7 @@ class BinanceFuturesAccountHttpAPI:
     def __init__(
         self,
         client: BinanceHttpClient,
-        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
     ):
         self.client = client
 

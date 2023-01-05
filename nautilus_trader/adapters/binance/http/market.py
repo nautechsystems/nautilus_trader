@@ -662,9 +662,7 @@ class BinanceMarketHttpAPI:
         PyCondition.not_none(client, "client")
         self.client = client
 
-        if account_type == BinanceAccountType.SPOT:
-            self.base_endpoint = "/api/v3/"
-        elif account_type == BinanceAccountType.MARGIN:
+        if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
         elif account_type == BinanceAccountType.FUTURES_USDT:
             self.base_endpoint = "/fapi/v1/"

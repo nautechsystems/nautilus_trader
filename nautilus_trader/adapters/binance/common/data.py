@@ -251,10 +251,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return
 
         valid_speeds = [100, 1000]
-        if self._binance_account_type in (
-            BinanceAccountType.FUTURES_USDT,
-            BinanceAccountType.FUTURES_COIN,
-        ):
+        if self._binance_account_type.is_futures:
             valid_speeds = [0, 100, 250, 500]  # 0ms option for futures exists but not documented?
         if update_speed not in valid_speeds:
             self._log.error(
@@ -334,7 +331,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             BarAggregation.HOUR,
             BarAggregation.DAY,
         ]
-        if self._binance_account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if self._binance_account_type.is_spot_or_margin:
             bars_avail.append(BarAggregation.SECOND)
         if bar_type.spec.aggregation not in bars_avail:
             self._log.error(
@@ -481,7 +478,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             BarAggregation.HOUR: "h",
             BarAggregation.DAY: "d",
         }
-        if self._binance_account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if self._binance_account_type.is_spot_or_margin:
             bar_agg_to_res[BarAggregation.SECOND] = "s"
         try:
             resolution = bar_agg_to_res[bar_type.spec.aggreagtion]

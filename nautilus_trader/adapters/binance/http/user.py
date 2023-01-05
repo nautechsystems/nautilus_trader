@@ -51,7 +51,7 @@ class BinanceUserDataHttpAPI:
         if account_type == BinanceAccountType.SPOT:
             self.base_endpoint = "/api/v3/"
             self.listen_key_endpoint = self.base_endpoint + "userDataStream"
-        elif account_type == BinanceAccountType.MARGIN:
+        elif account_type == BinanceAccountType.MARGIN_CROSS:
             self.base_endpoint = "/sapi/v1/"
             self.listen_key_endpoint = self.base_endpoint + "userDataStream"
         elif account_type == BinanceAccountType.FUTURES_USDT:

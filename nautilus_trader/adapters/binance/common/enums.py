@@ -99,7 +99,8 @@ class BinanceAccountType(Enum):
     """Represents a `Binance` account type."""
 
     SPOT = "SPOT"
-    MARGIN = "MARGIN"
+    MARGIN_CROSS = "MARGIN_CROSS"
+    MARGIN_ISOLATED = "MARGIN_ISOLATED"
     FUTURES_USDT = "FUTURES_USDT"
     FUTURES_COIN = "FUTURES_COIN"
 
@@ -109,11 +110,25 @@ class BinanceAccountType(Enum):
 
     @property
     def is_margin(self):
-        return self == BinanceAccountType.MARGIN
+        return self in (
+            BinanceAccountType.MARGIN_CROSS,
+            BinanceAccountType.MARGIN_ISOLATED,
+        )
+
+    @property
+    def is_spot_or_margin(self):
+        return self in (
+            BinanceAccountType.SPOT,
+            BinanceAccountType.MARGIN_CROSS,
+            BinanceAccountType.MARGIN_ISOLATED,
+        )
 
     @property
     def is_futures(self) -> bool:
-        return self in (BinanceAccountType.FUTURES_USDT, BinanceAccountType.FUTURES_COIN)
+        return self in (
+            BinanceAccountType.FUTURES_USDT,
+            BinanceAccountType.FUTURES_COIN,
+        )
 
 
 @unique

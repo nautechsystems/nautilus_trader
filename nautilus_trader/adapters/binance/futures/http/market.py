@@ -48,7 +48,7 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
             account_type=account_type,
         )
 
-        if account_type not in (BinanceAccountType.FUTURES_USDT, BinanceAccountType.FUTURES_COIN):
+        if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
             )
