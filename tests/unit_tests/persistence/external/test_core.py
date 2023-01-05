@@ -160,7 +160,7 @@ class _TestPersistenceCore:
 
         # Assert
         assert result == {
-            "BetfairTicker": 82,
+            "BetfairTicker": 83,
             "BettingInstrument": 2,
             "InstrumentStatusUpdate": 1,
             "OrderBookData": 1077,
@@ -318,7 +318,6 @@ class _TestPersistenceCore:
         ]
         assert new_partitions == expected
 
-    @pytest.mark.skip(reason="WIP")
     def test_validate_data_catalog(self):
         # Arrange
         self._load_data_into_catalog()
