@@ -130,6 +130,16 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if self._client.isConnected():
             self._client.disconnect()
 
+    def create_task(self, coro):
+        self._loop.create_task(self._check_task(coro))
+
+    async def _check_task(self, coro):
+        try:
+            awaitable = await coro
+            return awaitable
+        except Exception as e:
+            self._log.exception("Unhandled exception", e)
+
     def subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
@@ -208,18 +218,35 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
             bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
         else:
-            bar_data_list: BarDataList = self._client.reqHistoricalData(
-                contract=contract_details.contract,
-                endDateTime="",
-                durationStr=self._bar_spec_to_duration_str(bar_type.spec),
-                barSizeSetting=bar_size_setting,
-                whatToShow=what_to_show[price_type],
-                useRTH=True if contract_details.contract.secType == "STK" else False,
-                formatDate=2,
-                keepUpToDate=True,
+            self.create_task(
+                self._handle_historical_data_request(
+                    contract_details,
+                    bar_type,
+                    bar_size_setting,
+                    what_to_show,
+                ),
             )
 
-            bar_data_list.updateEvent += partial(self._on_historical_bar_update, bar_type=bar_type)
+    async def _handle_historical_data_request(
+        self,
+        contract_details,
+        bar_type,
+        bar_size_setting,
+        what_to_show,
+    ):
+        bar_data_list: BarDataList = await self._client.reqHistoricalDataAsync(
+            contract=contract_details.contract,
+            endDateTime="",
+            durationStr=self._bar_spec_to_duration_str(bar_type.spec),
+            barSizeSetting=bar_size_setting,
+            whatToShow=what_to_show[bar_type.spec.price_type],
+            useRTH=True if contract_details.contract.secType == "STK" else False,
+            formatDate=2,
+            keepUpToDate=True,
+        )
+
+        self._on_historical_bar_update(bars=bar_data_list, has_new_bar=True, bar_type=bar_type)
+        bar_data_list.updateEvent += partial(self._on_historical_bar_update, bar_type=bar_type)
 
     def _bar_spec_to_bar_size(self, bar_spec: BarSpecification):
         aggregation = bar_spec.aggregation
