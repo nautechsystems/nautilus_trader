@@ -114,25 +114,21 @@ void cstr_free(const char *ptr);
 
 /**
  * Returns the current seconds since the UNIX epoch.
- * This timestamp is guaranteed to be monotonic within a runtime.
  */
 double unix_timestamp(void);
 
 /**
  * Returns the current milliseconds since the UNIX epoch.
- * This timestamp is guaranteed to be monotonic within a runtime.
  */
 uint64_t unix_timestamp_ms(void);
 
 /**
  * Returns the current microseconds since the UNIX epoch.
- * This timestamp is guaranteed to be monotonic within a runtime.
  */
 uint64_t unix_timestamp_us(void);
 
 /**
  * Returns the current nanoseconds since the UNIX epoch.
- * This timestamp is guaranteed to be monotonic within a runtime.
  */
 uint64_t unix_timestamp_ns(void);
 
