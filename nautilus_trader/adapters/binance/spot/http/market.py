@@ -13,16 +13,132 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Optional
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
+from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotAvgPrice
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
+
+
+class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of SPOT/MARGIN exchange trading rules and symbol information
+
+    `GET /api/v3/exchangeInfo`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#exchange-information
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "exchangeInfo"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceSpotExchangeInfo)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET exchangeInfo parameters
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+            Optional, specify trading pair to get exchange info for
+        symbols : BinanceSymbols
+            Optional, specify list of trading pairs to get exchange info for
+        permissions : BinanceSpotPermissions
+            Optional, filter symbols list by supported permissions
+
+        """
+
+        symbol: Optional[BinanceSymbol] = None
+        symbols: Optional[BinanceSymbols] = None
+        permissions: Optional[BinanceSpotPermissions] = None
+
+    async def _get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotExchangeInfo:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_exchange_info(
+        self,
+        parameters: Optional[GetParameters] = None,
+    ) -> BinanceSpotExchangeInfo:
+        if parameters.symbol and parameters.symbols:
+            raise ValueError("`symbol` and `symbols` cannot be sent together")
+        return await self._get(parameters)
+
+
+class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of current average price of a symbol
+
+    `GET /api/v3/avgPrice`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#current-average-price
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "avgPrice"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceSpotAvgPrice)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET avgPrice parameters
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+            Specify trading pair to get average price for
+
+        """
+
+        symbol: BinanceSymbol = None
+
+    async def _get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_average_price(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
+        return await self._get(parameters)
 
 
 class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
@@ -53,77 +169,5 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
             )
 
-        self._decoder_exchange_info = msgspec.json.Decoder(BinanceSpotExchangeInfo)
-
-    async def exchange_info(
-        self,
-        symbol: Optional[str] = None,
-        symbols: Optional[list[str]] = None,
-    ) -> BinanceSpotExchangeInfo:
-        """
-        Get current exchange trading rules and symbol information.
-        Only either `symbol` or `symbols` should be passed.
-
-        Exchange Information.
-        `GET /api/v3/exchangeinfo`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-        symbols : list[str], optional
-            The list of trading pairs.
-
-        Returns
-        -------
-        BinanceSpotExchangeInfo
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#exchange-information
-
-        """
-        if symbol and symbols:
-            raise ValueError("`symbol` and `symbols` cannot be sent together")
-
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = BinanceSymbol(symbol)
-        if symbols is not None:
-            payload["symbols"] = BinanceSymbols(symbols)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "exchangeInfo",
-            payload=payload,
-        )
-
-        return self._decoder_exchange_info.decode(raw)
-
-    async def avg_price(self, symbol: str) -> dict[str, Any]:
-        """
-        Get the current average price for the given symbol.
-
-        `GET /api/v3/avgPrice`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#current-average-price
-
-        """
-        payload: dict[str, str] = {"symbol": BinanceSymbol(symbol)}
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "avgPrice",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
+        self.endpoint_exchange_info = BinanceSpotExchangeInfoHttp(client, self.base_endpoint)
+        self.endpoint_average_price = BinanceSpotAvgPriceHttp(client, self.base_endpoint)

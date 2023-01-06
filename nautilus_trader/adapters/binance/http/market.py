@@ -134,6 +134,22 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
 
     """
 
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "depth"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceDepth)
+
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
         Orderbook depth GET endpoint parameters
@@ -153,22 +169,6 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         limit: Optional[int] = None
-
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        base_endpoint: str,
-    ):
-        methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
-        }
-        url_path = base_endpoint + "depth"
-        super().__init__(
-            client,
-            methods,
-            url_path,
-        )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceDepth)
 
     async def _get(self, parameters: GetParameters) -> BinanceDepth:
         method_type = BinanceMethodType.GET

@@ -13,16 +13,54 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
+from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
+from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
+
+
+class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of FUTURES exchange trading rules and symbol information
+
+    `GET /fapi/v1/exchangeInfo`
+    `GET /dapi/v1/exchangeInfo`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/futures/en/#exchange-information
+    https://binance-docs.github.io/apidocs/delivery/en/#exchange-information
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "exchangeInfo"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
+
+    async def _get(self) -> BinanceFuturesExchangeInfo:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, None)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_exchange_info(self) -> BinanceFuturesExchangeInfo:
+        return await self._get()
 
 
 class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
@@ -53,51 +91,4 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
                 f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
             )
 
-        self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
-
-    async def exchange_info(
-        self,
-        symbol: Optional[str] = None,
-        symbols: Optional[list[str]] = None,
-    ) -> BinanceFuturesExchangeInfo:
-        """
-        Get current exchange trading rules and symbol information.
-        Only either `symbol` or `symbols` should be passed.
-
-        USD-M Futures Exchange Information.
-            `GET /fapi/v1/exchangeinfo`
-        COIN-M Futures Exchange Information.
-            `GET /dapi/v1/exchangeinfo`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-        symbols : list[str], optional
-            The list of trading pairs.
-
-        Returns
-        -------
-        BinanceFuturesExchangeInfo
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/futures/en/#exchange-information
-        https://binance-docs.github.io/apidocs/delivery/en/#exchange-information
-
-        """
-        if symbol and symbols:
-            raise ValueError("`symbol` and `symbols` cannot be sent together")
-
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = BinanceSymbol(symbol)
-        if symbols is not None:
-            payload["symbols"] = BinanceSymbols(symbols)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "exchangeInfo",
-            payload=payload,
-        )
-
-        return self._decoder_exchange_info.decode(raw)
+        self.endpoint_exchange_info = BinanceFuturesExchangeInfoHttp(client, self.base_endpoint)

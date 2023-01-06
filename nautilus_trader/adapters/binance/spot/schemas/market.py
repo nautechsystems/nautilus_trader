@@ -20,6 +20,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceExchangeFilter
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceRateLimit
 from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
 
@@ -28,10 +29,10 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 ################################################################################
 
 
-class BinanceSpotSymbolInfo(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
+class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
+    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
 
-    symbol: str
+    symbol: BinanceSymbol
     status: str
     baseAsset: str
     baseAssetPrecision: int
@@ -49,14 +50,21 @@ class BinanceSpotSymbolInfo(msgspec.Struct):
     permissions: list[BinanceSpotPermissions]
 
 
-class BinanceSpotExchangeInfo(msgspec.Struct):
-    """HTTP response from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
+class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
+    """HTTP response from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
 
     timezone: str
     serverTime: int
     rateLimits: list[BinanceRateLimit]
     exchangeFilters: list[BinanceExchangeFilter]
     symbols: list[BinanceSpotSymbolInfo]
+
+
+class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
+    """HTTP response from `Binance Spot/Margin` GET /api/v3/avgPrice."""
+
+    mins: int
+    price: str
 
 
 ################################################################################
