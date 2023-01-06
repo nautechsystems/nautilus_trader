@@ -21,9 +21,15 @@ import msgspec
 ################################################################################
 
 
-class BinanceSpotTradeFees(msgspec.Struct):
-    """HTTP response from `Binance Spot/Margin` GET /sapi/v1/asset/tradeFee (HMAC SHA256)."""
+class BinanceSpotTradeFee(msgspec.Struct, frozen=True):
+    """Schema of a single `Binance Spot/Margin` tradeFee"""
 
     symbol: str
     makerCommission: str
     takerCommission: str
+
+
+class BinanceSpotTradeFees(msgspec.Struct, frozen=True):
+    """HTTP response from `Binance Spot/Margin` GET /sapi/v1/asset/tradeFee (HMAC SHA256)."""
+
+    fees: list[BinanceSpotTradeFee]
