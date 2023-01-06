@@ -26,7 +26,7 @@ from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 
 
-class BinanceTradeFeeHttp(BinanceHttpEndpoint):
+class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     """
     Endpoint of maker/taker trade fee information
 
@@ -62,7 +62,7 @@ class BinanceTradeFeeHttp(BinanceHttpEndpoint):
         symbol : BinanceSymbol
             Optional symbol to receive individual trade fee
         recvWindow : str
-            Optional number of milliseconds after timestamp the request is valid for
+            Optional number of milliseconds after timestamp the request is valid
         timestamp : str
             Millisecond timestamp of the request
 
@@ -72,7 +72,7 @@ class BinanceTradeFeeHttp(BinanceHttpEndpoint):
         symbol: Optional[BinanceSymbol] = None
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotTradeFees:
+    async def _get(self, parameters: GetParameters) -> BinanceSpotTradeFees:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self.get_resp_decoder.decode(raw)
@@ -105,4 +105,4 @@ class BinanceSpotWalletHttpAPI:
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
             )
 
-        self.endpoint_trade_fee = BinanceTradeFeeHttp(client, self.base_endpoint)
+        self.endpoint_trade_fee = BinanceSpotTradeFeeHttp(client, self.base_endpoint)

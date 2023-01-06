@@ -23,15 +23,9 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 ################################################################################
 
 
-class BinanceSpotTradeFee(msgspec.Struct, frozen=True):
-    """Schema of a single `Binance Spot/Margin` tradeFee"""
+class BinanceFuturesCommissionRate(msgspec.Struct, frozen=True):
+    """Schema of a single `Binance Futures` commissionRate"""
 
     symbol: BinanceSymbol
-    makerCommission: str
-    takerCommission: str
-
-
-class BinanceSpotTradeFees(msgspec.Struct, frozen=True):
-    """HTTP response from `Binance Spot/Margin` GET /sapi/v1/asset/tradeFee (HMAC SHA256)."""
-
-    fees: list[BinanceSpotTradeFee]
+    makerCommissionRate: str
+    takerCommissionRate: str
