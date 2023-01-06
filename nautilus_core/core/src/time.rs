@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use lazy_static::lazy_static;
 
 /// Represents a timestamp in nanoseconds since UNIX epoch.
 pub type Timestamp = u64;
@@ -24,47 +21,43 @@ pub type Timestamp = u64;
 /// Represents a timedelta in nanoseconds.
 pub type Timedelta = i64;
 
-// A static reference to duration since UNIX epoch
-lazy_static! {
-    pub static ref INIT_SINCE_EPOCH: Duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| panic!("invalid system time"));
-}
-
-// A static reference to an instant of system time
-lazy_static! {
-    pub static ref INSTANT: Instant = Instant::now();
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 /// Returns the current seconds since the UNIX epoch.
-/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
-    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_secs() as f64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Error calling `SystemTime::now.duration_since`")
+        .as_secs_f64()
 }
 
 /// Returns the current milliseconds since the UNIX epoch.
-/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ms() -> u64 {
-    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_millis() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Error calling `SystemTime::now.duration_since`")
+        .as_millis() as u64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
-/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_us() -> u64 {
-    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_micros() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Error calling `SystemTime::now.duration_since`")
+        .as_micros() as u64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
-/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ns() -> u64 {
-    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_nanos() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Error calling `SystemTime::now.duration_since`")
+        .as_nanos() as u64
 }
 
 ////////////////////////////////////////////////////////////////////////////////
