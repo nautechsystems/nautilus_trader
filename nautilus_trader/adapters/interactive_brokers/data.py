@@ -19,7 +19,6 @@ from functools import partial
 from typing import Callable, Optional
 
 import ib_insync
-import nest_asyncio
 import pandas as pd
 from ib_insync import BarData
 from ib_insync import BarDataList
@@ -59,7 +58,12 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-nest_asyncio.apply()
+try:
+    import nest_asyncio
+
+    nest_asyncio.apply()
+except ValueError:  # pragma: no cover
+    pass
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
