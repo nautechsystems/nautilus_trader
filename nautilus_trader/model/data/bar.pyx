@@ -302,6 +302,52 @@ cdef class BarSpecification:
         return BarSpecification.from_str_c(value)
 
     @staticmethod
+    def from_timedelta(timedelta duration, PriceType price_type) -> BarSpecification:
+        """
+        Return a bar specification parsed from the given timedelta and price_type.
+
+        Parameters
+        ----------
+        duration : timedelta
+            The bar specification timedelta to parse.
+        price_type : PriceType
+            The bar specification price_type.
+
+        Examples
+        --------
+        BarSpecification.from_timedelta(datetime.timedelta(minutes=5), PriceType.LAST).
+
+        Returns
+        -------
+        BarSpecification
+
+        Raises
+        ------
+        ValueError
+            If `duration` is not rounded step of aggregation.
+
+        """
+        if duration.days >= 7:
+            bar_spec = BarSpecification(duration.days / 7, BarAggregation.WEEK, price_type)
+        elif duration.days >= 1:
+            bar_spec = BarSpecification(duration.days, BarAggregation.DAY, price_type)
+        elif duration.total_seconds() >= 3600:
+            bar_spec = BarSpecification(duration.total_seconds() / 3600, BarAggregation.HOUR, price_type)
+        elif duration.total_seconds() >= 60:
+            bar_spec = BarSpecification(duration.total_seconds() / 60, BarAggregation.MINUTE, price_type)
+        elif duration.total_seconds() >= 1:
+            bar_spec = BarSpecification(duration.total_seconds(), BarAggregation.SECOND, price_type)
+        else:
+            bar_spec = BarSpecification(duration.total_seconds() * 1000, BarAggregation.MILLISECOND, price_type)
+
+        if bar_spec.timedelta.total_seconds() == duration.total_seconds():
+            return bar_spec
+        else:
+            raise ValueError(
+                f"Duration {repr(duration)} is ambiguous.",
+            )
+
+    @staticmethod
     def check_time_aggregated(BarAggregation aggregation):
         """
         Check the given aggregation is a type of time aggregation.
