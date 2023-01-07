@@ -58,14 +58,6 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-try:
-    import nest_asyncio
-
-    nest_asyncio.apply()
-except ValueError:  # pragma: no cover
-    pass
-
-
 class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
     Provides a data client for the InteractiveBrokers exchange.
@@ -386,11 +378,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def _on_bar_update(
         self,
         bars: list[RealTimeBar],
-        hasNewBar: bool,
+        has_new_bar: bool,
         bar_type: BarType,
     ):
 
-        if not hasNewBar:
+        if not has_new_bar:
             return
 
         for bar in bars:
@@ -415,10 +407,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def _on_historical_bar_update(
         self,
         bars: list[BarDataList],
-        hasNewBar: bool,
+        has_new_bar: bool,
         bar_type: BarType,
     ):
-        if not hasNewBar:
+        if not has_new_bar:
             return
 
         if self._bar_type_to_last_bar_time[bar_type] == self._bar_type_to_last_bar_time[""]:
