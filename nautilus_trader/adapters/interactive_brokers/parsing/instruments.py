@@ -163,8 +163,8 @@ def parse_forex_contract(
     return CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
-        base_currency=Currency.from_str(details.contract.currency),
-        quote_currency=Currency.from_str(details.contract.symbol),
+        base_currency=Currency.from_str(details.contract.symbol),
+        quote_currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         size_precision=Quantity.from_int(1),
         price_increment=Price(details.minTick, price_precision),
