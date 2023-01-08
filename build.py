@@ -37,26 +37,35 @@ if platform.system() == "Windows":
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
-    RUST_LIB_PFX = ""
-    RUST_LIB_EXT = "lib"
-    TARGET_DIR = "x86_64-pc-windows-msvc/"
+    TARGET_DIR = os.path.join(
+        os.getcwd(),
+        "nautilus_core",
+        "x86_64-pc-windows-msvc",
+        "target",
+        BUILD_MODE,
+    )
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{TARGET_DIR}"
+    RUST_LIB_EXT = "dll"
 else:
-    RUST_LIB_PFX = "lib"
-    RUST_LIB_EXT = "a"
-    TARGET_DIR = ""
+    TARGET_DIR = os.path.join(
+        os.getcwd(),
+        "nautilus_core",
+        "target",
+        BUILD_MODE,
+    )
+    RUST_LIB_EXT = "so"
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
 
 RUST_LIBS = [
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
+    "nautilus_common",
+    "nautilus_core",
+    "nautilus_model",
+    "nautilus_persistence",
 ]
-# Later we can be more selective about which libs are included where - to optimize binary sizes
+
+RUST_LIBS_DIR = "nautilus_trader/core/rust/libs"
 
 
 def _build_rust_libs() -> None:
@@ -71,6 +80,14 @@ def _build_rust_libs() -> None:
     build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
     print(build_cmd)
     os.system(build_cmd)  # noqa
+
+    for file in os.listdir(TARGET_DIR):
+        src_path = os.path.join(TARGET_DIR, file)
+        if os.path.isfile(src_path) and file.endswith(RUST_LIB_EXT):
+            dst_path = os.path.join(RUST_LIBS_DIR, file)
+            shutil.copy(src_path, dst_path)
+
+    print(f"Copied all Rust compiled dynamic library files to {RUST_LIBS_DIR}")
 
 
 ################################################################################
@@ -113,7 +130,7 @@ def _build_extensions() -> list[Extension]:
         extra_compile_args.append("-O2")
         extra_compile_args.append("-pipe")
 
-    extra_link_args = RUST_LIBS
+    extra_link_args = []
     if platform.system() == "Windows":
         extra_link_args += [
             "WS2_32.Lib",
@@ -130,7 +147,10 @@ def _build_extensions() -> list[Extension]:
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
             sources=[str(pyx)],
+            libraries=RUST_LIBS,
+            library_dirs=[RUST_LIBS_DIR],
             include_dirs=[np.get_include()] + RUST_INCLUDES,
+            runtime_library_dirs=[RUST_LIBS_DIR],
             define_macros=define_macros,
             language="c",
             extra_link_args=extra_link_args,
@@ -187,7 +207,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
 
-    print("Copied all compiled dynamic library files into source")
+    print("Copied all dynamic library files into source")
 
 
 def _get_rustc_version() -> str:
@@ -251,6 +271,7 @@ if __name__ == "__main__":
 
     print("Starting build...")
     print(f"BUILD_MODE={BUILD_MODE}")
+    print(f"LD_LIBRARY_PATH={os.environ['LD_LIBRARY_PATH']}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
