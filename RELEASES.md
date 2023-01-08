@@ -29,6 +29,8 @@ and also to avoid C naming collisions.
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
 - Added `DataEngineConfig.build_time_bars_with_no_updates` option
 - Added `OrderFactory.bracket(post_only_tp)` param
+- Added `OrderListIdGenerator` and integrate with `OrderFactory`.
+- Improve generation of `OrderListId` from factory to ensure uniqueness.
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions

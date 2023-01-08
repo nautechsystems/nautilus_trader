@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
+from nautilus_trader.common.generators cimport OrderListIdGenerator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID4
@@ -58,13 +59,17 @@ cdef class OrderFactory:
         The strategy ID (only numerical tag sent to venue).
     clock : Clock
         The clock for the factory.
-    initial_count : int, optional
-        The initial order count for the factory.
+    initial_order_id_count : int, optional
+        The initial order ID count for the factory.
+    initial_order_list_id_count : int, optional
+        The initial order list ID count for the factory.
 
     Raises
     ------
     ValueError
-        If `initial_count` is negative (< 0).
+        If `initial_order_id_count` is negative (< 0).
+    ValueError
+        If `initial_order_list_id_count` is negative (< 0).
     """
 
     def __init__(
@@ -72,38 +77,29 @@ cdef class OrderFactory:
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         Clock clock not None,
-        int initial_count=0,
+        int initial_order_id_count=0,
+        int initial_order_list_id_count=0,
     ):
-        Condition.not_negative_int(initial_count, "initial_count")
+        Condition.not_negative_int(initial_order_id_count, "initial_order_id_count")
 
         self._clock = clock
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
-        self._order_list_id = 1
-        self._id_generator = ClientOrderIdGenerator(
+        self._order_id_generator = ClientOrderIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
             clock=clock,
-            initial_count=initial_count,
+            initial_count=initial_order_id_count,
+        )
+        self._order_list_id_generator = OrderListIdGenerator(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            clock=clock,
+            initial_count=initial_order_list_id_count,
         )
 
-    cdef int count_c(self):
-        return self._id_generator.count
-
-    @property
-    def count(self):
-        """
-        Return the count of IDs generated.
-
-        Returns
-        -------
-        int
-
-        """
-        return self.count_c()
-
-    cpdef void set_count(self, int count) except *:
+    cpdef void set_order_id_count(self, int count) except *:
         """
         Set the internal order ID generator count to the given count.
 
@@ -117,7 +113,23 @@ cdef class OrderFactory:
         System method (not intended to be called by user code).
 
         """
-        self._id_generator.set_count(count)
+        self._order_id_generator.set_count(count)
+
+    cpdef void set_order_list_id_count(self, int count) except *:
+        """
+        Set the internal order list ID generator count to the given count.
+
+        Parameters
+        ----------
+        count : int
+            The count to set.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        self._order_list_id_generator.set_count(count)
 
     cpdef void reset(self) except *:
         """
@@ -125,7 +137,8 @@ cdef class OrderFactory:
 
         All stateful fields are reset to their initial value.
         """
-        self._id_generator.reset()
+        self._order_id_generator.reset()
+        self._order_list_id_generator.reset()
 
     cpdef MarketOrder market(
         self,
@@ -171,7 +184,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             time_in_force=time_in_force,
@@ -246,7 +259,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -325,7 +338,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             trigger_price=trigger_price,
@@ -414,7 +427,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -485,7 +498,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             reduce_only=reduce_only,
@@ -561,7 +574,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             trigger_price=trigger_price,
@@ -650,7 +663,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -740,7 +753,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             trigger_price=trigger_price,
@@ -844,7 +857,7 @@ cdef class OrderFactory:
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._id_generator.generate(),
+            client_order_id=self._order_id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -934,11 +947,10 @@ cdef class OrderFactory:
         OrderList
 
         """
-        cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
-        self._order_list_id += 1
-        cdef ClientOrderId entry_client_order_id = self._id_generator.generate()
-        cdef ClientOrderId sl_client_order_id = self._id_generator.generate()
-        cdef ClientOrderId tp_client_order_id = self._id_generator.generate()
+        cdef OrderListId order_list_id = self._order_list_id_generator.generate()
+        cdef ClientOrderId entry_client_order_id = self._order_id_generator.generate()
+        cdef ClientOrderId sl_client_order_id = self._order_id_generator.generate()
+        cdef ClientOrderId tp_client_order_id = self._order_id_generator.generate()
 
         ########################################################################
         # ENTRY ORDER

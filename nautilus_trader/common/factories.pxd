@@ -19,6 +19,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
+from nautilus_trader.common.generators cimport OrderListIdGenerator
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport OrderType
@@ -44,17 +45,16 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 
 cdef class OrderFactory:
     cdef Clock _clock
-    cdef ClientOrderIdGenerator _id_generator
-    cdef int _order_list_id
+    cdef ClientOrderIdGenerator _order_id_generator
+    cdef OrderListIdGenerator _order_list_id_generator
 
     cdef readonly TraderId trader_id
     """The order factories trader ID.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
 
-    cdef int count_c(self)
-
-    cpdef void set_count(self, int count) except *
+    cpdef void set_order_id_count(self, int count) except *
+    cpdef void set_order_list_id_count(self, int count) except *
     cpdef void reset(self) except *
 
     cpdef MarketOrder market(
