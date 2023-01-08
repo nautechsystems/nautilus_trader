@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_core"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 chrono.workspace = true
