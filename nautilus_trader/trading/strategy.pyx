@@ -292,7 +292,7 @@ cdef class Strategy(Actor):
         )
 
         cdef int order_id_count = len(client_order_ids)
-        self.order_factory.set_count(order_id_count)
+        self.order_factory.set_order_id_count(order_id_count)
         self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
 
         # Required subscriptions
