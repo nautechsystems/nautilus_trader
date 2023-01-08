@@ -20,8 +20,8 @@ More domain specific concepts are introduced above the `core` base layer. The
 ID cache is implemented, a base `Clock` with `Test` and `Live`
 implementations which can control many `Timer` instances.
 
-Trading domain specific components for generating `Order` and `Identifier` objects.
-Common logging components. A high performance `Queue`. Common `UUID4` factory.
+Trading domain specific components for generating `Order` and `Identifier` objects,
+common logging components, a high performance `Queue` and `UUID4` factory.
 """
 
 from enum import Enum

@@ -80,8 +80,6 @@ cdef class OrderFactory:
         int initial_order_id_count=0,
         int initial_order_list_id_count=0,
     ):
-        Condition.not_negative_int(initial_order_id_count, "initial_order_id_count")
-
         self._clock = clock
         self.trader_id = trader_id
         self.strategy_id = strategy_id

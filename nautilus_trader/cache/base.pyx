@@ -176,6 +176,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef set order_list_ids(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cpdef set position_ids(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -267,6 +271,20 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int orders_total_count(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None, OrderSide side = OrderSide.NO_ORDER_SIDE) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+# -- ORDER_LIST_QUERIES --------------------------------------------------------------------------------
+
+    cpdef OrderList order_list(self, OrderListId order_list_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef list order_lists(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef bint order_list_exists(self, OrderListId order_list_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
