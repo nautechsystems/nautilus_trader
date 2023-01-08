@@ -17,6 +17,7 @@ jobs:
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
+      LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/nautilus_trader/core/rust/libs
       BUILD_MODE: debug
 
     steps:
