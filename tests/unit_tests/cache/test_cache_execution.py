@@ -42,6 +42,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -147,6 +148,13 @@ class TestCache:
     def test_cache_orders_with_no_orders(self):
         # Arrange, Act
         self.cache.cache_orders()
+
+        # Assert
+        assert True  # No exception raised
+
+    def test_cache_order_lists_with_no_orders(self):
+        # Arrange, Act
+        self.cache.cache_order_lists()
 
         # Assert
         assert True  # No exception raised
@@ -276,6 +284,24 @@ class TestCache:
     def test_order_exists_when_no_order_returns_false(self):
         # Arrange, Act, Assert
         assert not self.cache.order_exists(ClientOrderId("O-123456"))
+
+    def test_order_list_exists_when_no_order_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.order_list_exists(OrderListId("OL-123456"))
+
+    def test_order_list_ids_when_no_order_lists_returns_empty_set(self):
+        # Arrange, Act
+        result = self.cache.order_list_ids()
+
+        # Assert
+        assert result == set()
+
+    def test_order_lists_when_no_order_lists_returns_empty_list(self):
+        # Arrange, Act
+        result = self.cache.order_lists()
+
+        # Assert
+        assert result == []
 
     def test_position_when_no_position_returns_none(self):
         # Arrange
@@ -528,6 +554,108 @@ class TestCache:
 
         # Assert
         assert result == command
+
+    def test_add_order_list_command(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order_list(bracket)
+
+        # Act
+        result = self.cache.order_list(bracket.id)
+
+        # Assert
+        assert result == bracket
+
+    def test_cache_order_lists(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket1 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        bracket2 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order(bracket1.orders[0], None)
+        self.cache.add_order(bracket1.orders[1], None)
+        self.cache.add_order(bracket1.orders[2], None)
+        self.cache.add_order(bracket2.orders[0], None)
+        self.cache.add_order(bracket2.orders[1], None)
+        self.cache.add_order(bracket2.orders[2], None)
+        self.cache.add_order_list(bracket1)
+        self.cache.add_order_list(bracket2)
+
+        # Act
+        self.cache.cache_order_lists()  # <-- exercise caching
+
+        # Assert
+        assert self.cache.order_list_ids() == {bracket1.id, bracket2.id}
+
+    def test_order_lists(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket1 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        bracket2 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order_list(bracket1)
+        self.cache.add_order_list(bracket2)
+
+        # Act
+        result = self.cache.order_lists(
+            venue=AUDUSD_SIM.venue,
+            instrument_id=AUDUSD_SIM.id,
+            strategy_id=StrategyId("S-001"),
+        )
+
+        # Assert
+        assert result == [bracket1, bracket2]
 
     def test_add_and_load_submit_order_list_command(self):
         order_factory = OrderFactory(
