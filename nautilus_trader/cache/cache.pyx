@@ -3170,7 +3170,7 @@ cdef class Cache(CacheFacade):
 
         return order_list_id in self._order_lists
 
-    # -- POSITION QUERIES -----------------------------------------------------------------------------
+# -- POSITION QUERIES -----------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id):
         """
