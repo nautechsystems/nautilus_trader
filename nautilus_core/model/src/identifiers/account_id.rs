@@ -93,8 +93,9 @@ pub extern "C" fn account_id_hash(account_id: &AccountId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::ffi::CString;
+
+    use super::*;
 
     #[test]
     fn test_account_id_new_invalid_string() {

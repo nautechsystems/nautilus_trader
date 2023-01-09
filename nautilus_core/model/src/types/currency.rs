@@ -18,9 +18,10 @@ use std::ffi::c_char;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use crate::enums::CurrencyType;
 use nautilus_core::correctness;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+
+use crate::enums::CurrencyType;
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]

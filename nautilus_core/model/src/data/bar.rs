@@ -19,12 +19,13 @@ use std::ffi::c_char;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
+use nautilus_core::string::string_to_cstr;
+use nautilus_core::time::Timestamp;
+
 use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-use nautilus_core::string::string_to_cstr;
-use nautilus_core::time::Timestamp;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
