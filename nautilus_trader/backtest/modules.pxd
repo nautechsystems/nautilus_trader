@@ -22,7 +22,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class SimulationModule:
-    cdef SimulatedExchange _exchange
+    cdef readonly SimulatedExchange exchange
 
     cpdef void register_exchange(self, SimulatedExchange exchange) except *
     cpdef void process(self, uint64_t now_ns) except *
