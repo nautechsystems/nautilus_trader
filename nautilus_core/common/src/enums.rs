@@ -17,9 +17,8 @@ use std::ffi::c_char;
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use strum::{Display, EnumString, FromRepr};
-
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use strum::{Display, EnumString, FromRepr};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]

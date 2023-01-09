@@ -18,15 +18,15 @@ use std::ffi::c_char;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null;
 
+use nautilus_core::correctness;
+use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
+use nautilus_core::string::cstr_to_string;
+use nautilus_core::time::Timestamp;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
-use nautilus_core::correctness;
-use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
-use nautilus_core::string::cstr_to_string;
-use nautilus_core::time::Timestamp;
 
 /// Represents a type of clock.
 /// # Notes

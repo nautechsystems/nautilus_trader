@@ -106,8 +106,9 @@ pub fn f64_non_negative(value: f64, desc: &str) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest(s, case(" a"), case("a "), case("a a"), case(" a "), case("abc"))]
     fn test_valid_string_with_valid_value(s: &str) {

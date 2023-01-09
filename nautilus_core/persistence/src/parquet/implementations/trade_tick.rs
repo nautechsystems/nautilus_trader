@@ -21,8 +21,6 @@ use arrow2::{
     datatypes::{DataType, Field, Schema},
     io::parquet::write::{transverse, Encoding},
 };
-
-use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::TradeTick;
 use nautilus_model::enums::AggressorSide;
 use nautilus_model::identifiers::trade_id::TradeId;
@@ -30,6 +28,8 @@ use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
+
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 
 impl EncodeToChunk for TradeTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {

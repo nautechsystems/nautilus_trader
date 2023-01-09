@@ -83,8 +83,9 @@ pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
+
+    use super::*;
 
     #[rstest]
     #[case(0.0, 0)]

@@ -18,9 +18,10 @@ use std::ffi::c_char;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
+use nautilus_core::string::{cstr_to_string, string_to_cstr};
+
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -105,9 +106,10 @@ pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::ffi::CStr;
+
     use super::InstrumentId;
     use crate::identifiers::instrument_id::{instrument_id_free, instrument_id_to_cstr};
-    use std::ffi::CStr;
 
     #[test]
     fn test_equality() {

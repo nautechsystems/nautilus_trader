@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::string::cstr_to_string;
 use std::ffi::c_char;
+
+use crate::string::cstr_to_string;
 
 /// Return the decimal precision inferred from the given string.
 pub fn precision_from_str(s: &str) -> u8 {
@@ -45,9 +46,11 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rstest::rstest;
     use std::ffi::CString;
+
+    use rstest::rstest;
+
+    use super::*;
 
     #[rstest(
         s,
