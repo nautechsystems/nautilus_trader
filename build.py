@@ -108,10 +108,11 @@ def _build_extensions() -> list[Extension]:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
 
-    extra_compile_args = ["-Wno-parentheses-equality"]
-    if BUILD_MODE == "release" and platform.system() != "Windows":
-        extra_compile_args.append("-O2")
-        extra_compile_args.append("-pipe")
+    if platform.system() != "Windows":
+        extra_compile_args = ["-Wno-parentheses-equality"]
+        if BUILD_MODE == "release":
+            extra_compile_args.append("-O2")
+            extra_compile_args.append("-pipe")
 
     extra_link_args = RUST_LIBS
     if platform.system() == "Windows":
@@ -125,6 +126,7 @@ def _build_extensions() -> list[Extension]:
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
+    print(f"extra_link_args={extra_link_args}")
 
     return [
         Extension(
@@ -198,7 +200,7 @@ def _get_clang_version() -> str:
             shell=True,
             capture_output=True,
         )
-        output = result.stdout.decode().splitlines()[0].lstrip("clang version ")
+        output = result.stdout.decode().splitlines()[0].lstrip("Apple ").lstrip("clang version ")
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
