@@ -32,9 +32,10 @@ COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else Fals
 ################################################################################
 #  RUST BUILD
 ################################################################################
-# Use clang as the default compiler
-os.environ["CC"] = "clang"
-os.environ["LDSHARED"] = "clang -shared"
+if platform.system() != "Darwin":
+    # Use clang as the default compiler
+    os.environ["CC"] = "clang"
+    os.environ["LDSHARED"] = "clang -shared"
 
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
@@ -50,14 +51,12 @@ else:
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
-
 RUST_LIBS = [
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
 ]
-# Later we can be more selective about which libs are included where - to optimize binary sizes
 
 
 def _build_rust_libs() -> None:
@@ -109,11 +108,10 @@ def _build_extensions() -> list[Extension]:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
 
-    extra_compile_args = []
+    extra_compile_args = ["-Wno-parentheses-equality"]
     if BUILD_MODE == "release" and platform.system() != "Windows":
         extra_compile_args.append("-O2")
         extra_compile_args.append("-pipe")
-        extra_compile_args.append("-Wno-parentheses-equality")
 
     extra_link_args = RUST_LIBS
     if platform.system() == "Windows":
