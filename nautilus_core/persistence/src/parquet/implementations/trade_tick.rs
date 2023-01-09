@@ -35,7 +35,7 @@ impl EncodeToChunk for TradeTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
         let keys = ["instrument_id", "price_precision", "size_precision"];
         for key in keys {
-            (!metadata.contains_key(key)).then(|| panic!("metadata missing key {}", key));
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key {key}"));
         }
     }
 

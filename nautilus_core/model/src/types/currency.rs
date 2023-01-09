@@ -93,7 +93,7 @@ pub extern "C" fn currency_free(currency: Currency) {
 
 #[no_mangle]
 pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(format!("{:?}", currency).as_str())
+    string_to_cstr(format!("{currency:?}").as_str())
 }
 
 #[no_mangle]

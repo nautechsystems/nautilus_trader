@@ -61,7 +61,7 @@ impl From<&str> for Price {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
-            Err(err) => panic!("Cannot parse `input` string '{}' as f64, {}", input, err),
+            Err(err) => panic!("Cannot parse `input` string '{input}' as f64, {err}"),
         };
         Price::new(float_res, precision_from_str(input))
     }
@@ -326,7 +326,7 @@ mod tests {
         let input_string = "44.12";
         let price = Price::from(input_string);
         let mut res = String::new();
-        write!(&mut res, "{}", price).unwrap();
+        write!(&mut res, "{price}").unwrap();
         assert_eq!(res, input_string);
     }
 

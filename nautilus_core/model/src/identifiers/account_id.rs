@@ -124,7 +124,7 @@ mod tests {
     fn test_account_id_fmt() {
         let s = "IB-U123456789";
         let account_id = AccountId::new(s);
-        let formatted = format!("{}", account_id);
+        let formatted = format!("{account_id}");
         assert_eq!(formatted, s);
     }
 
