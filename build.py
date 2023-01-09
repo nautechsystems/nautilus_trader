@@ -114,8 +114,6 @@ def _build_extensions() -> list[Extension]:
         extra_compile_args.append("-O2")
         extra_compile_args.append("-pipe")
         extra_compile_args.append("-Wno-parentheses-equality")
-        extra_compile_args.append("-ffunction-sections")
-        extra_compile_args.append("-fdata-sections")
 
     extra_link_args = RUST_LIBS
     if platform.system() == "Windows":
