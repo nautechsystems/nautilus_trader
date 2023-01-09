@@ -90,7 +90,7 @@ impl std::fmt::Display for LogLevel {
             LogLevel::Error => "ERR",
             LogLevel::Critical => "CRT",
         };
-        write!(f, "{}", display)
+        write!(f, "{display}")
     }
 }
 

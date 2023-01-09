@@ -60,7 +60,7 @@ impl From<&str> for Quantity {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
-            Err(err) => panic!("cannot parse `input` string '{}' as f64, {}", input, err),
+            Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
         };
         Quantity::new(float_res, precision_from_str(input))
     }
@@ -294,7 +294,7 @@ mod tests {
         let input_string = "44.12";
         let qty = Quantity::from(input_string);
         let mut res = String::new();
-        write!(&mut res, "{}", qty).unwrap();
+        write!(&mut res, "{qty}").unwrap();
         assert_eq!(res, input_string);
         assert_eq!(qty.to_string(), input_string);
     }

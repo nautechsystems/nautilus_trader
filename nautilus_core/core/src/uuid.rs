@@ -159,7 +159,7 @@ mod tests {
     fn test_uuid4_display() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
-        let result_string = format!("{}", uuid);
+        let result_string = format!("{uuid}");
         assert_eq!(result_string, uuid_string);
     }
 
