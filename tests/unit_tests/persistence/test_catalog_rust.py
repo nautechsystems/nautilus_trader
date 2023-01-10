@@ -21,9 +21,7 @@ import pandas as pd
 import pytest
 
 # build and load pyo3 module using maturin
-from nautilus_persistence import ParquetReader
-from nautilus_persistence import ParquetReaderType
-from nautilus_persistence import ParquetType
+from nautilus.persistence import ParquetReader, ParquetReaderType, ParquetType
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider

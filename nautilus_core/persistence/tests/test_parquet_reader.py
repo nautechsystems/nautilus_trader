@@ -1,8 +1,6 @@
 import os
 
-from nautilus_persistence import ParquetReader
-from nautilus_persistence import ParquetReaderType
-from nautilus_persistence import ParquetType
+from nautilus.persistence import ParquetReader, ParquetReaderType, ParquetType
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.model.data.tick import QuoteTick

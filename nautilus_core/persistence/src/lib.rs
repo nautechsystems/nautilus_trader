@@ -306,8 +306,9 @@ impl PythonParquetWriter {
     }
 }
 
+/// loaded as nautilus.persistence
 #[pymodule]
-fn nautilus_persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonParquetReader>()?;
     m.add_class::<PythonParquetWriter>()?;
     m.add_class::<ParquetType>()?;

@@ -922,6 +922,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus_pyo3"
+version = "0.2.0"
+dependencies = [
+ "nautilus_persistence",
+ "pyo3",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
