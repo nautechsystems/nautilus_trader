@@ -1538,7 +1538,7 @@ cdef class OrderMatchingEngine:
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
-    cdef PositionId _get_position_id(self, Order order, bint generate=True):
+    cpdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
         if OmsType.HEDGING:
             position_id = self.cache.position_id(order.client_order_id)
@@ -1559,21 +1559,21 @@ cdef class OrderMatchingEngine:
         else:
             return None
 
-    cdef PositionId _generate_venue_position_id(self):
+    cpdef PositionId _generate_venue_position_id(self):
         self._position_count += 1
         return PositionId(
             f"{self.venue.to_str()}-{self.product_id}-{self._position_count:03d}")
 
-    cdef VenueOrderId _generate_venue_order_id(self):
+    cpdef VenueOrderId _generate_venue_order_id(self):
         self._order_count += 1
         return VenueOrderId(
             f"{self.venue.to_str()}-{self.product_id}-{self._order_count:03d}")
 
-    cdef TradeId _generate_trade_id(self):
+    cpdef TradeId _generate_trade_id(self):
         self._execution_count += 1
         return TradeId(self._generate_trade_id_str())
 
-    cdef str _generate_trade_id_str(self):
+    cpdef str _generate_trade_id_str(self):
         return f"{self.venue.to_str()}-{self.product_id}-{self._execution_count:03d}"
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
@@ -1715,7 +1715,7 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_order_rejected(self, Order order, str reason) except *:
+    cpdef void _generate_order_rejected(self, Order order, str reason) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderRejected event = OrderRejected(
@@ -1731,7 +1731,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_accepted(self, Order order) except *:
+    cpdef void _generate_order_accepted(self, Order order) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderAccepted event = OrderAccepted(
@@ -1747,7 +1747,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_pending_update(self, Order order) except *:
+    cpdef void _generate_order_pending_update(self, Order order) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderPendingUpdate event = OrderPendingUpdate(
@@ -1763,7 +1763,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_pending_cancel(self, Order order) except *:
+    cpdef void _generate_order_pending_cancel(self, Order order) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderPendingCancel event = OrderPendingCancel(
@@ -1779,7 +1779,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_modify_rejected(
+    cpdef void _generate_order_modify_rejected(
         self,
         TraderId trader_id,
         StrategyId strategy_id,
@@ -1805,7 +1805,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_cancel_rejected(
+    cpdef void _generate_order_cancel_rejected(
         self,
         TraderId trader_id,
         StrategyId strategy_id,
@@ -1870,7 +1870,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_canceled(self, Order order) except *:
+    cpdef void _generate_order_canceled(self, Order order) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderCanceled event = OrderCanceled(
@@ -1886,7 +1886,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_triggered(self, Order order) except *:
+    cpdef void _generate_order_triggered(self, Order order) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderTriggered event = OrderTriggered(
@@ -1902,7 +1902,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_expired(self, Order order) except *:
+    cpdef void _generate_order_expired(self, Order order) except *:
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderExpired event = OrderExpired(
@@ -1918,7 +1918,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_filled(
+    cpdef void _generate_order_filled(
         self,
         Order order,
         PositionId venue_position_id,

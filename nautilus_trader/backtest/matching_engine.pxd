@@ -180,11 +180,11 @@ cdef class OrderMatchingEngine:
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
-    cdef PositionId _get_position_id(self, Order order, bint generate=*)
-    cdef PositionId _generate_venue_position_id(self)
-    cdef VenueOrderId _generate_venue_order_id(self)
-    cdef TradeId _generate_trade_id(self)
-    cdef str _generate_trade_id_str(self)
+    cpdef PositionId _get_position_id(self, Order order, bint generate=*)
+    cpdef PositionId _generate_venue_position_id(self)
+    cpdef VenueOrderId _generate_venue_order_id(self)
+    cpdef TradeId _generate_trade_id(self)
+    cpdef str _generate_trade_id_str(self)
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
@@ -198,11 +198,11 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_order_rejected(self, Order order, str reason) except *
-    cdef void _generate_order_accepted(self, Order order) except *
-    cdef void _generate_order_pending_update(self, Order order) except *
-    cdef void _generate_order_pending_cancel(self, Order order) except *
-    cdef void _generate_order_modify_rejected(
+    cpdef void _generate_order_rejected(self, Order order, str reason) except *
+    cpdef void _generate_order_accepted(self, Order order) except *
+    cpdef void _generate_order_pending_update(self, Order order) except *
+    cpdef void _generate_order_pending_cancel(self, Order order) except *
+    cpdef void _generate_order_modify_rejected(
         self,
         TraderId trader_id,
         StrategyId strategy_id,
@@ -212,7 +212,7 @@ cdef class OrderMatchingEngine:
         VenueOrderId venue_order_id,
         str reason,
     ) except *
-    cdef void _generate_order_cancel_rejected(
+    cpdef void _generate_order_cancel_rejected(
         self,
         TraderId trader_id,
         StrategyId strategy_id,
@@ -223,10 +223,10 @@ cdef class OrderMatchingEngine:
         str reason,
     ) except *
     cpdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
-    cdef void _generate_order_canceled(self, Order order) except *
-    cdef void _generate_order_triggered(self, Order order) except *
-    cdef void _generate_order_expired(self, Order order) except *
-    cdef void _generate_order_filled(
+    cpdef void _generate_order_canceled(self, Order order) except *
+    cpdef void _generate_order_triggered(self, Order order) except *
+    cpdef void _generate_order_expired(self, Order order) except *
+    cpdef void _generate_order_filled(
         self,
         Order order,
         PositionId venue_position_id,
