@@ -286,7 +286,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
 
     References
     ----------
-    https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
+    https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup-market_data
     https://binance-docs.github.io/apidocs/futures/en/#old-trades-lookup-market_data
     https://binance-docs.github.io/apidocs/delivery/en/#old-trades-lookup-market_data
 
