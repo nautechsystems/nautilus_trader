@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -110,11 +110,11 @@ def parse_time_in_force(time_in_force: BinanceFuturesTimeInForce) -> TimeInForce
 
 def parse_trigger_type(working_type: BinanceFuturesWorkingType) -> TriggerType:
     if working_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
-        return TriggerType.LAST
+        return TriggerType.LAST_TRADE
     elif working_type == BinanceFuturesWorkingType.MARK_PRICE:
-        return TriggerType.MARK
+        return TriggerType.MARK_PRICE
     else:
-        return TriggerType.NONE  # pragma: no cover (design-time error)
+        return TriggerType.NO_TRIGGER  # pragma: no cover (design-time error)
 
 
 def parse_order_report_http(
@@ -152,7 +152,7 @@ def parse_order_report_http(
         trailing_offset=Decimal(data.priceRate) * 100 if data.priceRate is not None else None,
         trailing_offset_type=TrailingOffsetType.BASIS_POINTS
         if data.priceRate is not None
-        else TrailingOffsetType.NONE,
+        else TrailingOffsetType.NO_TRAILING_OFFSET,
     )
 
 

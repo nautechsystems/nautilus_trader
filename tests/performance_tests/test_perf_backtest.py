@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.test_kit.performance import PerformanceHarness
@@ -53,7 +53,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             engine.add_venue(
                 venue=Venue("SIM"),
-                oms_type=OMSType.HEDGING,
+                oms_type=OmsType.HEDGING,
                 account_type=AccountType.MARGIN,
                 base_currency=USD,
                 starting_balances=[Money(1_000_000, USD)],
@@ -90,7 +90,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             engine.add_venue(
                 venue=Venue("SIM"),
-                oms_type=OMSType.HEDGING,
+                oms_type=OmsType.HEDGING,
                 account_type=AccountType.MARGIN,
                 base_currency=USD,
                 starting_balances=[Money(1_000_000, USD)],
@@ -142,7 +142,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             engine.add_venue(
                 venue=Venue("SIM"),
-                oms_type=OMSType.HEDGING,
+                oms_type=OmsType.HEDGING,
                 account_type=AccountType.MARGIN,
                 base_currency=USD,
                 starting_balances=[Money(1_000_000, USD)],

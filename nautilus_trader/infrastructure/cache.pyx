@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,8 +25,9 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport currency_type_from_str
+from nautilus_trader.model.enums_c cimport currency_type_to_str
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
@@ -405,7 +406,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
             precision=int(c_map["precision"]),
             iso4217=int(c_map["iso4217"]),
             name=c_map["name"].decode(_UTF8),
-            currency_type=CurrencyTypeParser.from_str(c_map["currency_type"].decode("utf-8")),
+            currency_type=currency_type_from_str(c_map["currency_type"].decode("utf-8")),
         )
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
@@ -596,7 +597,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
             "precision": currency.precision,
             "iso4217": currency.iso4217,
             "name": currency.name,
-            "currency_type": CurrencyTypeParser.to_str(currency.currency_type)
+            "currency_type": currency_type_to_str(currency.currency_type)
         }
 
         # Command pipeline

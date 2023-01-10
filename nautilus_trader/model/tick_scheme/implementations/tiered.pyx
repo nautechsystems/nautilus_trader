@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,8 @@
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.string cimport precision_from_str
+from nautilus_trader.core.rust.core cimport precision_from_cstr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
@@ -68,7 +69,7 @@ cdef class TieredTickScheme(TickScheme):
         for start, stop, step in self.tiers:
             if stop == np.inf:
                 stop = start + ((self.max_ticks_per_tier + 1) * step)
-            precision = precision_from_str(str(step))
+            precision = precision_from_cstr(pystr_to_cstr(str(step)))
             ticks = [Price(x, precision) for x in np.arange(start, stop, step)]
             if len(ticks) > self.max_ticks_per_tier+1:
                 print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")

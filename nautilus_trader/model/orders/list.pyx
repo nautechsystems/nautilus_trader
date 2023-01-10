@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -48,6 +48,7 @@ cdef class OrderList:
         cdef Order first = orders[0]
         self.id = order_list_id
         self.instrument_id = first.instrument_id
+        self.strategy_id = first.strategy_id
         self.orders = orders
         self.first = first
         self.ts_init = first.ts_init
@@ -59,4 +60,10 @@ cdef class OrderList:
         return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"OrderList(id={self.id.to_str()}, instrument_id={self.instrument_id}, orders={self.orders})"
+        return (
+            f"OrderList("
+            f"id={self.id.to_str()}, "
+            f"instrument_id={self.instrument_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"orders={self.orders})"
+        )

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,14 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -50,14 +49,13 @@ impl VenueOrderId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn venue_order_id_new(ptr: *mut ffi::PyObject) -> VenueOrderId {
-    VenueOrderId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
+    VenueOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -71,22 +69,14 @@ pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
     drop(venue_order_id); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn venue_order_id_to_pystr(
-    venue_order_id: &VenueOrderId,
-) -> *mut ffi::PyObject {
-    string_to_pystr(venue_order_id.value.as_str())
+pub extern "C" fn venue_order_id_to_cstr(venue_order_id: &VenueOrderId) -> *const c_char {
+    string_to_cstr(&venue_order_id.value)
 }
 
 #[no_mangle]
 pub extern "C" fn venue_order_id_eq(lhs: &VenueOrderId, rhs: &VenueOrderId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
@@ -108,7 +98,6 @@ mod tests {
     fn test_equality() {
         let id1 = VenueOrderId::new("001");
         let id2 = VenueOrderId::new("002");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
         assert_eq!(id1.to_string(), "001")
@@ -117,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = VenueOrderId::new("001");
-
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }
@@ -125,7 +113,6 @@ mod tests {
     #[test]
     fn test_venue_order_id() {
         let id = VenueOrderId::new("001");
-
         venue_order_id_free(id); // No panic
     }
 }

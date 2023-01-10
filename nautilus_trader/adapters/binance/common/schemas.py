@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,7 +52,7 @@ class BinanceTrade(msgspec.Struct):
     isBestMatch: Optional[bool] = True
 
 
-class BinanceTicker(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceTicker(msgspec.Struct, kw_only=True):
     """HTTP response from `Binance` GET /fapi/v1/ticker/24hr ."""
 
     symbol: str
@@ -91,7 +91,7 @@ class BinanceDataMsgWrapper(msgspec.Struct):
     stream: str
 
 
-class BinanceOrderBookData(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceOrderBookData(msgspec.Struct, kw_only=True):
     """WebSocket message 'inner struct' for `Binance` Diff. Book Depth Streams."""
 
     e: str  # Event type
@@ -152,7 +152,7 @@ class BinanceAggregatedTradeMsg(msgspec.Struct):
     data: BinanceAggregatedTradeData
 
 
-class BinanceTickerData(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceTickerData(msgspec.Struct, kw_only=True):
     """
     WebSocker message from `Binance` 24hr Ticker
 

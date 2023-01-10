@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,7 +41,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
@@ -122,7 +122,7 @@ class TestSimulatedExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -244,12 +244,12 @@ class TestSimulatedExchange:
         # Arrange
         tick1 = TestDataStubs.trade_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
         )
 
         tick2 = TestDataStubs.trade_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
-            aggressor_side=AggressorSide.SELL,
+            aggressor_side=AggressorSide.SELLER,
         )
 
         # Act
@@ -2263,7 +2263,7 @@ class TestSimulatedExchange:
         # Arrange
         exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

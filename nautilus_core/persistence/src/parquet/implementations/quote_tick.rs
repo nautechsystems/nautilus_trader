@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,19 +21,19 @@ use arrow2::{
     datatypes::{DataType, Field, Schema},
     io::parquet::write::{transverse, Encoding},
 };
-
-use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::QuoteTick;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
+
 impl EncodeToChunk for QuoteTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
         let keys = ["instrument_id", "price_precision", "size_precision"];
         for key in keys {
-            (!metadata.contains_key(key)).then(|| panic!("metadata missing key \"{}\"", key));
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key \"{key}\""));
         }
     }
 
@@ -103,7 +103,8 @@ impl EncodeToChunk for QuoteTick {
 
 impl DecodeFromChunk for QuoteTick {
     fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self> {
-        let instrument_id = InstrumentId::from(schema.metadata.get("instrument_id").unwrap());
+        let instrument_id =
+            InstrumentId::from(schema.metadata.get("instrument_id").unwrap().as_str());
         let price_precision = schema
             .metadata
             .get("price_precision")

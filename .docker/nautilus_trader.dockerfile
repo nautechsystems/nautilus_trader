@@ -16,7 +16,7 @@ WORKDIR $PYSETUP_PATH
 FROM base as builder
 
 # Install build deps
-RUN apt-get update && apt-get install -y gcc curl
+RUN apt-get update && apt-get install -y clang curl
 
 # Install Rust stable
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,7 @@ from nautilus_trader.examples.strategies.volatility_market_maker import Volatili
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     SIM = Venue("SIM")
     engine.add_venue(
         venue=SIM,
-        oms_type=OMSType.NETTING,
+        oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(10_000_000, USD)],  # Single-currency or multi-currency accounts
@@ -89,7 +89,7 @@ if __name__ == "__main__":
         atr_period=20,
         atr_multiple=3.0,
         trade_size=Decimal(500_000),
-        emulation_trigger="NONE",
+        emulation_trigger="NO_TRIGGER",
     )
     # Instantiate and add your strategy
     strategy = VolatilityMarketMaker(config=config)

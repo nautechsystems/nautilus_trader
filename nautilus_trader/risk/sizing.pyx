@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class PositionSizer:
     """
-    The abstract base class for all position sizers.
+    The base class for all position sizers.
 
     Parameters
     ----------

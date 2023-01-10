@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,11 +24,11 @@ from tabulate import tabulate
 from nautilus_trader.model.orderbook.error import BookIntegrityError
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.book_action cimport BookAction
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport BookAction
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport BookOrder
@@ -981,5 +981,5 @@ cdef class L1OrderBook(OrderBook):
         # Because an `L1OrderBook` only has one level per side, we replace the
         # `order.id` with the name of the side, which will let us easily process
         # the order.
-        order.id = OrderSideParser.to_str(order.side)
+        order.id = order_side_to_str(order.side)
         return order

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,9 +28,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
+from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
@@ -225,10 +225,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_instrument_status_updates(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._add_subscription_instrument_close_prices(instrument_id)
+        self._add_subscription_instrument_close(instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instruments(self) except *:
@@ -283,10 +283,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._remove_subscription_instrument_status_updates(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._remove_subscription_instrument_close_prices(instrument_id)
+        self._remove_subscription_instrument_close(instrument_id)
         # Do nothing else for backtest
 
 # -- REQUESTS -------------------------------------------------------------------------------------

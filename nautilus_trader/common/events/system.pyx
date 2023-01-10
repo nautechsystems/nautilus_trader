@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,11 +20,12 @@ import msgspec
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.enums_c cimport ComponentState
+from nautilus_trader.model.enums_c cimport component_state_from_str
+from nautilus_trader.model.enums_c cimport component_state_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -76,7 +77,7 @@ cdef class ComponentStateChanged(Event):
             f"trader_id={self.trader_id.to_str()}, "
             f"component_id={self.component_id.to_str()}, "
             f"component_type={self.component_type}, "
-            f"state={ComponentStateParser.to_str(self.state)}, "
+            f"state={component_state_to_str(self.state)}, "
             f"config={self.config}, "
             f"event_id={self.id.to_str()})"
         )
@@ -87,7 +88,7 @@ cdef class ComponentStateChanged(Event):
             f"trader_id={self.trader_id.to_str()}, "
             f"component_id={self.component_id.to_str()}, "
             f"component_type={self.component_type}, "
-            f"state={ComponentStateParser.to_str(self.state)}, "
+            f"state={component_state_to_str(self.state)}, "
             f"config={self.config}, "
             f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
@@ -100,7 +101,7 @@ cdef class ComponentStateChanged(Event):
             trader_id=TraderId(values["trader_id"]),
             component_id=ComponentId(values["component_id"]),
             component_type=values["component_type"],
-            state=ComponentStateParser.from_str(values["state"]),
+            state=component_state_from_str(values["state"]),
             config=json.loads(values["config"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -133,7 +134,7 @@ cdef class ComponentStateChanged(Event):
             "trader_id": obj.trader_id.to_str(),
             "component_id": obj.component_id.to_str(),
             "component_type": obj.component_type,
-            "state": ComponentStateParser.to_str(obj.state),
+            "state": component_state_to_str(obj.state),
             "config": config_bytes,
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,

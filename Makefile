@@ -3,7 +3,6 @@ REGISTRY?=ghcr.io/
 IMAGE?=${REGISTRY}${PROJECT}
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=${IMAGE}:${GIT_TAG}
-EXTRAS?="betfair docker ib redis"
 .PHONY: install build clean docs format pre-commit
 .PHONY: clippy cargo-update cargo-test cargo-test-arm64
 .PHONY: update docker-build docker-build-force docker-push
@@ -11,10 +10,10 @@ EXTRAS?="betfair docker ib redis"
 .PHONY: pytest pytest-coverage
 
 install:
-	poetry install --with dev,test --extras ${EXTRAS}
+	poetry install --with dev,test --all-extras
 
 install-just-deps:
-	poetry install --with dev,test --extras ${EXTRAS} --no-root
+	poetry install --with dev,test --all-extras --no-root
 
 build: nautilus_trader
 	poetry run python build.py

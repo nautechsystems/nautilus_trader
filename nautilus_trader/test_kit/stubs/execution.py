@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -81,7 +81,7 @@ class TestExecStubs:
             post_only=False,
             reduce_only=False,
             display_qty=None,
-            contingency_type=ContingencyType.NONE,
+            contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
@@ -109,7 +109,7 @@ class TestExecStubs:
             init_id=TestIdStubs.uuid(),
             ts_init=0,
             reduce_only=False,
-            contingency_type=ContingencyType.NONE,
+            contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,

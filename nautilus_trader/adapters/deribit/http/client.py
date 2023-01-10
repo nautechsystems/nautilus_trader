@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -156,7 +156,9 @@ class DeribitHttpClient(HttpClient):
                 return data["error"]
             return data["result"]
         except msgspec.MsgspecError:
-            self._log.error(f"Could not decode data to JSON: {resp.data}.")
+            self._log.error(
+                f"Could not decode data to JSON: {resp.data}.",
+            )
 
     async def _handle_exception(self, error: ClientResponseError) -> None:
         if error.status < 400:

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,10 +17,10 @@ from typing import Callable, Optional
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
@@ -166,18 +166,18 @@ cdef class MatchingCore:
 
         if order.side == OrderSide.BUY:
             self._orders_bid.append(order)
-            self._sort_bid_orders()
+            self.sort_bid_orders()
         elif order.side == OrderSide.SELL:
             self._orders_ask.append(order)
-            self._sort_ask_orders()
+            self.sort_ask_orders()
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
-    cdef void _sort_bid_orders(self) except *:
-        self._orders_bid.sort(key=lambda o: order_sort_key(o), reverse=True)
+    cdef void sort_bid_orders(self) except *:
+        self._orders_bid.sort(key=order_sort_key, reverse=True)
 
-    cdef void _sort_ask_orders(self) except *:
-        self._orders_ask.sort(key=lambda o: order_sort_key(o))
+    cdef void sort_ask_orders(self) except *:
+        self._orders_ask.sort(key=order_sort_key)
 
     cpdef void delete_order(self, Order order) except *:
         self._orders.pop(order.client_order_id, None)
@@ -354,6 +354,7 @@ cdef class MatchingCore:
 
         return LiquiditySide.TAKER
 
+
 cdef inline int64_t order_sort_key(Order order) except *:
     cdef Price trigger_price
     cdef Price price
@@ -387,5 +388,5 @@ cdef inline int64_t order_sort_key(Order order) except *:
     else:
         raise RuntimeError(
             f"invalid order type to sort in book, "
-            f"was {OrderTypeParser.to_str(order.order_type)}",
+            f"was {order_type_to_str(order.order_type)}",
         )

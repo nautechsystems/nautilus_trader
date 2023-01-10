@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,8 +22,8 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.c_enums.contingency_type import ContingencyType
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -391,7 +391,7 @@ class TestOrders:
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
-            "contingency_type": "NONE",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -460,15 +460,15 @@ class TestOrders:
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": "20000",
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -567,13 +567,13 @@ class TestOrders:
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "emulation_trigger": "BID_ASK",
-            "contingency_type": "NONE",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -621,7 +621,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             tags="STOP_LOSS",
         )
 
@@ -643,19 +643,19 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -731,7 +731,7 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "display_qty": None,
-            "contingency_type": "NONE",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -801,13 +801,13 @@ class TestOrders:
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -824,7 +824,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
             tags="ENTRY",
         )
 
@@ -843,11 +843,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
 
     def test_limit_if_touched_order_to_dict(self):
@@ -858,8 +858,8 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            trigger_type=TriggerType.MARK,
-            emulation_trigger=TriggerType.LAST,
+            trigger_type=TriggerType.MARK_PRICE,
+            emulation_trigger=TriggerType.LAST_TRADE,
             tags="STOP_LOSS",
         )
 
@@ -881,19 +881,19 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "LAST",
-            "contingency_type": "NONE",
+            "emulation_trigger": "LAST_TRADE",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -998,13 +998,13 @@ class TestOrders:
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -1045,13 +1045,13 @@ class TestOrders:
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -1129,7 +1129,7 @@ class TestOrders:
             trigger_price=Price.from_str("1.10010"),
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
 
@@ -1151,22 +1151,22 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "limit_offset": "5",
             "trailing_offset": "10",
             "trailing_offset_type": "BASIS_POINTS",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -1183,7 +1183,7 @@ class TestOrders:
             Quantity.from_int(100000),
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
 
@@ -1205,22 +1205,22 @@ class TestOrders:
             "quantity": "100000",
             "price": None,
             "trigger_price": None,
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "limit_offset": "5",
             "trailing_offset": "10",
             "trailing_offset_type": "BASIS_POINTS",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "liquidity_side": "NONE",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
-            "contingency_type": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
+            "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
@@ -1261,7 +1261,7 @@ class TestOrders:
         )
 
         # Assert
-        assert bracket.id == OrderListId("1")
+        assert bracket.id == OrderListId("OL-19700101-000-001-1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.MARKET
@@ -1312,7 +1312,7 @@ class TestOrders:
         )
 
         # Assert
-        assert bracket.id == OrderListId("1")
+        assert bracket.id == OrderListId("OL-19700101-000-001-1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.LIMIT
@@ -1366,7 +1366,7 @@ class TestOrders:
         )
 
         # Assert
-        assert bracket.id == OrderListId("1")
+        assert bracket.id == OrderListId("OL-19700101-000-001-1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.LIMIT_IF_TOUCHED
@@ -1415,10 +1415,10 @@ class TestOrders:
 
         # Assert
         assert str(bracket) == (
-            "OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)])"  # noqa
         )
         assert repr(bracket) == (
-            "OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)])"  # noqa
         )
 
     def test_apply_order_denied_event(self):

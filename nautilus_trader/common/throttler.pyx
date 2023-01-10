@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -110,7 +110,7 @@ cdef class Throttler:
         self.recv_count = 0
         self.sent_count = 0
 
-        self._log.info("INITIALIZED.")
+        self._log.info("READY.")
 
     @property
     def qsize(self):

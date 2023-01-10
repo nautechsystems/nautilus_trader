@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
@@ -148,5 +148,5 @@ class TestBetfairInstrumentProvider:
 
         # Assert
         result = [r.status for r in results[:8]]
-        expected = [InstrumentStatus.PRE_OPEN] * 7 + [InstrumentStatus.CLOSED]
+        expected = [MarketStatus.PRE_OPEN] * 7 + [MarketStatus.CLOSED]
         assert result == expected

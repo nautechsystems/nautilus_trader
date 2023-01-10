@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,6 +27,7 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
@@ -168,7 +169,7 @@ class _TestBacktestConfig:
             ),
         ],
     )
-    def test_models_to_json(self, model: msgspec.Struct):
+    def test_models_to_json(self, model: NautilusConfig):
         raw = model.json()
         assert raw
 

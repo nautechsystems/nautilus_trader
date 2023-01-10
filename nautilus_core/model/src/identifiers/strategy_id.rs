@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -51,14 +50,13 @@ impl StrategyId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn strategy_id_new(ptr: *mut ffi::PyObject) -> StrategyId {
-    StrategyId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
+    StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -70,6 +68,12 @@ pub extern "C" fn strategy_id_clone(strategy_id: &StrategyId) -> StrategyId {
 #[no_mangle]
 pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
     drop(strategy_id); // Memory freed here
+}
+
+/// Returns a [`StrategyId`] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char {
+    string_to_cstr(&strategy_id.value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +88,6 @@ mod tests {
     fn test_equality() {
         let id1 = StrategyId::new("EMACross-001");
         let id2 = StrategyId::new("EMACross-002");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -92,7 +95,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = StrategyId::new("EMACross-001");
-
         assert_eq!(id.to_string(), "EMACross-001");
         assert_eq!(format!("{id}"), "EMACross-001");
     }
@@ -100,7 +102,6 @@ mod tests {
     #[test]
     fn test_strategy_id_free() {
         let id = StrategyId::new("EMACross-001");
-
         strategy_id_free(id); // No panic
     }
 }

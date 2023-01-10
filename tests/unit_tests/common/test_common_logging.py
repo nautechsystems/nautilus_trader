@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,15 +20,16 @@ import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.enums import log_level_from_str
+from nautilus_trader.common.enums import log_level_to_str
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.logging import LogLevelParser
 
 
-class TestLogLevelParser:
+class TestLogLevel:
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -41,7 +42,7 @@ class TestLogLevelParser:
     )
     def test_log_level_to_str(self, enum, expected):
         # Arrange, Act
-        result = LogLevelParser.to_str_py(enum)
+        result = log_level_to_str(enum)
 
         # Assert
         assert result == expected
@@ -63,7 +64,7 @@ class TestLogLevelParser:
     )
     def test_log_level_from_str(self, string, expected):
         # Arrange, Act
-        result = LogLevelParser.from_str_py(string)
+        result = log_level_from_str(string)
 
         # Assert
         assert result == expected

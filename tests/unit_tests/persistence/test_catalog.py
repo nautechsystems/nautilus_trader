@@ -1,17 +1,18 @@
-# # -------------------------------------------------------------------------------------------------
-# #  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
-# #  https://nautechsystems.io
-# #
-# #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-# #  You may not use this file except in compliance with the License.
-# #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-# #
-# #  Unless required by applicable law or agreed to in writing, software
-# #  distributed under the License is distributed on an "AS IS" BASIS,
-# #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# #  See the License for the specific language governing permissions and
-# #  limitations under the License.
-# # -------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import datetime
 import itertools
 import os
@@ -243,7 +244,6 @@ class _TestPersistenceCatalog:
         assert data_types == expected
 
     def test_list_partitions(self):
-
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         tick = QuoteTick(
@@ -315,7 +315,6 @@ class _TestPersistenceCatalog:
         assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
     def test_data_catalog_currency_with_null_max_price_loads(self):
-
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         write_objects(catalog=self.catalog, chunk=[instrument])
@@ -327,14 +326,13 @@ class _TestPersistenceCatalog:
         assert instrument.max_price is None
 
     def test_data_catalog_instrument_ids_correctly_unmapped(self):
-
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
             instrument_id=instrument.id,
             price=Price.from_str("2.0"),
             size=Quantity.from_int(10),
-            aggressor_side=AggressorSide.NONE,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId("1"),
             ts_event=0,
             ts_init=0,
@@ -351,7 +349,6 @@ class _TestPersistenceCatalog:
         assert trade_tick.instrument_id.value == "AUD/USD.SIM"
 
     def test_data_catalog_filter(self):
-
         # Arrange, Act
         deltas = self.catalog.order_book_deltas()
         filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
@@ -378,7 +375,6 @@ class _TestPersistenceCatalog:
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 
     def test_data_catalog_bars(self):
-
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -417,7 +413,6 @@ class _TestPersistenceCatalog:
         assert len(bars) == 21
 
     def test_catalog_bar_query_instrument_id(self):
-
         # Arrange
         bar = TestDataStubs.bar_5decimal()
         write_objects(catalog=self.catalog, chunk=[bar])
@@ -439,7 +434,6 @@ class _TestPersistenceCatalog:
         assert trades["trade_id"].equals(trades["tid"])
 
     def test_catalog_persists_equity(self):
-
         # Arrange
         instrument = Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),

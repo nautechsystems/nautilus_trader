@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,9 +18,10 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 use nautilus_core::correctness;
-use nautilus_core::string::precision_from_str;
+use nautilus_core::parsing::precision_from_str;
+
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
@@ -36,14 +37,14 @@ impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
-        Quantity {
+        Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        Quantity { raw, precision }
+        Self { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -59,7 +60,7 @@ impl From<&str> for Quantity {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
-            Err(err) => panic!("cannot parse `input` string '{}' as f64, {}", input, err),
+            Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
         };
         Quantity::new(float_res, precision_from_str(input))
     }
@@ -230,7 +231,6 @@ mod tests {
     #[test]
     fn test_qty_new() {
         let qty = Quantity::new(0.00812, 8);
-
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8120000);
         assert_eq!(qty.precision, 8);
@@ -241,7 +241,6 @@ mod tests {
     #[test]
     fn test_qty_minimum() {
         let qty = Quantity::new(0.000000001, 9);
-
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -249,7 +248,6 @@ mod tests {
     #[test]
     fn test_qty_is_zero() {
         let qty = Quantity::new(0.0, 8);
-
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
@@ -261,7 +259,6 @@ mod tests {
     #[test]
     fn test_qty_precision() {
         let qty = Quantity::new(1.001, 2);
-
         assert_eq!(qty.raw, 1000000000);
         assert_eq!(qty.to_string(), "1.00");
     }
@@ -269,7 +266,6 @@ mod tests {
     #[test]
     fn test_qty_new_from_str() {
         let qty = Quantity::from("0.00812000");
-
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8120000);
         assert_eq!(qty.precision, 8);
@@ -298,8 +294,7 @@ mod tests {
         let input_string = "44.12";
         let qty = Quantity::from(input_string);
         let mut res = String::new();
-
-        write!(&mut res, "{}", qty).unwrap();
+        write!(&mut res, "{qty}").unwrap();
         assert_eq!(res, input_string);
         assert_eq!(qty.to_string(), input_string);
     }

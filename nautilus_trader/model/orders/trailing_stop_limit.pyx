@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,18 +22,20 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.enums_c cimport contingency_type_to_str
+from nautilus_trader.model.enums_c cimport liquidity_side_to_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.enums_c cimport time_in_force_to_str
+from nautilus_trader.model.enums_c cimport trailing_offset_type_from_str
+from nautilus_trader.model.enums_c cimport trailing_offset_type_to_str
+from nautilus_trader.model.enums_c cimport trigger_type_from_str
+from nautilus_trader.model.enums_c cimport trigger_type_to_str
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -93,9 +95,9 @@ cdef class TrailingStopLimitOrder(Order):
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).
-    emulation_trigger : TriggerType, default ``NONE``
+    emulation_trigger : TriggerType, default ``NO_TRIGGER``
         The order emulation trigger.
-    contingency_type : ContingencyType, default ``NONE``
+    contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
@@ -110,13 +112,13 @@ cdef class TrailingStopLimitOrder(Order):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `trigger_type` is ``NONE``.
+        If `trigger_type` is ``NO_TRIGGER``.
     ValueError
-        If `trailing_offset_type` is ``NONE``.
+        If `trailing_offset_type` is ``NO_TRAILING_OFFSET``.
     ValueError
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     ValueError
@@ -146,16 +148,16 @@ cdef class TrailingStopLimitOrder(Order):
         bint post_only = False,
         bint reduce_only = False,
         Quantity display_qty = None,
-        TriggerType emulation_trigger = TriggerType.NONE,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
-        Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
-        Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+        Condition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NO_TRIGGER")
+        Condition.not_equal(trailing_offset_type, TrailingOffsetType.NO_TRAILING_OFFSET, "trailing_offset_type", "NO_TRAILING_OFFSET")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
@@ -174,10 +176,10 @@ cdef class TrailingStopLimitOrder(Order):
         cdef dict options = {
             "price": str(price) if price is not None else None,
             "trigger_price": str(trigger_price) if trigger_price is not None else None,
-            "trigger_type": TriggerTypeParser.to_str(trigger_type),
+            "trigger_type": trigger_type_to_str(trigger_type),
             "limit_offset": str(limit_offset),
             "trailing_offset": str(trailing_offset),
-            "trailing_offset_type": TrailingOffsetTypeParser.to_str(trailing_offset_type),
+            "trailing_offset_type": trailing_offset_type_to_str(trailing_offset_type),
             "expire_time_ns": expire_time_ns,
             "display_qty": str(display_qty) if display_qty is not None else None,
         }
@@ -245,15 +247,15 @@ cdef class TrailingStopLimitOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
-        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
+        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.order_type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
+            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
             f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
-            f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
-            f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
-            f"{self.limit_offset}-LIMIT_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
-            f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"[{trigger_type_to_str(self.trigger_type)}] {self.price}-LIMIT "
+            f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
+            f"{self.limit_offset}-LIMIT_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
+            f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
 
@@ -276,27 +278,27 @@ cdef class TrailingStopLimitOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.order_type),
-            "side": OrderSideParser.to_str(self.side),
+            "type": order_type_to_str(self.order_type),
+            "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price) if self.price is not None else None,
             "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
-            "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
+            "trigger_type": trigger_type_to_str(self.trigger_type),
             "limit_offset": str(self.limit_offset),
             "trailing_offset": str(self.trailing_offset),
-            "trailing_offset_type": TrailingOffsetTypeParser.to_str(self.trailing_offset_type),
+            "trailing_offset_type": trailing_offset_type_to_str(self.trailing_offset_type),
             "expire_time_ns": self.expire_time_ns,
-            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
-            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
+            "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
-            "emulation_trigger": TriggerTypeParser.to_str(self.emulation_trigger),
-            "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "emulation_trigger": trigger_type_to_str(self.emulation_trigger),
+            "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
@@ -341,10 +343,10 @@ cdef class TrailingStopLimitOrder(Order):
             quantity=init.quantity,
             price=Price.from_str_c(price_str) if price_str is not None else None,
             trigger_price=Price.from_str_c(trigger_price_str) if trigger_price_str is not None else None,
-            trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
+            trigger_type=trigger_type_from_str(init.options["trigger_type"]),
             limit_offset=Decimal(init.options["limit_offset"]),
             trailing_offset=Decimal(init.options["trailing_offset"]),
-            trailing_offset_type=TrailingOffsetTypeParser.from_str(init.options["trailing_offset_type"]),
+            trailing_offset_type=trailing_offset_type_from_str(init.options["trailing_offset_type"]),
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
             init_id=init.id,

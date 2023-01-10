@@ -6,8 +6,6 @@ authors.workspace = true
 description.workspace = true
 documentation.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
@@ -17,6 +15,7 @@ nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 chrono.workspace = true
 pyo3.workspace = true
+strum.workspace = true
 
 [features]
 extension-module = [
@@ -28,4 +27,3 @@ default = []
 
 [build-dependencies]
 cbindgen.workspace = true
-

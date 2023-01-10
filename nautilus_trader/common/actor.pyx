@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,6 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
@@ -53,16 +52,17 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport ComponentState
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -278,14 +278,14 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *:
+    cpdef void on_instrument_close(self, InstrumentClose update) except *:
         """
         Actions to be performed when running and receives an instrument close
-        price update.
+        update.
 
         Parameters
         ----------
-        update : InstrumentClosePrice
+        update : InstrumentClose
             The update received.
 
         Warnings
@@ -947,7 +947,7 @@ cdef class Actor(Component):
 
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
-        Subscribe to status updates of the given instrument id.
+        Subscribe to status updates of the given instrument ID.
 
         Parameters
         ----------
@@ -976,9 +976,9 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
-        Subscribe to closing prices for the given instrument id.
+        Subscribe to close updates for the given instrument ID.
 
         Parameters
         ----------
@@ -994,13 +994,13 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.venue.close_price.{instrument_id.to_str()}",
-            handler=self.handle_instrument_close_price,
+            handler=self.handle_instrument_close,
         )
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentClosePrice, metadata={"instrument_id": instrument_id}),
+            data_type=DataType(InstrumentClose, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1984,15 +1984,15 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *:
+    cpdef void handle_instrument_close(self, InstrumentClose update) except *:
         """
-        Handle the given instrument close price update.
+        Handle the given instrument close update.
 
-        If state is ``RUNNING`` then passes to `on_instrument_close_price`.
+        If state is ``RUNNING`` then passes to `on_instrument_close`.
 
         Parameters
         ----------
-        update : InstrumentClosePrice
+        update : InstrumentClose
             The update received.
 
         Warnings
@@ -2004,7 +2004,7 @@ cdef class Actor(Component):
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_instrument_close_price(update)
+                self.on_instrument_close(update)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise

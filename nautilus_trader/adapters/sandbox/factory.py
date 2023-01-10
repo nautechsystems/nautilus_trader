@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
@@ -31,7 +30,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
     """
 
     @staticmethod
-    def create(
+    def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
         name: str,
         config: SandboxExecutionClientConfig,
@@ -39,7 +38,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls: Optional[type] = None,
     ) -> SandboxExecutionClient:
         """
         Create a new Sandbox execution client.
@@ -60,9 +58,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------

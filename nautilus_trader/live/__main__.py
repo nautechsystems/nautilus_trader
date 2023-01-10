@@ -2,6 +2,7 @@ from typing import Optional
 
 import click
 import fsspec
+import msgspec.json
 
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -20,7 +21,7 @@ def main(
     if fsspec_url and raw is None:
         with fsspec.open(fsspec_url, "rb") as f:
             raw = f.read().decode()
-    config = TradingNodeConfig.parse_raw(raw)
+    config: TradingNodeConfig = msgspec.json.decode(raw, type=TradingNodeConfig)
     node = TradingNode(config=config)
     node.build()
     if start:

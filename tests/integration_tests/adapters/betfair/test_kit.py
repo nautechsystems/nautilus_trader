@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 import bz2
 import contextlib
+import gzip
 import pathlib
 from asyncio import Future
 from ssl import SSLContext
@@ -26,6 +27,7 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
 from betfair_parser.spec.streaming.ocm import MatchedOrder
@@ -661,21 +663,36 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
-    def read_lines(market: str = "1.166811431") -> list[bytes]:
-        return bz2.open(DATA_PATH / f"{market}.bz2").readlines()
+    def read_lines(filename: str = "1.166811431.bz2") -> list[bytes]:
+        path = DATA_PATH / filename
+        if path.suffix == ".bz2":
+            return bz2.open(path).readlines()
+        elif path.suffix == ".gz":
+            return gzip.open(path).readlines()
+        elif path.suffix == ".log":
+            return open(path, "rb").readlines()
+        else:
+            raise ValueError(filename)
 
     @staticmethod
-    def market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
+    def read_mcm(filename: str) -> list[MCM]:
+        return [STREAM_DECODER.decode(line) for line in BetfairDataProvider.read_lines(filename)]
+
+    @staticmethod
+    def market_updates(filename="1.166811431.bz2", runner1="60424", runner2="237478") -> list:
+        market_id = pathlib.Path(filename).name
+        assert market_id.startswith("1.")
+
         def _fix_ids(r):
             return (
-                r.replace(market.encode(), b"1.180737206")
+                r.replace(market_id.encode(), b"1.180737206")
                 .replace(runner1.encode(), b"19248890")
                 .replace(runner2.encode(), b"38848248")
             )
 
         return [
             STREAM_DECODER.decode(_fix_ids(line.strip()))
-            for line in BetfairDataProvider.read_lines(market)
+            for line in BetfairDataProvider.read_lines(filename)
         ]
 
     @staticmethod

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -144,7 +144,7 @@ def test_parquet_writer_round_trip_trade_ticks():
             InstrumentId.from_str("EUR/USD.SIM"),
             Price(1.234, 4),
             Quantity(5, 4),
-            AggressorSide.BUY,
+            AggressorSide.BUYER,
             TradeId("123456"),
             0,
             0,

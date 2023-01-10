@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,12 +19,13 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.common.generators cimport OrderListIdGenerator
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TrailingOffsetType
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -44,17 +45,16 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 
 cdef class OrderFactory:
     cdef Clock _clock
-    cdef ClientOrderIdGenerator _id_generator
-    cdef int _order_list_id
+    cdef ClientOrderIdGenerator _order_id_generator
+    cdef OrderListIdGenerator _order_list_id_generator
 
     cdef readonly TraderId trader_id
     """The order factories trader ID.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
 
-    cdef int count_c(self)
-
-    cpdef void set_count(self, int count) except *
+    cpdef void set_order_id_count(self, int count) except *
+    cpdef void set_order_list_id_count(self, int count) except *
     cpdef void reset(self) except *
 
     cpdef MarketOrder market(
@@ -206,7 +206,8 @@ cdef class OrderFactory:
         OrderType tp_order_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        bint post_only=*,
+        bint post_only_entry=*,
+        bint post_only_tp=*,
         TriggerType emulation_trigger=*,
         ContingencyType contingency_type=*,
     )

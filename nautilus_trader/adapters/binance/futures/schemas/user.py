@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -118,7 +118,7 @@ class BinanceFuturesAccountUpdateWrapper(msgspec.Struct):
     data: BinanceFuturesAccountUpdateMsg
 
 
-class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     """
     WebSocket message 'inner struct' for `Binance Futures` Order Update events.
 

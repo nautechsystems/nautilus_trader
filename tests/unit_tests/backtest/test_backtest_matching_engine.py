@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.matching_engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
@@ -20,16 +19,23 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
-class TestOrderMatchingEngineCommands:
+class TestOrderMatchingEngine:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -45,16 +51,18 @@ class TestOrderMatchingEngineCommands:
             clock=self.clock,
             logger=self.logger,
         )
-
+        self.instrument = ETHUSDT_PERP_BINANCE
+        self.instrument_id = self.instrument.id
+        self.account_id = TestIdStubs.account_id()
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
+        self.cache.add_instrument(self.instrument)
 
         self.matching_engine = OrderMatchingEngine(
-            instrument=ETHUSDT_PERP_BINANCE,
+            instrument=self.instrument,
             product_id=0,
             fill_model=FillModel(),
             book_type=BookType.L1_TBBO,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             reject_stop_orders=True,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -78,3 +86,46 @@ class TestOrderMatchingEngineCommands:
 
         # Assert
         assert True
+
+    def test_process_venue_status(self):
+        self.matching_engine.process_status(MarketStatus.CLOSED)
+        self.matching_engine.process_status(MarketStatus.PRE_OPEN)
+        self.matching_engine.process_status(MarketStatus.PAUSE)
+        self.matching_engine.process_status(MarketStatus.OPEN)
+
+    def test_process_market_on_close_order(self):
+        order: MarketOrder = TestExecStubs.market_order(
+            instrument_id=self.instrument.id,
+            time_in_force=TimeInForce.AT_THE_CLOSE,
+        )
+        self.matching_engine.process_order(order, self.account_id)
+
+    def test_process_auction_book(self):
+        # Arrange
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument_id=self.instrument.id,
+            bid_price=100,
+            ask_price=105,
+            book_type=BookType.L3_MBO,
+            time_in_force=TimeInForce.AT_THE_CLOSE,
+        )
+        self.matching_engine.process_order_book(snapshot)
+
+        client_order: MarketOrder = TestExecStubs.market_order(
+            instrument_id=self.instrument.id,
+            order_side=OrderSide.BUY,
+            time_in_force=TimeInForce.AT_THE_CLOSE,
+        )
+        self.cache.add_order(client_order, None)
+        self.matching_engine.process_order(client_order, self.account_id)
+        self.matching_engine.process_status(MarketStatus.OPEN)
+        self.matching_engine.process_status(MarketStatus.PRE_OPEN)
+        messages = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        # Act
+        self.matching_engine.process_status(MarketStatus.PAUSE)
+
+        # Assert
+        assert self.matching_engine.msgbus.sent_count == 1
+        assert isinstance(messages[0], OrderFilled)

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,8 +21,8 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -92,13 +92,14 @@ cdef class BettingInstrument(Instrument):
         self.selection_id = selection_id
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
-        instrument_id = betfair_instrument_id(market_id=market_id, selection_id=selection_id,
-                                              selection_handicap=selection_handicap)
+        instrument_id = betfair_instrument_id(
+            market_id=market_id, runner_id=selection_id, runner_handicap=selection_handicap
+        )
 
         super().__init__(
             instrument_id=instrument_id,
             native_symbol=instrument_id.symbol,
-            asset_class=AssetClass.BETTING,
+            asset_class=AssetClass.SPORTS_BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -93,6 +93,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef uint64_t _stored_close_ns
     cdef tuple _cached_update
     cdef str _timer_name
+    cdef bint _build_bars_with_no_updates
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""

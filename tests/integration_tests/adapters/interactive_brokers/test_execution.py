@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import datetime
 from unittest.mock import patch
 
@@ -295,7 +296,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "last_px": Price.from_str("50.00"),
             "last_qty": Quantity.from_str("100"),
-            "liquidity_side": LiquiditySide.NONE,
+            "liquidity_side": LiquiditySide.NO_LIQUIDITY_SIDE,
             "order_side": 1,
             "order_type": OrderType.LIMIT,
             "quote_currency": USD,
