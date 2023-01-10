@@ -75,27 +75,28 @@ unsafe impl Send for PythonParquetReader {}
 #[pymethods]
 impl PythonParquetReader {
     #[new]
+    #[args(ts_init_filter=0)]
     fn new(
         file_path: String,
         chunk_size: usize,
         parquet_type: ParquetType,
         reader_type: ParquetReaderType,
         buffer: Option<&[u8]>,
+        ts_init_filter: i64,
     ) -> Self {
+        let group_filter: GroupFilterArg = ts_init_filter.into();
         let reader = match (parquet_type, reader_type) {
             (ParquetType::QuoteTick, ParquetReaderType::File) => {
                 let file = File::open(&file_path)
                     .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
-                let reader =
-                    ParquetReader::<QuoteTick, File>::new(file, chunk_size, GroupFilterArg::None);
+                let reader = ParquetReader::<QuoteTick, File>::new(file, chunk_size, group_filter);
                 let reader = Box::new(reader);
                 Box::into_raw(reader) as *mut c_void
             }
             (ParquetType::TradeTick, ParquetReaderType::File) => {
                 let file = File::open(&file_path)
                     .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
-                let reader =
-                    ParquetReader::<TradeTick, File>::new(file, chunk_size, GroupFilterArg::None);
+                let reader = ParquetReader::<TradeTick, File>::new(file, chunk_size, group_filter);
                 let reader = Box::new(reader);
                 Box::into_raw(reader) as *mut c_void
             }
@@ -104,7 +105,7 @@ impl PythonParquetReader {
                 let reader = ParquetReader::<QuoteTick, Cursor<&[u8]>>::new(
                     cursor,
                     chunk_size,
-                    GroupFilterArg::None,
+                    group_filter,
                 );
                 let reader = Box::new(reader);
                 Box::into_raw(reader) as *mut c_void
@@ -114,7 +115,7 @@ impl PythonParquetReader {
                 let reader = ParquetReader::<QuoteTick, Cursor<&[u8]>>::new(
                     cursor,
                     chunk_size,
-                    GroupFilterArg::None,
+                    group_filter,
                 );
                 let reader = Box::new(reader);
                 Box::into_raw(reader) as *mut c_void

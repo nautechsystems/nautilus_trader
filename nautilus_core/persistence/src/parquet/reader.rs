@@ -50,6 +50,16 @@ impl<'source> FromPyObject<'source> for GroupFilterArg {
     }
 }
 
+impl From<i64> for GroupFilterArg {
+    fn from(value: i64) -> Self {
+        match value.cmp(&0) {
+            Ordering::Less => GroupFilterArg::TsInitLt(value.unsigned_abs()),
+            Ordering::Equal => GroupFilterArg::None,
+            Ordering::Greater => GroupFilterArg::TsInitGt(value.unsigned_abs()),
+        }
+    }
+}
+
 impl GroupFilterArg {
     /// Scan metadata and choose which chunks to filter and returns a HashSet
     /// holding the indexes of the selected chunks.
