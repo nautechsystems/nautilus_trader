@@ -113,6 +113,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             lambda: pd.Timestamp("1970-01-01", tz="UTC"),
         )
 
+        # Event hooks
+        self._client.errorEvent += self._on_error_event
+
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
@@ -129,6 +132,16 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _disconnect(self):
         if self._client.isConnected():
             self._client.disconnect()
+
+    def create_task(self, coro):
+        self._loop.create_task(self._check_task(coro))
+
+    async def _check_task(self, coro):
+        try:
+            awaitable = await coro
+            return awaitable
+        except Exception as e:
+            self._log.exception("Unhandled exception", e)
 
     def subscribe_order_book_snapshots(
         self,
@@ -208,18 +221,35 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
             bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
         else:
-            bar_data_list: BarDataList = self._client.reqHistoricalData(
-                contract=contract_details.contract,
-                endDateTime="",
-                durationStr=self._bar_spec_to_duration_str(bar_type.spec),
-                barSizeSetting=bar_size_setting,
-                whatToShow=what_to_show[price_type],
-                useRTH=True if contract_details.contract.secType == "STK" else False,
-                formatDate=2,
-                keepUpToDate=True,
+            self.create_task(
+                self._handle_historical_data_request(
+                    contract_details,
+                    bar_type,
+                    bar_size_setting,
+                    what_to_show,
+                ),
             )
 
-            bar_data_list.updateEvent += partial(self._on_historical_bar_update, bar_type=bar_type)
+    async def _handle_historical_data_request(
+        self,
+        contract_details,
+        bar_type,
+        bar_size_setting,
+        what_to_show,
+    ):
+        bar_data_list: BarDataList = await self._client.reqHistoricalDataAsync(
+            contract=contract_details.contract,
+            endDateTime="",
+            durationStr=self._bar_spec_to_duration_str(bar_type.spec),
+            barSizeSetting=bar_size_setting,
+            whatToShow=what_to_show[bar_type.spec.price_type],
+            useRTH=True if contract_details.contract.secType == "STK" else False,
+            formatDate=2,
+            keepUpToDate=True,
+        )
+
+        self._on_historical_bar_update(bars=bar_data_list, has_new_bar=True, bar_type=bar_type)
+        bar_data_list.updateEvent += partial(self._on_historical_bar_update, bar_type=bar_type)
 
     def _bar_spec_to_bar_size(self, bar_spec: BarSpecification):
         aggregation = bar_spec.aggregation
@@ -413,26 +443,15 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not has_new_bar:
             return
 
-        if self._bar_type_to_last_bar_time[bar_type] == self._bar_type_to_last_bar_time[""]:
-            bars.pop()  # Remove incomplete bar from initial pull
-            new_bars = bars
-            historical = True
-        else:
-            # Take Bar with final update, ignoring incomplete and previous bars
-            new_bars = [bars[-2]]
-            historical = False
+        instrument = self.instrument_provider.find(bar_type.instrument_id)
 
         bar: BarData
-        for bar in new_bars:
+        for bar in bars[:-1]:   # Exclude incomplete bar
             if bar.date <= self._bar_type_to_last_bar_time[bar_type]:
                 continue
-            instrument = self.instrument_provider.find(bar_type.instrument_id)
-            if historical:
-                ts_event = dt_to_unix_nanos(bar.date)
-                ts_init = dt_to_unix_nanos(bar.date + bar_type.spec.timedelta)
-            else:
-                ts_event = dt_to_unix_nanos(bar.date)
-                ts_init = self._clock.timestamp_ns()
+
+            ts_event = dt_to_unix_nanos(bar.date)
+            ts_init = self._clock.timestamp_ns()
 
             data = Bar(
                 bar_type=bar_type,
@@ -446,3 +465,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             self._handle_data(data)
             self._bar_type_to_last_bar_time[bar_type] = pd.Timestamp(bar.date)
+
+    def _on_error_event(self, req_id, error_code, error_string, contract):
+        # Connectivity between IB and Trader Workstation has been restored
+        if error_code == 1101 or error_code == 1102:
+            self._log.info(f"{error_code}: {error_string}")
+            for bar_type in self._bar_type_to_last_bar_time.keys():
+                self._log.info(f"Resubscribe to {repr(bar_type)}")
+                self.subscribe_bars(bar_type)
+        else:
+            self._log.warning(f"{error_code}: {error_string}")
