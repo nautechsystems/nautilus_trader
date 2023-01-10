@@ -81,9 +81,17 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
 
     async def request_commission_rate(
         self,
-        parameters: GetParameters,
+        timestamp: str,
+        symbol: BinanceSymbol,
+        recv_window: Optional[str] = None,
     ) -> BinanceFuturesCommissionRate:
-        rate = await self._get(parameters)
+        rate = await self._get(
+            parameters=self.GetParameters(
+                timestamp=timestamp,
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
+        )
         return rate
 
 

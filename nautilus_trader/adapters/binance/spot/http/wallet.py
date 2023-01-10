@@ -77,8 +77,19 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self.get_resp_decoder.decode(raw)
 
-    async def request_trade_fees(self, parameters: GetParameters) -> BinanceSpotTradeFees:
-        fees = await self._get(parameters)
+    async def request_trade_fees(
+        self,
+        timestamp: str,
+        symbol: Optional[BinanceSymbol] = None,
+        recv_window: Optional[str] = None,
+    ) -> BinanceSpotTradeFees:
+        fees = await self._get(
+            parameters=self.GetParameters(
+                timestamp=timestamp,
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
+        )
         return fees
 
 

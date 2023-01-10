@@ -121,16 +121,38 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
     async def create_listen_key(
         self,
-        parameters: Optional[PostParameters] = None,
+        symbol: Optional[BinanceSymbol] = None,
     ) -> BinanceListenKey:
-        key = await self._post(parameters)
+        key = await self._post(
+            parameters=self.PostParameters(
+                symbol=symbol,
+            ),
+        )
         return key
 
-    async def keepalive_listen_key(self, parameters: Optional[PutDeleteParameters] = None):
-        await self._put(parameters)
+    async def keepalive_listen_key(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        listen_key: Optional[BinanceListenKey] = None,
+    ):
+        await self._put(
+            parameters=self.PutDeleteParameters(
+                symbol=symbol,
+                listenKey=listen_key,
+            ),
+        )
 
-    async def delete_listen_key(self, parameters: Optional[PutDeleteParameters] = None):
-        await self._delete(parameters)
+    async def delete_listen_key(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        listen_key: Optional[BinanceListenKey] = None,
+    ):
+        await self._delete(
+            parameters=self.PutDeleteParameters(
+                symbol=symbol,
+                listenKey=listen_key,
+            ),
+        )
 
 
 class BinanceUserDataHttpAPI:

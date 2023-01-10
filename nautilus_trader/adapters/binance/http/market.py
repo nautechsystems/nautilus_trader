@@ -78,6 +78,9 @@ class BinancePingHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, None)
         return self.get_resp_decoder.decode(raw)
 
+    async def request_ping(self) -> dict:
+        return await self._get()
+
 
 class BinanceTimeHttp(BinanceHttpEndpoint):
     """
@@ -179,9 +182,15 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-        parameters: GetParameters,
+        symbol: BinanceSymbol,
+        limit: Optional[int] = None,
     ) -> OrderBookSnapshot:
-        response = await self._get(parameters)
+        response = await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                limit=limit,
+            ),
+        )
         return response._parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=ts_init,
@@ -250,12 +259,18 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
     async def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        parameters: GetParameters,
         ts_init: int,
+        symbol: BinanceSymbol,
+        limit: Optional[int] = None,
     ) -> list[TradeTick]:
         """Request TradeTicks from Binance"""
-        response = await self._get(parameters)
-        return response._parse_to_trade_ticks(
+        response = await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                limit=limit,
+            ),
+        )
+        return response.parse_to_trade_ticks(
             instrument_id=instrument_id,
             ts_init=ts_init,
         )
@@ -319,12 +334,20 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
     async def request_historical_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        parameters: GetParameters,
         ts_init: int,
+        symbol: BinanceSymbol,
+        limit: Optional[int] = None,
+        from_id: Optional[str] = None,
     ) -> list[TradeTick]:
         """Request historical TradeTicks from Binance"""
-        response = await self._get(parameters)
-        return response._parse_to_trade_ticks(
+        response = await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                limit=limit,
+                fromId=from_id,
+            ),
+        )
+        return response.parse_to_trade_ticks(
             instrument_id=instrument_id,
             ts_init=ts_init,
         )
@@ -458,12 +481,24 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
     async def request_binance_bars(
         self,
         bar_type: BarType,
-        parameters: GetParameters,
         ts_init: int,
+        symbol: BinanceSymbol,
+        interval: BinanceKlineInterval,
+        limit: Optional[int] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
     ) -> list[BinanceBar]:
         """Request Binance Bars"""
-        response = await self._get(parameters)
-        return response._parse_to_binance_bars(
+        response = await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+                startTime=start_time,
+                endTime=end_time,
+            ),
+        )
+        return response.parse_to_binance_bars(
             bar_type=bar_type,
             ts_init=ts_init,
         )

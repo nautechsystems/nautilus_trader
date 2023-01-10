@@ -84,11 +84,19 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
 
     async def request_exchange_info(
         self,
-        parameters: Optional[GetParameters] = None,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+        permissions: Optional[BinanceSpotPermissions] = None,
     ) -> BinanceSpotExchangeInfo:
-        if parameters.symbol and parameters.symbols:
+        if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
-        return await self._get(parameters)
+        return await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+                permissions=permissions,
+            ),
+        )
 
 
 class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
@@ -137,8 +145,12 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self.get_resp_decoder.decode(raw)
 
-    async def request_average_price(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
-        return await self._get(parameters)
+    async def request_average_price(self, symbol: BinanceSymbol) -> BinanceSpotAvgPrice:
+        return await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+            ),
+        )
 
 
 class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
