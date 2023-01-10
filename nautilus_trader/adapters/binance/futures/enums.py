@@ -16,6 +16,10 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TriggerType
+
 
 """
 Defines `Binance` Futures specific enums.
@@ -106,3 +110,37 @@ class BinanceFuturesEventType(Enum):
     ACCOUNT_UPDATE = "ACCOUNT_UPDATE"
     ORDER_TRADE_UPDATE = "ORDER_TRADE_UPDATE"
     ACCOUNT_CONFIG_UPDATE = "ACCOUNT_CONFIG_UPDATE"
+
+
+class BinanceFuturesEnumParser(BinanceEnumParser):
+    """
+    Provides parsing methods for enums used by the 'Binance Futures' exchange.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.ext_position_side_to_int_position_side = {
+            BinanceFuturesPositionSide.BOTH: PositionSide.FLAT,
+            BinanceFuturesPositionSide.LONG: PositionSide.LONG,
+            BinanceFuturesPositionSide.SHORT: PositionSide.SHORT,
+        }
+
+    def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
+        if trigger_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
+            return TriggerType.LAST_TRADE
+        elif trigger_type == BinanceFuturesWorkingType.MARK_PRICE:
+            return TriggerType.MARK_PRICE
+        else:
+            return TriggerType.NO_TRIGGER  # pragma: no cover (design-time error)
+
+    def parse_futures_position_side(
+        self,
+        position_side: BinanceFuturesPositionSide,
+    ) -> PositionSide:
+        try:
+            return self.ext_position_side_to_int_position_side[position_side]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized binance futures position side, was {position_side}",  # pragma: no cover
+            )

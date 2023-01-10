@@ -16,6 +16,8 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+
 
 """
 Defines `Binance` Spot/Margin specific enums.
@@ -64,3 +66,12 @@ class BinanceSpotEventType(Enum):
     balanceUpdate = "balanceUpdate"
     executionReport = "executionReport"
     listStatus = "listStatus"
+
+
+class BinanceSpotEnumParser(BinanceEnumParser):
+    """
+    Provides parsing methods for enums used by the 'Binance Spot/Margin' exchange.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
