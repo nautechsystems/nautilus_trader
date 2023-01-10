@@ -16,6 +16,7 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -255,6 +256,11 @@ class BinanceEnumParser:
             BinanceOrderType.LIMIT_MAKER: OrderType.LIMIT,
         }
 
+        self.ext_order_side_to_int_order_side = {
+            BinanceOrderSide.BUY: OrderSide.BUY,
+            BinanceOrderSide.SELL: OrderSide.SELL,
+        }
+
         # Build symmetrical reverse dictionary hashmaps
         self._build_int_to_ext_dicts()
 
@@ -271,6 +277,14 @@ class BinanceEnumParser:
                 self.ext_order_type_to_int_order_type.items(),
             ),
         )
+
+    def parse_binance_order_side(self, order_side: BinanceOrderSide) -> OrderSide:
+        try:
+            return self.ext_order_side_to_int_order_side[order_side]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized binance order side, was {order_side}",  # pragma: no cover
+            )
 
     def parse_binance_time_in_force(self, time_in_force: BinanceTimeInForce) -> TimeInForce:
         if time_in_force == BinanceTimeInForce.GTX:
