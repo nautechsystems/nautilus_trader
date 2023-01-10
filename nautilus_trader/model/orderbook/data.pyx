@@ -61,12 +61,14 @@ cdef class OrderBookData(Data):
         uint64_t update_id,
         uint64_t ts_event,
         uint64_t ts_init,
+        TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
         self.book_type = book_type
         self.update_id = update_id
+        self.time_in_force = time_in_force
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -100,8 +102,9 @@ cdef class OrderBookSnapshot(OrderBookData):
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t update_id=0,
+        TimeInForce time_in_force = TimeInForce.GTC,
     ):
-        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init, time_in_force)
 
         self.bids = bids
         self.asks = asks
@@ -209,8 +212,9 @@ cdef class OrderBookDeltas(OrderBookData):
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t update_id=0,
+        TimeInForce time_in_force = TimeInForce.GTC,
     ):
-        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init, time_in_force)
 
         self.deltas = deltas
 
@@ -317,8 +321,9 @@ cdef class OrderBookDelta(OrderBookData):
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t update_id=0,
+        TimeInForce time_in_force = TimeInForce.GTC,
     ):
-        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init, time_in_force)
 
         self.action = action
         self.order = order

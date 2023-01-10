@@ -82,16 +82,16 @@ def _order_quantity_to_stake(quantity: Quantity) -> str:
     return str(quantity.as_double())
 
 
-def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
+def _make_limit_order(order: LimitOrder):
     price = str(float(_probability_to_price(probability=order.price, side=order.side)))
     size = _order_quantity_to_stake(quantity=order.quantity)
 
-    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
+    if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
             "orderType": "LIMIT_ON_CLOSE",
             "limitOnCloseOrder": {"price": price, "liability": size},
         }
-    else:
+    elif order.time_in_force in (TimeInForce.GTC, TimeInForce.IOC, TimeInForce.FOK):
         parsed = {
             "orderType": "LIMIT",
             "limitOrder": {"price": price, "size": size, "persistenceType": "PERSIST"},
@@ -100,17 +100,19 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
             parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]  # type: ignore
             parsed["limitOrder"]["persistenceType"] = "LAPSE"  # type: ignore
         return parsed
+    else:
+        raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
 
 
-def _make_market_order(order: Union[LimitOrder, MarketOrder]):
-    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
+def _make_market_order(order: MarketOrder):
+    if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
             "orderType": "MARKET_ON_CLOSE",
             "marketOnCloseOrder": {
                 "liability": str(order.quantity.as_double()),
             },
         }
-    else:
+    elif order.time_in_force == TimeInForce.GTC:
         # Betfair doesn't really support market orders, return a limit order with min/max price
         limit_order = LimitOrder(
             trader_id=order.trader_id,
@@ -129,6 +131,8 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
         # the size as is.
         limit_order["limitOrder"]["size"] = str(order.quantity.as_double())
         return limit_order
+    else:
+        raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
 
 
 def make_order(order: Union[LimitOrder, MarketOrder]):
@@ -157,7 +161,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 "selectionId": instrument.selection_id,
                 "side": N2B_SIDE[command.order.side],
                 "handicap": instrument.selection_handicap,
-                # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
+                # Remove the strategy name from customer_order_ref; it has a limited size and don't control what
                 # length the strategy might be or what characters users might append
                 "customerOrderRef": make_custom_order_ref(
                     client_order_id=command.order.client_order_id,
