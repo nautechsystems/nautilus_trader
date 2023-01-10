@@ -18,6 +18,11 @@ import json
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
 
+################################################################################
+# HTTP responses
+################################################################################
+
+
 class BinanceSymbol(str):
     """Binance compatible symbol"""
 
@@ -46,5 +51,9 @@ class BinanceSymbols(str):
     """Binance compatible list of symbols"""
 
     def __new__(cls, symbols: list[str]):
-        binance_symbols: list[str] = [BinanceSymbol(symbol) for symbol in symbols]
+        binance_symbols: list[BinanceSymbol] = [BinanceSymbol(symbol) for symbol in symbols]
         return super().__new__(cls, json.dumps(binance_symbols))
+
+    def parse_str_to_list(self) -> list[BinanceSymbol]:
+        binance_symbols: list[BinanceSymbol] = json.loads(self)
+        return binance_symbols

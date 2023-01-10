@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
@@ -24,6 +25,9 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 
 
 ################################################################################
@@ -54,6 +58,17 @@ class BinanceSpotBalance(msgspec.Struct):
     a: str  # Asset
     f: str  # Free
     l: str  # Locked
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.a)
+        free = Decimal(self.f)
+        locked = Decimal(self.l)
+        total: Decimal = free + locked
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
 
 
 class BinanceSpotAccountUpdateMsg(msgspec.Struct):

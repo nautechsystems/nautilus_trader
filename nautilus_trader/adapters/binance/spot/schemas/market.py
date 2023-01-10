@@ -17,11 +17,23 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceExchangeFilter
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceRateLimit
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookDelta
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 ################################################################################
@@ -48,6 +60,24 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
     isMarginTradingAllowed: bool
     filters: list[BinanceSymbolFilter]
     permissions: list[BinanceSpotPermissions]
+
+    def parse_to_base_asset(self):
+        return Currency(
+            code=self.baseAsset,
+            precision=self.baseAssetPrecision,
+            iso4217=0,  # Currently undetermined for crypto assets
+            name=self.baseAsset,
+            currency_type=CurrencyType.CRYPTO,
+        )
+
+    def parse_to_quote_asset(self):
+        return Currency(
+            code=self.baseAsset,
+            precision=self.baseAssetPrecision,
+            iso4217=0,  # Currently undetermined for crypto assets
+            name=self.baseAsset,
+            currency_type=CurrencyType.CRYPTO,
+        )
 
 
 class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
@@ -76,8 +106,23 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
     """Websocker message 'inner struct' for 'Binance Spot/Margin Partial Book Depth Streams.'"""
 
     lastUpdateId: int
-    bids: list[tuple[str, str]]
-    asks: list[tuple[str, str]]
+    bids: list[BinanceOrderBookDelta]
+    asks: list[BinanceOrderBookDelta]
+
+    def parse_to_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> OrderBookSnapshot:
+        return OrderBookSnapshot(
+            instrument_id=instrument_id,
+            book_type=BookType.L2_MBP,
+            bids=[[float(o.price), float(o.size)] for o in self.bids],
+            asks=[[float(o.price), float(o.size)] for o in self.asks],
+            ts_event=ts_init,
+            ts_init=ts_init,
+            update_id=self.lastUpdateId,
+        )
 
 
 class BinanceSpotOrderBookPartialDepthMsg(msgspec.Struct):
@@ -115,6 +160,21 @@ class BinanceSpotTradeData(msgspec.Struct):
     a: int  # Seller order ID
     T: int  # Trade time
     m: bool  # Is the buyer the market maker?
+
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.q),
+            aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.t)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
 
 
 class BinanceSpotTradeMsg(msgspec.Struct):

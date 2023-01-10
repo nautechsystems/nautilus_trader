@@ -13,27 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.adapters.binance.common.parsing.execution import BinanceExecutionParser
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
-from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Quantity
 
 
 class BinanceFuturesExecutionParser(BinanceExecutionParser):
     """
-    Provides parsing methods for execution on the 'Binance Futures' exchange.
+    Provides enum parsing methods for execution on the 'Binance Futures' exchange.
     """
 
     def __init__(self) -> None:
         super().__init__()
+
+        self.ext_position_side_to_int_position_side = {
+            BinanceFuturesPositionSide.BOTH: PositionSide.FLAT,
+            BinanceFuturesPositionSide.LONG: PositionSide.LONG,
+            BinanceFuturesPositionSide.SHORT: PositionSide.SHORT,
+        }
 
     def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
         if trigger_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
@@ -43,29 +42,13 @@ class BinanceFuturesExecutionParser(BinanceExecutionParser):
         else:
             return TriggerType.NO_TRIGGER  # pragma: no cover (design-time error)
 
-    def parse_futures_position_report_http(
+    def parse_futures_position_side(
         self,
-        account_id: AccountId,
-        instrument_id: InstrumentId,
-        data: BinanceFuturesPositionRisk,
-        report_id: UUID4,
-        ts_init: int,
-    ) -> PositionStatusReport:
-        net_size = Decimal(data.positionAmt)
-
-        if net_size > 0:
-            position_side = PositionSide.LONG
-        elif net_size < 0:
-            position_side = PositionSide.SHORT
-        else:
-            position_side = PositionSide.FLAT
-
-        return PositionStatusReport(
-            account_id=account_id,
-            instrument_id=instrument_id,
-            position_side=position_side,
-            quantity=Quantity.from_str(str(abs(net_size))),
-            report_id=report_id,
-            ts_last=ts_init,
-            ts_init=ts_init,
-        )
+        position_side: BinanceFuturesPositionSide,
+    ) -> PositionSide:
+        try:
+            return self.ext_position_side_to_int_position_side[position_side]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized binance futures position side, was {position_side}",  # pragma: no cover
+            )

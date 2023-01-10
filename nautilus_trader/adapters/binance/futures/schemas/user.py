@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
@@ -27,6 +28,9 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventTy
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 
 
 ################################################################################
@@ -80,6 +84,18 @@ class BinanceFuturesBalance(msgspec.Struct):
     wb: str  # Wallet Balance
     cw: str  # Cross Wallet Balance
     bc: str  # Balance Change except PnL and Commission
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.a)
+        free = Decimal(self.wb)
+        locked = Decimal(0)  # TODO(cs): Pending refactoring of accounting
+        total: Decimal = free + locked
+
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
 
 
 class BinanceFuturesPosition(msgspec.Struct):

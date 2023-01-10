@@ -13,17 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceExchangeFilter
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceRateLimit
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 ################################################################################
@@ -66,6 +77,24 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
     filters: list[BinanceSymbolFilter]
     orderTypes: list[BinanceOrderType]
     timeInForce: list[BinanceTimeInForce]
+
+    def parse_to_base_currency(self):
+        return Currency(
+            code=self.baseAsset,
+            precision=self.baseAssetPrecision,
+            iso4217=0,  # Currently undetermined for crypto assets
+            name=self.baseAsset,
+            currency_type=CurrencyType.CRYPTO,
+        )
+
+    def parse_to_quote_currency(self):
+        return Currency(
+            code=self.quoteAsset,
+            precision=self.quotePrecision,
+            iso4217=0,  # Currently undetermined for crypto assets
+            name=self.quoteAsset,
+            currency_type=CurrencyType.CRYPTO,
+        )
 
 
 class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
@@ -133,6 +162,21 @@ class BinanceFuturesTradeData(msgspec.Struct):
     X: BinanceOrderType  # Buyer order type
     m: bool  # Is the buyer the market maker?
 
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.q),
+            aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.t)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
+
 
 class BinanceFuturesTradeMsg(msgspec.Struct):
     """WebSocket message from `Binance Futures` Trade Streams."""
@@ -152,6 +196,22 @@ class BinanceFuturesMarkPriceData(msgspec.Struct):
     P: str  # Estimated Settle Price, only useful in the last hour before the settlement starts
     r: str  # Funding rate
     T: int  # Next funding time
+
+    def parse_to_binance_futures_mark_price_update(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> BinanceFuturesMarkPriceUpdate:
+        return BinanceFuturesMarkPriceUpdate(
+            instrument_id=instrument_id,
+            mark=Price.from_str(self.p),
+            index=Price.from_str(self.i),
+            estimated_settle=Price.from_str(self.P),
+            funding_rate=Decimal(self.r),
+            ts_next_funding=millis_to_nanos(self.T),
+            ts_event=millis_to_nanos(self.E),
+            ts_init=ts_init,
+        )
 
 
 class BinanceFuturesMarkPriceMsg(msgspec.Struct):

@@ -13,9 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 
 
 ################################################################################
@@ -31,6 +36,17 @@ class BinanceSpotBalanceInfo(msgspec.Struct):
     asset: str
     free: str
     locked: str
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.asset)
+        free = Decimal(self.free)
+        locked = Decimal(self.locked)
+        total: Decimal = free + locked
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
 
 
 class BinanceSpotAccountInfo(msgspec.Struct):

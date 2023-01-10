@@ -13,12 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
+from nautilus_trader.adapters.binance.futures.parsing.execution import BinanceFuturesExecutionParser
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 
 
 ################################################################################
@@ -46,6 +57,24 @@ class BinanceFuturesBalanceInfo(msgspec.Struct):
     # whether the asset can be used as margin in Multi - Assets mode
     marginAvailable: Optional[bool] = None
     updateTime: Optional[int] = None  # last update time
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.asset)
+        total = Decimal(self.walletBalance)
+        locked = Decimal(self.initialMargin) + Decimal(self.maintMargin)
+        free = total - locked
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+
+    def parse_to_margin_balance(self) -> MarginBalance:
+        currency: Currency = Currency.from_str(self.asset)
+        return MarginBalance(
+            initial=Money(Decimal(self.initialMargin), currency),
+            maintenance=Money(Decimal(self.maintMargin), currency),
+        )
 
 
 class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
@@ -95,3 +124,25 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     unRealizedProfit: str
     positionSide: BinanceFuturesPositionSide
     updateTime: int
+
+    def parse_to_position_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        enum_parser: BinanceFuturesExecutionParser,
+        report_id: UUID4,
+        ts_init: int,
+    ) -> PositionStatusReport:
+        position_side = enum_parser.parse_futures_position_side(
+            self.positionSide,
+        )
+        net_size = Decimal(self.positionAmt)
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            position_side=position_side,
+            quantity=Quantity.from_str(str(abs(net_size))),
+            report_id=report_id,
+            ts_last=ts_init,
+            ts_init=ts_init,
+        )
