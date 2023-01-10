@@ -110,6 +110,7 @@ def _build_extensions() -> list[Extension]:
 
     extra_compile_args = []
     if platform.system() != "Windows":
+        # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-parentheses-equality")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
