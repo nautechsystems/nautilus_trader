@@ -260,25 +260,12 @@ def build() -> None:
 
 
 if __name__ == "__main__":
+    ts_start = datetime.utcnow()
+
     print("\033[36m")
     print("=====================================================================")
     print("Nautilus Builder")
     print("=====================================================================\033[0m")
-
-    ts_start = datetime.utcnow()
-
-    # Work around a Cython problem in Python 3.8.x on macOS
-    # https://github.com/cython/cython/issues/3262
-    if platform.system() == "Darwin":
-        print("macOS: Setting multiprocessing method to 'fork'.")
-        try:
-            # noinspection PyUnresolvedReferences
-            import multiprocessing
-
-            multiprocessing.set_start_method("fork", force=True)
-        except ImportError:
-            print("multiprocessing not available")  # pragma: no cover
-
     print(f"System: {platform.system()} {platform.machine()}")
     print(f"Clang:  {_get_clang_version()}")
     print(f"Rust:   {_get_rustc_version()}")
