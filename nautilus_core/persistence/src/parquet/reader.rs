@@ -16,12 +16,15 @@
 use std::collections::HashSet;
 use std::io::{Read, Seek};
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use arrow2::array::UInt64Array;
 use arrow2::io::parquet::read::{self, RowGroupMetaData};
 use arrow2::io::parquet::write::FileMetaData;
 use arrow2::{datatypes::Schema, io::parquet::read::FileReader};
+use pyo3::types::PyInt;
+use pyo3::FromPyObject;
+
+use std::cmp::Ordering;
 
 use super::DecodeFromChunk;
 
@@ -36,13 +39,21 @@ pub enum GroupFilterArg {
     None,
 }
 
-// duplicate private type definition from arrow2 parquet file reader
-type GroupFilterPredicate = Arc<dyn Fn(usize, &RowGroupMetaData) -> bool + Send + Sync>;
+impl<'source> FromPyObject<'source> for GroupFilterArg {
+    fn extract(ob: &'source pyo3::PyAny) -> pyo3::PyResult<Self> {
+        let filter_arg: i64 = ob.downcast::<PyInt>()?.extract()?;
+        match filter_arg.cmp(&0) {
+            Ordering::Less => Ok(GroupFilterArg::TsInitLt(filter_arg.abs() as u64)),
+            Ordering::Equal => Ok(GroupFilterArg::None),
+            Ordering::Greater => Ok(GroupFilterArg::TsInitGt(filter_arg.abs() as u64)),
+        }
+    }
+}
 
 impl GroupFilterArg {
     /// Scan metadata and choose which chunks to filter and returns a HashSet
     /// holding the indexes of the selected chunks.
-    fn selected_groups(&self, metadata: &FileMetaData, schema: &Schema) -> HashSet<usize> {
+    fn selected_groups(&self, metadata: FileMetaData, schema: &Schema) -> Vec<RowGroupMetaData> {
         match self {
             // select groups that have minimum ts_init less than limit
             GroupFilterArg::TsInitLt(limit) => {
@@ -57,7 +68,7 @@ impl GroupFilterArg {
                         .as_any()
                         .downcast_ref::<UInt64Array>()
                         .expect("Unable to unwrap minimum value metadata for ts_init statistics");
-                    min_values
+                    let selected_groups: HashSet<usize> = min_values
                         .iter()
                         .enumerate()
                         .filter_map(|(i, ts_group_min)| {
@@ -68,9 +79,16 @@ impl GroupFilterArg {
                                 None
                             }
                         })
+                        .collect();
+                    metadata
+                        .row_groups
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(i, _row_group)| selected_groups.contains(i))
+                        .map(|(_i, row_group)| row_group)
                         .collect()
                 } else {
-                    HashSet::new()
+                    metadata.row_groups
                 }
             }
             // select groups that have maximum ts_init time greater than limit
@@ -86,7 +104,7 @@ impl GroupFilterArg {
                         .as_any()
                         .downcast_ref::<UInt64Array>()
                         .expect("Unable to unwrap maximum value metadata for ts_init statistics");
-                    max_values
+                    let selected_groups: HashSet<usize> = max_values
                         .iter()
                         .enumerate()
                         .filter_map(|(i, ts_group_max)| {
@@ -97,14 +115,19 @@ impl GroupFilterArg {
                                 None
                             }
                         })
+                        .collect();
+                    metadata
+                        .row_groups
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(i, _row_group)| selected_groups.contains(i))
+                        .map(|(_i, row_group)| row_group)
                         .collect()
                 } else {
-                    HashSet::new()
+                    metadata.row_groups
                 }
             }
-            GroupFilterArg::None => {
-                unreachable!("filter_groups should not be called with None filter")
-            }
+            GroupFilterArg::None => metadata.row_groups,
         }
     }
 }
@@ -121,43 +144,14 @@ impl<A, R> ParquetReader<A, R>
 where
     R: Read + Seek,
 {
-    pub fn new(mut reader: R, chunk_size: usize, _filter_arg: GroupFilterArg) -> Self {
-        // TODO: filter group
-        // let group_filter_predicate = ParquetReader::<A, R>::new_predicate(&filter_arg, &mut reader);
-
+    pub fn new(mut reader: R, chunk_size: usize, filter_arg: GroupFilterArg) -> Self {
         let metadata = read::read_metadata(&mut reader).expect("Unable to read metadata");
         let schema = read::infer_schema(&metadata).expect("Unable to infer schema");
-        let fr = FileReader::new(
-            reader,
-            metadata.row_groups,
-            schema,
-            Some(chunk_size),
-            None,
-            None,
-        );
+        let row_groups = filter_arg.selected_groups(metadata, &schema);
+        let fr = FileReader::new(reader, row_groups, schema, Some(chunk_size), None, None);
         ParquetReader {
             file_reader: fr,
             reader_type: PhantomData,
-        }
-    }
-
-    /// create new predicate from a given argument and metadata
-    fn new_predicate(filter_arg: &GroupFilterArg, reader: &mut R) -> Option<GroupFilterPredicate> {
-        match filter_arg {
-            GroupFilterArg::None => None,
-            // a closure that captures the HashSet of indexes of selected chunks
-            // and uses this to check if a chunk is selected based on it's index
-            _ => {
-                let metadata = read::read_metadata(reader).expect("unable to read metadata");
-                let schema = read::infer_schema(&metadata).expect("unable to infer schema");
-                let selected_groups = filter_arg.selected_groups(&metadata, &schema);
-                let filter_closure: GroupFilterPredicate = Arc::new(
-                    move |group_index: usize, _metadata: &RowGroupMetaData| -> bool {
-                        selected_groups.contains(&group_index)
-                    },
-                );
-                Some(filter_closure)
-            }
         }
     }
 }

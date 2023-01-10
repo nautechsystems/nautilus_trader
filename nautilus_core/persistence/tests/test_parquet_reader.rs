@@ -13,13 +13,18 @@
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
 
-use std::{ffi::CString, fs::File};
+use std::{collections::BTreeMap, ffi::CString, fs::File, io::Cursor};
 
 use nautilus_core::cvec::CVec;
-use nautilus_model::data::tick::QuoteTick;
+use nautilus_model::{
+    data::tick::{QuoteTick, TradeTick},
+    identifiers::trade_id::TradeId,
+    types::{price::Price, quantity::Quantity},
+};
 use nautilus_persistence::parquet::{
     parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
-    parquet_reader_next_chunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType,
+    parquet_reader_next_chunk, EncodeToChunk, GroupFilterArg, ParquetReader, ParquetReaderType,
+    ParquetType, ParquetWriter,
 };
 
 mod test_util;
@@ -73,4 +78,65 @@ fn test_parquet_reader_native() {
 
     assert_eq!("EUR/USD.SIM", data[0].instrument_id.to_string());
     assert_eq!(data.len(), 9500);
+}
+
+#[test]
+fn test_parquet_filter() {
+    use rand::Rng;
+
+    let mut rng = rand::thread_rng();
+    let len = 10234;
+    let data1 = vec![
+        TradeTick {
+            instrument_id: "EUR/USD.DUKA".into(),
+            price: Price::new(rng.gen_range(1.2..1.5), 4),
+            size: Quantity::new(40.0, 0),
+            ts_event: 0,
+            ts_init: rng.gen_range(1..10),
+            aggressor_side: nautilus_model::enums::AggressorSide::Buyer,
+            trade_id: TradeId::new("hey")
+        };
+        len
+    ];
+    let data2 = vec![
+        TradeTick {
+            instrument_id: "EUR/USD.DUKA".into(),
+            price: Price::new(rng.gen_range(1.2..1.5), 4),
+            size: Quantity::new(40.0, 0),
+            ts_event: 0,
+            ts_init: rng.gen_range(11..24),
+            aggressor_side: nautilus_model::enums::AggressorSide::Buyer,
+            trade_id: TradeId::new("hey")
+        };
+        len
+    ];
+
+    let mut metadata: BTreeMap<String, String> = BTreeMap::new();
+    metadata.insert("instrument_id".to_string(), "EUR/USD.DUKA".to_string());
+    metadata.insert("price_precision".to_string(), "4".to_string());
+    metadata.insert("size_precision".to_string(), "4".to_string());
+    let mut writer: ParquetWriter<TradeTick, Vec<u8>> =
+        ParquetWriter::new(Vec::new(), TradeTick::encode_schema(metadata));
+
+    writer.write(&data1).unwrap();
+    writer.write(&data2).unwrap();
+
+    let buffer = writer.flush();
+    let filtered_reader: ParquetReader<TradeTick, Cursor<&[u8]>> =
+        ParquetReader::new(Cursor::new(&buffer), 1000, GroupFilterArg::TsInitGt(11));
+    let data_filtered: Vec<TradeTick> = filtered_reader
+        .flat_map(|ticks| ticks.into_iter())
+        .collect();
+    let unfiltered_reader: ParquetReader<TradeTick, Cursor<&[u8]>> =
+        ParquetReader::new(Cursor::new(&buffer), 1000, GroupFilterArg::None);
+    let data_unfiltered: Vec<TradeTick> = unfiltered_reader
+        .flat_map(|ticks| ticks.into_iter())
+        .collect();
+
+    assert_eq!(data_filtered.len(), len);
+    assert_eq!(data_unfiltered.len(), len + len);
+    assert!(
+        data_filtered.len() < data_unfiltered.len(),
+        "Filtered data must be less than unfiltered data"
+    );
 }
