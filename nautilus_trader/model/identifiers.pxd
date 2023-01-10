@@ -85,9 +85,6 @@ cdef class AccountId(Identifier):
 cdef class ClientOrderId(Identifier):
     cdef ClientOrderId_t _mem
 
-    cpdef str to_str(self)
-
-
 cdef class VenueOrderId(Identifier):
     cdef VenueOrderId_t _mem
 
