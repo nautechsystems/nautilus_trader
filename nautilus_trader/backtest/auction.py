@@ -18,7 +18,7 @@ from nautilus_trader.model.orderbook.ladder import Ladder
 
 
 def default_auction_match(left: Ladder, right: Ladder) -> tuple[list, list]:
-    """A default auction match function, matching in-cross bids and offers"""
+    """Match bid/ask Ladders as default auction match function"""
     if not (left.top() and right.top()):
         return [], []
     bid_volume = volume_traded_at_price(left, right.top().price, side=OrderSide.BUY)
