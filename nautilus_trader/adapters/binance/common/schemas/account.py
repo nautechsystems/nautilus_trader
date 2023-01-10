@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
@@ -21,7 +22,28 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.parsing.execution import BinanceExecutionParser
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 ################################################################################
@@ -80,6 +102,68 @@ class BinanceOrder(msgspec.Struct, frozen=True):
     cumBase: Optional[str] = None  # COIN-M FUTURES only
     pair: Optional[str] = None  # COIN-M FUTURES only
 
+    def parse_to_order_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        report_id: UUID4,
+        exec_parser: BinanceExecutionParser,
+        ts_init: int,
+    ) -> OrderStatusReport:
+        client_order_id = ClientOrderId(self.clientOrderId) if self.clientOrderId != "" else None
+        order_list_id = OrderListId(str(self.orderListId)) if self.orderListId is not None else None
+        contingency_type = (
+            ContingencyType.OCO
+            if self.orderListId is not None and self.orderListId != -1
+            else ContingencyType.NO_CONTINGENCY
+        )
+
+        trigger_price = Decimal(self.stopPrice)
+        trigger_type = TriggerType.NO_TRIGGER
+        if self.workingType is not None:
+            trigger_type = exec_parser.parse_binance_trigger_type(self.workingType)
+        elif trigger_price > 0:
+            trigger_type = TriggerType.LAST_TRADE if trigger_price > 0 else TriggerType.NO_TRIGGER
+
+        trailing_offset = None
+        trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
+        if self.priceRate is not None:
+            trailing_offset = Decimal(self.priceRate)
+            trailing_offset_type = TrailingOffsetType.BASIS_POINTS
+
+        avg_px = Decimal(self.avgPrice) if self.avgPrice is not None else None
+        post_only = (
+            self.type == BinanceOrderType.LIMIT_MAKER or self.timeInForce == BinanceTimeInForce.GTX
+        )
+        reduce_only = self.reduceOnly if self.reduceOnly is not None else False
+
+        return OrderStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            order_list_id=order_list_id,
+            venue_order_id=VenueOrderId(str(self.orderId)),
+            order_side=OrderSide[self.side],
+            order_type=exec_parser.parse_binance_order_type(self.type),
+            contingency_type=contingency_type,
+            time_in_force=exec_parser.parse_binance_time_in_force(self.timeInForce),
+            order_status=exec_parser.parse_binance_order_status(self.status),
+            price=Price.from_str(str(Decimal(self.price))),
+            trigger_price=Price.from_str(str(trigger_price)),
+            trigger_type=trigger_type,
+            trailing_offset=trailing_offset,
+            trailing_offset_type=trailing_offset_type,
+            quantity=Quantity.from_str(self.origQty),
+            filled_qty=Quantity.from_str(self.executedQty),
+            avg_px=avg_px,
+            post_only=post_only,
+            reduce_only=reduce_only,
+            ts_accepted=millis_to_nanos(self.time),
+            ts_last=millis_to_nanos(self.updateTime),
+            report_id=report_id,
+            ts_init=ts_init,
+        )
+
 
 class BinanceUserTrade(msgspec.Struct):
     """
@@ -115,3 +199,33 @@ class BinanceUserTrade(msgspec.Struct):
 
     baseQty: Optional[str] = None  # COIN-M FUTURES only
     pair: Optional[str] = None  # COIN-M FUTURES only
+
+    def parse_to_trade_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        report_id: UUID4,
+        ts_init: int,
+    ) -> TradeReport:
+        venue_position_id = None
+        if self.positionSide is not None:
+            venue_position_id = PositionId(f"{instrument_id}-{self.positionSide}")
+
+        order_side = OrderSide.BUY if self.isBuyer or self.buyer else OrderSide.SELL
+        liquidity_side = LiquiditySide.MAKER if self.isMaker or self.maker else LiquiditySide.TAKER
+
+        return TradeReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            venue_order_id=VenueOrderId(str(self.orderId)),
+            venue_position_id=venue_position_id,
+            trade_id=TradeId(str(self.id)),
+            order_side=order_side,
+            last_qty=Quantity.from_str(self.qty),
+            last_px=Price.from_str(self.price),
+            liquidity_side=liquidity_side,
+            ts_event=millis_to_nanos(self.time),
+            commission=Money(self.commission, Currency.from_str(self.commissionAsset)),
+            report_id=report_id,
+            ts_init=ts_init,
+        )
