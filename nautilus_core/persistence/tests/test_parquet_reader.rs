@@ -86,6 +86,7 @@ fn test_parquet_filter() {
 
     let mut rng = rand::thread_rng();
     let len = 10234;
+    let ts_init_cutoff = 11;
     let data1 = vec![
         TradeTick {
             instrument_id: "EUR/USD.DUKA".into(),
@@ -123,7 +124,7 @@ fn test_parquet_filter() {
 
     let buffer = writer.flush();
     let filtered_reader: ParquetReader<TradeTick, Cursor<&[u8]>> =
-        ParquetReader::new(Cursor::new(&buffer), 1000, GroupFilterArg::TsInitGt(11));
+        ParquetReader::new(Cursor::new(&buffer), 1000, GroupFilterArg::TsInitGt(ts_init_cutoff));
     let data_filtered: Vec<TradeTick> = filtered_reader
         .flat_map(|ticks| ticks.into_iter())
         .collect();
@@ -139,4 +140,5 @@ fn test_parquet_filter() {
         data_filtered.len() < data_unfiltered.len(),
         "Filtered data must be less than unfiltered data"
     );
+    assert_eq!(data_filtered.iter().all(|tick| tick.ts_init > ts_init_cutoff), true);
 }

@@ -43,9 +43,9 @@ impl<'source> FromPyObject<'source> for GroupFilterArg {
     fn extract(ob: &'source pyo3::PyAny) -> pyo3::PyResult<Self> {
         let filter_arg: i64 = ob.downcast::<PyInt>()?.extract()?;
         match filter_arg.cmp(&0) {
-            Ordering::Less => Ok(GroupFilterArg::TsInitLt(filter_arg.abs() as u64)),
+            Ordering::Less => Ok(GroupFilterArg::TsInitLt(filter_arg.unsigned_abs())),
             Ordering::Equal => Ok(GroupFilterArg::None),
-            Ordering::Greater => Ok(GroupFilterArg::TsInitGt(filter_arg.abs() as u64)),
+            Ordering::Greater => Ok(GroupFilterArg::TsInitGt(filter_arg.unsigned_abs())),
         }
     }
 }

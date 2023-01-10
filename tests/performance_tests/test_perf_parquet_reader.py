@@ -5,7 +5,9 @@ import time
 import pytest
 
 # build and load pyo3 module using maturin
-from nautilus.persistence import ParquetReader, ParquetReaderType, ParquetType
+from nautilus.persistence import ParquetReader
+from nautilus.persistence import ParquetReaderType
+from nautilus.persistence import ParquetType
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
