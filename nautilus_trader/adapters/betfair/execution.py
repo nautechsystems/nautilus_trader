@@ -182,7 +182,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """Ensure socket stream is connected"""
         while self.stream.is_running:
             if not self.stream.is_connected:
-                self.stream.connect()
+                await self.stream.connect()
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
@@ -637,16 +637,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug("Base currency matches client details")
 
     # -- DEBUGGING --------------------------------------------------------------------------------
-
-    def create_task(self, coro):
-        self._loop.create_task(self._check_task(coro))
-
-    async def _check_task(self, coro):
-        try:
-            awaitable = await coro
-            return awaitable
-        except Exception as e:
-            self._log.exception("Unhandled exception", e)
 
     def client(self) -> BetfairClient:
         return self._client
