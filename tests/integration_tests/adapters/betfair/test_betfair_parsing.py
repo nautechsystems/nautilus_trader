@@ -421,7 +421,7 @@ class TestBetfairParsing:
             price=Price(0.33, precision=5),
             quantity=Quantity.from_int(10),
             instrument_id=TestIdStubs.betting_instrument_id(),
-            time_in_force=TimeInForce.AT_THE_CLOSE,
+            time_in_force=TimeInForce.AT_THE_OPEN,
         )
         result = make_order(order)
         expected = {
@@ -464,7 +464,7 @@ class TestBetfairParsing:
     )
     def test_make_order_market_on_close(self, side, liability):
         order = TestExecStubs.market_order(
-            time_in_force=TimeInForce.AT_THE_CLOSE,
+            time_in_force=TimeInForce.AT_THE_OPEN,
             order_side=order_side_from_str(side),
         )
         result = make_order(order)

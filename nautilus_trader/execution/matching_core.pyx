@@ -174,10 +174,10 @@ cdef class MatchingCore:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
     cdef void sort_bid_orders(self) except *:
-        self._orders_bid.sort(key=lambda o: order_sort_key(o), reverse=True)
+        self._orders_bid.sort(key=order_sort_key, reverse=True)
 
     cdef void sort_ask_orders(self) except *:
-        self._orders_ask.sort(key=lambda o: order_sort_key(o))
+        self._orders_ask.sort(key=order_sort_key)
 
     cpdef void delete_order(self, Order order) except *:
         self._orders.pop(order.client_order_id, None)
@@ -353,6 +353,8 @@ cdef class MatchingCore:
             return LiquiditySide.MAKER
 
         return LiquiditySide.TAKER
+
+
 
 cdef inline int64_t order_sort_key(Order order) except *:
     cdef Price trigger_price

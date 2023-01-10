@@ -57,6 +57,8 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport BookType
@@ -985,6 +987,10 @@ cdef class BacktestEngine:
                 self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
                 self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+            elif isinstance(data, VenueStatusUpdate):
+                self._venues[data.venue].process_venue_status(data)
+            elif isinstance(data, InstrumentStatusUpdate):
+                self._venues[data.instrument_id.venue].process_instrument_status(data)
 
             self._data_engine.process(data)
 

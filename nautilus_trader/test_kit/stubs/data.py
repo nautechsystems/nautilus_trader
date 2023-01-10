@@ -37,6 +37,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -295,6 +296,7 @@ class TestDataStubs:
         bid_size=10,
         ask_size=10,
         book_type=BookType.L2_MBP,
+        time_in_force=TimeInForce.GTC,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
@@ -306,6 +308,7 @@ class TestDataStubs:
             asks=[(float(ask_price + i), float(ask_size * (1 + i))) for i in range(ask_levels)],
             ts_event=0,
             ts_init=0,
+            time_in_force=time_in_force,
         )
 
     @staticmethod

@@ -176,7 +176,7 @@ class TestBetfairClient:
         instrument = TestInstrumentProvider.betting_instrument()
         market_on_close_order = TestExecStubs.market_order(
             order_side=OrderSide.BUY,
-            time_in_force=TimeInForce.AT_THE_CLOSE,
+            time_in_force=TimeInForce.AT_THE_OPEN,
             quantity=Quantity.from_str("10.0"),
         )
         submit_order_command = SubmitOrder(

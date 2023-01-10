@@ -173,6 +173,7 @@ def market_definition_to_instrument_status_updates(
     ts_init: int,
 ) -> list[InstrumentStatusUpdate]:
     updates = []
+
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
             market_id=market_id,

@@ -15,7 +15,6 @@
 
 from typing import Optional
 
-from cpython.object cimport PyObject
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport uint64_t
@@ -85,6 +84,8 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.backtest.auction import default_auction_match
+
 
 cdef class OrderMatchingEngine:
     """
@@ -130,6 +131,7 @@ cdef class OrderMatchingEngine:
         Logger logger not None,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        object auction_match_algo = default_auction_match
     ):
         self._clock = clock
         self._log = LoggerAdapter(
@@ -144,15 +146,28 @@ cdef class OrderMatchingEngine:
         self.product_id = product_id
         self.book_type = book_type
         self.oms_type = oms_type
+        self.market_status = MarketStatus.OPEN
 
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
+        self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._book = OrderBook.create(
             instrument=instrument,
             book_type=book_type,
             simulated=True,
         )
+        self._opening_auction_book = OrderBook.create(
+            instrument=instrument,
+            book_type=BookType.L3_MBO,
+            simulated=True,
+        )
+        self._closing_auction_book = OrderBook.create(
+            instrument=instrument,
+            book_type=BookType.L3_MBO,
+            simulated=True,
+        )
+
         self._account_ids: dict[TraderId, AccountId]  = {}
 
         # Market
@@ -311,8 +326,14 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(data)}...")
 
-        self._book.apply(data)
-
+        if data.time_in_force == TimeInForce.GTC:
+            self._book.apply(data)
+        elif data.time_in_force == TimeInForce.AT_THE_OPEN:
+            self._opening_auction_book.apply(data)
+        elif data.time_in_force == TimeInForce.AT_THE_CLOSE:
+            self._closing_auction_book.apply(data)
+        else:
+            raise RuntimeError(data.time_in_force)
         self.iterate(data.ts_init)
 
     cpdef void process_quote_tick(self, QuoteTick tick)  except *:
@@ -394,6 +415,70 @@ cdef class OrderMatchingEngine:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `PriceType`, was {price_type}",  # pragma: no cover
             )
+
+    cpdef void process_status(self, MarketStatus status) except *:
+        """
+        Process the exchange status.
+
+        Parameters
+        ----------
+        status : MarketStatus
+            The status to process.
+
+        """
+        Condition.not_none(status, "status")
+
+        if (self.market_status, status) == (MarketStatus.CLOSED, MarketStatus.OPEN):
+            self.market_status = status
+
+        elif (self.market_status, status) == (MarketStatus.CLOSED, MarketStatus.PRE_OPEN):
+            # Nothing to do on pre-market open.
+            self.market_status = status
+
+        elif (self.market_status, status) == (MarketStatus.PRE_OPEN, MarketStatus.PAUSE):
+            # Opening auction period, run auction match on pre-open auction orderbook
+            self.process_auction_book(self._opening_auction_book)
+            self.market_status = status
+
+        elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatus.OPEN):
+            # Normal market open
+            self.market_status = status
+
+        elif (self.market_status, status) == (MarketStatus.OPEN, MarketStatus.PAUSE):
+            # Closing auction period, run auction match on closing auction orderbook
+            self.process_auction_book(self._closing_auction_book)
+            self.market_status = status
+
+        elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatus.CLOSED):
+            # Market closed - nothing to do for now
+            # TODO - should we implement some sort of closing price message here?
+            self.market_status = status
+
+    cpdef void process_auction_book(self, OrderBook book) except *:
+        cdef:
+            BookOrder order
+            Order real_order
+            set client_order_ids = {c.value for c in self.cache.client_order_ids()}
+            list traded_bids
+            list traded_asks
+            PositionId venue_position_id
+
+        # Perform an auction match on this auction order book
+        traded_bids, traded_asks = self._auction_match_algo(book.bids, book.asks)
+        # Check filled orders from auction for any client orders and emit fills
+        for order in traded_bids + traded_asks:
+            if order.id in client_order_ids:
+                real_order = self.cache.order(ClientOrderId(order.id))
+                venue_position_id = self._get_position_id(real_order)
+                self._generate_order_filled(
+                    real_order,
+                    venue_position_id,
+                    Quantity(order.size, self.instrument.size_precision),
+                    Price(order.price, self.instrument.price_precision),
+                    self.instrument.quote_currency,
+                    Money(0.0, self.instrument.quote_currency),
+                    LiquiditySide.NO_LIQUIDITY_SIDE,
+                )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *:
         cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
@@ -599,6 +684,11 @@ cdef class OrderMatchingEngine:
                 self._cancel_order(order)
 
     cdef void _process_market_order(self, MarketOrder order) except *:
+        # Check AT_THE_OPEN/AT_THE_CLOSE time in force
+        if order.time_in_force == TimeInForce.AT_THE_OPEN or order.time_in_force == TimeInForce.AT_THE_CLOSE:
+            self._process_auction_market_order(order)
+            return
+
         # Check market exists
         if order.side == OrderSide.BUY and not self._core.is_ask_initialized:
             self._generate_order_rejected(order, f"no market for {order.instrument_id}")
@@ -626,6 +716,11 @@ cdef class OrderMatchingEngine:
             self._accept_order(order)
 
     cdef void _process_limit_order(self, LimitOrder order) except *:
+        # Check AT_THE_OPEN/AT_THE_CLOSE time in force
+        if order.time_in_force == TimeInForce.AT_THE_OPEN or order.time_in_force == TimeInForce.AT_THE_CLOSE:
+            self._process_auction_limit_order(order)
+            return
+
         if order.is_post_only and self._core.is_limit_matched(order.side, order.price):
             self._generate_order_rejected(
                 order,
@@ -755,6 +850,37 @@ cdef class OrderMatchingEngine:
 
         # Order is valid and accepted
         self._accept_order(order)
+
+    cdef void _process_auction_market_order(self, MarketOrder order) except *:
+        cdef:
+            Instrument instrument = self.instrument
+            double price = instrument.max_price.as_double() if order.is_buy_c() else instrument.min_price.as_double()
+            BookOrder book_order = BookOrder(
+                price=price,
+                size=order.quantity.as_double(),
+                side=order.side,
+                id=order.client_order_id.to_str(),
+            )
+        self._process_auction_book_order(book_order, time_in_force=order.time_in_force)
+
+    cdef void _process_auction_limit_order(self, LimitOrder order) except *:
+        cdef:
+            Instrument instrument = self.instrument
+            BookOrder book_order = BookOrder(
+                price=order.price.as_double(),
+                size=order.quantity.as_double(),
+                side=order.side,
+                id=order.client_order_id.to_str(),
+            )
+        self._process_auction_book_order(book_order, time_in_force=order.time_in_force)
+
+    cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force) except *:
+        if time_in_force == TimeInForce.AT_THE_OPEN:
+            self._opening_auction_book.add(order)
+        elif time_in_force == TimeInForce.AT_THE_CLOSE:
+            self._closing_auction_book.add(order)
+        else:
+            raise RuntimeError(time_in_force)
 
     cdef void _update_limit_order(
         self,
