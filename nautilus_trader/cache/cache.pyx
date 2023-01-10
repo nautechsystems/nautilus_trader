@@ -57,6 +57,7 @@ from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.trading.strategy cimport Strategy
 
 
@@ -110,6 +111,7 @@ cdef class Cache(CacheFacade):
         self._instruments = {}                 # type: dict[InstrumentId, Instrument]
         self._accounts = {}                    # type: dict[AccountId, Account]
         self._orders = {}                      # type: dict[ClientOrderId, Order]
+        self._order_lists = {}                 # type: dict[OrderListId, OrderList]
         self._positions = {}                   # type: dict[PositionId, Position]
         self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
         self._submit_order_commands = {}       # type: dict[ClientOrderId, SubmitOrder]
@@ -218,6 +220,43 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._orders else LogColor.NORMAL,
         )
 
+    cpdef void cache_order_lists(self) except *:
+        """
+        Clear the current order lists cache and load order lists using cached orders.
+        """
+        self._log.debug(f"Loading order lists...")
+
+        cdef dict order_list_index = {}  # type: dict[OrderListId, list[Order]]
+
+        # Collect all orders common to an OrderListId
+        cdef:
+            Order order
+            list orders
+        for order in self._orders.values():
+            if order.order_list_id is not None:
+                orders = order_list_index.get(order.order_list_id)
+                if orders is None:
+                    orders = []
+                    order_list_index[order.order_list_id] = orders
+                orders.append(order)
+
+        # Rebuild and cache order lists
+        cdef:
+            OrderListId order_list_id
+            OrderList order_list
+        for order_list_id, orders in order_list_index.items():
+            order_list = OrderList(
+                order_list_id=order_list_id,
+                orders=orders,
+            )
+            self._order_lists[order_list_id] = order_list
+
+        cdef int count = len(self._order_lists)
+        self._log.info(
+            f"Cached {count} order list{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._order_lists else LogColor.NORMAL,
+        )
+
     cpdef void cache_positions(self) except *:
         """
         Clear the current positions cache and load positions from the cache
@@ -252,13 +291,13 @@ cdef class Cache(CacheFacade):
 
         cdef int count = len(self._submit_order_commands)
         self._log.info(
-            f"Cached {count} command{'' if count == 1 else 's'} from database.",
+            f"Cached {count} submit_order command{'' if count == 1 else 's'} from database.",
             color=LogColor.BLUE if self._submit_order_commands else LogColor.NORMAL
         )
 
         count = len(self._submit_order_list_commands)
         self._log.info(
-            f"Cached {count} command{'' if count == 1 else 's'} from database.",
+            f"Cached {count} submit_order_list command{'' if count == 1 else 's'} from database.",
             color=LogColor.BLUE if self._submit_order_list_commands else LogColor.NORMAL
         )
 
@@ -594,6 +633,7 @@ cdef class Cache(CacheFacade):
         self._instruments.clear()
         self._accounts.clear()
         self._orders.clear()
+        self._order_lists.clear()
         self._positions.clear()
         self._position_snapshots.clear()
         self._submit_order_commands.clear()
@@ -1228,7 +1268,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
         if not override:
-            Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_cached_orders")
+            Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_orders")
             Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
             Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
             Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "_index_order_strategy")
@@ -1278,6 +1318,28 @@ cdef class Cache(CacheFacade):
 
         cdef str position_id_str = f", for {position_id.to_str()}" if position_id is not None else ""
         self._log.debug(f"Added {order}{position_id_str}.")
+
+    cpdef void add_order_list(self, OrderList order_list) except *:
+        """
+        Add the given order list to the cache.
+
+        Parameters
+        ----------
+        order_list : OrderList
+            The order_list to add.
+
+        Raises
+        ------
+        ValueError
+            If `order_list.id` is already contained in the cache.
+
+        """
+        Condition.not_none(order_list, "order_list")
+        Condition.not_in(order_list.id, self._order_lists, "order_list.id", "_order_lists")
+
+        self._order_lists[order_list.id] = order_list
+
+        self._log.debug(f"Added {order_list}.")
 
     cpdef void add_position_id(
         self,
@@ -2349,6 +2411,66 @@ cdef class Cache(CacheFacade):
         else:
             return self._index_orders.intersection(query)
 
+    cpdef set client_order_ids_open(
+        self,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+    ):
+        """
+        Return all open client order IDs with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        set[ClientOrderId]
+
+        """
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
+
+        if query is None:
+            return self._index_orders_open
+        else:
+            return self._index_orders_open.intersection(query)
+
+    cpdef set client_order_ids_closed(
+        self,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+    ):
+        """
+        Return all closed client order IDs with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        set[ClientOrderId]
+
+        """
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
+
+        if query is None:
+            return self._index_orders_closed
+        else:
+            return self._index_orders_closed.intersection(query)
+
     cpdef set client_order_ids_emulated(
         self,
         Venue venue = None,
@@ -2409,65 +2531,24 @@ cdef class Cache(CacheFacade):
         else:
             return self._index_orders_inflight.intersection(query)
 
-    cpdef set client_order_ids_open(
+    cpdef set order_list_ids(
         self,
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
     ):
         """
-        Return all open client order IDs with the given query filters.
-
-        Parameters
-        ----------
-        venue : Venue, optional
-            The venue ID query filter.
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        strategy_id : StrategyId, optional
-            The strategy ID query filter.
+        Return all order list IDs.
 
         Returns
         -------
-        set[ClientOrderId]
+        set[OrderListId]
 
         """
-        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
+        cdef list order_lists = self.order_lists(venue, instrument_id, strategy_id)
 
-        if query is None:
-            return self._index_orders_open
-        else:
-            return self._index_orders_open.intersection(query)
-
-    cpdef set client_order_ids_closed(
-        self,
-        Venue venue = None,
-        InstrumentId instrument_id = None,
-        StrategyId strategy_id = None,
-    ):
-        """
-        Return all closed client order IDs with the given query filters.
-
-        Parameters
-        ----------
-        venue : Venue, optional
-            The venue ID query filter.
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        strategy_id : StrategyId, optional
-            The strategy ID query filter.
-
-        Returns
-        -------
-        set[ClientOrderId]
-
-        """
-        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
-
-        if query is None:
-            return self._index_orders_closed
-        else:
-            return self._index_orders_closed.intersection(query)
+        cdef OrderList ol
+        return {ol.id for ol in order_lists}
 
     cpdef set position_ids(
         self,
@@ -2627,7 +2708,7 @@ cdef class Cache(CacheFacade):
         OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
-        Return all orders with the given query filters.
+        Return all orders matching the given query filters.
 
         *No particular order of list elements is guaranteed.*
 
@@ -3025,6 +3106,69 @@ cdef class Cache(CacheFacade):
 
         """
         return len(self.orders(venue, instrument_id, strategy_id, side))
+
+# -- ORDER LIST QUERIES --------------------------------------------------------------------------------
+
+    cpdef OrderList order_list(self, OrderListId order_list_id):
+        """
+        Return the order list matching the given order list ID (if found).
+
+        Returns
+        -------
+        OrderList or ``None``
+
+        """
+        Condition.not_none(order_list_id, "order_list_id")
+
+        return self._order_lists.get(order_list_id)
+
+    cpdef list order_lists(
+        self,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+    ):
+        """
+        Return all order lists matching the given query filters.
+
+        *No particular order of list elements is guaranteed.*
+
+        Returns
+        -------
+        list[OrderList]
+
+        """
+        cdef list order_lists = list(self._order_lists.values())
+
+        cdef OrderList ol
+        if venue is not None:
+            order_lists = [ol for ol in order_lists if ol.instrument_id.venue == venue]
+
+        if instrument_id is not None:
+            order_lists = [ol for ol in order_lists if ol.instrument_id == instrument_id]
+
+        if strategy_id is not None:
+            order_lists = [ol for ol in order_lists if ol.strategy_id == strategy_id]
+
+        return order_lists
+
+    cpdef bint order_list_exists(self, OrderListId order_list_id) except*:
+        """
+        Return a value indicating whether an order list with the given ID exists.
+
+        Parameters
+        ----------
+        order_list_id : OrderListId
+            The order list ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(order_list_id, "order_list_id")
+
+        return order_list_id in self._order_lists
 
 # -- POSITION QUERIES -----------------------------------------------------------------------------
 

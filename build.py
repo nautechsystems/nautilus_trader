@@ -32,10 +32,12 @@ COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else Fals
 ################################################################################
 #  RUST BUILD
 ################################################################################
-if platform.system() == "Windows":
+if platform.system() != "Darwin":
     # Use clang as the default compiler
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
+
+if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
     target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
     os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
@@ -48,20 +50,13 @@ else:
     TARGET_DIR = ""
 
 # Directories with headers to include
-RUST_INCLUDES = [
-    "nautilus_trader/common/includes",
-    "nautilus_trader/core/includes",
-    "nautilus_trader/model/includes",
-    "nautilus_trader/persistence/includes",
-]
-
+RUST_INCLUDES = ["nautilus_trader/core/includes"]
 RUST_LIBS = [
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
 ]
-# Later we can be more selective about which libs are included where - to optimize binary sizes
 
 
 def _build_rust_libs() -> None:
@@ -114,9 +109,11 @@ def _build_extensions() -> list[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
-    if BUILD_MODE == "release" and platform.system() != "Windows":
-        extra_compile_args.append("-O2")
-        extra_compile_args.append("-pipe")
+    if platform.system() != "Windows":
+        extra_compile_args.append("-Wno-parentheses-equality")
+        if BUILD_MODE == "release":
+            extra_compile_args.append("-O2")
+            extra_compile_args.append("-pipe")
 
     extra_link_args = RUST_LIBS
     if platform.system() == "Windows":
@@ -130,12 +127,13 @@ def _build_extensions() -> list[Extension]:
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
+    print(f"extra_link_args={extra_link_args}")
 
     return [
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
             sources=[str(pyx)],
-            include_dirs=[".", np.get_include()] + RUST_INCLUDES,
+            include_dirs=[np.get_include()] + RUST_INCLUDES,
             define_macros=define_macros,
             language="c",
             extra_link_args=extra_link_args,
@@ -195,15 +193,49 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
     print("Copied all compiled dynamic library files into source")
 
 
+def _get_clang_version() -> str:
+    try:
+        result = subprocess.run(
+            "clang --version",
+            check=True,
+            shell=True,
+            capture_output=True,
+        )
+        output = result.stdout.decode().splitlines()[0].lstrip("Apple ").lstrip("clang version ")
+        return output
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"Error running clang: {e.stderr.decode()}",
+        ) from e
+    except FileNotFoundError as e:
+        if "clang" in e.strerror:
+            raise RuntimeError(
+                "You are installing from source which requires the Clang compiler to be installed.",
+            ) from e
+        raise
+
+
 def _get_rustc_version() -> str:
     try:
-        rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
-        return rustc_version.lstrip(b"rustc ").decode()[:-1]
-    except FileNotFoundError:
-        raise RuntimeError(
-            "You are installing from source which requires the Rust compiler to "
-            "be installed. Find more information at https://www.rust-lang.org/tools/install",
+        result = subprocess.run(
+            "rustc --version",
+            check=True,
+            shell=True,
+            capture_output=True,
         )
+        output = result.stdout.decode().lstrip("rustc ")[:-1]
+        return output
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"Error running rustc: {e.stderr.decode()}",
+        ) from e
+    except FileNotFoundError as e:
+        if "rustc" in e.strerror:
+            raise RuntimeError(
+                "You are installing from source which requires the Rust compiler to "
+                "be installed. Find more information at https://www.rust-lang.org/tools/install",
+            ) from e
+        raise
 
 
 def build() -> None:
@@ -248,6 +280,7 @@ if __name__ == "__main__":
             print("multiprocessing not available")  # pragma: no cover
 
     print(f"System: {platform.system()} {platform.machine()}")
+    print(f"Clang:  {_get_clang_version()}")
     print(f"Rust:   {_get_rustc_version()}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")

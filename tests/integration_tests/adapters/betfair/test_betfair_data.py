@@ -18,6 +18,7 @@ from collections import Counter
 from functools import partial
 from unittest.mock import patch
 
+import msgspec
 import pytest
 from betfair_parser.spec.streaming import STREAM_DECODER
 
@@ -26,6 +27,7 @@ from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
@@ -42,19 +44,22 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
@@ -137,10 +142,11 @@ class TestBetfairDataClient:
             betfair_client=self.betfair_client,
         )
         # Add a subset of instruments
-        instruments = [
+        self.instruments = [
             ins for ins in INSTRUMENTS if ins.market_id in BetfairDataProvider.market_ids()
         ]
-        self.instrument_provider.add_bulk(instruments)
+        self.instrument = self.instruments[0]
+        self.instrument_provider.add_bulk(self.instruments)
 
         self.client = BetfairDataClient(
             loop=self.loop,
@@ -260,6 +266,7 @@ class TestBetfairDataClient:
             {
                 "InstrumentStatusUpdate": 270,
                 "OrderBookSnapshot": 270,
+                "BetfairTicker": 170,
                 "InstrumentClose": 22,
                 "OrderBookDeltas": 4,
             },
@@ -270,7 +277,10 @@ class TestBetfairDataClient:
         self.client.on_market_update(BetfairStreaming.mcm_RESUB_DELTA())
         result = [type(event).__name__ for event in self.messages]
         expected = (
-            ["OrderBookDeltas"] * 272 + ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 12
+            ["OrderBookDeltas"] * 272
+            + ["InstrumentStatusUpdate"] * 12
+            + ["BetfairStartingPrice"] * 12
+            + ["OrderBookDeltas"] * 12
         )
         assert result == expected
 
@@ -306,6 +316,7 @@ class TestBetfairDataClient:
         expected = ["TradeTick", "OrderBookDeltas"]
         assert result == expected
 
+    @patch("nautilus_trader.adapters.betfair.parsing.streaming.STRICT_MARKET_DATA_HANDLING", "")
     def test_market_bsp(self):
         # Setup
         update = BetfairStreaming.mcm_BSP()
@@ -320,12 +331,21 @@ class TestBetfairDataClient:
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
             "TradeTick": 95,
-            "BSPOrderBookDeltas": 16,
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
+            "BetfairTicker": 8,
+            "BSPOrderBookDeltas": 8,
             "OrderBookDeltas": 2,
+            "InstrumentClose": 1,
         }
         assert result == expected
+        sp_deltas = [
+            d
+            for deltas in self.messages
+            if isinstance(deltas, BSPOrderBookDeltas)
+            for d in deltas.deltas
+        ]
+        assert len(sp_deltas) == 30
 
     @pytest.mark.asyncio
     async def test_request_search_instruments(self):
@@ -433,14 +453,14 @@ class TestBetfairDataClient:
             isinstance(messages[0], InstrumentStatusUpdate)
             and messages[0].status == MarketStatus.CLOSED
         )
-        assert isinstance(messages[1], InstrumentClose) and messages[1].close_price == 1.0000
+        assert isinstance(messages[2], InstrumentClose) and messages[2].close_price == 1.0000
         assert (
-            isinstance(messages[1], InstrumentClose)
-            and messages[1].close_type == InstrumentCloseType.CONTRACT_EXPIRED
+            isinstance(messages[2], InstrumentClose)
+            and messages[2].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
         assert (
-            isinstance(messages[2], InstrumentStatusUpdate)
-            and messages[2].status == MarketStatus.CLOSED
+            isinstance(messages[1], InstrumentStatusUpdate)
+            and messages[1].status == MarketStatus.CLOSED
         )
         assert isinstance(messages[3], InstrumentClose) and messages[3].close_price == 0.0
         assert (
@@ -451,8 +471,26 @@ class TestBetfairDataClient:
     def test_betfair_ticker(self):
         self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
-        assert ticker.last_traded_price == Price.from_str("0.3174603")
-        assert ticker.traded_volume == Quantity.from_str("364.45")
+        assert ticker.last_traded_price == 0.3174603
+        assert ticker.traded_volume == 364.45
+
+    def test_betfair_ticker_sp(self):
+        # Arrange
+        lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+
+        # Act
+        for line in lines:
+            self.client.on_market_update(line)
+
+        # Assert
+        starting_prices_near = [
+            t for t in self.messages if isinstance(t, BetfairTicker) if t.starting_price_near
+        ]
+        starting_prices_far = [
+            t for t in self.messages if isinstance(t, BetfairTicker) if t.starting_price_far
+        ]
+        assert len(starting_prices_near) == 1739
+        assert len(starting_prices_far) == 1182
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(
@@ -480,3 +518,50 @@ class TestBetfairDataClient:
                     book.check_integrity()
                 except Exception as e:
                     print(str(type(e)) + " " + str(e))
+
+    def test_bsp_deltas_apply(self):
+        # Arrange
+        book = TestDataStubs.make_book(
+            instrument=self.instrument,
+            book_type=BookType.L2_MBP,
+            asks=[(0.0010000, 55.81)],
+        )
+        deltas = BSPOrderBookDeltas.from_dict(
+            {
+                "type": "BSPOrderBookDeltas",
+                "instrument_id": self.instrument.id.value,
+                "book_type": "L2_MBP",
+                "deltas": msgspec.json.encode(
+                    [
+                        {
+                            "type": "OrderBookDelta",
+                            "instrument_id": self.instrument.id.value,
+                            "book_type": "L2_MBP",
+                            "action": "UPDATE",
+                            "order_price": 0.990099,
+                            "order_size": 2.0,
+                            "order_side": "BUY",
+                            "order_id": "ef93694d-64c7-4b26-b03b-48c0bc2afea7",
+                            "update_id": 0,
+                            "ts_event": 1667288437852999936,
+                            "ts_init": 1667288437852999936,
+                        },
+                    ],
+                ),
+                "update_id": 0,
+                "ts_event": 1667288437852999936,
+                "ts_init": 1667288437852999936,
+            },
+        )
+
+        # Act
+        book.apply(deltas)
+
+        # Assert
+        expected_ask = Level(price=0.001)
+        expected_ask.add(BookOrder(0.001, 55.81, OrderSide.SELL, "0.00100"))
+        assert book.best_ask_level() == expected_ask
+
+        expected_bid = Level(price=0.990099)
+        expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
+        assert book.best_bid_level() == expected_bid

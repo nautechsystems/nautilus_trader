@@ -467,6 +467,12 @@ cdef class RiskEngine(Component):
             self._send_to_emulator(command)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
+        if self._cache.order_list_exists(command.order_list.id):
+            self._deny_command(
+                command=command,
+                reason=f"Duplicate {repr(command.order_list.id)}")
+            return  # Denied
+
         cdef Order order
         for order in command.order_list.orders:
             # Check IDs for duplicates
@@ -477,6 +483,8 @@ cdef class RiskEngine(Component):
                 return  # Denied
             # Cache order
             self._cache.add_order(order, position_id=command.position_id)
+
+        self._cache.add_order_list(command.order_list)
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling

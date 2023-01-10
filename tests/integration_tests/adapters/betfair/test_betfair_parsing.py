@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import Counter
 from unittest.mock import patch
 
 import msgspec
@@ -22,9 +23,12 @@ from betfair_parser.core import parse
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
+from betfair_parser.spec.streaming.mcm import MarketChange
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.parsing.requests import _order_quantity_to_stake
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
@@ -33,6 +37,16 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_betfair_starting_prices,
+)
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_instrument_closes,
+)
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_instrument_status_updates,
+)
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -40,7 +54,11 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
@@ -54,7 +72,9 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -65,23 +85,154 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestBetfairParsingStreaming:
     def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.clock = LiveClock()
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
         self.instrument = TestInstrumentProvider.betting_instrument()
-        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
-        self.provider = BetfairTestStubs.instrument_provider(self.client)
+
+    def test_market_definition_to_instrument_status_updates(self, market_definition_open):
+        # Arrange, Act
+        updates = market_definition_to_instrument_status_updates(
+            market_definition_open,
+            "1.205822330",
+            0,
+            0,
+        )
+
+        # Assert
+        result = [
+            upd
+            for upd in updates
+            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
+        ]
+        assert len(result) == 17
+
+    def test_market_definition_to_instrument_close_price(self, market_definition_close):
+        # Arrange, Act
+        updates = market_definition_to_instrument_closes(
+            market_definition_close,
+            "1.205822330",
+            0,
+            0,
+        )
+
+        # Assert
+        result = [upd for upd in updates if isinstance(upd, InstrumentClose)]
+        assert len(result) == 17
+
+    def test_market_definition_to_betfair_starting_price(self, market_definition_close):
+        # Arrange, Act
+        updates = market_definition_to_betfair_starting_prices(
+            market_definition_close,
+            "1.205822330",
+            0,
+            0,
+        )
+
+        # Assert
+        result = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
+        assert len(result) == 14
+
+    def test_market_change_bsp_updates(self):
+        raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'  # noqa
+        mc = msgspec.json.decode(raw, type=MarketChange)
+        result = Counter([upd.__class__.__name__ for upd in market_change_to_updates(mc, 0, 0)])
+        expected = Counter({"BSPOrderBookDeltas": 12, "OrderBookDeltas": 1})
+        assert result == expected
+
+    def test_market_change_ticker(self):
+        raw = b'{"id":"1.205822330","rc":[{"atl":[[1.98,0],[1.91,30.38]],"id":49808338},{"atb":[[3.95,2.98]],"id":49808334},{"trd":[[3.95,46.95]],"ltp":3.95,"tv":46.95,"id":49808334}],"con":true,"img":false}'  # noqa
+        mc = msgspec.json.decode(raw, type=MarketChange)
+        result = market_change_to_updates(mc, 0, 0)
+        assert result[0] == TradeTick.from_dict(
+            {
+                "type": "TradeTick",
+                "instrument_id": "1.205822330|49808334|0.0.BETFAIR",
+                "price": "0.2531646",
+                "size": "46.9500",
+                "aggressor_side": "NO_AGGRESSOR",
+                "trade_id": "3.9546.95",
+                "ts_event": 0,
+                "ts_init": 0,
+            },
+        )
+        assert result[1] == BetfairTicker.from_dict(
+            {
+                "type": "BetfairTicker",
+                "instrument_id": "1.205822330|49808334|0.0.BETFAIR",
+                "ts_event": 0,
+                "ts_init": 0,
+                "last_traded_price": 0.2531646,
+                "traded_volume": 46.95,
+                "starting_price_near": None,
+                "starting_price_far": None,
+            },
+        )
+        assert isinstance(result[2], OrderBookDeltas)
+        assert isinstance(result[3], OrderBookDeltas)
 
     @pytest.mark.parametrize(
-        "market_id, num_msgs",
-        [("1.166564490", 2531), ("1.166811431", 17846), ("1.180305278", 15734)],
+        "filename, num_msgs",
+        [
+            ("1.166564490.bz2", 2533),
+            ("1.166811431.bz2", 17846),
+            ("1.180305278.bz2", 15734),
+            ("1.206064380.bz2", 50149),
+        ],
     )
-    def test_parsing_streaming_file(self, market_id, num_msgs):
-        mcms = BetfairDataProvider.market_updates(market_id)
+    def test_parsing_streaming_file(self, filename, num_msgs):
+        mcms = BetfairDataProvider.market_updates(filename)
         parser = BetfairParser()
         updates = [x for mcm in mcms for x in parser.parse(mcm)]
         assert len(updates) == num_msgs
+
+    def test_parsing_streaming_file_message_counts(self):
+        mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
+        parser = BetfairParser()
+        updates = Counter([x.__class__.__name__ for mcm in mcms for x in parser.parse(mcm)])
+        expected = Counter(
+            {
+                "OrderBookDeltas": 40253,
+                "BetfairTicker": 4658,
+                "TradeTick": 3590,
+                "BSPOrderBookDeltas": 1139,
+                "OrderBookSnapshot": 152,
+                "InstrumentStatusUpdate": 260,
+                "BetfairStartingPrice": 72,
+                "InstrumentClose": 25,
+            },
+        )
+        assert updates == expected
+
+    @pytest.mark.parametrize(
+        "filename, book_count",
+        [
+            ("1.166564490.bz2", [1854, 2161]),
+            ("1.166811431.bz2", [12318, 12181]),
+            ("1.180305278.bz2", [2414, 11960]),
+            (
+                "1.206064380.bz2",
+                [10909, 5364, 11256, 9407, 406, 6771, 7056, 5700, 9463, 6707, 18776, 8767, 5392],
+            ),
+        ],
+    )
+    def test_order_book_integrity(self, filename, book_count):
+        mcms = BetfairDataProvider.market_updates(filename)
+        parser = BetfairParser()
+
+        books: dict[InstrumentId, OrderBook] = {}
+        for update in [x for mcm in mcms for x in parser.parse(mcm)]:
+            if isinstance(update, (OrderBookDeltas, OrderBookSnapshot)) and not isinstance(
+                update,
+                BSPOrderBookDeltas,
+            ):
+                instrument_id = update.instrument_id
+                if instrument_id not in books:
+                    instrument = TestInstrumentProvider.betting_instrument(
+                        *instrument_id.value.split("|")
+                    )
+                    books[instrument_id] = OrderBook.create(instrument, book_type=BookType.L2_MBP)
+                books[instrument_id].apply(update)
+                books[instrument_id].check_integrity()
+        result = [book.count for book in books.values()]
+        assert result == book_count
 
 
 class TestBetfairParsing:
@@ -373,7 +524,7 @@ class TestBetfairParsing:
         ]
         assert mcm.mc[0].rc[0].batb == expected
 
-    def test_mcm_bsp(self):
+    def test_mcm_bsp_example1(self):
         parser = BetfairParser()
         r = b'{"op":"mcm","id":1,"clk":"ANjxBACiiQQAlpQD","pt":1672131753550,"mc":[{"id":"1.208011084","marketDefinition":{"bspMarket":true,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":7,"eventId":"31987078","eventTypeId":"4339","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2022-12-27T09:00:00.000Z","suspendTime":"2022-12-27T09:00:00.000Z","bspReconciled":true,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":0,"betDelay":0,"status":"CLOSED","settledTime":"2022-12-27T09:02:21.000Z","runners":[{"status":"WINNER","sortPriority":1,"bsp":2.0008034621107256,"id":45967562},{"status":"LOSER","sortPriority":2,"bsp":5.5,"id":45565847},{"status":"LOSER","sortPriority":3,"bsp":9.2,"id":47727833},{"status":"LOSER","sortPriority":4,"bsp":166.61668896346615,"id":47179469},{"status":"LOSER","sortPriority":5,"bsp":44,"id":51247493},{"status":"LOSER","sortPriority":6,"bsp":32,"id":42324350},{"status":"LOSER","sortPriority":7,"bsp":7.4,"id":51247494},{"status":"LOSER","sortPriority":8,"bsp":32.28604557164013,"id":48516342}],"regulators":["MR_INT"],"venue":"Warragul","countryCode":"AU","discountAllowed":true,"timezone":"Australia/Sydney","openDate":"2022-12-27T07:46:00.000Z","version":4968605121,"priceLadderDefinition":{"type":"CLASSIC"}}}]}'  # noqa
         mcm = parse(r)
@@ -384,3 +535,16 @@ class TestBetfairParsing:
             "1.208011084|45967562|0.0-BSP.BETFAIR",
         )
         assert starting_prices[0].bsp == 2.0008034621107256
+
+    def test_mcm_bsp_example2(self):
+        raw = b'{"op":"mcm","clk":"7066946780","pt":1667288437853,"mc":[{"id":"1.205880280","rc":[{"spl":[[1.01,2]],"id":49892033},{"atl":[[2.8,0],[2.78,0]],"id":49892032},{"atb":[[2.8,378.82]],"id":49892032},{"trd":[[2.8,1.16],[2.78,1.18]],"ltp":2.8,"tv":2.34,"id":49892032},{"spl":[[1.01,4.79]],"id":49892030},{"spl":[[1.01,2]],"id":49892029},{"spl":[[1.01,3.79]],"id":49892028},{"spl":[[1.01,2]],"id":49892027},{"spl":[[1.01,2]],"id":49892034}],"con":true,"img":false}]}'  # noqa
+        parser = BetfairParser()
+        mcm = parse(raw)
+        updates = parser.parse(mcm)
+        single_instrument_bsp_updates = [
+            upd
+            for upd in updates
+            if isinstance(upd, BSPOrderBookDeltas)
+            and upd.instrument_id == InstrumentId.from_str("1.205880280|49892033|0.0-BSP.BETFAIR")
+        ]
+        assert len(single_instrument_bsp_updates) == 1

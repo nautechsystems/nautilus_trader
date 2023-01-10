@@ -1261,6 +1261,81 @@ class TestRiskEngineWithCashAccount:
         assert order.status == OrderStatus.DENIED
         assert self.risk_engine.command_count == 1  # <-- command never reaches engine
 
+    def test_submit_order_list_with_duplicate_id_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket1 = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket2 = OrderList(
+            order_list_id=bracket1.id,
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        submit_bracket1 = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket1,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        submit_bracket2 = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket2,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_bracket1)
+
+        # Act
+        self.risk_engine.execute(submit_bracket2)
+
+        # Assert
+        assert entry.status == OrderStatus.DENIED
+        assert stop_loss.status == OrderStatus.DENIED
+        assert take_profit.status == OrderStatus.DENIED
+        assert self.risk_engine.command_count == 3  # <-- command never reaches engine
+
     def test_submit_order_list_when_trading_halted_then_denies_orders(self):
         # Arrange
         self.exec_engine.start()

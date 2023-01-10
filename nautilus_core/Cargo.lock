@@ -887,7 +887,6 @@ dependencies = [
  "chrono",
  "criterion",
  "iai",
- "lazy_static",
  "pyo3",
  "rstest",
  "strum",

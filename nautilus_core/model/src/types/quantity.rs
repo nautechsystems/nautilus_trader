@@ -18,9 +18,10 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 use nautilus_core::correctness;
-use nautilus_core::string::precision_from_str;
+use nautilus_core::parsing::precision_from_str;
+
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
@@ -59,7 +60,7 @@ impl From<&str> for Quantity {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
-            Err(err) => panic!("cannot parse `input` string '{}' as f64, {}", input, err),
+            Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
         };
         Quantity::new(float_res, precision_from_str(input))
     }
@@ -293,7 +294,7 @@ mod tests {
         let input_string = "44.12";
         let qty = Quantity::from(input_string);
         let mut res = String::new();
-        write!(&mut res, "{}", qty).unwrap();
+        write!(&mut res, "{qty}").unwrap();
         assert_eq!(res, input_string);
         assert_eq!(qty.to_string(), input_string);
     }

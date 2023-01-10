@@ -24,12 +24,12 @@ use std::io::Cursor;
 use std::slice;
 
 use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::Encoding};
-use pyo3::types::PyDict;
-use pyo3::{ffi, pyclass, FromPyPointer, Python};
-
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::cstr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
+use pyo3::types::PyDict;
+use pyo3::{ffi, FromPyPointer, Python};
+use pyo3::prelude::*;
 
 pub use crate::parquet::reader::{GroupFilterArg, ParquetReader};
 pub use crate::parquet::writer::ParquetWriter;

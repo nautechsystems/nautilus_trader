@@ -164,7 +164,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         if projections:
             projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
             table_kwargs.update(columns=projected)
-        table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
+
+        try:
+            table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
+        except Exception as e:
+            print(e)
+            raise e
         mappings = self.load_inverse_mappings(path=full_path)
 
         if (

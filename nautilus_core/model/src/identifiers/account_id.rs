@@ -93,8 +93,9 @@ pub extern "C" fn account_id_hash(account_id: &AccountId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::ffi::CString;
+
+    use super::*;
 
     #[test]
     fn test_account_id_new_invalid_string() {
@@ -123,7 +124,7 @@ mod tests {
     fn test_account_id_fmt() {
         let s = "IB-U123456789";
         let account_id = AccountId::new(s);
-        let formatted = format!("{}", account_id);
+        let formatted = format!("{account_id}");
         assert_eq!(formatted, s);
     }
 

@@ -65,6 +65,14 @@ cdef extern from "../includes/core.h":
     # - Assumes `ptr` is a valid C string pointer.
     MessageCategory message_category_from_cstr(const char *ptr);
 
+    # Return the decimal precision inferred from the given C string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    # - If `ptr` is null.
+    uint8_t precision_from_cstr(const char *ptr);
+
     # Drops the C string memory at the pointer.
     #
     # # Safety
@@ -74,19 +82,15 @@ cdef extern from "../includes/core.h":
     void cstr_free(const char *ptr);
 
     # Returns the current seconds since the UNIX epoch.
-    # This timestamp is guaranteed to be monotonic within a runtime.
     double unix_timestamp();
 
     # Returns the current milliseconds since the UNIX epoch.
-    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_ms();
 
     # Returns the current microseconds since the UNIX epoch.
-    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_us();
 
     # Returns the current nanoseconds since the UNIX epoch.
-    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_ns();
 
     UUID4_t uuid4_new();

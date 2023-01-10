@@ -30,7 +30,6 @@ from nautilus_trader.adapters.binance.futures.schemas.market import BinanceSymbo
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -91,8 +90,8 @@ def parse_perpetual_instrument_http(
     PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
     PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
-    price_precision = precision_from_str(tick_size)
-    size_precision = precision_from_str(step_size)
+    price_precision = abs(Decimal(tick_size).as_tuple().exponent)
+    size_precision = abs(Decimal(step_size).as_tuple().exponent)
     price_increment = Price.from_str(tick_size)
     size_increment = Quantity.from_str(step_size)
     max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
@@ -182,8 +181,8 @@ def parse_futures_instrument_http(
     PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
     PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
-    price_precision = precision_from_str(tick_size)
-    size_precision = precision_from_str(step_size)
+    price_precision = abs(Decimal(tick_size).as_tuple().exponent)
+    size_precision = abs(Decimal(step_size).as_tuple().exponent)
     price_increment = Price.from_str(tick_size)
     size_increment = Quantity.from_str(step_size)
     max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)

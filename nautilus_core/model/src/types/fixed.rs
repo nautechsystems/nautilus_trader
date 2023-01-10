@@ -45,8 +45,9 @@ pub fn fixed_u64_to_f64(value: u64) -> f64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::*;
+
+    use super::*;
 
     #[rstest(precision, value,
         case(0, 0.0),
