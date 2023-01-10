@@ -46,6 +46,7 @@ where
             write_statistics: true,
             compression: CompressionOptions::Uncompressed,
             version: Version::V2,
+            data_pagesize_limit: None
         };
         let encodings = A::encodings(schema.metadata.clone());
         let writer = FileWriter::try_new(w, schema, options).unwrap();

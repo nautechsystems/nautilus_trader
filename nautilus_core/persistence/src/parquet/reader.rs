@@ -121,13 +121,20 @@ impl<A, R> ParquetReader<A, R>
 where
     R: Read + Seek,
 {
-    pub fn new(mut reader: R, chunk_size: usize, filter_arg: GroupFilterArg) -> Self {
-        // let mut file = File::open(file_path)
-        //     .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
-        let group_filter_predicate = ParquetReader::<A, R>::new_predicate(&filter_arg, &mut reader);
+    pub fn new(mut reader: R, chunk_size: usize, _filter_arg: GroupFilterArg) -> Self {
+        // TODO: filter group
+        // let group_filter_predicate = ParquetReader::<A, R>::new_predicate(&filter_arg, &mut reader);
 
-        let fr = FileReader::try_new(reader, None, Some(chunk_size), None, group_filter_predicate)
-            .expect("Unable to create parquet reader from reader");
+        let metadata = read::read_metadata(&mut reader).expect("Unable to read metadata");
+        let schema = read::infer_schema(&metadata).expect("Unable to infer schema");
+        let fr = FileReader::new(
+            reader,
+            metadata.row_groups,
+            schema,
+            Some(chunk_size),
+            None,
+            None,
+        );
         ParquetReader {
             file_reader: fr,
             reader_type: PhantomData,
