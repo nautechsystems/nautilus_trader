@@ -108,8 +108,9 @@ def _build_extensions() -> list[Extension]:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
 
+    extra_compile_args = []
     if platform.system() != "Windows":
-        extra_compile_args = ["-Wno-parentheses-equality"]
+        extra_compile_args.append("-Wno-parentheses-equality")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
