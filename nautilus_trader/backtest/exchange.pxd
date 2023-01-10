@@ -41,6 +41,8 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+
 
 cdef class SimulatedExchange:
     cdef Clock _clock
@@ -119,6 +121,7 @@ cdef class SimulatedExchange:
     cpdef void process_trade_tick(self, TradeTick tick) except *
     cpdef void process_bar(self, Bar bar) except *
     cpdef void process_venue_status(self, VenueStatusUpdate update) except *
+    cpdef void process_instrument_status(self, InstrumentStatusUpdate update) except *
     cpdef void process(self, uint64_t now_ns) except *
     cpdef void reset(self) except *
 

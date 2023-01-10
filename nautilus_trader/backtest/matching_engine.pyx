@@ -146,7 +146,7 @@ cdef class OrderMatchingEngine:
         self.product_id = product_id
         self.book_type = book_type
         self.oms_type = oms_type
-        self.market_status = MarketStatus.CLOSED
+        self.market_status = MarketStatus.OPEN
 
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders

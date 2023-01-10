@@ -28,6 +28,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.system.kernel import NautilusKernel
 
@@ -987,7 +988,9 @@ cdef class BacktestEngine:
             elif isinstance(data, Bar):
                 self._venues[data.bar_type.instrument_id.venue].process_bar(data)
             elif isinstance(data, VenueStatusUpdate):
-                self._venues[data.venue].process_status(data)
+                self._venues[data.venue].process_venue_status(data)
+            elif isinstance(data, InstrumentStatusUpdate):
+                self._venues[data.instrument_id.venue].process_instrument_status(data)
 
             self._data_engine.process(data)
 

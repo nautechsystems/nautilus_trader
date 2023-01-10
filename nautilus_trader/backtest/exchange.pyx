@@ -684,6 +684,28 @@ cdef class SimulatedExchange:
 
             matching_engine.process_status(update.status)
 
+    cpdef void process_instrument_status(self, InstrumentStatusUpdate update) except *:
+        """
+        Process a specific instrument status.
+
+        Parameters
+        ----------
+        update : VenueStatusUpdate
+            The status to process.
+
+        """
+        Condition.not_none(update, "status")
+
+        cdef:
+            InstrumentId instrument_id = update.instrument_id
+            OrderMatchingEngine matching_engine
+
+        matching_engine = self._matching_engines.get(instrument_id)
+
+        if matching_engine is None:
+            raise RuntimeError(f"No matching engine found for {instrument_id}")
+
+        matching_engine.process_status(update.status)
 
     cpdef void process(self, uint64_t now_ns) except *:
         """
