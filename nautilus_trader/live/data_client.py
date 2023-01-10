@@ -22,6 +22,7 @@ could also be possible to write clients for specialized data publishers.
 import asyncio
 import functools
 from asyncio import Task
+from collections.abc import Coroutine
 from typing import Any, Callable, Optional
 
 import pandas as pd
@@ -95,9 +96,34 @@ class LiveDataClient(DataClient):
 
         self._loop = loop
 
+    async def run_after_delay(self, delay, coro) -> None:
+        await asyncio.sleep(delay)
+        return await coro
+
+    def create_task(
+        self,
+        coro: Coroutine,
+        name: Optional[str] = None,
+        actions: Optional[Callable] = None,
+        success: Optional[str] = None,
+    ):
+        name = name or coro.__name__
+        self._log.debug(f"Creating task {name}.")
+        task = self._loop.create_task(
+            coro,
+            name=name,
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                actions,
+                success,
+            ),
+        )
+
     def _on_task_completed(
         self,
-        actions: Callable,
+        actions: Optional[Callable],
         success: Optional[str],
         task: Task,
     ) -> None:
@@ -107,29 +133,26 @@ class LiveDataClient(DataClient):
             )
         else:
             if actions:
-                actions()
+                try:
+                    actions()
+                except Exception as e:
+                    self._log.error(
+                        f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
+                        f"{repr(e)}",
+                    )
             if success:
                 self._log.info(success, LogColor.GREEN)
-
-    async def run_after_delay(self, delay, coro) -> None:
-        await asyncio.sleep(delay)
-        return await coro
 
     def connect(self) -> None:
         """
         Connect the client.
         """
         self._log.info("Connecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._connect(),
             name="connect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(True),
-                "Connected",
-            ),
+            actions=lambda: self._set_connected(True),
+            success="Connected",
         )
 
     def disconnect(self) -> None:
@@ -137,58 +160,36 @@ class LiveDataClient(DataClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._disconnect(),
             name="disconnect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(False),
-                "Disconnected",
-            ),
+            actions=lambda: self._set_connected(False),
+            success="Disconnected",
         )
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
-        self._log.debug(f"Subscribe {data_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe(data_type),
-            name="subscribe",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription(data_type),
-                None,
-            ),
+            name=f"subscribe_{data_type}",
+            actions=lambda: self._add_subscription(data_type),
         )
 
     def unsubscribe(self, data_type: DataType) -> None:
-        self._log.debug(f"Unsubscribe {data_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe(data_type),
-            name="unsubscribe",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription(data_type),
-                None,
-            ),
+            name=f"unsubscribe_{data_type}",
+            actions=lambda: self._remove_subscription(data_type),
         )
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
         self._log.debug(f"Request {data_type} {correlation_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request(data_type, correlation_id),
-            name="request",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            name=f"request_{data_type}",
         )
 
     ############################################################################
@@ -277,41 +278,63 @@ class LiveMarketDataClient(MarketDataClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
+    async def run_after_delay(self, delay, coro) -> None:
+        await asyncio.sleep(delay)
+        return await coro
+
+    def create_task(
+        self,
+        coro: Coroutine,
+        name: Optional[str] = None,
+        actions: Optional[Callable] = None,
+        success: Optional[str] = None,
+    ):
+        name = name or coro.__name__
+        self._log.debug(f"Creating task {name}.")
+        task = self._loop.create_task(
+            coro,
+            name=name,
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                actions,
+                success,
+            ),
+        )
+
     def _on_task_completed(
         self,
-        actions: Callable,
+        actions: Optional[Callable],
         success: Optional[str],
         task: Task,
-    ):
+    ) -> None:
         if task.exception():
             self._log.error(
                 f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
             )
         else:
             if actions:
-                actions()
+                try:
+                    actions()
+                except Exception as e:
+                    self._log.error(
+                        f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
+                        f"{repr(e)}",
+                    )
             if success:
                 self._log.info(success, LogColor.GREEN)
-
-    async def run_after_delay(self, delay, coro) -> None:
-        await asyncio.sleep(delay)
-        return await coro
 
     def connect(self) -> None:
         """
         Connect the client.
         """
         self._log.info("Connecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._connect(),
             name="connected",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(True),
-                "Connected",
-            ),
+            actions=lambda: self._set_connected(True),
+            success="Connected",
         )
 
     def disconnect(self) -> None:
@@ -319,61 +342,35 @@ class LiveMarketDataClient(MarketDataClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._disconnect(),
             name="disconnect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(False),
-                "Disconnected",
-            ),
+            actions=lambda: self._set_connected(False),
+            success="Disconnected",
         )
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
-        self._log.debug(f"Subscribe {data_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe(data_type),
-            name="subscribe",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription(data_type),
-                None,
-            ),
+            name=f"subscribe_{data_type}",
+            actions=lambda: self._add_subscription(data_type),
         )
 
     def subscribe_instruments(self) -> None:
-        self._log.debug("Subscribe all instruments.")
         instrument_ids = list(self._instrument_provider.get_all().keys())
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_instruments(),
-            name="subscribe_instruments",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: [self._add_subscription_instrument(i) for i in instrument_ids],
-                None,
-            ),
+            name="subscribe_all_instruments",
+            actions=lambda: [self._add_subscription_instrument(i) for i in instrument_ids],
         )
 
     def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Subscribe instrument {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_instruments(),
-            name="subscribe_instrument",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_instrument(instrument_id),
-                None,
-            ),
+            name=f"subscribe_instrument_{instrument_id}",
+            actions=lambda: self._add_subscription_instrument(instrument_id),
         )
 
     def subscribe_order_book_deltas(
@@ -383,22 +380,15 @@ class LiveMarketDataClient(MarketDataClient):
         depth: Optional[int] = None,
         kwargs: dict[str, Any] = None,
     ) -> None:
-        self._log.debug(f"Subscribe order book deltas {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_order_book_deltas(
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
                 kwargs=kwargs,
             ),
-            name="subscribe_order_book_deltas",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_order_book_deltas(instrument_id),
-                None,
-            ),
+            name=f"subscribe_order_book_deltas: {instrument_id}",
+            actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
         )
 
     def subscribe_order_book_snapshots(
@@ -408,296 +398,158 @@ class LiveMarketDataClient(MarketDataClient):
         depth: Optional[int] = None,
         kwargs: dict = None,
     ) -> None:
-        self._log.debug(f"Subscribe order book snapshots {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_order_book_snapshots(
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
                 kwargs=kwargs,
             ),
-            name="subscribe_order_book_snapshots",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_order_book_snapshots(instrument_id),
-                None,
-            ),
+            name=f"subscribe_order_book_snapshots: {instrument_id}",
+            actions=lambda: self._add_subscription_order_book_snapshots(instrument_id),
         )
 
     def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Subscribe ticker {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_ticker(instrument_id),
-            name="subscribe_ticker",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_ticker(instrument_id),
-                None,
-            ),
+            name=f"subscribe_ticker: {instrument_id}",
+            actions=lambda: self._add_subscription_ticker(instrument_id),
         )
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Subscribe quote ticks {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_quote_ticks(instrument_id),
-            name="subscribe_quote_ticks",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_quote_ticks(instrument_id),
-                None,
-            ),
+            name=f"subscribe_quote_ticks: {instrument_id}",
+            actions=lambda: self._add_subscription_quote_ticks(instrument_id),
         )
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Subscribe trade ticks {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_trade_ticks(instrument_id),
-            name="subscribe_trade_ticks",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_trade_ticks(instrument_id),
-                None,
-            ),
+            name=f"subscribe_trade_ticks: {instrument_id}",
+            actions=lambda: self._add_subscription_trade_ticks(instrument_id),
         )
 
     def subscribe_bars(self, bar_type: BarType) -> None:
         PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
 
-        self._log.debug(f"Subscribe bars {bar_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_bars(bar_type),
-            name="subscribe_bars",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_bars(bar_type),
-                None,
-            ),
+            name=f"subscribe_bars {bar_type}",
+            actions=lambda: self._add_subscription_bars(bar_type),
         )
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Subscribe instrument status updates {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_instrument_status_updates(instrument_id),
-            name="subscribe_instrument_status_updates",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_instrument_status_updates(instrument_id),
-                None,
-            ),
+            name=f"subscribe_instrument_status_updates: {instrument_id}",
+            actions=lambda: self._add_subscription_instrument_status_updates(instrument_id),
         )
 
     def subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Subscribe instrument close updates {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._subscribe_instrument_close(instrument_id),
-            name="subscribe_instrument_close",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._add_subscription_instrument_close(instrument_id),
-                None,
-            ),
+            name=f"subscribe_instrument_close: {instrument_id}",
+            actions=lambda: self._add_subscription_instrument_close(instrument_id),
         )
 
     def unsubscribe(self, data_type: DataType) -> None:
-        self._log.debug(f"Unsubscribe {data_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe(data_type),
-            name="unsubscribe",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription(data_type),
-                None,
-            ),
+            name=f"unsubscribe: {data_type}",
+            actions=lambda: self._remove_subscription(data_type),
         )
 
     def unsubscribe_instruments(self) -> None:
-        self._log.debug("Unsubscribe all instruments.")
         instrument_ids = list(self._instrument_provider.get_all().keys())
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_instruments(),
             name="unsubscribe_instruments",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: [self._remove_subscription_instrument(i) for i in instrument_ids],
-                None,
-            ),
+            actions=lambda: [self._remove_subscription_instrument(i) for i in instrument_ids],
         )
 
     def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe instrument {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_instrument(instrument_id),
-            name="unsubscribe_instrument",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_instrument(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_instrument: {instrument_id}",
+            actions=lambda: self._remove_subscription_instrument(instrument_id),
         )
 
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe order book deltas {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_order_book_deltas(instrument_id),
-            name="unsubscribe_order_book_deltas",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_order_book_deltas(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_order_book_deltas: {instrument_id}",
+            actions=lambda: self._remove_subscription_order_book_deltas(instrument_id),
         )
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe order book snapshots {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_order_book_snapshots(instrument_id),
-            name="unsubscribe_order_book_snapshots",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_order_book_snapshots(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_order_book_snapshots: {instrument_id}",
+            actions=lambda: self._remove_subscription_order_book_snapshots(instrument_id),
         )
 
     def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe ticker {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_ticker(instrument_id),
-            name="unsubscribe_ticker",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_ticker(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_ticker: {instrument_id}",
+            actions=lambda: self._remove_subscription_ticker(instrument_id),
         )
 
     def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe quote ticks {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_quote_ticks(instrument_id),
-            name="unsubscribe_quote_ticks",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_quote_ticks(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_quote_ticks: {instrument_id}",
+            actions=lambda: self._remove_subscription_quote_ticks(instrument_id),
         )
 
     def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe trade ticks {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_trade_ticks(instrument_id),
-            name="unsubscribe_trade_ticks",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_trade_ticks(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_trade_ticks: {instrument_id}",
+            actions=lambda: self._remove_subscription_trade_ticks(instrument_id),
         )
 
     def unsubscribe_bars(self, bar_type: BarType) -> None:
-        self._log.debug(f"Unsubscribe bars {bar_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_bars(bar_type),
-            name="unsubscribe_bars",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_bars(bar_type),
-                None,
-            ),
+            name=f"unsubscribe_bars: {bar_type}",
+            actions=lambda: self._remove_subscription_bars(bar_type),
         )
 
     def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe instrument status updates {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_instrument_status_updates(instrument_id),
-            name="unsubscribe_instrument_status_updates",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_instrument_status_updates(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_instrument_status_updates: {instrument_id}",
+            actions=lambda: self._remove_subscription_instrument_status_updates(instrument_id),
         )
 
     def unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribe instrument close updates {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._unsubscribe_instrument_close(instrument_id),
-            name="unsubscribe_instrument_close",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._remove_subscription_instrument_close(instrument_id),
-                None,
-            ),
+            name=f"unsubscribe_instrument_close: {instrument_id}",
+            actions=lambda: self._remove_subscription_instrument_close(instrument_id),
         )
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        self._log.debug(f"Request {data_type} {correlation_id}.")
-        self._log.debug(f"{data_type} {correlation_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request(data_type, correlation_id),
-            name="request",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            name=f"request {data_type}",
         )
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
-        self._log.debug(f"Request instrument {instrument_id} {correlation_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request_instrument(instrument_id, correlation_id),
-            name="request_instrument",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            name=f"request_instrument: {instrument_id}",
         )
 
     def request_instruments(self, venue: Venue, correlation_id: UUID4):
         self._log.debug(f"Request instruments for {venue} {correlation_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request_instruments(venue, correlation_id),
             name="request_instruments",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
         )
 
     def request_quote_ticks(
@@ -709,7 +561,7 @@ class LiveMarketDataClient(MarketDataClient):
         to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.debug(f"Request quote ticks {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request_quote_ticks(
                 instrument_id=instrument_id,
                 limit=limit,
@@ -718,9 +570,6 @@ class LiveMarketDataClient(MarketDataClient):
                 to_datetime=to_datetime,
             ),
             name="request_quote_ticks",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
         )
 
     def request_trade_ticks(
@@ -732,7 +581,7 @@ class LiveMarketDataClient(MarketDataClient):
         to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.debug(f"Request trade ticks {instrument_id}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request_trade_ticks(
                 instrument_id=instrument_id,
                 limit=limit,
@@ -741,9 +590,6 @@ class LiveMarketDataClient(MarketDataClient):
                 to_datetime=to_datetime,
             ),
             name="request_trade_ticks",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
         )
 
     def request_bars(
@@ -755,7 +601,7 @@ class LiveMarketDataClient(MarketDataClient):
         to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.debug(f"Request bars {bar_type}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._request_bars(
                 bar_type=bar_type,
                 limit=limit,
@@ -764,9 +610,6 @@ class LiveMarketDataClient(MarketDataClient):
                 to_datetime=to_datetime,
             ),
             name="request_bars",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
         )
 
     ############################################################################
