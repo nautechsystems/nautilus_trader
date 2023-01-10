@@ -85,6 +85,7 @@ cdef class AccountId(Identifier):
 cdef class ClientOrderId(Identifier):
     cdef ClientOrderId_t _mem
 
+
 cdef class VenueOrderId(Identifier):
     cdef VenueOrderId_t _mem
 

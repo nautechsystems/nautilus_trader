@@ -673,17 +673,8 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(update, "status")
 
-        cdef:
-            list instrument_ids = list(self.instruments.keys())
-            InstrumentId instrument_id
-            OrderMatchingEngine matching_engine
-
-        for instrument_id in instrument_ids:
-            matching_engine = self._matching_engines.get(instrument_id)
-
-            if matching_engine is None:
-                raise RuntimeError(f"No matching engine found for {instrument_id}")
-
+        cdef OrderMatchingEngine matching_engine
+        for matching_engine in self._matching_engines.values():
             matching_engine.process_status(update.status)
 
     cpdef void process_instrument_status(self, InstrumentStatusUpdate update) except *:
@@ -698,14 +689,9 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(update, "status")
 
-        cdef:
-            InstrumentId instrument_id = update.instrument_id
-            OrderMatchingEngine matching_engine
-
-        matching_engine = self._matching_engines.get(instrument_id)
-
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(update.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {instrument_id}")
+            raise RuntimeError(f"No matching engine found for {update.instrument_id}")
 
         matching_engine.process_status(update.status)
 

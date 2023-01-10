@@ -12,13 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.ladder import Ladder
 
 
 def default_auction_match(left: Ladder, right: Ladder) -> tuple[list, list]:
-    """Match bid/ask Ladders as default auction match function"""
+    """Match bid/ask Ladders as default auction match function."""
     if not (left.top() and right.top()):
         return [], []
     bid_volume = volume_traded_at_price(left, right.top().price, side=OrderSide.BUY)
@@ -44,7 +45,7 @@ def valid_trade_price(order_price, side, target_price):
 
 
 def volume_traded_at_price(ladder: Ladder, price: float, side: OrderSide) -> float:
-    """Determine the total volume available to trade in `ladder` up to a certain `price`"""
+    """Determine the total volume available to trade in `ladder` up to a certain `price`."""
     total_volume = 0.0
     for level in ladder.levels:
         if not valid_trade_price(order_price=level.price, side=side, target_price=price):
@@ -55,7 +56,7 @@ def volume_traded_at_price(ladder: Ladder, price: float, side: OrderSide) -> flo
 
 
 def find_trades_for_volume(ladder: Ladder, target_volume: float) -> list[BookOrder]:
-    """Assuming `target_volume` size has traded, find all trades up to that volume"""
+    """Assuming `target_volume` size has traded, find all trades up to that volume."""
     remaining_size = target_volume
     orders: list[BookOrder] = []
     for level in ladder.levels:
