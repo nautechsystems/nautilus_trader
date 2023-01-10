@@ -458,7 +458,7 @@ cdef class OrderMatchingEngine:
         cdef:
             BookOrder order
             Order real_order
-            set client_order_ids = {c.to_str() for c in self.cache.client_order_ids()}
+            set client_order_ids = {c.value for c in self.cache.client_order_ids()}
             list traded_bids
             list traded_asks
             PositionId venue_position_id

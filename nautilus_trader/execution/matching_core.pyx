@@ -354,8 +354,6 @@ cdef class MatchingCore:
 
         return LiquiditySide.TAKER
 
-    cdef list auction(self) except *:
-        return self._auction_match(self.get_orders_bid(), self.get_orders_ask())
 
 
 cdef inline int64_t order_sort_key(Order order) except *:
