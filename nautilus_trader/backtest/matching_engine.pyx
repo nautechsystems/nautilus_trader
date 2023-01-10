@@ -15,6 +15,8 @@
 
 from typing import Optional
 
+from nautilus_trader.backtest.auction import default_auction_match
+
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport uint64_t
@@ -84,8 +86,6 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-from nautilus_trader.backtest.auction import default_auction_match
-
 
 cdef class OrderMatchingEngine:
     """
@@ -116,6 +116,8 @@ cdef class OrderMatchingEngine:
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
+        The auction matching algorithm.
     """
 
     def __init__(
@@ -131,7 +133,7 @@ cdef class OrderMatchingEngine:
         Logger logger not None,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
-        object auction_match_algo = default_auction_match
+        auction_match_algo = default_auction_match
     ):
         self._clock = clock
         self._log = LoggerAdapter(
@@ -334,6 +336,7 @@ cdef class OrderMatchingEngine:
             self._closing_auction_book.apply(data)
         else:
             raise RuntimeError(data.time_in_force)
+
         self.iterate(data.ts_init)
 
     cpdef void process_quote_tick(self, QuoteTick tick)  except *:
@@ -426,45 +429,42 @@ cdef class OrderMatchingEngine:
             The status to process.
 
         """
-        Condition.not_none(status, "status")
-
         if (self.market_status, status) == (MarketStatus.CLOSED, MarketStatus.OPEN):
             self.market_status = status
-
         elif (self.market_status, status) == (MarketStatus.CLOSED, MarketStatus.PRE_OPEN):
             # Nothing to do on pre-market open.
             self.market_status = status
-
         elif (self.market_status, status) == (MarketStatus.PRE_OPEN, MarketStatus.PAUSE):
             # Opening auction period, run auction match on pre-open auction orderbook
             self.process_auction_book(self._opening_auction_book)
             self.market_status = status
-
         elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatus.OPEN):
             # Normal market open
             self.market_status = status
-
         elif (self.market_status, status) == (MarketStatus.OPEN, MarketStatus.PAUSE):
             # Closing auction period, run auction match on closing auction orderbook
             self.process_auction_book(self._closing_auction_book)
             self.market_status = status
-
         elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatus.CLOSED):
             # Market closed - nothing to do for now
             # TODO - should we implement some sort of closing price message here?
             self.market_status = status
 
     cpdef void process_auction_book(self, OrderBook book) except *:
+        Condition.not_none(book, "book")
+
+        cdef:
+            list traded_bids
+            list traded_asks
+        # Perform an auction match on this auction order book
+        traded_bids, traded_asks = self._auction_match_algo(book.bids, book.asks)
+
+        cdef set client_order_ids = {c.value for c in self.cache.client_order_ids()}
+
         cdef:
             BookOrder order
             Order real_order
-            set client_order_ids = {c.value for c in self.cache.client_order_ids()}
-            list traded_bids
-            list traded_asks
             PositionId venue_position_id
-
-        # Perform an auction match on this auction order book
-        traded_bids, traded_asks = self._auction_match_algo(book.bids, book.asks)
         # Check filled orders from auction for any client orders and emit fills
         for order in traded_bids + traded_asks:
             if order.id in client_order_ids:

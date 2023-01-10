@@ -48,6 +48,8 @@ cdef class OrderBookData(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    time_in_force : TimeInForce, default ``GTC``
+        The order time in force for this update.
 
     Warnings
     --------
@@ -67,8 +69,8 @@ cdef class OrderBookData(Data):
 
         self.instrument_id = instrument_id
         self.book_type = book_type
-        self.update_id = update_id
         self.time_in_force = time_in_force
+        self.update_id = update_id
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -91,6 +93,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     update_id : uint64, default 0
         The unique ID for the data. If zero then order book will maintain ID internally.
+    time_in_force : TimeInForce, default ``GTC``
+        The order time in force for this update.
     """
 
     def __init__(
@@ -104,7 +108,14 @@ cdef class OrderBookSnapshot(OrderBookData):
         uint64_t update_id=0,
         TimeInForce time_in_force = TimeInForce.GTC,
     ):
-        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init, time_in_force)
+        super().__init__(
+            instrument_id,
+            book_type,
+            update_id,
+            ts_event,
+            ts_init,
+            time_in_force,
+        )
 
         self.bids = bids
         self.asks = asks
@@ -202,6 +213,8 @@ cdef class OrderBookDeltas(OrderBookData):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     update_id : uint64, default 0
         The unique ID for the data. If zero then order book will maintain ID internally.
+    time_in_force : TimeInForce, default ``GTC``
+        The order time in force for this update.
     """
 
     def __init__(
@@ -214,7 +227,14 @@ cdef class OrderBookDeltas(OrderBookData):
         uint64_t update_id=0,
         TimeInForce time_in_force = TimeInForce.GTC,
     ):
-        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init, time_in_force)
+        super().__init__(
+            instrument_id,
+            book_type,
+            update_id,
+            ts_event,
+            ts_init,
+            time_in_force,
+        )
 
         self.deltas = deltas
 
@@ -310,6 +330,8 @@ cdef class OrderBookDelta(OrderBookData):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     update_id : uint64_t, default 0
         The unique ID for the data. If zero then order book will maintain ID internally.
+    time_in_force : TimeInForce, default ``GTC``
+        The order time in force for this update.
     """
 
     def __init__(
@@ -323,7 +345,14 @@ cdef class OrderBookDelta(OrderBookData):
         uint64_t update_id=0,
         TimeInForce time_in_force = TimeInForce.GTC,
     ):
-        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init, time_in_force)
+        super().__init__(
+            instrument_id,
+            book_type,
+            update_id,
+            ts_event,
+            ts_init,
+            time_in_force,
+        )
 
         self.action = action
         self.order = order

@@ -28,10 +28,10 @@ cdef class OrderBookData(Data):
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly BookType book_type
     """The order book type (L1_TBBO, L2_MBP, L3_MBO).\n\n:returns: `BookType`"""
-    cdef readonly uint64_t update_id
-    """The update ID.\n\n:returns: `uint64`"""
     cdef readonly TimeInForce time_in_force
     """The time in force for this update.\n\n:returns: `TimeInForce`"""
+    cdef readonly uint64_t update_id
+    """The update ID.\n\n:returns: `uint64`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):

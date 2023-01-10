@@ -355,7 +355,6 @@ cdef class MatchingCore:
         return LiquiditySide.TAKER
 
 
-
 cdef inline int64_t order_sort_key(Order order) except *:
     cdef Price trigger_price
     cdef Price price
