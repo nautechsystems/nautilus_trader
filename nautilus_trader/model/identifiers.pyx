@@ -587,7 +587,7 @@ cdef class ClientOrderId(Identifier):
     def __hash__ (self) -> int:
         return client_order_id_hash(&self._mem)
 
-    cdef str to_str(self):
+    cpdef str to_str(self):
         return cstr_to_pystr(client_order_id_to_cstr(&self._mem))
 
 

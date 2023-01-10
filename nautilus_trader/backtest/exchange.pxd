@@ -28,6 +28,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OmsType
@@ -117,6 +118,7 @@ cdef class SimulatedExchange:
     cpdef void process_quote_tick(self, QuoteTick tick) except *
     cpdef void process_trade_tick(self, TradeTick tick) except *
     cpdef void process_bar(self, Bar bar) except *
+    cpdef void process_venue_status(self, VenueStatusUpdate update) except *
     cpdef void process(self, uint64_t now_ns) except *
     cpdef void reset(self) except *
 

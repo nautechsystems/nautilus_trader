@@ -75,6 +75,7 @@ cdef class MatchingCore:
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *
     cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *
     cdef LiquiditySide _determine_order_liquidity(self, bint initial, OrderSide side, Price price, Price trigger_price) except *
+    cdef list auction(self) except *
 
 
 cdef int64_t order_sort_key(Order order) except *
