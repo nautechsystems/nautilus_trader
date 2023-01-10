@@ -42,8 +42,6 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-
 
 cdef class SimulatedExchange:
     cdef Clock _clock
