@@ -14,24 +14,38 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
+from decimal import Decimal
 from typing import Optional
+
+import msgspec
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_instrument_http
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
-from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
+from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
+from nautilus_trader.model.objects import QUANTITY_MAX
+from nautilus_trader.model.objects import QUANTITY_MIN
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class BinanceSpotInstrumentProvider(InstrumentProvider):
@@ -64,10 +78,13 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._http_wallet = BinanceSpotWalletHttpAPI(self._client)
+        self._http_wallet = BinanceSpotWalletHttpAPI(self._client, account_type=account_type)
         self._http_market = BinanceSpotMarketHttpAPI(self._client, account_type=account_type)
 
         self._log_warnings = config.log_warnings if config else True
+
+        self._decoder = msgspec.json.Decoder()
+        self._encoder = msgspec.json.Encoder()
 
     async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
@@ -75,11 +92,13 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         if self._client.base_url.__contains__("testnet.binance.vision"):
-            fees: dict[str, BinanceSpotTradeFees] = {}
+            fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {}
         else:
             try:
-                fee_res: list[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
-                fees = {s.symbol: s for s in fee_res}
+                endpoint_trade_fee = self._http_wallet.endpoint_trade_fee
+                parameters = endpoint_trade_fee.GetParameters(timestamp=str(time.time() * 1000))
+                response = await endpoint_trade_fee.request_trade_fees(parameters)
+                fees_dict = {fee.symbol: fee for fee in response.fees}
             except BinanceClientError as e:
                 self._log.error(
                     "Cannot load instruments: API key authentication failed "
@@ -88,11 +107,11 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 return
 
         # Get exchange info for all assets
-        exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info()
+        exchange_info = await self._http_market.endpoint_exchange_info.request_exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
-                fees=fees.get(symbol_info.symbol),
+                fee=fees_dict[symbol_info.symbol],
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
@@ -114,8 +133,14 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fee_res: list[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
-            fees: dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
+            endpoint_trade_fee = self._http_wallet.endpoint_trade_fee
+            trade_fee_parameters = endpoint_trade_fee.GetParameters(
+                timestamp=str(time.time() * 1000),
+            )
+            response = await endpoint_trade_fee.request_trade_fees(trade_fee_parameters)
+            fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {
+                fee.symbol: fee for fee in response.fees
+            }
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -124,16 +149,21 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Extract all symbol strings
-        symbols: list[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
-
-        # Get exchange info for all assets
-        exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
-            symbols=symbols,
+        binance_symbols = BinanceSymbols(
+            [instrument_id.symbol.value for instrument_id in instrument_ids],
         )
-        for symbol_info in exchange_info.symbols:
+        # Get exchange info for all assets
+        endpoint_exchange_info = self._http_market.endpoint_exchange_info
+        exchange_info_parameters = endpoint_exchange_info.GetParameters(symbols=binance_symbols)
+        exchange_info = await endpoint_exchange_info.request_exchange_info(exchange_info_parameters)
+        symbol_info_dict: dict[BinanceSymbol, BinanceSpotSymbolInfo] = {
+            info.symbol: info for info in exchange_info.symbols
+        }
+
+        for symbol in binance_symbols.parse_str_to_list():
             self._parse_instrument(
-                symbol_info=symbol_info,
-                fees=fees[symbol_info.symbol],
+                symbol_info=symbol_info_dict[symbol],
+                fee=fees_dict[symbol],
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
@@ -144,13 +174,19 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = BinanceSymbol(instrument_id.symbol.value)
 
         # Get current commission rates
         try:
-            fees: BinanceSpotTradeFees = await self._http_wallet.trade_fee(
-                symbol=instrument_id.symbol.value,
+            endpoint_trade_fee = self._http_wallet.endpoint_trade_fee
+            trade_fee_parameters = endpoint_trade_fee.GetParameters(
+                timestamp=str(time.time() * 1000),
+                symbol=symbol,
             )
+            trade_fees = await endpoint_trade_fee.request_trade_fees(trade_fee_parameters)
+            fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {
+                fee.symbol: fee for fee in trade_fees.fees
+            }
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -159,29 +195,110 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for asset
-        exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
-            symbol=symbol,
+        endpoint_exchange_info = self._http_market.endpoint_exchange_info
+        exchange_info_parameters = endpoint_exchange_info.GetParameters(symbol=symbol)
+        exchange_info = await endpoint_exchange_info.request_exchange_info(exchange_info_parameters)
+        symbol_info_dict: dict[BinanceSymbol, BinanceSpotSymbolInfo] = {
+            info.symbol: info for info in exchange_info.symbols
+        }
+
+        self._parse_instrument(
+            symbol_info=symbol_info_dict[symbol],
+            fee=fees_dict[symbol],
+            ts_event=millis_to_nanos(exchange_info.serverTime),
         )
-        for symbol_info in exchange_info.symbols:
-            self._parse_instrument(
-                symbol_info=symbol_info,
-                fees=fees,
-                ts_event=millis_to_nanos(exchange_info.serverTime),
-            )
 
     def _parse_instrument(
         self,
         symbol_info: BinanceSpotSymbolInfo,
-        fees: Optional[BinanceSpotTradeFees],
+        fee: Optional[BinanceSpotTradeFee],
         ts_event: int,
     ) -> None:
         ts_init = time.time_ns()
         try:
-            instrument = parse_spot_instrument_http(
-                symbol_info=symbol_info,
-                fees=fees,
+            base_currency = symbol_info.parse_to_base_asset()
+            quote_currency = symbol_info.parse_to_quote_asset()
+
+            native_symbol = Symbol(symbol_info.symbol)
+            instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
+
+            # Parse instrument filters
+            filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+                f.filterType: f for f in symbol_info.filters
+            }
+            price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
+            lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
+            min_notional_filter: BinanceSymbolFilter = filters.get(
+                BinanceSymbolFilterType.MIN_NOTIONAL,
+            )
+            # market_lot_size_filter = symbol_filters.get("MARKET_LOT_SIZE")
+
+            tick_size = price_filter.tickSize.rstrip("0")
+            step_size = lot_size_filter.stepSize.rstrip("0")
+            PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
+            PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
+
+            price_precision = abs(Decimal(tick_size).as_tuple().exponent)
+            size_precision = abs(Decimal(step_size).as_tuple().exponent)
+            price_increment = Price.from_str(tick_size)
+            size_increment = Quantity.from_str(step_size)
+            lot_size = Quantity.from_str(step_size)
+
+            PyCondition.in_range(
+                float(lot_size_filter.maxQty),
+                QUANTITY_MIN,
+                QUANTITY_MAX,
+                "maxQty",
+            )
+            PyCondition.in_range(
+                float(lot_size_filter.minQty),
+                QUANTITY_MIN,
+                QUANTITY_MAX,
+                "minQty",
+            )
+            max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
+            min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
+            min_notional = None
+            if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
+                min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+            max_price = Price(
+                min(float(price_filter.maxPrice), 4294967296.0),
+                precision=price_precision,
+            )
+            min_price = Price(max(float(price_filter.minPrice), 0.0), precision=price_precision)
+
+            # Parse fees
+            maker_fee: Decimal = Decimal(0)
+            taker_fee: Decimal = Decimal(0)
+            if fee:
+                assert fee.symbol == symbol_info.symbol
+                maker_fee = Decimal(fee.makerCommission)
+                taker_fee = Decimal(fee.takerCommission)
+
+            # Create instrument
+            instrument = CurrencyPair(
+                instrument_id=instrument_id,
+                native_symbol=native_symbol,
+                base_currency=base_currency,
+                quote_currency=quote_currency,
+                price_precision=price_precision,
+                size_precision=size_precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                lot_size=lot_size,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=None,
+                min_notional=min_notional,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal(0),
+                margin_maint=Decimal(0),
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
                 ts_event=min(ts_event, ts_init),
                 ts_init=ts_init,
+                info=self._decoder.decode(self._encoder.encode(symbol_info)),
             )
             self.add_currency(currency=instrument.base_currency)
             self.add_currency(currency=instrument.quote_currency)
