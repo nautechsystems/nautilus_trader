@@ -172,7 +172,7 @@ class LiveDataClient(DataClient):
     def subscribe(self, data_type: DataType) -> None:
         self.create_task(
             self._subscribe(data_type),
-            name=f"subscribe_{data_type}",
+            name=f"subscribe: {data_type}",
             actions=lambda: self._add_subscription(data_type),
         )
 
@@ -354,7 +354,7 @@ class LiveMarketDataClient(MarketDataClient):
     def subscribe(self, data_type: DataType) -> None:
         self.create_task(
             self._subscribe(data_type),
-            name=f"subscribe_{data_type}",
+            name=f"subscribe: {data_type}",
             actions=lambda: self._add_subscription(data_type),
         )
 
@@ -369,7 +369,7 @@ class LiveMarketDataClient(MarketDataClient):
     def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_instruments(),
-            name=f"subscribe_instrument_{instrument_id}",
+            name=f"subscribe: instrument_{instrument_id}",
             actions=lambda: self._add_subscription_instrument(instrument_id),
         )
 
@@ -387,7 +387,7 @@ class LiveMarketDataClient(MarketDataClient):
                 depth=depth,
                 kwargs=kwargs,
             ),
-            name=f"subscribe_order_book_deltas: {instrument_id}",
+            name=f"subscribe: order_book_deltas: {instrument_id}",
             actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
         )
 
@@ -405,28 +405,28 @@ class LiveMarketDataClient(MarketDataClient):
                 depth=depth,
                 kwargs=kwargs,
             ),
-            name=f"subscribe_order_book_snapshots: {instrument_id}",
+            name=f"subscribe: order_book_snapshots: {instrument_id}",
             actions=lambda: self._add_subscription_order_book_snapshots(instrument_id),
         )
 
     def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_ticker(instrument_id),
-            name=f"subscribe_ticker: {instrument_id}",
+            name=f"subscribe: ticker: {instrument_id}",
             actions=lambda: self._add_subscription_ticker(instrument_id),
         )
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_quote_ticks(instrument_id),
-            name=f"subscribe_quote_ticks: {instrument_id}",
+            name=f"subscribe: quote_ticks: {instrument_id}",
             actions=lambda: self._add_subscription_quote_ticks(instrument_id),
         )
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_trade_ticks(instrument_id),
-            name=f"subscribe_trade_ticks: {instrument_id}",
+            name=f"subscribe: trade_ticks: {instrument_id}",
             actions=lambda: self._add_subscription_trade_ticks(instrument_id),
         )
 
@@ -435,21 +435,21 @@ class LiveMarketDataClient(MarketDataClient):
 
         self.create_task(
             self._subscribe_bars(bar_type),
-            name=f"subscribe_bars {bar_type}",
+            name=f"subscribe: bars {bar_type}",
             actions=lambda: self._add_subscription_bars(bar_type),
         )
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_instrument_status_updates(instrument_id),
-            name=f"subscribe_instrument_status_updates: {instrument_id}",
+            name=f"subscribe: instrument_status_updates: {instrument_id}",
             actions=lambda: self._add_subscription_instrument_status_updates(instrument_id),
         )
 
     def subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_instrument_close(instrument_id),
-            name=f"subscribe_instrument_close: {instrument_id}",
+            name=f"subscribe: instrument_close: {instrument_id}",
             actions=lambda: self._add_subscription_instrument_close(instrument_id),
         )
 
