@@ -3,7 +3,7 @@ use pyo3::{prelude::*, types::PyDict};
 
 /// Need to modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
-/// 
+///
 /// refer: https://github.com/PyO3/pyo3/issues/2644
 #[pymodule]
 fn nautilus(py: Python<'_>, m: &PyModule) -> PyResult<()> {

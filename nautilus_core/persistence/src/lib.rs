@@ -75,7 +75,7 @@ unsafe impl Send for PythonParquetReader {}
 #[pymethods]
 impl PythonParquetReader {
     #[new]
-    #[args(ts_init_filter=0)]
+    #[args(ts_init_filter = 0)]
     fn new(
         file_path: String,
         chunk_size: usize,
