@@ -133,16 +133,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if self._client.isConnected():
             self._client.disconnect()
 
-    def create_task(self, coro):
-        self._loop.create_task(self._check_task(coro))
-
-    async def _check_task(self, coro):
-        try:
-            awaitable = await coro
-            return awaitable
-        except Exception as e:
-            self._log.exception("Unhandled exception", e)
-
     def subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,

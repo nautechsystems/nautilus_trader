@@ -96,22 +96,53 @@ class LiveDataClient(DataClient):
 
         self._loop = loop
 
-    async def run_after_delay(self, delay, coro) -> None:
+    async def run_after_delay(
+        self,
+        delay: float,
+        coro: Coroutine,
+    ) -> None:
+        """
+        Run the given coroutine after a delay.
+
+        Parameters
+        ----------
+        delay : float
+            The delay (seconds) before running the coroutine.
+        coro : Coroutine
+            The coroutine to run after the initial delay.
+
+        """
         await asyncio.sleep(delay)
         return await coro
 
     def create_task(
         self,
         coro: Coroutine,
-        name: Optional[str] = None,
+        log_msg: Optional[str] = None,
         actions: Optional[Callable] = None,
         success: Optional[str] = None,
-    ):
-        name = name or coro.__name__
-        self._log.debug(f"Creating task {name}.")
+    ) -> None:
+        """
+        Run the given coroutine with error handling and optional callback
+        actions when done.
+
+        Parameters
+        ----------
+        coro : Coroutine
+            The coroutine to run.
+        log_msg : str, optional
+            The log message for the task.
+        actions : Callable, optional
+            The actions callback to run when the coroutine is done.
+        success : str, optional
+            The log message to write on actions success.
+
+        """
+        log_msg = log_msg or coro.__name__
+        self._log.debug(f"Creating task {log_msg}.")
         task = self._loop.create_task(
             coro,
-            name=name,
+            name=coro.__name__,
         )
         task.add_done_callback(
             functools.partial(
@@ -150,7 +181,6 @@ class LiveDataClient(DataClient):
         self._log.info("Connecting...")
         self.create_task(
             self._connect(),
-            name="connect",
             actions=lambda: self._set_connected(True),
             success="Connected",
         )
@@ -162,7 +192,6 @@ class LiveDataClient(DataClient):
         self._log.info("Disconnecting...")
         self.create_task(
             self._disconnect(),
-            name="disconnect",
             actions=lambda: self._set_connected(False),
             success="Disconnected",
         )
@@ -172,14 +201,14 @@ class LiveDataClient(DataClient):
     def subscribe(self, data_type: DataType) -> None:
         self.create_task(
             self._subscribe(data_type),
-            name=f"subscribe: {data_type}",
+            log_msg=f"subscribe: {data_type}",
             actions=lambda: self._add_subscription(data_type),
         )
 
     def unsubscribe(self, data_type: DataType) -> None:
         self.create_task(
             self._unsubscribe(data_type),
-            name=f"unsubscribe_{data_type}",
+            log_msg=f"unsubscribe_{data_type}",
             actions=lambda: self._remove_subscription(data_type),
         )
 
@@ -189,7 +218,7 @@ class LiveDataClient(DataClient):
         self._log.debug(f"Request {data_type} {correlation_id}.")
         self.create_task(
             self._request(data_type, correlation_id),
-            name=f"request_{data_type}",
+            log_msg=f"request_{data_type}",
         )
 
     ############################################################################
@@ -278,22 +307,53 @@ class LiveMarketDataClient(MarketDataClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
-    async def run_after_delay(self, delay, coro) -> None:
+    async def run_after_delay(
+        self,
+        delay: float,
+        coro: Coroutine,
+    ) -> None:
+        """
+        Run the given coroutine after a delay.
+
+        Parameters
+        ----------
+        delay : float
+            The delay (seconds) before running the coroutine.
+        coro : Coroutine
+            The coroutine to run after the initial delay.
+
+        """
         await asyncio.sleep(delay)
         return await coro
 
     def create_task(
         self,
         coro: Coroutine,
-        name: Optional[str] = None,
+        log_msg: Optional[str] = None,
         actions: Optional[Callable] = None,
         success: Optional[str] = None,
-    ):
-        name = name or coro.__name__
-        self._log.debug(f"Creating task {name}.")
+    ) -> None:
+        """
+        Run the given coroutine with error handling and optional callback
+        actions when done.
+
+        Parameters
+        ----------
+        coro : Coroutine
+            The coroutine to run.
+        log_msg : str, optional
+            The log message for the task.
+        actions : Callable, optional
+            The actions callback to run when the coroutine is done.
+        success : str, optional
+            The log message to write on actions success.
+
+        """
+        log_msg = log_msg or coro.__name__
+        self._log.debug(f"Creating task {log_msg}.")
         task = self._loop.create_task(
             coro,
-            name=name,
+            name=coro.__name__,
         )
         task.add_done_callback(
             functools.partial(
@@ -332,7 +392,6 @@ class LiveMarketDataClient(MarketDataClient):
         self._log.info("Connecting...")
         self.create_task(
             self._connect(),
-            name="connected",
             actions=lambda: self._set_connected(True),
             success="Connected",
         )
@@ -344,7 +403,6 @@ class LiveMarketDataClient(MarketDataClient):
         self._log.info("Disconnecting...")
         self.create_task(
             self._disconnect(),
-            name="disconnect",
             actions=lambda: self._set_connected(False),
             success="Disconnected",
         )
@@ -354,7 +412,7 @@ class LiveMarketDataClient(MarketDataClient):
     def subscribe(self, data_type: DataType) -> None:
         self.create_task(
             self._subscribe(data_type),
-            name=f"subscribe: {data_type}",
+            log_msg=f"subscribe: {data_type}",
             actions=lambda: self._add_subscription(data_type),
         )
 
@@ -362,14 +420,13 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_ids = list(self._instrument_provider.get_all().keys())
         self.create_task(
             self._subscribe_instruments(),
-            name="subscribe_all_instruments",
             actions=lambda: [self._add_subscription_instrument(i) for i in instrument_ids],
         )
 
     def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_instruments(),
-            name=f"subscribe: instrument_{instrument_id}",
+            log_msg=f"subscribe: instrument {instrument_id}",
             actions=lambda: self._add_subscription_instrument(instrument_id),
         )
 
@@ -387,7 +444,7 @@ class LiveMarketDataClient(MarketDataClient):
                 depth=depth,
                 kwargs=kwargs,
             ),
-            name=f"subscribe: order_book_deltas: {instrument_id}",
+            log_msg=f"subscribe: order_book_deltas {instrument_id}",
             actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
         )
 
@@ -405,28 +462,28 @@ class LiveMarketDataClient(MarketDataClient):
                 depth=depth,
                 kwargs=kwargs,
             ),
-            name=f"subscribe: order_book_snapshots: {instrument_id}",
+            log_msg=f"subscribe: order_book_snapshots {instrument_id}",
             actions=lambda: self._add_subscription_order_book_snapshots(instrument_id),
         )
 
     def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_ticker(instrument_id),
-            name=f"subscribe: ticker: {instrument_id}",
+            log_msg=f"subscribe: ticker {instrument_id}",
             actions=lambda: self._add_subscription_ticker(instrument_id),
         )
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_quote_ticks(instrument_id),
-            name=f"subscribe: quote_ticks: {instrument_id}",
+            log_msg=f"subscribe: quote_ticks {instrument_id}",
             actions=lambda: self._add_subscription_quote_ticks(instrument_id),
         )
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_trade_ticks(instrument_id),
-            name=f"subscribe: trade_ticks: {instrument_id}",
+            log_msg=f"subscribe: trade_ticks {instrument_id}",
             actions=lambda: self._add_subscription_trade_ticks(instrument_id),
         )
 
@@ -435,28 +492,28 @@ class LiveMarketDataClient(MarketDataClient):
 
         self.create_task(
             self._subscribe_bars(bar_type),
-            name=f"subscribe: bars {bar_type}",
+            log_msg=f"subscribe: bars {bar_type}",
             actions=lambda: self._add_subscription_bars(bar_type),
         )
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_instrument_status_updates(instrument_id),
-            name=f"subscribe: instrument_status_updates: {instrument_id}",
+            log_msg=f"subscribe: instrument_status_updates {instrument_id}",
             actions=lambda: self._add_subscription_instrument_status_updates(instrument_id),
         )
 
     def subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._subscribe_instrument_close(instrument_id),
-            name=f"subscribe: instrument_close: {instrument_id}",
+            log_msg=f"subscribe: instrument_close {instrument_id}",
             actions=lambda: self._add_subscription_instrument_close(instrument_id),
         )
 
     def unsubscribe(self, data_type: DataType) -> None:
         self.create_task(
             self._unsubscribe(data_type),
-            name=f"unsubscribe: {data_type}",
+            log_msg=f"unsubscribe {data_type}",
             actions=lambda: self._remove_subscription(data_type),
         )
 
@@ -464,70 +521,69 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_ids = list(self._instrument_provider.get_all().keys())
         self.create_task(
             self._unsubscribe_instruments(),
-            name="unsubscribe_instruments",
             actions=lambda: [self._remove_subscription_instrument(i) for i in instrument_ids],
         )
 
     def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_instrument(instrument_id),
-            name=f"unsubscribe_instrument: {instrument_id}",
+            log_msg=f"unsubscribe: instrument {instrument_id}",
             actions=lambda: self._remove_subscription_instrument(instrument_id),
         )
 
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_order_book_deltas(instrument_id),
-            name=f"unsubscribe_order_book_deltas: {instrument_id}",
+            log_msg=f"unsubscribe: order_book_deltas {instrument_id}",
             actions=lambda: self._remove_subscription_order_book_deltas(instrument_id),
         )
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_order_book_snapshots(instrument_id),
-            name=f"unsubscribe_order_book_snapshots: {instrument_id}",
+            log_msg=f"unsubscribe: order_book_snapshots {instrument_id}",
             actions=lambda: self._remove_subscription_order_book_snapshots(instrument_id),
         )
 
     def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_ticker(instrument_id),
-            name=f"unsubscribe_ticker: {instrument_id}",
+            log_msg=f"unsubscribe: ticker {instrument_id}",
             actions=lambda: self._remove_subscription_ticker(instrument_id),
         )
 
     def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_quote_ticks(instrument_id),
-            name=f"unsubscribe_quote_ticks: {instrument_id}",
+            log_msg=f"unsubscribe: quote_ticks {instrument_id}",
             actions=lambda: self._remove_subscription_quote_ticks(instrument_id),
         )
 
     def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_trade_ticks(instrument_id),
-            name=f"unsubscribe_trade_ticks: {instrument_id}",
+            log_msg=f"unsubscribe: trade_ticks {instrument_id}",
             actions=lambda: self._remove_subscription_trade_ticks(instrument_id),
         )
 
     def unsubscribe_bars(self, bar_type: BarType) -> None:
         self.create_task(
             self._unsubscribe_bars(bar_type),
-            name=f"unsubscribe_bars: {bar_type}",
+            log_msg=f"unsubscribe: bars {bar_type}",
             actions=lambda: self._remove_subscription_bars(bar_type),
         )
 
     def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_instrument_status_updates(instrument_id),
-            name=f"unsubscribe_instrument_status_updates: {instrument_id}",
+            log_msg=f"unsubscribe: instrument_status_updates {instrument_id}",
             actions=lambda: self._remove_subscription_instrument_status_updates(instrument_id),
         )
 
     def unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
         self.create_task(
             self._unsubscribe_instrument_close(instrument_id),
-            name=f"unsubscribe_instrument_close: {instrument_id}",
+            log_msg=f"unsubscribe: instrument_close {instrument_id}",
             actions=lambda: self._remove_subscription_instrument_close(instrument_id),
         )
 
@@ -536,20 +592,19 @@ class LiveMarketDataClient(MarketDataClient):
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
         self.create_task(
             self._request(data_type, correlation_id),
-            name=f"request {data_type}",
+            log_msg=f"request: {data_type}",
         )
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         self.create_task(
             self._request_instrument(instrument_id, correlation_id),
-            name=f"request_instrument: {instrument_id}",
+            log_msg=f"request: instrument {instrument_id}",
         )
 
     def request_instruments(self, venue: Venue, correlation_id: UUID4):
         self._log.debug(f"Request instruments for {venue} {correlation_id}.")
         self.create_task(
             self._request_instruments(venue, correlation_id),
-            name="request_instruments",
         )
 
     def request_quote_ticks(
@@ -569,7 +624,6 @@ class LiveMarketDataClient(MarketDataClient):
                 from_datetime=from_datetime,
                 to_datetime=to_datetime,
             ),
-            name="request_quote_ticks",
         )
 
     def request_trade_ticks(
@@ -589,7 +643,6 @@ class LiveMarketDataClient(MarketDataClient):
                 from_datetime=from_datetime,
                 to_datetime=to_datetime,
             ),
-            name="request_trade_ticks",
         )
 
     def request_bars(
@@ -609,7 +662,6 @@ class LiveMarketDataClient(MarketDataClient):
                 from_datetime=from_datetime,
                 to_datetime=to_datetime,
             ),
-            name="request_bars",
         )
 
     ############################################################################
