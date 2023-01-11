@@ -1046,6 +1046,8 @@ cdef class Cache(CacheFacade):
             bars = deque(maxlen=self.bar_capacity)
             self._bars[bar.bar_type] = bars
 
+        if bar._is_revised:
+            bars.popleft()
         bars.appendleft(bar)
 
         cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
