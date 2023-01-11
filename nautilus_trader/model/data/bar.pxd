@@ -67,6 +67,8 @@ cdef class BarType:
 cdef class Bar(Data):
     cdef Bar_t _mem
 
+    cdef bint _is_revised
+
     cdef str to_str(self)
 
     @staticmethod

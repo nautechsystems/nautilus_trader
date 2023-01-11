@@ -675,6 +675,8 @@ cdef class Bar(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    is_revised : bint
+        Identifier flag if the bar is an update of previous bar. Default is False.
 
     Raises
     ------
@@ -696,6 +698,7 @@ cdef class Bar(Data):
         Quantity volume not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        bint is_revised = False,
     ):
         Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
         Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
@@ -714,6 +717,8 @@ cdef class Bar(Data):
             ts_event,
             ts_init,
         )
+        self._is_revised = is_revised
+
     def __getstate__(self):
         return (
             self.bar_type.instrument_id.value,
@@ -877,6 +882,18 @@ cdef class Bar(Data):
 
         """
         return Quantity.from_raw_c(self._mem.volume.raw, self._mem.volume.precision)
+
+    @property
+    def is_revised(self) -> bool:
+        """
+        Return the is_revised flag of the bar.
+
+        Returns
+        -------
+        bool
+
+        """
+        return bool(self._is_revised)
 
     @staticmethod
     def from_dict(dict values) -> Bar:
