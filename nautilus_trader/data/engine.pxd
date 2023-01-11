@@ -47,6 +47,7 @@ cdef class DataEngine(Component):
     cdef dict _routing_map
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
+    cdef dict _topic_last_ts
     cdef bint _build_time_bars_with_no_updates
 
     cdef readonly bint debug

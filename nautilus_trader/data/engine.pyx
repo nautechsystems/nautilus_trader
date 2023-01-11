@@ -29,6 +29,7 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
+from libc.stdint cimport uint64_t
 from typing import Callable, Optional
 
 from nautilus_trader.common.enums import LogColor
@@ -123,6 +124,7 @@ cdef class DataEngine(Component):
         self._default_client: Optional[DataClient] = None
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
+        self._topic_last_ts: dict[str, (uint64_t, uint64_t)] = {}
 
         # Settings
         self.debug = config.debug
@@ -475,6 +477,7 @@ cdef class DataEngine(Component):
 
         self._order_book_intervals.clear()
         self._bar_aggregators.clear()
+        self._topic_last_ts.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -1140,9 +1143,16 @@ cdef class DataEngine(Component):
         )
 
     cdef void _handle_bar(self, Bar bar) except *:
+        topic = f"data.bars.{bar.bar_type}"
+        if topic not in self._topic_last_ts:
+            self._topic_last_ts[topic] = (0, 0)
+        if bar.ts_event < self._topic_last_ts[topic][0] or bar.ts_init <= self._topic_last_ts[topic][1]:
+            return
+
+        self._topic_last_ts[topic] = (bar.ts_event, bar.ts_init)
         self._cache.add_bar(bar)
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar.bar_type}", msg=bar)
+        self._msgbus.publish_c(topic=topic, msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
