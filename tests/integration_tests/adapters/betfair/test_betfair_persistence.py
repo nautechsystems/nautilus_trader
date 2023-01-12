@@ -63,3 +63,15 @@ class TestBetfairPersistence:
         process_raw_file(catalog=self.catalog, raw_file=rf, reader=self.reader)
         data = self.catalog.query(BSPOrderBookDelta)
         assert len(data) == 443
+
+    @pytest.mark.skip("compression broken in github ci")
+    def test_betfair_starting_price_to_parquet(self):
+        rf = RawFile(
+            open_file=fsspec.open(
+                f"{TEST_DATA_DIR}/betfair/1.170258150.bz2",
+                compression="infer",
+            ),
+        )
+        process_raw_file(catalog=self.catalog, raw_file=rf, reader=self.reader)
+        data = self.catalog.query(BSPOrderBookDelta)
+        assert len(data) == 443
