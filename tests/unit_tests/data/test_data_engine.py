@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import time
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
@@ -1577,8 +1578,8 @@ class TestDataEngine:
             Price.from_str("1050.00000"),
             Price.from_str("1052.00000"),
             Quantity.from_int(100),
-            0,
-            0,
+            time.time_ns(),
+            time.time_ns(),
         )
 
         # Act
@@ -1626,8 +1627,8 @@ class TestDataEngine:
             Price.from_str("1050.00000"),
             Price.from_str("1052.00000"),
             Quantity.from_int(100),
-            0,
-            0,
+            time.time_ns(),
+            time.time_ns(),
         )
 
         # Act
