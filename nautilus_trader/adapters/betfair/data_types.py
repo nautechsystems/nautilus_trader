@@ -236,8 +236,7 @@ register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
 
 # Register serialization/parquet BSPOrderBookDeltas
 BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookData])
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.remove_metadata()
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.add_metadata({"type": "BSPOrderBookDelta"})
+BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
 
 register_serializable_object(
     BSPOrderBookDeltas,
