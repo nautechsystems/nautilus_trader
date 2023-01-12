@@ -127,7 +127,7 @@ cdef class BacktestEngine:
             trader_id=TraderId(config.trader_id),
             instance_id=config.instance_id,
             cache_config=config.cache or CacheConfig(),
-            cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
+            cache_database_config=config.cache_database or CacheDatabaseConfig(),
             data_config=config.data_engine or DataEngineConfig(),
             risk_config=config.risk_engine or RiskEngineConfig(),
             exec_config=config.exec_engine or ExecEngineConfig(),
