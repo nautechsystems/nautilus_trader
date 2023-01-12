@@ -805,10 +805,7 @@ cdef class Order:
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInitialized):
-            Condition.true(len(self._events) <= 1, "Reinitialized with more than one previous event")
-            Condition.true(isinstance(self.last_event_c(), OrderInitialized), "Reinitialized last event was not `OrderInitialized`")
-            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NO_TRIGGER, "Reinitialized order not an emulated order")
-            Condition.true(event.emulation_trigger == TriggerType.NO_TRIGGER, "Reinitialized order not transforming an emulated order")
+            # Previous event is not necessarily another OrderInitialized
             self.emulation_trigger = event.emulation_trigger
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
