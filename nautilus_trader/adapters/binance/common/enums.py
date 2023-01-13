@@ -221,6 +221,17 @@ class BinanceMethodType(Enum):
     DELETE = "DELETE"
 
 
+@unique
+class BinanceNewOrderRespType(Enum):
+    """
+    Represents a `Binance` newOrderRespType.
+    """
+
+    ACK = "ACK"
+    RESULT = "RESULT"
+    FULL = "FULL"
+
+
 class BinanceEnumParser:
     """
     Provides common parsing methods for enums used by the 'Binance' exchange.
