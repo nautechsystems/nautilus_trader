@@ -129,7 +129,6 @@ def _build_extensions() -> list[Extension]:
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
-    print(f"extra_link_args={extra_link_args}")
 
     return [
         Extension(
@@ -273,17 +272,15 @@ if __name__ == "__main__":
     print(f"Rust:   {_get_rustc_version()}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
-    print(f"NumPy:  {np.__version__}")
-    print("")
+    print(f"NumPy:  {np.__version__}\n")
 
-    print("Starting build...")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
-    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
-    print("")
+    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}\n")
 
+    print("Starting build...")
     build()
     print(f"Build time: {datetime.utcnow() - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")
