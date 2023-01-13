@@ -109,10 +109,12 @@ def _build_extensions() -> list[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
+    if platform.system() == "Darwin":
+        extra_compile_args.append("-Wno-unreachable-code-fallthrough")
+
     if platform.system() != "Windows":
         # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-parentheses-equality")
-        extra_compile_args.append("-Wno-unreachable-code-fallthrough")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
