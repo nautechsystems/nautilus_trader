@@ -13,16 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Defines core level enums."""
+from nautilus_trader.core.rust.core cimport MessageCategory
 
 
-from nautilus_trader.core.enums_c import message_category_from_str
-from nautilus_trader.core.enums_c import message_category_to_str
-from nautilus_trader.core.rust.core import MessageCategory
-
-
-__all__ = [
-    "MessageCategory",
-    "message_category_from_str",
-    "message_category_to_str",
-]
+cpdef MessageCategory message_category_from_str(str value) except *
+cpdef str message_category_to_str(MessageCategory value)

@@ -13,16 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Defines core level enums."""
+from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogLevel
 
 
-from nautilus_trader.core.enums_c import message_category_from_str
-from nautilus_trader.core.enums_c import message_category_to_str
-from nautilus_trader.core.rust.core import MessageCategory
+cpdef ComponentState component_state_from_str(str value) except *
+cpdef str component_state_to_str(ComponentState value)
+
+cpdef ComponentTrigger component_trigger_from_str(str value) except *
+cpdef str component_trigger_to_str(ComponentTrigger value)
 
 
-__all__ = [
-    "MessageCategory",
-    "message_category_from_str",
-    "message_category_to_str",
-]
+cpdef LogColor log_color_from_str(str value) except *
+cpdef str log_color_to_str(LogColor value)
+
+cpdef LogLevel log_level_from_str(str value) except *
+cpdef str log_level_to_str(LogLevel value)

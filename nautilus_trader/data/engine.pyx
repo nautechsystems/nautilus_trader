@@ -38,6 +38,7 @@ from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
@@ -66,7 +67,6 @@ from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.enums_c cimport BarAggregation
-from nautilus_trader.model.enums_c cimport ComponentState
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId

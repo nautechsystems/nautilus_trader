@@ -16,13 +16,16 @@
 """Defines core level enums."""
 
 
-from nautilus_trader.core.enums_c import message_category_from_str
-from nautilus_trader.core.enums_c import message_category_to_str
-from nautilus_trader.core.rust.core import MessageCategory
+from nautilus_trader.core.rust.core cimport MessageCategory
+from nautilus_trader.core.rust.core cimport message_category_from_cstr
+from nautilus_trader.core.rust.core cimport message_category_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 
 
-__all__ = [
-    "MessageCategory",
-    "message_category_from_str",
-    "message_category_to_str",
-]
+cpdef MessageCategory message_category_from_str(str value) except *:
+    return message_category_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str message_category_to_str(MessageCategory value):
+    return cstr_to_pystr(message_category_to_cstr(value))
