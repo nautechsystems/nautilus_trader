@@ -189,11 +189,14 @@ class DataEngineConfig(NautilusConfig):
     ----------
     build_time_bars_with_no_updates : bool, default True
         If time bar aggregators will build and emit bars with no new market updates.
+    handle_revised_bars : bool, default True
+        If revised bars older than the latest should be handled by the engine.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
     build_time_bars_with_no_updates: bool = True
+    handle_revised_bars: bool = True
     debug: bool = False
 
 

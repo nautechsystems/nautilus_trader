@@ -127,6 +127,7 @@ cdef class DataEngine(Component):
         # Settings
         self.debug = config.debug
         self._build_time_bars_with_no_updates = config.build_time_bars_with_no_updates
+        self._handle_revised_bars = config.handle_revised_bars
 
         # Counters
         self.command_count = 0
@@ -1140,9 +1141,17 @@ cdef class DataEngine(Component):
         )
 
     cdef void _handle_bar(self, Bar bar) except *:
+        cdef BarType bar_type = bar.bar_type
+
+        cdef Bar last_bar = None
+        if not self._handle_revised_bars:
+            last_bar = self._cache.bar(bar_type)
+            if last_bar is not None and (bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init):
+                return
+
         self._cache.add_bar(bar)
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar.bar_type}", msg=bar)
+        self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
