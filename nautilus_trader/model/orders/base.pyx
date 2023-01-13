@@ -16,6 +16,8 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.model.enums import order_status_to_str
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport LiquiditySide
@@ -25,7 +27,6 @@ from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport contingency_type_to_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
-from nautilus_trader.model.enums_c cimport order_status_to_str
 from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
 from nautilus_trader.model.enums_c cimport time_in_force_to_str

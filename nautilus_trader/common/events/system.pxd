@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.enums_c cimport ComponentState
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 
