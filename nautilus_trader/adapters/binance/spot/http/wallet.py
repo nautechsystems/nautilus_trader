@@ -23,7 +23,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
-from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
+from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
 
 
 class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
@@ -51,7 +51,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
             methods,
             base_endpoint + "tradeFee",
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceSpotTradeFees)
+        self.get_resp_decoder = msgspec.json.Decoder(list[BinanceSpotTradeFee])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -72,7 +72,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         symbol: Optional[BinanceSymbol] = None
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceSpotTradeFees:
+    async def _get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self.get_resp_decoder.decode(raw)
@@ -82,7 +82,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         timestamp: str,
         symbol: Optional[BinanceSymbol] = None,
         recv_window: Optional[str] = None,
-    ) -> BinanceSpotTradeFees:
+    ) -> list[BinanceSpotTradeFee]:
         fees = await self._get(
             parameters=self.GetParameters(
                 timestamp=timestamp,
