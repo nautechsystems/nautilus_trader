@@ -176,30 +176,6 @@ class BinanceTrade(msgspec.Struct, frozen=True):
         )
 
 
-class BinanceTrades(msgspec.Struct, frozen=True):
-    """
-    Schema of list of trades.
-    GET response of `trades` and `historicalTrades`
-    """
-
-    trades: list[BinanceTrade]
-
-    def parse_to_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        ts_init: int,
-    ) -> list[TradeTick]:
-        """Parse Binance response to internal TradeTicks"""
-        ticks: list[TradeTick] = [
-            trade.parse_to_trade_tick(
-                instrument_id=instrument_id,
-                ts_init=ts_init,
-            )
-            for trade in self.trades
-        ]
-        return ticks
-
-
 class BinanceAggTrade(msgspec.Struct, frozen=True):
     """Schema of a single compressed aggregate trade"""
 
@@ -211,15 +187,6 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
     T: int  # Timestamp
     m: bool  # Was the buyer the maker?
     M: Optional[bool] = None  # SPOT/MARGIN only, was the trade the best price match?
-
-
-class BinanceAggTrades(msgspec.Struct, frozen=True):
-    """
-    Schema of list of aggregate trades
-    GET response of `aggTrades`
-    """
-
-    trades: list[BinanceAggTrade]
 
 
 class BinanceKline(msgspec.Struct, array_like=True):
@@ -260,26 +227,6 @@ class BinanceKline(msgspec.Struct, array_like=True):
         )
 
 
-class BinanceKlines(msgspec.Struct, frozen=True):
-    """
-    Schema of list of binance klines
-    GET response of `klines`
-    """
-
-    klines: list[BinanceKline]
-
-    def parse_to_binance_bars(
-        self,
-        bar_type: BarType,
-        ts_init: int,
-    ) -> list[BinanceBar]:
-        """Parse klines to BinanceBars"""
-        bars: list[BinanceBar] = [
-            kline.parse_to_binance_bar(bar_type, ts_init) for kline in self.klines
-        ]
-        return bars
-
-
 class BinanceTicker24hr(msgspec.Struct, frozen=True):
     """Schema of single Binance 24hr ticker (FULL/MINI)"""
 
@@ -312,16 +259,6 @@ class BinanceTicker24hr(msgspec.Struct, frozen=True):
     quoteVolume: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
 
 
-class BinanceTicker24hrs(BinanceTicker24hr):
-    """
-    GET response of `ticker/24hr`
-    Single BinanceTicker24hr or list of BinanceTicker24hr,
-    depending on parameters.
-    """
-
-    tickers: Optional[list[BinanceTicker24hr]] = None
-
-
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
     """Schema of single Binance Price Ticker"""
 
@@ -329,16 +266,6 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
     price: Optional[str]
     time: Optional[int] = None  # FUTURES only
     ps: Optional[str] = None  # COIN-M FUTURES only, pair
-
-
-class BinanceTickerPrices(BinanceTickerPrice):
-    """
-    GET response of `ticker/price`
-    Single BinanceTickerPrice or list of BinanceTickerPrice,
-    depending on parameters and exchange type.
-    """
-
-    tickers: Optional[list[BinanceTickerPrice]] = None
 
 
 class BinanceTickerBook(msgspec.Struct, frozen=True):
@@ -351,16 +278,6 @@ class BinanceTickerBook(msgspec.Struct, frozen=True):
     askQty: Optional[str]
     pair: Optional[str] = None  # USD-M FUTURES only
     time: Optional[int] = None  # FUTURES only, transaction time
-
-
-class BinanceTickerBooks(BinanceTickerBook):
-    """
-    GET response of `ticker/bookTicker`
-    Single BinanceTickerBook or list of BinanceTickerBook,
-    depending on parameters and exchange type.
-    """
-
-    tickers: Optional[list[BinanceTickerBook]] = None
 
 
 ################################################################################

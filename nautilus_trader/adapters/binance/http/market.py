@@ -21,14 +21,14 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggTrades
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggTrade
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceKlines
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceTicker24hrs
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerBooks
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerPrices
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceKline
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTicker24hr
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerBook
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerPrice
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTime
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceTrades
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTrade
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.common.types import BinanceBar
@@ -234,7 +234,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
+        self.get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTrade])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -251,10 +251,10 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol
         limit: Optional[int] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceTrades:
+    async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        return self.get_arr_resp_decoder.decode(raw)
 
     async def request_trade_ticks(
         self,
@@ -270,10 +270,13 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
                 limit=limit,
             ),
         )
-        return response.parse_to_trade_ticks(
-            instrument_id=instrument_id,
-            ts_init=ts_init,
-        )
+        return [
+            trade.parse_to_trade_tick(
+                instrument_id=instrument_id,
+                ts_init=ts_init,
+            )
+            for trade in response
+        ]
 
 
 class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
@@ -306,7 +309,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
+        self.get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTrade])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -326,10 +329,10 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         limit: Optional[int] = None
         fromId: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceTrades:
+    async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        return self.get_arr_resp_decoder.decode(raw)
 
     async def request_historical_trade_ticks(
         self,
@@ -347,10 +350,13 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
                 fromId=from_id,
             ),
         )
-        return response.parse_to_trade_ticks(
-            instrument_id=instrument_id,
-            ts_init=ts_init,
-        )
+        return [
+            trade.parse_to_trade_tick(
+                instrument_id=instrument_id,
+                ts_init=ts_init,
+            )
+            for trade in response
+        ]
 
 
 class BinanceAggTradesHttp(BinanceHttpEndpoint):
@@ -384,7 +390,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceAggTrades)
+        self.get_resp_decoder = msgspec.json.Decoder(list[BinanceAggTrade])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -410,7 +416,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
         startTime: Optional[str] = None
         endTime: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceAggTrades:
+    async def _get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self.get_resp_decoder.decode(raw)
@@ -447,7 +453,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceKlines)
+        self.get_resp_decoder = msgspec.json.Decoder(list[BinanceKline])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -473,7 +479,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
         startTime: Optional[str] = None
         endTime: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceKlines:
+    async def _get(self, parameters: GetParameters) -> list[BinanceKline]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self.get_resp_decoder.decode(raw)
@@ -498,10 +504,10 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
                 endTime=end_time,
             ),
         )
-        return response.parse_to_binance_bars(
-            bar_type=bar_type,
-            ts_init=ts_init,
-        )
+        bars: list[BinanceBar] = [
+            kline.parse_to_binance_bar(bar_type, ts_init) for kline in response
+        ]
+        return bars
 
 
 class BinanceTicker24hrHttp(BinanceHttpEndpoint):
@@ -538,7 +544,8 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTicker24hrs)
+        self.get_object_resp_decoder = msgspec.json.Decoder(BinanceTicker24hr)
+        self.get_list_resp_decoder = msgspec.json.Decoder(list[BinanceTicker24hr])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -561,10 +568,13 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
         type: Optional[str] = None  # SPOT/MARIN only
 
-    async def _get(self, parameters: GetParameters) -> BinanceTicker24hrs:
+    async def _get(self, parameters: GetParameters) -> list[BinanceTicker24hr]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        if parameters.symbol is not None:
+            return [self.get_object_resp_decoder.decode(raw)]
+        else:
+            return self.get_list_resp_decoder.decode(raw)
 
 
 class BinanceTickerPriceHttp(BinanceHttpEndpoint):
@@ -596,7 +606,8 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerPrices)
+        self.get_object_resp_decoder = msgspec.json.Decoder(BinanceTickerPrice)
+        self.get_list_resp_decoder = msgspec.json.Decoder(list[BinanceTickerPrice])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -615,10 +626,13 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         symbol: Optional[BinanceSymbol] = None
         symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
 
-    async def _get(self, parameters: GetParameters) -> BinanceTickerPrices:
+    async def _get(self, parameters: GetParameters) -> list[BinanceTickerPrice]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        if parameters.symbol is not None:
+            return [self.get_object_resp_decoder.decode(raw)]
+        else:
+            return self.get_list_resp_decoder.decode(raw)
 
 
 class BinanceTickerBookHttp(BinanceHttpEndpoint):
@@ -650,7 +664,8 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerBooks)
+        self.get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTickerBook])
+        self.get_obj_resp_decoder = msgspec.json.Decoder(BinanceTickerBook)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -669,10 +684,13 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         symbol: Optional[BinanceSymbol] = None
         symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
 
-    async def _get(self, parameters: GetParameters) -> BinanceTickerBooks:
+    async def _get(self, parameters: GetParameters) -> list[BinanceTickerBook]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        if parameters.symbol is not None:
+            return [self.get_obj_resp_decoder.decode(raw)]
+        else:
+            return self.get_arr_resp_decoder.decode(raw)
 
 
 class BinanceMarketHttpAPI:
