@@ -138,8 +138,8 @@ cpdef BarAggregation bar_aggregation_from_str(str value) except *:
     return <BarAggregation>bar_aggregation_from_cstr(pystr_to_cstr(value))
 
 
-cpdef str bar_aggregation_to_str(uint8_t value):
-    return cstr_to_pystr(bar_aggregation_to_cstr(value))
+cpdef str bar_aggregation_to_str(BarAggregation value):
+    return cstr_to_pystr(bar_aggregation_to_cstr(<uint8_t>value))
 
 
 cpdef BookAction book_action_from_str(str value) except *:
