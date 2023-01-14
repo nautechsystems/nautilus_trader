@@ -204,7 +204,13 @@ def _get_clang_version() -> str:
             shell=True,
             capture_output=True,
         )
-        output = result.stdout.decode().splitlines()[0].lstrip("Apple ").lstrip("clang version ")
+        output = (
+            result.stdout.decode()
+            .splitlines()[0]
+            .lstrip("Apple ")
+            .lstrip("Ubuntu ")
+            .lstrip("clang version ")
+        )
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
