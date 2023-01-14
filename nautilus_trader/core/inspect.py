@@ -21,9 +21,8 @@ def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class is a builtin nautilus type.
     """
-    return (
-        cls.__module__.startswith("nautilus_trader.") and
-        not cls.__module__.startswith("nautilus_trader.test_kit")
+    return cls.__module__.startswith("nautilus_trader.") and not cls.__module__.startswith(
+        "nautilus_trader.test_kit",
     )
 
 
@@ -41,7 +40,7 @@ def get_size_of(obj):
     uint64
 
     """
-    cdef set marked = {id(obj)}
+    marked: set = {id(obj)}
     obj_q = [obj]
     size = 0
 

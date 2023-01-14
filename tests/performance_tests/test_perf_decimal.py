@@ -81,7 +81,7 @@ class TestDecimalPerformance(PerformanceHarness):
 
     def test_decimal_size(self):
         print(get_size_of(_DECIMAL1))
-        # Object size <class 'nautilus_trader.model.objects.BaseDecimal'> is 152 bytes.
+        # Object size <class 'nautilus_trader.model.objects.Quantity'> is 40 bytes.
 
     def test_make_builtin_decimal(self):
         self.benchmark.pedantic(
