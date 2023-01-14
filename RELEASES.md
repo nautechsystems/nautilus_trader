@@ -40,6 +40,7 @@ and also to avoid C naming collisions.
 - Added `.timedelta` property to `BarSpecification`, thanks @rsmb7z
 - Numerous improvements to the Betfair adapter, thanks @limx0
 - Improvements to Interactive Brokers data subscriptions, thanks @rsmb7z
+- Added `DataEngineConfig.validate_data_sequence` (False by default and currently only for `Bar` data), thanks @rsmb7z
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions

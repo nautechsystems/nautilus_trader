@@ -127,7 +127,7 @@ cdef class DataEngine(Component):
         # Settings
         self.debug = config.debug
         self._build_time_bars_with_no_updates = config.build_time_bars_with_no_updates
-        self._handle_revised_bars = config.handle_revised_bars
+        self._validate_data_sequence = config.validate_data_sequence
 
         # Counters
         self.command_count = 0
@@ -1144,7 +1144,7 @@ cdef class DataEngine(Component):
         cdef BarType bar_type = bar.bar_type
 
         cdef Bar last_bar = None
-        if not self._handle_revised_bars:
+        if self._validate_data_sequence:
             last_bar = self._cache.bar(bar_type)
             if last_bar is not None and (bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init):
                 return
