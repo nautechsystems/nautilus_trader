@@ -137,7 +137,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
             price=price or Price.from_str("1.001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -154,7 +154,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,

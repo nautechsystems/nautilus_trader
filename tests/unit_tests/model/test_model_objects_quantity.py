@@ -576,7 +576,7 @@ class TestQuantity:
 
     def test_from_int_returns_expected_value(self):
         # Arrange, Act
-        qty = Quantity.from_int(1000)
+        qty = Quantity.from_int(1_000)
 
         # Assert
         assert qty == 1000
