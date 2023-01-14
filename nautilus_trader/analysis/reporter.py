@@ -97,12 +97,12 @@ class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        trades = [p.to_dict() for p in positions if p.is_closed]
-        if not trades:
+        positions = [p.to_dict() for p in positions if p.is_closed]
+        if not positions:
             return pd.DataFrame()
 
         sort = ["ts_opened", "ts_closed", "position_id"]
-        report = pd.DataFrame(data=trades).set_index("position_id").sort_values(sort)
+        report = pd.DataFrame(data=positions).set_index("position_id").sort_values(sort)
         del report["net_qty"]
         del report["quantity"]
         del report["quote_currency"]

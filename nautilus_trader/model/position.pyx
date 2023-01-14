@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
@@ -27,7 +25,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-@cython.auto_pickle(True)
 cdef class Position:
     """
     Represents a position in a financial market.
@@ -95,7 +92,7 @@ cdef class Position:
         self.cost_currency = instrument.get_settlement_currency()
 
         self.realized_return = 0.0
-        self.realized_pnl = Money(0, self.cost_currency)
+        self.realized_pnl = None
 
         self.apply(fill)
 
@@ -577,8 +574,8 @@ cdef class Position:
         """
         Condition.not_none(last, "last")
 
-        cdef double pnl = self.realized_pnl.as_f64_c() + self.unrealized_pnl(last).as_f64_c()
-        return Money(pnl, self.cost_currency)
+        cdef double realized_pnl = self.realized_pnl.as_f64_c() if self.realized_pnl is not None else 0.0
+        return Money(realized_pnl + self.unrealized_pnl(last).as_f64_c(), self.cost_currency)
 
     cpdef list commissions(self):
         """
@@ -614,7 +611,10 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
+        if self.realized_pnl is None:
+            self.realized_pnl = Money(realized_pnl, self.cost_currency)
+        else:
+            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
         self._buy_qty.add_assign(last_qty_obj)
         self.net_qty += last_qty
@@ -643,7 +643,10 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
+        if self.realized_pnl is None:
+            self.realized_pnl = Money(realized_pnl, self.cost_currency)
+        else:
+            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
         self._sell_qty.add_assign(last_qty_obj)
         self.net_qty -= last_qty
