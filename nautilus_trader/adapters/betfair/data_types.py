@@ -70,8 +70,6 @@ class BSPOrderBookDeltas(OrderBookDeltas):
     Represents a batch of Betfair BSP order book delta.
     """
 
-    pass
-
 
 class BSPOrderBookDelta(OrderBookDelta):
     """

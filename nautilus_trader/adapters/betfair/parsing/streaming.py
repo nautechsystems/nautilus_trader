@@ -603,7 +603,6 @@ def runner_change_to_bsp_order_book_deltas(
         ts_event=ts_event,
         ts_init=ts_init,
     )
-    return
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
