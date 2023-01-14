@@ -95,7 +95,7 @@ class TestDataEngine:
         )
 
         config = DataEngineConfig(
-            handle_revised_bars=False,
+            validate_data_sequence=True,
             debug=True,
         )
         self.data_engine = DataEngine(
