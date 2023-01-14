@@ -189,11 +189,14 @@ class DataEngineConfig(NautilusConfig):
     ----------
     build_time_bars_with_no_updates : bool, default True
         If time bar aggregators will build and emit bars with no new market updates.
+    validate_data_sequence : bool, default False
+        If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
     build_time_bars_with_no_updates: bool = True
+    validate_data_sequence: bool = True
     debug: bool = False
 
 

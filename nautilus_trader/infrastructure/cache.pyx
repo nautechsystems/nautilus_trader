@@ -26,8 +26,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport currency_type_from_str
 from nautilus_trader.model.enums_c cimport currency_type_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
@@ -39,6 +42,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
@@ -495,9 +500,23 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef OrderInitialized init = self._serializer.deserialize(events.pop(0))
         cdef Order order = OrderUnpacker.from_init_c(init)
 
+        cdef int event_count = 0
         cdef bytes event_bytes
+        cdef OrderEvent event
         for event_bytes in events:
-            order.apply(self._serializer.deserialize(event_bytes))
+            event = self._serializer.deserialize(event_bytes)
+            if event_count > 0 and isinstance(event, OrderInitialized):
+                if event.order_type == OrderType.MARKET:
+                    order = MarketOrder.transform(order, event.ts_init)
+                elif event.order_type == OrderType.LIMIT:
+                    order = LimitOrder.transform(order, event.ts_init)
+                else:
+                    raise RuntimeError(  # pragma: no cover (design-time error)
+                        f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
+                    )
+            else:
+                order.apply(event)
+            event_count += 1
 
         return order
 

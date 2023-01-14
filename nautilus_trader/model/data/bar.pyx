@@ -675,6 +675,8 @@ cdef class Bar(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    is_revision : bool, default False
+        If this bar is a revision of a previous bar with the same `ts_event`.
 
     Raises
     ------
@@ -696,6 +698,7 @@ cdef class Bar(Data):
         Quantity volume not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        bint is_revision = False,
     ):
         Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
         Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
@@ -714,6 +717,8 @@ cdef class Bar(Data):
             ts_event,
             ts_init,
         )
+        self.is_revision = is_revision
+
     def __getstate__(self):
         return (
             self.bar_type.instrument_id.value,

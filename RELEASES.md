@@ -1,6 +1,6 @@
 # NautilusTrader 1.165.0 Beta
 
-Released on TBD (UTC).
+Released on 14th January 2023 (UTC).
 
 A number of enum variant names have been changed in favour of explicitness, 
 and also to avoid C naming collisions.
@@ -29,16 +29,22 @@ and also to avoid C naming collisions.
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
 - Added `DataEngineConfig.build_time_bars_with_no_updates` option
 - Added `OrderFactory.bracket(post_only_tp)` param
-- Added `OrderListIdGenerator` and integrate with `OrderFactory`.
+- Added `OrderListIdGenerator` and integrate with `OrderFactory`
 - Added `Cache.add_order_list(...)`
 - Added `Cache.order_list(...)`
 - Added `Cache.order_lists(...)`
 - Added `Cache.order_list_exists(...)`
 - Added `Cache.order_list_ids(...)`
-- Improved generation of `OrderListId` from factory to ensure uniqueness.
+- Improved generation of `OrderListId` from factory to ensure uniqueness
+- Added auction matches for backtests, thanks @limx0
+- Added `.timedelta` property to `BarSpecification`, thanks @rsmb7z
+- Numerous improvements to the Betfair adapter, thanks @limx0
+- Improvements to Interactive Brokers data subscriptions, thanks @rsmb7z
+- Added `DataEngineConfig.validate_data_sequence` (False by default and currently only for `Bar` data), thanks @rsmb7z
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions
+- Fixed `PARTIALLY_FILLED` -> `EXPIRED` order state transition, thanks @bb01100100
 
 ---
 

@@ -13,15 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
-
-from nautilus_trader.model.events.order cimport OrderInitialized
-from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.core.rust.core cimport MessageCategory
 
 
-cdef class MarketOrder(Order):
-    @staticmethod
-    cdef MarketOrder create(OrderInitialized init)
-
-    @staticmethod
-    cdef MarketOrder transform(Order order, uint64_t ts_init)
+cpdef MessageCategory message_category_from_str(str value) except *
+cpdef str message_category_to_str(MessageCategory value)

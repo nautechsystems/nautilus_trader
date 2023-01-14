@@ -94,7 +94,10 @@ class TestDataEngine:
             logger=self.logger,
         )
 
-        config = DataEngineConfig(debug=True)
+        config = DataEngineConfig(
+            validate_data_sequence=True,
+            debug=True,
+        )
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
@@ -1636,6 +1639,69 @@ class TestDataEngine:
         # Assert
         assert handler1 == [bar]
         assert handler2 == [bar]
+
+    def test_process_bar_when_revised_with_older_timestamp_does_not_cache_or_publish(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
+
+        handler = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        bar1 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            1,
+            1,
+        )
+
+        bar2 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1051.00000"),
+            Quantity.from_int(100),
+            0,
+            1,
+        )
+
+        bar3 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1050.50000"),
+            Quantity.from_int(100),
+            0,
+            0,
+        )
+
+        # Act
+        self.data_engine.process(bar1)
+        self.data_engine.process(bar2)
+        self.data_engine.process(bar3)
+
+        # Assert
+        assert handler == [bar1]
+        assert self.cache.bar(bar_type) == bar1
 
     def test_request_instrument_reaches_client(self):
         # Arrange

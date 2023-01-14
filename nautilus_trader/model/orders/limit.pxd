@@ -31,3 +31,6 @@ cdef class LimitOrder(Order):
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized init)
+
+    @staticmethod
+    cdef LimitOrder transform(Order order, uint64_t ts_init)

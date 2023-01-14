@@ -173,6 +173,7 @@ def market_definition_to_instrument_status_updates(
     ts_init: int,
 ) -> list[InstrumentStatusUpdate]:
     updates = []
+
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
@@ -602,7 +603,6 @@ def runner_change_to_bsp_order_book_deltas(
         ts_event=ts_event,
         ts_init=ts_init,
     )
-    return
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):

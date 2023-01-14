@@ -143,6 +143,11 @@ cdef class MarketOrder(Order):
         )
         super().__init__(init=init)
 
+    cdef void _updated(self, OrderUpdated event) except*:
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+
     cdef bint has_price_c(self) except *:
         return False
 
@@ -242,7 +247,51 @@ cdef class MarketOrder(Order):
             tags=init.tags,
         )
 
-    cdef void _updated(self, OrderUpdated event) except *:
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+    @staticmethod
+    cdef MarketOrder transform(Order order, uint64_t ts_init):
+        """
+        Transform the given order to a `market` order.
+
+        All existing events will be prepended to the orders internal events
+        prior to the new `OrderInitialized` event.
+
+        Parameters
+        ----------
+        order : Order
+            The order to transform from.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        MarketOrder
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef list original_events = order.events_c()
+        cdef MarketOrder transformed = MarketOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            order_side=order.side,
+            quantity=order.quantity,
+            time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
+            reduce_only=order.is_reduce_only,
+            init_id=UUID4(),
+            ts_init=ts_init,
+            contingency_type=order.contingency_type,
+            order_list_id=order.order_list_id,
+            linked_order_ids=order.linked_order_ids,
+            parent_order_id=order.parent_order_id,
+            tags=order.tags,
+        )
+
+        Order._hydrate_initial_events(original=order, transformed=transformed)
+
+        return transformed
+
+    @staticmethod
+    def transform_py(Order order, uint64_t ts_init) -> MarketOrder:
+        return MarketOrder.transform(order, ts_init)

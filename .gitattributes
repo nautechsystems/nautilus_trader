@@ -1,7 +1,8 @@
 # Set standard UNIX/Linux/MacOSX line endings.
-* text eol=lf
+* text=auto eol=lf
 
 # Denote all files that are truly binary and should not be modified.
 *.png binary
+*.ico binary
 *.jpg binary
 *.bz2 binary

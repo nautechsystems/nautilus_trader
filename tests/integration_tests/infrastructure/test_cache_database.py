@@ -43,6 +43,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
@@ -52,6 +53,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -554,6 +557,47 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert result == order
+
+    def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        order = MarketOrder.transform_py(order, 0)
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.order_type == OrderType.MARKET
+
+    def test_load_order_when_transformed_to_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+        )
+
+        order = LimitOrder.transform_py(order, 0)
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.order_type == OrderType.LIMIT
 
     def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange

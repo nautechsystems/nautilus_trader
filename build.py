@@ -109,7 +109,11 @@ def _build_extensions() -> list[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
+    if platform.system() == "Darwin":
+        extra_compile_args.append("-Wno-unreachable-code-fallthrough")
+
     if platform.system() != "Windows":
+        # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-parentheses-equality")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
@@ -127,7 +131,6 @@ def _build_extensions() -> list[Extension]:
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
-    print(f"extra_link_args={extra_link_args}")
 
     return [
         Extension(
@@ -201,7 +204,13 @@ def _get_clang_version() -> str:
             shell=True,
             capture_output=True,
         )
-        output = result.stdout.decode().splitlines()[0].lstrip("Apple ").lstrip("clang version ")
+        output = (
+            result.stdout.decode()
+            .splitlines()[0]
+            .lstrip("Apple ")
+            .lstrip("Ubuntu ")
+            .lstrip("clang version ")
+        )
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
@@ -260,41 +269,26 @@ def build() -> None:
 
 
 if __name__ == "__main__":
+    ts_start = datetime.utcnow()
+
     print("\033[36m")
     print("=====================================================================")
     print("Nautilus Builder")
     print("=====================================================================\033[0m")
-
-    ts_start = datetime.utcnow()
-
-    # Work around a Cython problem in Python 3.8.x on macOS
-    # https://github.com/cython/cython/issues/3262
-    if platform.system() == "Darwin":
-        print("macOS: Setting multiprocessing method to 'fork'.")
-        try:
-            # noinspection PyUnresolvedReferences
-            import multiprocessing
-
-            multiprocessing.set_start_method("fork", force=True)
-        except ImportError:
-            print("multiprocessing not available")  # pragma: no cover
-
     print(f"System: {platform.system()} {platform.machine()}")
     print(f"Clang:  {_get_clang_version()}")
     print(f"Rust:   {_get_rustc_version()}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
-    print(f"NumPy:  {np.__version__}")
-    print("")
+    print(f"NumPy:  {np.__version__}\n")
 
-    print("Starting build...")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
-    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
-    print("")
+    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}\n")
 
+    print("Starting build...")
     build()
     print(f"Build time: {datetime.utcnow() - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")

@@ -38,6 +38,7 @@ from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
@@ -66,7 +67,6 @@ from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.enums_c cimport BarAggregation
-from nautilus_trader.model.enums_c cimport ComponentState
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -127,6 +127,7 @@ cdef class DataEngine(Component):
         # Settings
         self.debug = config.debug
         self._build_time_bars_with_no_updates = config.build_time_bars_with_no_updates
+        self._validate_data_sequence = config.validate_data_sequence
 
         # Counters
         self.command_count = 0
@@ -1140,9 +1141,32 @@ cdef class DataEngine(Component):
         )
 
     cdef void _handle_bar(self, Bar bar) except *:
-        self._cache.add_bar(bar)
+        cdef BarType bar_type = bar.bar_type
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar.bar_type}", msg=bar)
+        cdef:
+            Bar cached_bar
+            Bar last_bar
+            list bars
+            int i
+        if self._validate_data_sequence:
+            last_bar = self._cache.bar(bar_type)
+            if bar.is_revision:
+                bars = self._cache._bars.get(bar_type)  # noqa
+                if bars:  # If not bars then just fall through and add to cache
+                    for i, cached_bar in enumerate(bars):
+                        if bar.ts_event == cached_bar.ts_event:
+                            # Replace bar at index, previously cached bar will fall out of scope
+                            bars[i] = bar
+                            break
+                else:
+                    self._cache.add_bar(bar)
+            elif last_bar is not None and (bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init):
+                return
+
+        if not bar.is_revision:
+            self._cache.add_bar(bar)
+
+        self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
