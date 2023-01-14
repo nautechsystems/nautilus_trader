@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 
@@ -34,6 +35,17 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
     cpdef void set_count(self, int count) except *
     cpdef ClientOrderId generate(self)
+    cpdef void reset(self) except *
+
+
+cdef class OrderListIdGenerator(IdentifierGenerator):
+    cdef str _id_tag_strategy
+
+    cdef readonly int count
+    """The count of IDs generated.\n\n:returns: `int`"""
+
+    cpdef void set_count(self, int count) except *
+    cpdef OrderListId generate(self)
     cpdef void reset(self) except *
 
 

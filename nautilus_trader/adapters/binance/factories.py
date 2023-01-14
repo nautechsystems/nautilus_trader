@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -371,6 +371,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 clock_sync_interval_secs=config.clock_sync_interval_secs,
+                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
             )
         else:
             # Get instrument provider singleton
@@ -393,6 +394,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 clock_sync_interval_secs=config.clock_sync_interval_secs,
+                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
             )
 
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class SimulationModule:
-    cdef SimulatedExchange _exchange
+    cdef readonly SimulatedExchange exchange
 
     cpdef void register_exchange(self, SimulatedExchange exchange) except *
     cpdef void process(self, uint64_t now_ns) except *

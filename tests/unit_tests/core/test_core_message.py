@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,11 @@
 
 import pytest
 
+from nautilus_trader.core.enums import MessageCategory
+from nautilus_trader.core.enums import message_category_from_str
+from nautilus_trader.core.enums import message_category_to_str
 from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Message
-from nautilus_trader.core.message import MessageCategory
-from nautilus_trader.core.message import MessageCategoryParser
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
 
@@ -106,7 +107,7 @@ class TestMessage:
     )
     def test_message_category_to_str(self, category, expected):
         # Arrange, Act
-        result = MessageCategoryParser.to_str_py(category)
+        result = message_category_to_str(category)
 
         # Assert
         assert result == expected
@@ -123,7 +124,7 @@ class TestMessage:
     )
     def test_message_category_from_str(self, string, expected):
         # Arrange, Act
-        result = MessageCategoryParser.from_str_py(string)
+        result = message_category_from_str(string)
 
         # Assert
         assert result == expected

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -119,6 +119,80 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
         return ClientOrderId(
             f"O-"
+            f"{self._get_date_tag()}-"
+            f"{self._id_tag_trader}-"
+            f"{self._id_tag_strategy}-"
+            f"{self.count}",
+        )
+
+    cpdef void reset(self) except *:
+        """
+        Reset the ID generator.
+
+        All stateful fields are reset to their initial value.
+        """
+        self.count = 0
+
+
+cdef class OrderListIdGenerator(IdentifierGenerator):
+    """
+    Provides a generator for unique `OrderListId`(s).
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the generator.
+    strategy_id : StrategyId
+        The strategy ID for the generator.
+    clock : Clock
+        The clock for the generator.
+    initial_count : int
+        The initial count for the generator.
+
+    Raises
+    ------
+    ValueError
+        If `initial_count` is negative (< 0).
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        Clock clock not None,
+        int initial_count=0,
+    ):
+        Condition.not_negative_int(initial_count, "initial_count")
+        super().__init__(trader_id, clock)
+
+        self._id_tag_strategy = strategy_id.get_tag()
+        self.count = initial_count
+
+    cpdef void set_count(self, int count) except*:
+        """
+        Set the internal counter to the given count.
+
+        Parameters
+        ----------
+        count : int
+            The count to set.
+
+        """
+        self.count = count
+
+    cpdef OrderListId generate(self):
+        """
+        Return a unique order list ID.
+
+        Returns
+        -------
+        OrderListId
+
+        """
+        self.count += 1
+
+        return OrderListId(
+            f"OL-"
             f"{self._get_date_tag()}-"
             f"{self._id_tag_trader}-"
             f"{self._id_tag_strategy}-"

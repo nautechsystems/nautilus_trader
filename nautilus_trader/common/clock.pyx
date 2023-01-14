@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,6 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.timer cimport LoopTimer
@@ -51,12 +50,13 @@ from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class Clock:
     """
-    The abstract base class for all clocks.
+    The base class for all clocks.
 
     Notes
     -----
@@ -454,7 +454,7 @@ cdef class TestClock(Clock):
 
         self._handlers[name] = callback
 
-        test_clock_set_time_alert_ns(&self._mem, <PyObject *>name, alert_time_ns)
+        test_clock_set_time_alert_ns(&self._mem, pystr_to_cstr(name), alert_time_ns)
 
     cpdef void set_timer_ns(
         self,
@@ -479,17 +479,17 @@ cdef class TestClock(Clock):
 
         test_clock_set_timer_ns(
             &self._mem,
-            <PyObject *>name,
+            pystr_to_cstr(name),
             interval_ns,
             start_time_ns,
             stop_time_ns,
         )
 
     cpdef uint64_t next_time_ns(self, str name) except*:
-        return test_clock_next_time_ns(&self._mem, <PyObject *>name)
+        return test_clock_next_time_ns(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name) except *:
-        test_clock_cancel_timer(&self._mem, <PyObject *>name)
+        test_clock_cancel_timer(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timers(self) except *:
         test_clock_cancel_timers(&self._mem)

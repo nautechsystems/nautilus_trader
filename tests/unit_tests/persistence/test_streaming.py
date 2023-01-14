@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -65,7 +65,7 @@ class TestPersistenceStreaming:
             + self.catalog.order_book_deltas(as_nautilus=True)
             + self.catalog.tickers(as_nautilus=True)
         )
-        assert len(data) == 2533
+        assert len(data) == 2535
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self):

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,14 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -50,14 +49,13 @@ impl ComponentId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn component_id_new(ptr: *mut ffi::PyObject) -> ComponentId {
-    ComponentId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
+    ComponentId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -71,31 +69,15 @@ pub extern "C" fn component_id_free(component_id: ComponentId) {
     drop(component_id); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [`ComponentId`] identifier as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn component_to_pystr(component_id: &ComponentId) -> *mut ffi::PyObject {
-    string_to_pystr(component_id.value.as_str())
-}
-
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
-#[no_mangle]
-pub unsafe extern "C" fn component_id_to_pystr(component_id: &ComponentId) -> *mut ffi::PyObject {
-    string_to_pystr(component_id.value.as_str())
+pub extern "C" fn component_id_to_cstr(component_id: &ComponentId) -> *const c_char {
+    string_to_cstr(&component_id.value)
 }
 
 #[no_mangle]
 pub extern "C" fn component_id_eq(lhs: &ComponentId, rhs: &ComponentId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
@@ -117,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = ComponentId::new("RiskEngine");
         let id2 = ComponentId::new("DataEngine");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -125,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = ComponentId::new("RiskEngine");
-
         assert_eq!(id.to_string(), "RiskEngine");
         assert_eq!(format!("{id}"), "RiskEngine");
     }

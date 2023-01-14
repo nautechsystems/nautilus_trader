@@ -33,7 +33,7 @@ jobs:
 
       - name: Get branch name
         id: branch-name
-        uses: tj-actions/branch-names@v5.2
+        uses: tj-actions/branch-names@v6
 
       # Build nautilus_trader docker image (develop)
       - name: Build nautilus_trader image (develop)

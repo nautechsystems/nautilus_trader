@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,11 +17,11 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
@@ -54,7 +54,7 @@ class OrderBookImbalanceConfig(StrategyConfig):
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
+    oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """
@@ -92,7 +92,7 @@ class OrderBookImbalance(Strategy):
         self.instrument: Optional[Instrument] = None
         if self.config.use_quote_ticks:
             assert self.config.book_type == "L1_TBBO"
-        self.book_type: BookType = BookTypeParser.from_str_py(self.config.book_type)
+        self.book_type: BookType = book_type_from_str(self.config.book_type)
         self._book = None  # type: Optional[OrderBook]
 
     def on_start(self):
@@ -107,7 +107,7 @@ class OrderBookImbalance(Strategy):
             book_type = BookType.L1_TBBO
             self.subscribe_quote_ticks(instrument_id=self.instrument.id)
         else:
-            book_type = BookTypeParser.from_str_py(self.config.book_type)
+            book_type = book_type_from_str(self.config.book_type)
             self.subscribe_order_book_deltas(instrument_id=self.instrument.id, book_type=book_type)
         self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
 

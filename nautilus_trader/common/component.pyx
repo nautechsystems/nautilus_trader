@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,13 @@ from typing import Optional
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.c_enums.component_state import ComponentState as PyComponentState
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
-from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.common.c_enums.component_trigger cimport ComponentTriggerParser
+from nautilus_trader.common.enums import ComponentState as PyComponentState
+from nautilus_trader.common.enums import component_state_to_str
+from nautilus_trader.common.enums import component_trigger_to_str
+
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.enums_c cimport ComponentState
+from nautilus_trader.common.enums_c cimport ComponentTrigger
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -36,32 +37,32 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef dict _COMPONENT_STATE_TABLE = {
-    (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.INITIALIZED,
-    (ComponentState.INITIALIZED, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
-    (ComponentState.INITIALIZED, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
-    (ComponentState.INITIALIZED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
-    (ComponentState.RESETTING, ComponentTrigger.RESET): ComponentState.INITIALIZED,
-    (ComponentState.STARTING, ComponentTrigger.RUNNING): ComponentState.RUNNING,
+    (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.READY,
+    (ComponentState.READY, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
+    (ComponentState.READY, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
+    (ComponentState.READY, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
+    (ComponentState.RESETTING, ComponentTrigger.RESET_COMPLETED): ComponentState.READY,
+    (ComponentState.STARTING, ComponentTrigger.START_COMPLETED): ComponentState.RUNNING,
     (ComponentState.STARTING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
     (ComponentState.STARTING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
     (ComponentState.RUNNING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
     (ComponentState.RUNNING, ComponentTrigger.DEGRADE): ComponentState.DEGRADING,  # Transitional state
     (ComponentState.RUNNING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
     (ComponentState.RESUMING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
-    (ComponentState.RESUMING, ComponentTrigger.RUNNING): ComponentState.RUNNING,
+    (ComponentState.RESUMING, ComponentTrigger.RESUME_COMPLETED): ComponentState.RUNNING,
     (ComponentState.RESUMING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.STOPPING, ComponentTrigger.STOPPED): ComponentState.STOPPED,
+    (ComponentState.STOPPING, ComponentTrigger.STOP_COMPLETED): ComponentState.STOPPED,
     (ComponentState.STOPPING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
     (ComponentState.STOPPED, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
     (ComponentState.STOPPED, ComponentTrigger.RESUME): ComponentState.RESUMING,  # Transitional state
     (ComponentState.STOPPED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
     (ComponentState.STOPPED, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
-    (ComponentState.DEGRADING, ComponentTrigger.DEGRADED): ComponentState.DEGRADED,
+    (ComponentState.DEGRADING, ComponentTrigger.DEGRADE_COMPLETED): ComponentState.DEGRADED,
     (ComponentState.DEGRADED, ComponentTrigger.RESUME): ComponentState.RESUMING,  # Transitional state
     (ComponentState.DEGRADED, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
     (ComponentState.DEGRADED, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transition state
-    (ComponentState.DISPOSING, ComponentTrigger.DISPOSED): ComponentState.DISPOSED,  # Terminal state
-    (ComponentState.FAULTING, ComponentTrigger.FAULTED): ComponentState.FAULTED,  # Terminal state
+    (ComponentState.DISPOSING, ComponentTrigger.DISPOSE_COMPLETED): ComponentState.DISPOSED,  # Terminal state
+    (ComponentState.FAULTING, ComponentTrigger.FAULT_COMPLETED): ComponentState.FAULTED,  # Terminal state
 }
 
 cdef class ComponentFSMFactory:
@@ -95,8 +96,8 @@ cdef class ComponentFSMFactory:
         return FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.PRE_INITIALIZED,
-            trigger_parser=ComponentTriggerParser.to_str,
-            state_parser=ComponentStateParser.to_str,
+            trigger_parser=component_trigger_to_str,
+            state_parser=component_state_to_str,
         )
 
 
@@ -221,7 +222,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state >= ComponentState.INITIALIZED
+        return self._fsm.state >= ComponentState.READY
 
     @property
     def is_running(self) -> bool:
@@ -374,7 +375,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.RUNNING,
+            trigger=ComponentTrigger.START_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -405,7 +406,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.STOPPED,
+            trigger=ComponentTrigger.STOP_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -436,7 +437,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.RUNNING,
+            trigger=ComponentTrigger.RESUME_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -469,7 +470,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.RESET,
+            trigger=ComponentTrigger.RESET_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -500,7 +501,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.DISPOSED,
+            trigger=ComponentTrigger.DISPOSE_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -531,7 +532,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.DEGRADED,
+            trigger=ComponentTrigger.DEGRADE_COMPLETED,
             is_transitory=False,
             action=None,
         )
@@ -565,7 +566,7 @@ cdef class Component:
             raise  # Halt state transition
 
         self._trigger_fsm(
-            trigger=ComponentTrigger.FAULTED,
+            trigger=ComponentTrigger.FAULT_COMPLETED,
             is_transitory=False,
             action=None,
         )

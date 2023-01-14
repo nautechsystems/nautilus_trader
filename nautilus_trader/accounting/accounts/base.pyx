@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,8 +16,8 @@
 from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.core.rust.enums cimport account_type_to_str
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport account_type_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance

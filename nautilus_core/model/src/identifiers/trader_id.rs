@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,13 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -49,14 +48,13 @@ impl TraderId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn trader_id_new(ptr: *mut ffi::PyObject) -> TraderId {
-    TraderId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
+    TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -68,6 +66,12 @@ pub extern "C" fn trader_id_clone(trader_id: &TraderId) -> TraderId {
 #[no_mangle]
 pub extern "C" fn trader_id_free(trader_id: TraderId) {
     drop(trader_id); // Memory freed here
+}
+
+/// Returns a [`TraderId`] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn trader_id_to_cstr(trader_id: &TraderId) -> *const c_char {
+    string_to_cstr(&trader_id.value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -82,7 +86,6 @@ mod tests {
     fn test_equality() {
         let trader_id1 = TraderId::new("TRADER-001");
         let trader_id2 = TraderId::new("TRADER-002");
-
         assert_eq!(trader_id1, trader_id1);
         assert_ne!(trader_id1, trader_id2);
     }
@@ -90,7 +93,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let trader_id = TraderId::new("TRADER-001");
-
         assert_eq!(trader_id.to_string(), "TRADER-001");
         assert_eq!(format!("{trader_id}"), "TRADER-001");
     }
@@ -98,7 +100,6 @@ mod tests {
     #[test]
     fn test_trader_id_free() {
         let id = TraderId::new("TRADER-001");
-
         trader_id_free(id); // No panic
     }
 }

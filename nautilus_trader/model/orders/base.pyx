@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,18 +16,20 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.model.enums import order_status_to_str
+
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport contingency_type_to_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.model.enums_c cimport time_in_force_to_str
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -67,8 +69,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
     (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Covers external orders
     (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers external orders
-    (OrderStatus.INITIALIZED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # Covers emulated and external orders
     (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers emulated and external orders
+    (OrderStatus.INITIALIZED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # Covers emulated and external orders
     (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated and external orders
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
     (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
@@ -109,6 +111,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.CANCELED): OrderStatus.CANCELED,
+    (OrderStatus.PARTIALLY_FILLED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED): OrderStatus.FILLED,
 }
@@ -116,7 +119,7 @@ cdef dict _ORDER_STATE_TABLE = {
 
 cdef class Order:
     """
-    The abstract base class for all orders.
+    The base class for all orders.
 
     Parameters
     ----------
@@ -137,8 +140,8 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,
-            state_parser=OrderStatusParser.to_str,
+            trigger_parser=order_status_to_str,
+            state_parser=order_status_to_str,
         )
         self._previous_status = OrderStatus.INITIALIZED
         self._triggered_price = None  # Can be None
@@ -158,7 +161,7 @@ cdef class Order:
         self.order_type = init.order_type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
-        self.liquidity_side = LiquiditySide.NONE
+        self.liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
         self.emulation_trigger = init.emulation_trigger
@@ -187,7 +190,7 @@ cdef class Order:
 
     def __repr__(self) -> str:
         cdef ClientOrderId coi
-        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NONE else f", contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}"
+        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NO_CONTINGENCY else f", contingency_type={contingency_type_to_str(self.contingency_type)}"
         cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
         cdef str linked_order_ids_str = "" if self.linked_order_ids is None else f", linked_order_ids=[{', '.join([coi.to_str() for coi in self.linked_order_ids])}]" if self.linked_order_ids is not None else None  # noqa
         return (
@@ -256,13 +259,13 @@ cdef class Order:
         return self._fsm.state_string_c()
 
     cdef str type_string_c(self):
-        return OrderTypeParser.to_str(self.order_type)
+        return order_type_to_str(self.order_type)
 
     cdef str side_string_c(self):
-        return OrderSideParser.to_str(self.side)
+        return order_side_to_str(self.side)
 
     cdef str tif_string_c(self):
-        return TimeInForceParser.to_str(self.time_in_force)
+        return time_in_force_to_str(self.time_in_force)
 
     cdef bint has_price_c(self) except *:
         raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
@@ -283,10 +286,10 @@ cdef class Order:
         return self.order_type == OrderType.MARKET
 
     cdef bint is_emulated_c(self) except *:
-        return self.emulation_trigger != TriggerType.NONE
+        return self.emulation_trigger != TriggerType.NO_TRIGGER
 
     cdef bint is_contingency_c(self) except *:
-        return self.contingency_type != ContingencyType.NONE
+        return self.contingency_type != ContingencyType.NO_CONTINGENCY
 
     cdef bint is_parent_order_c(self) except *:
         return self.contingency_type == ContingencyType.OTO
@@ -295,7 +298,7 @@ cdef class Order:
         return self.parent_order_id is not None
 
     cdef bint is_open_c(self) except *:
-        if self.emulation_trigger != TriggerType.NONE:
+        if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
         return (
             self._fsm.state == OrderStatus.ACCEPTED
@@ -318,7 +321,7 @@ cdef class Order:
         )
 
     cdef bint is_inflight_c(self) except *:
-        if self.emulation_trigger != TriggerType.NONE:
+        if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
         return (
             self._fsm.state == OrderStatus.SUBMITTED
@@ -539,7 +542,7 @@ cdef class Order:
     @property
     def is_contingency(self):
         """
-        Return whether the order has a contingency (`contingency_type` is not ``NONE``).
+        Return whether the order has a contingency (`contingency_type` is not ``NO_CONTINGENCY``).
 
         Returns
         -------
@@ -683,7 +686,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {OrderSideParser.to_str(side)}",  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {order_side_to_str(side)}",  # pragma: no cover (design-time error)
             )
 
     @staticmethod
@@ -694,7 +697,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
+                f"invalid `PositionSide`, was {position_side_to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
             )
 
     @staticmethod
@@ -804,11 +807,7 @@ cdef class Order:
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInitialized):
-            Condition.true(len(self._events) <= 1, "Reinitialized with more than one previous event")
-            Condition.true(isinstance(self.last_event_c(), OrderInitialized), "Reinitialized last event was not `OrderInitialized`")
-            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NONE, "Reinitialized order not an emulated order")
-            Condition.true(event.emulation_trigger == TriggerType.NONE, "Reinitialized order not transforming an emulated order")
-            self.emulation_trigger = event.emulation_trigger
+            Condition.true(not self._events, "Initialization should be the first order event")
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)
@@ -935,3 +934,13 @@ cdef class Order:
 
     cdef void _set_slippage(self) except *:
         pass  # Optionally implement
+
+    @staticmethod
+    cdef void _hydrate_initial_events(Order original, Order transformed) except *:
+        cdef list original_events = original.events_c()
+
+        cdef OrderEvent event
+        for event in reversed(original_events):
+            # Insert each event to the beginning of the events list in reverse
+            # to preserve correct order of events.
+            transformed._events.insert(0, event)

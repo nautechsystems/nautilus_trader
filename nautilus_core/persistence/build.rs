@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,28 +16,25 @@
 use std::env;
 use std::path::PathBuf;
 
+#[allow(clippy::expect_used)] // OK in build script
 fn main() {
-    let crate_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR env var is not defined"),
-    );
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     // Generate C headers
     let config_c = cbindgen::Config::from_file("cbindgen.toml")
         .expect("unable to find cbindgen.toml configuration file");
 
-    cbindgen::generate_with_config(&crate_dir, config_c.clone())
-        .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("includes/persistence.h"));
-
+    let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/persistence.h");
     cbindgen::generate_with_config(&crate_dir, config_c)
         .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("../../nautilus_trader/core/includes/persistence.h"));
+        .write_to_file(c_header_path);
 
     // Generate Cython definitions
     let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
-        .expect("unable to find cbindgen.toml configuration file");
+        .expect("unable to find cbindgen_cython.toml configuration file");
 
+    let cython_path = crate_dir.join("../../nautilus_trader/core/rust/persistence.pxd");
     cbindgen::generate_with_config(&crate_dir, config_cython)
         .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("../../nautilus_trader/core/rust/persistence.pxd"));
+        .write_to_file(cython_path);
 }

@@ -5,6 +5,41 @@
 #include <stdint.h>
 #include <Python.h>
 
+typedef enum ComponentState {
+    PRE_INITIALIZED = 0,
+    READY = 1,
+    STARTING = 2,
+    RUNNING = 3,
+    STOPPING = 4,
+    STOPPED = 5,
+    RESUMING = 6,
+    RESETTING = 7,
+    DISPOSING = 8,
+    DISPOSED = 9,
+    DEGRADING = 10,
+    DEGRADED = 11,
+    FAULTING = 12,
+    FAULTED = 13,
+} ComponentState;
+
+typedef enum ComponentTrigger {
+    INITIALIZE = 1,
+    START = 2,
+    START_COMPLETED = 3,
+    STOP = 4,
+    STOP_COMPLETED = 5,
+    RESUME = 6,
+    RESUME_COMPLETED = 7,
+    RESET = 8,
+    RESET_COMPLETED = 9,
+    DISPOSE = 10,
+    DISPOSE_COMPLETED = 11,
+    DEGRADE = 12,
+    DEGRADE_COMPLETED = 13,
+    FAULT = 14,
+    FAULT_COMPLETED = 15,
+} ComponentTrigger;
+
 typedef enum LogColor {
     NORMAL = 0,
     GREEN = 1,
@@ -22,14 +57,6 @@ typedef enum LogLevel {
     ERROR = 40,
     CRITICAL = 50,
 } LogLevel;
-
-typedef enum MessageCategory {
-    COMMAND,
-    DOCUMENT,
-    EVENT,
-    REQUEST,
-    RESPONSE,
-} MessageCategory;
 
 typedef struct Logger_t Logger_t;
 
@@ -52,7 +79,7 @@ typedef struct TimeEvent_t {
     /**
      * The event ID.
      */
-    enum MessageCategory category;
+    MessageCategory category;
     /**
      * The UNIX timestamp (nanoseconds) when the time event occurred.
      */
@@ -95,16 +122,18 @@ uintptr_t test_clock_timer_count(struct CTestClock *clock);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_set_time_alert_ns(struct CTestClock *clock, PyObject *name, uint64_t alert_time_ns);
+void test_clock_set_time_alert_ns(struct CTestClock *clock,
+                                  const char *name_ptr,
+                                  uint64_t alert_time_ns);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
 void test_clock_set_timer_ns(struct CTestClock *clock,
-                             PyObject *name,
+                             const char *name_ptr,
                              uint64_t interval_ns,
                              uint64_t start_time_ns,
                              uint64_t stop_time_ns);
@@ -121,29 +150,69 @@ void vec_time_events_drop(struct Vec_TimeEvent v);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
-uint64_t test_clock_next_time_ns(struct CTestClock *clock, PyObject *name);
+uint64_t test_clock_next_time_ns(struct CTestClock *clock, const char *name_ptr);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_cancel_timer(struct CTestClock *clock, PyObject *name);
+void test_clock_cancel_timer(struct CTestClock *clock, const char *name_ptr);
 
 void test_clock_cancel_timers(struct CTestClock *clock);
 
+const char *component_state_to_cstr(enum ComponentState value);
+
 /**
- * Creates a logger from a valid Python object pointer and a defined logging level.
+ * Returns an enum from a Python string.
  *
  * # Safety
- * - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-struct CLogger logger_new(PyObject *trader_id_ptr,
-                          PyObject *machine_id_ptr,
-                          PyObject *instance_id_ptr,
+enum ComponentState component_state_from_cstr(const char *ptr);
+
+const char *component_trigger_to_cstr(enum ComponentTrigger value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+const char *log_level_to_cstr(enum LogLevel value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogLevel log_level_from_cstr(const char *ptr);
+
+const char *log_color_to_cstr(enum LogColor value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogColor log_color_from_cstr(const char *ptr);
+
+/**
+ * Creates a new logger.
+ *
+ * # Safety
+ * - Assumes `trader_id_ptr` is a valid C string pointer.
+ * - Assumes `machine_id_ptr` is a valid C string pointer.
+ * - Assumes `instance_id_ptr` is a valid C string pointer.
+ */
+struct CLogger logger_new(const char *trader_id_ptr,
+                          const char *machine_id_ptr,
+                          const char *instance_id_ptr,
                           enum LogLevel level_stdout,
                           uint8_t is_bypassed);
 
@@ -151,49 +220,33 @@ void logger_free(struct CLogger logger);
 
 void flush(struct CLogger *logger);
 
-/**
- * Return the loggers trader ID.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *logger_get_trader_id(const struct CLogger *logger);
+const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 
-/**
- * Return the loggers machine ID.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *logger_get_machine_id(const struct CLogger *logger);
+const char *logger_get_machine_id_cstr(const struct CLogger *logger);
 
 UUID4_t logger_get_instance_id(const struct CLogger *logger);
 
 uint8_t logger_is_bypassed(const struct CLogger *logger);
 
 /**
- * Log a message from valid Python object pointers.
+ * Log a message.
  *
  * # Safety
- * - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `component_ptr` is a valid C string pointer.
+ * - Assumes `msg_ptr` is a valid C string pointer.
  */
 void logger_log(struct CLogger *logger,
                 uint64_t timestamp_ns,
                 enum LogLevel level,
                 enum LogColor color,
-                PyObject *component_ptr,
-                PyObject *msg_ptr);
+                const char *component_ptr,
+                const char *msg_ptr);
 
 /**
  * # Safety
  * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
  */
-struct TimeEvent_t time_event_new(PyObject *name,
+struct TimeEvent_t time_event_new(const char *name,
                                   UUID4_t event_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
@@ -202,12 +255,4 @@ struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
 
 void time_event_free(struct TimeEvent_t event);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *time_event_name(const struct TimeEvent_t *event);
+const char *time_event_name_cstr(const struct TimeEvent_t *event);

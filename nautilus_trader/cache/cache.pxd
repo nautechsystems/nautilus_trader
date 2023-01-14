@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,14 +20,14 @@ from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -38,6 +38,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
 
@@ -59,6 +60,7 @@ cdef class Cache(CacheFacade):
     cdef dict _instruments
     cdef dict _accounts
     cdef dict _orders
+    cdef dict _order_lists
     cdef dict _positions
     cdef dict _position_snapshots
     cdef dict _submit_order_commands
@@ -95,6 +97,7 @@ cdef class Cache(CacheFacade):
     cpdef void cache_instruments(self) except *
     cpdef void cache_accounts(self) except *
     cpdef void cache_orders(self) except *
+    cpdef void cache_order_lists(self) except *
     cpdef void cache_positions(self) except *
     cpdef void cache_commands(self) except *
     cpdef void build_index(self) except *
@@ -135,8 +138,9 @@ cdef class Cache(CacheFacade):
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id, bint override=*) except *
+    cpdef void add_order_list(self, OrderList order_list) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
-    cpdef void add_position(self, Position position, OMSType oms_type) except *
+    cpdef void add_position(self, Position position, OmsType oms_type) except *
     cpdef void snapshot_position(self, Position position) except *
     cpdef void add_submit_order_command(self, SubmitOrder command) except *
     cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *

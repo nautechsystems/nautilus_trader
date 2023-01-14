@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional, Union
 
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -61,10 +61,10 @@ class VolatilityMarketMakerConfig(StrategyConfig):
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    emulation_trigger : str, optional
+    emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
-    oms_type : OMSType
+    oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """
@@ -74,7 +74,7 @@ class VolatilityMarketMakerConfig(StrategyConfig):
     atr_period: int
     atr_multiple: float
     trade_size: Decimal
-    emulation_trigger: str = "NONE"
+    emulation_trigger: str = "NO_TRIGGER"
 
 
 class VolatilityMarketMaker(Strategy):
@@ -128,10 +128,10 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_quote_ticks(self.instrument_id)
         # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=100)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=50)  # For debugging
         # self.subscribe_order_book_snapshots(
         #     self.instrument_id,
-        #     depth=25,
+        #     depth=20,
         #     interval_ms=1000,
         # )  # For debugging
         # self.subscribe_data(
@@ -154,7 +154,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(data), LogColor.CYAN)
-        pass
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -169,7 +168,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
-        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -196,7 +194,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(delta), LogColor.CYAN)
-        pass
 
     def on_ticker(self, ticker: Ticker):
         """
@@ -210,7 +207,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(ticker), LogColor.CYAN)
-        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -224,7 +220,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -238,7 +233,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar):
         """

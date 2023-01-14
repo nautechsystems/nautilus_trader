@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,12 +17,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser
-from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
-from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
-from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
-from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
+from nautilus_trader.model.enums_c cimport InstrumentCloseType
+from nautilus_trader.model.enums_c cimport MarketStatus
+from nautilus_trader.model.enums_c cimport instrument_close_type_from_str
+from nautilus_trader.model.enums_c cimport instrument_close_type_to_str
+from nautilus_trader.model.enums_c cimport market_status_from_str
+from nautilus_trader.model.enums_c cimport market_status_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
@@ -30,7 +30,7 @@ from nautilus_trader.model.objects cimport Price
 
 cdef class StatusUpdate(Data):
     """
-    The abstract base class for all status updates.
+    The base class for all status updates.
 
     Parameters
     ----------
@@ -58,8 +58,10 @@ cdef class VenueStatusUpdate(StatusUpdate):
 
     Parameters
     ----------
-    status : VenueStatus
-        The venue status.
+    venue : Venue
+        The venue ID.
+    status : MarketStatus
+        The venue market status.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
@@ -69,7 +71,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
     def __init__(
         self,
         Venue venue,
-        VenueStatus status,
+        MarketStatus status,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -87,7 +89,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return (
             f"{type(self).__name__}("
             f"venue={self.venue}, "
-            f"status={VenueStatusParser.to_str(self.status)})"
+            f"status={market_status_to_str(self.status)})"
         )
 
     @staticmethod
@@ -95,7 +97,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         Condition.not_none(values, "values")
         return VenueStatusUpdate(
             venue=Venue(values["venue"]),
-            status=VenueStatusParser.from_str(values["status"]),
+            status=market_status_from_str(values["status"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -106,7 +108,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return {
             "type": "VenueStatusUpdate",
             "venue": obj.venue.to_str(),
-            "status": VenueStatusParser.to_str(obj.status),
+            "status": market_status_to_str(obj.status),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -147,8 +149,10 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
 
     Parameters
     ----------
-    status : InstrumentStatus
-        The instrument status.
+    instrument_id : InstrumentId
+        The instrument ID.
+    status : MarketStatus
+        The instrument market status.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
@@ -158,7 +162,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     def __init__(
         self,
         InstrumentId instrument_id,
-        InstrumentStatus status,
+        MarketStatus status,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -176,7 +180,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
-            f"status={InstrumentStatusParser.to_str(self.status)})"
+            f"status={market_status_to_str(self.status)})"
         )
 
     @staticmethod
@@ -184,7 +188,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         Condition.not_none(values, "values")
         return InstrumentStatusUpdate(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            status=InstrumentStatusParser.from_str(values["status"]),
+            status=market_status_from_str(values["status"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -195,7 +199,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return {
             "type": "InstrumentStatusUpdate",
             "instrument_id": obj.instrument_id.to_str(),
-            "status": InstrumentStatusParser.to_str(obj.status),
+            "status": market_status_to_str(obj.status),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -230,9 +234,9 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return InstrumentStatusUpdate.to_dict_c(obj)
 
 
-cdef class InstrumentClosePrice(Data):
+cdef class InstrumentClose(Data):
     """
-    Represents an instruments closing price at a venue.
+    Represents an instrument close at a venue.
 
     Parameters
     ----------
@@ -259,45 +263,45 @@ cdef class InstrumentClosePrice(Data):
         self.close_price = close_price
         self.close_type = close_type
 
-    def __eq__(self, InstrumentClosePrice other) -> bool:
-        return InstrumentClosePrice.to_dict_c(self) == InstrumentClosePrice.to_dict_c(other)
+    def __eq__(self, InstrumentClose other) -> bool:
+        return InstrumentClose.to_dict_c(self) == InstrumentClose.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(InstrumentClosePrice.to_dict_c(self)))
+        return hash(frozenset(InstrumentClose.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"close_price={self.close_price}, "
-            f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)})"
+            f"close_type={instrument_close_type_to_str(self.close_type)})"
         )
 
     @staticmethod
-    cdef InstrumentClosePrice from_dict_c(dict values):
+    cdef InstrumentClose from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return InstrumentClosePrice(
+        return InstrumentClose(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             close_price=Price.from_str_c(values["close_price"]),
-            close_type=InstrumentCloseTypeParser.from_str(values["close_type"]),
+            close_type=instrument_close_type_from_str(values["close_type"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
 
     @staticmethod
-    cdef dict to_dict_c(InstrumentClosePrice obj):
+    cdef dict to_dict_c(InstrumentClose obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "InstrumentClosePrice",
+            "type": "InstrumentClose",
             "instrument_id": obj.instrument_id.to_str(),
             "close_price": str(obj.close_price),
-            "close_type": InstrumentCloseTypeParser.to_str(obj.close_type),
+            "close_type": instrument_close_type_to_str(obj.close_type),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
 
     @staticmethod
-    def from_dict(dict values) -> InstrumentClosePrice:
+    def from_dict(dict values) -> InstrumentClose:
         """
         Return an instrument close price event from the given dict values.
 
@@ -308,13 +312,13 @@ cdef class InstrumentClosePrice(Data):
 
         Returns
         -------
-        InstrumentClosePrice
+        InstrumentClose
 
         """
-        return InstrumentClosePrice.from_dict_c(values)
+        return InstrumentClose.from_dict_c(values)
 
     @staticmethod
-    def to_dict(InstrumentClosePrice obj):
+    def to_dict(InstrumentClose obj):
         """
         Return a dictionary representation of this object.
 
@@ -323,4 +327,4 @@ cdef class InstrumentClosePrice(Data):
         dict[str, object]
 
         """
-        return InstrumentClosePrice.to_dict_c(obj)
+        return InstrumentClose.to_dict_c(obj)

@@ -1,5 +1,5 @@
 # -----------------------------------book--------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -224,7 +224,7 @@ def market_definition_to_instruments(
             betting_type=market_definition.bettingType,
             market_id=market_definition.marketId,
             market_name=market_definition.marketName,
-            market_start_time=pd.Timestamp(market_definition.marketStartTime)
+            market_start_time=pd.Timestamp(market_definition.marketTime)
             if market_definition.marketStartTime
             else pd.Timestamp(0, tz="UTC"),
             market_type=market_definition.marketType,

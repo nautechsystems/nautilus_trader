@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 
 cdef class CacheDatabase:
     """
-    The abstract base class for all cache databases.
+    The base class for all cache databases.
 
     Parameters
     ----------
@@ -46,7 +46,7 @@ cdef class CacheDatabase:
     def __init__(self, Logger logger not None):
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 
-        self._log.info("INITIALIZED.")
+        self._log.info("READY.")
 
     cpdef void flush(self) except *:
         """Abstract method (implement in subclass)."""

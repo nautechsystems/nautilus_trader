@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,10 +21,10 @@ from typing import Union
 from ib_insync import Contract
 from ib_insync import ContractDetails
 
-from nautilus_trader.model.c_enums.asset_class import AssetClassParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -56,7 +56,7 @@ def sec_type_to_asset_class(sec_type: str):
         "CASH": "FX",
         "BOND": "BOND",
     }
-    return AssetClassParser.from_str_py(mapping.get(sec_type, sec_type))
+    return asset_class_from_str(mapping.get(sec_type, sec_type))
 
 
 def parse_instrument(
@@ -163,8 +163,8 @@ def parse_forex_contract(
     return CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
-        base_currency=Currency.from_str(details.contract.currency),
-        quote_currency=Currency.from_str(details.contract.symbol),
+        base_currency=Currency.from_str(details.contract.symbol),
+        quote_currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         size_precision=Quantity.from_int(1),
         price_increment=Price(details.minTick, price_precision),

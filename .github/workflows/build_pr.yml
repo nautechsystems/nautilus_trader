@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -22,6 +22,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
 
       # Cargo setup
       - name: Set up Cargo cache
@@ -111,7 +119,7 @@ jobs:
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: |
-          poetry install --with test --extras "betfair docker ib redis"
+          poetry install --with test --all-extras
           poetry run pytest --ignore=tests/performance_tests --new-first --failed-first
         env:
           PARALLEL_BUILD: false

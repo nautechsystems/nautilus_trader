@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,14 +22,14 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
@@ -55,7 +55,7 @@ class TestComponentStubs:
         return LiveLogger(
             loop=asyncio.get_event_loop(),
             clock=TestComponentStubs.clock(),
-            level_stdout=LogLevelParser.from_str_py(level),
+            level_stdout=log_level_from_str(level),
         )
 
     @staticmethod
@@ -149,7 +149,7 @@ class TestComponentStubs:
         instrument: Optional[Instrument] = None,
         ticks: list[Data] = None,
         venue: Optional[Venue] = None,
-        oms_type: Optional[OMSType] = None,
+        oms_type: Optional[OmsType] = None,
         account_type: Optional[AccountType] = None,
         base_currency: Optional[Currency] = None,
         starting_balances: Optional[list[Money]] = None,
@@ -158,7 +158,7 @@ class TestComponentStubs:
         engine = BacktestEngine(config=config)
         engine.add_venue(
             venue=venue or Venue("SIM"),
-            oms_type=oms_type or OMSType.HEDGING,
+            oms_type=oms_type or OmsType.HEDGING,
             account_type=account_type or AccountType.MARGIN,
             base_currency=base_currency or USD,
             starting_balances=starting_balances or [Money(1_000_000, USD)],

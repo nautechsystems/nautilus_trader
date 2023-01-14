@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,12 +27,12 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport BarAggregation
+from nautilus_trader.model.enums_c cimport bar_aggregation_to_str
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -526,6 +526,8 @@ cdef class TimeBarAggregator(BarAggregator):
         The clock for the aggregator.
     logger : Logger
         The logger for the aggregator.
+    build_bars_with_no_updates : bool, default True
+        If build and emit bars with no new market updates.
 
     Raises
     ------
@@ -539,6 +541,7 @@ cdef class TimeBarAggregator(BarAggregator):
         handler not None: Callable[[Bar], None],
         Clock clock not None,
         Logger logger not None,
+        bint build_bars_with_no_updates = True,
     ):
         super().__init__(
             instrument=instrument,
@@ -556,6 +559,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._build_on_next_tick = False
         self._stored_close_ns = 0
         self._cached_update = None
+        self._build_bars_with_no_updates = build_bars_with_no_updates
 
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
@@ -619,8 +623,8 @@ cdef class TimeBarAggregator(BarAggregator):
             )
         else:  # pragma: no cover (design-time error)
             raise ValueError(
-                f"Aggregation not a time, "
-                f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}",
+                f"Aggregation type not supported for time bars, "
+                f"was {bar_aggregation_to_str(self.bar_type.spec.aggregation)}",
             )
 
         return start_time
@@ -663,7 +667,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(
-                f"Aggregation not time based, was {BarAggregationParser.to_str(aggregation)}",
+                f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
     cdef uint64_t _get_interval_ns(self):
@@ -683,7 +687,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(
-                f"Aggregation not time based, was {BarAggregationParser.to_str(aggregation)}",
+                f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
     cpdef void _set_build_timer(self) except *:
@@ -712,6 +716,9 @@ cdef class TimeBarAggregator(BarAggregator):
             self._build_on_next_tick = True
             self._stored_close_ns = self.next_close_ns
             return
+
+        if not self._build_bars_with_no_updates and self._builder.count == 0:
+            return  # Do not build and emit bar
 
         self._build_and_send(ts_event=event.ts_event)
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,13 +24,15 @@ from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport MarketStatus
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -45,6 +47,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
@@ -65,8 +68,12 @@ cdef class OrderMatchingEngine:
     cdef LoggerAdapter _log
     cdef MessageBus _msgbus
     cdef OrderBook _book
+    cdef OrderBook _opening_auction_book
+    cdef OrderBook _closing_auction_book
     cdef FillModel _fill_model
+    cdef object _auction_match_algo
     cdef bint _reject_stop_orders
+    cdef bint _support_gtd_orders
     cdef dict _account_ids
 
     cdef readonly Venue venue
@@ -77,8 +84,10 @@ cdef class OrderMatchingEngine:
     """The instruments product ID for the exchange.\n\n:returns: `int`"""
     cdef readonly BookType book_type
     """The order book type for the matching engine.\n\n:returns: `BookType`"""
-    cdef readonly OMSType oms_type
-    """The order management system type for the matching engine.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The order management system type for the matching engine.\n\n:returns: `OmsType`"""
+    cdef readonly MarketStatus market_status
+    """The market status for the matching engine.\n\n:returns: `MarketStatus`"""
     cdef readonly CacheFacade cache
     """The cache for the matching engine.\n\n:returns: `CacheFacade`"""
     cdef readonly MessageBus msgbus
@@ -115,6 +124,8 @@ cdef class OrderMatchingEngine:
     cpdef void process_quote_tick(self, QuoteTick tick) except *
     cpdef void process_trade_tick(self, TradeTick tick) except *
     cpdef void process_bar(self, Bar bar) except *
+    cpdef void process_status(self, MarketStatus status) except *
+    cpdef void process_auction_book(self, OrderBook book) except *
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *
     cdef void _process_quote_ticks_from_bar(self) except *
 
@@ -133,6 +144,9 @@ cdef class OrderMatchingEngine:
     cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order) except *
     cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *
+    cdef void _process_auction_market_order(self, MarketOrder order) except *
+    cdef void _process_auction_limit_order(self, LimitOrder order) except *
+    cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force) except *
     cdef void _update_limit_order(self, Order order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price) except *
