@@ -26,6 +26,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
       # Cargo setup
       - name: Set up Cargo cache
         uses: actions/cache@v3
@@ -62,6 +70,14 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 2
+
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
 
       # Cargo setup
       - name: Set up Cargo cache
@@ -138,6 +154,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
 
       # Cargo setup
       - name: Set up Cargo cache
@@ -222,6 +246,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
 
       # Cargo setup
       - name: Set up Cargo cache
