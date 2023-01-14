@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,8 +16,9 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport order_side_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -98,7 +99,7 @@ cdef class Bet:
         return Bet(
             price=Price.from_str_c(values["price"]),
             quantity=Quantity.from_str_c(values["quantity"]),
-            side=OrderSideParser.from_str(values['side'])
+            side=order_side_from_str(values['side'])
         )
 
     @staticmethod
@@ -108,7 +109,7 @@ cdef class Bet:
             "type": type(obj).__name__,
             "price": str(obj.price),
             "quantity": str(obj.quantity),
-            "side": OrderSideParser.to_str(obj.side),
+            "side": order_side_to_str(obj.side),
         }
 
     @staticmethod

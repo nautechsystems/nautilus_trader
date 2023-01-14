@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.enums_c cimport order_side_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -37,7 +38,7 @@ from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 
 cdef class TradingCommand(Command):
     """
-    The abstract base class for all trading related commands.
+    The base class for all trading related commands.
 
     Parameters
     ----------
@@ -729,7 +730,7 @@ cdef class CancelAllOrders(TradingCommand):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)})"
+            f"order_side={order_side_to_str(self.order_side)})"
         )
 
     def __repr__(self) -> str:
@@ -739,7 +740,7 @@ cdef class CancelAllOrders(TradingCommand):
             f"trader_id={self.trader_id.to_str()}, "
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -753,7 +754,7 @@ cdef class CancelAllOrders(TradingCommand):
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            order_side=OrderSideParser.from_str(values["order_side"]),
+            order_side=order_side_from_str(values["order_side"]),
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -767,7 +768,7 @@ cdef class CancelAllOrders(TradingCommand):
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
             "instrument_id": obj.instrument_id.to_str(),
-            "order_side": OrderSideParser.to_str(obj.order_side),
+            "order_side": order_side_to_str(obj.order_side),
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }

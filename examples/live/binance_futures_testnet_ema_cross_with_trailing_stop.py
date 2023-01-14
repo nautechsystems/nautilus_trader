@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -87,7 +87,7 @@ strat_config = EMACrossTrailingStopConfig(
     atr_period=20,
     trailing_atr_multiple=3.0,
     trailing_offset_type="BASIS_POINTS",
-    trigger_type="LAST",
+    trigger_type="LAST_TRADE",
     trade_size=Decimal("0.010"),
 )
 # Instantiate your strategy

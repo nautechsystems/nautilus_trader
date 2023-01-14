@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -48,7 +48,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
@@ -74,7 +74,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         self.engine.add_venue(
             venue=self.venue,
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -197,7 +197,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
         self.engine.add_venue(
             venue=self.venue,
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=GBP,
             starting_balances=[Money(1_000_000, GBP)],
@@ -251,7 +251,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             trailing_atr_multiple=3.0,
             trailing_offset_type="PRICE",
             trailing_offset=Decimal("0.01"),
-            trigger_type="LAST",
+            trigger_type="LAST_TRADE",
         )
         strategy = EMACrossStopEntry(config=config)
         self.engine.add_strategy(strategy)
@@ -267,7 +267,6 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             GBP,
         )
 
-    @pytest.mark.skip(reason="ValueError: `free` amount was negative")
     def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
         # Arrange
         config = EMACrossTrailingStopConfig(
@@ -277,7 +276,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             fast_ema_period=10,
             slow_ema_period=20,
             atr_period=20,
-            trailing_atr_multiple=3.0,
+            trailing_atr_multiple=2.0,
             trailing_offset_type="PRICE",
             trigger_type="BID_ASK",
             emulation_trigger="BID_ASK",
@@ -289,9 +288,9 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 41762
+        assert strategy.fast_ema.count == 41761
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(639016.69, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(963946.75, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -315,7 +314,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
 
         self.engine.add_venue(
             venue=self.venue,
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -391,10 +390,10 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         self.engine.add_venue(
             venue=self.venue,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.CASH,  # <-- Spot exchange
-            base_currency=None,
             starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
+            base_currency=None,
         )
 
         self.btcusdt = TestInstrumentProvider.btcusdt_binance()
@@ -494,7 +493,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=AUD,
             starting_balances=[Money(1_000_000, AUD)],
@@ -565,7 +564,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Setup venue
         self.engine.add_venue(
             venue=self.venue,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
@@ -625,7 +624,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             venue=self.venue,
             account_type=AccountType.MARGIN,
             base_currency=None,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             starting_balances=[Money(100_000, GBP)],
             book_type=BookType.L2_MBP,
         )
@@ -681,7 +680,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             venue=self.venue,
             account_type=AccountType.MARGIN,
             base_currency=None,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             starting_balances=[Money(10_000, GBP)],
             book_type=BookType.L2_MBP,
         )

@@ -1,21 +1,20 @@
 # User Guide
 
-Welcome to the user guide for NautilusTrader!
+Thank you for using the NautilusTrader platform! We hope that this user guide will be a helpful 
+resource as you explore the different features and capabilities of the platform.
 
-Here you will find detailed documentation and examples explaining the different 
-use cases for the platform.
+To get started, you can take a look at the table of contents on the left-hand side of the page. 
+The topics are generally ordered from highest to lowest level, so you can start with the higher-level 
+concepts and then dive into the more specific details as needed.
 
-You can choose different subjects from the left nav menu, which are generally ordered from
-highest to lowest level (although they are self-contained and can be read in any order).
-
-Since this is a companion guide to the full [API Reference](../api_reference/index.md) 
-documentation (which is generated from the latest source code), the API Reference should be considered
-the source of truth if code or information in the user guide differs. We will aim to keep the
-user guide in line with the API Reference on a best effort basis, and intend to introduce some doc tests
-in the near future to assist with this.
+It's important to note that the [API Reference](../api_reference/index.md) documentation should be 
+considered the source of truth for the platform. If there are any discrepancies between the user 
+guide and the API Reference, the API Reference should be considered the correct information. We are 
+working to ensure that the user guide stays up-to-date with the API Reference and will be introducing 
+doc tests in the near future to help with this.
 
 ```{note}
-The terms 'NautilusTrader', 'Nautilus' and 'platform' are used interchageably throughout the documentation.
+The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
 ```
 
 ```{eval-rst}

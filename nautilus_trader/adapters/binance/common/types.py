@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -109,13 +109,13 @@ class BinanceBar(Bar):
 
     def __setstate__(self, state):
 
-        super().__setstate__(state[:15])
-        self.quote_volume = Decimal(state[15])
-        self.count = state[16]
-        self.taker_buy_base_volume = Decimal(state[17])
-        self.taker_buy_quote_volume = Decimal(state[18])
-        self.taker_sell_base_volume = Decimal(state[19])
-        self.taker_sell_quote_volume = Decimal(state[20])
+        super().__setstate__(state[:14])
+        self.quote_volume = Decimal(state[14])
+        self.count = state[15]
+        self.taker_buy_base_volume = Decimal(state[16])
+        self.taker_buy_quote_volume = Decimal(state[17])
+        self.taker_sell_base_volume = Decimal(state[18])
+        self.taker_sell_quote_volume = Decimal(state[19])
 
     def __repr__(self) -> str:
         return (

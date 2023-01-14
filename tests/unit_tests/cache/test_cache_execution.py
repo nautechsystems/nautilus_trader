@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,12 +36,13 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -147,6 +148,13 @@ class TestCache:
     def test_cache_orders_with_no_orders(self):
         # Arrange, Act
         self.cache.cache_orders()
+
+        # Assert
+        assert True  # No exception raised
+
+    def test_cache_order_lists_with_no_orders(self):
+        # Arrange, Act
+        self.cache.cache_order_lists()
 
         # Assert
         assert True  # No exception raised
@@ -277,6 +285,24 @@ class TestCache:
         # Arrange, Act, Assert
         assert not self.cache.order_exists(ClientOrderId("O-123456"))
 
+    def test_order_list_exists_when_no_order_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.order_list_exists(OrderListId("OL-123456"))
+
+    def test_order_list_ids_when_no_order_lists_returns_empty_set(self):
+        # Arrange, Act
+        result = self.cache.order_list_ids()
+
+        # Assert
+        assert result == set()
+
+    def test_order_lists_when_no_order_lists_returns_empty_list(self):
+        # Arrange, Act
+        result = self.cache.order_lists()
+
+        # Assert
+        assert result == []
+
     def test_position_when_no_position_returns_none(self):
         # Arrange
         position_id = PositionId("P-123456")
@@ -395,7 +421,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -471,7 +497,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         # Act
         result = self.cache.load_position(position.id)
@@ -527,7 +553,109 @@ class TestCache:
         result = self.cache.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
+
+    def test_add_order_list_command(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order_list(bracket)
+
+        # Act
+        result = self.cache.order_list(bracket.id)
+
+        # Assert
+        assert result == bracket
+
+    def test_cache_order_lists(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket1 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        bracket2 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order(bracket1.orders[0], None)
+        self.cache.add_order(bracket1.orders[1], None)
+        self.cache.add_order(bracket1.orders[2], None)
+        self.cache.add_order(bracket2.orders[0], None)
+        self.cache.add_order(bracket2.orders[1], None)
+        self.cache.add_order(bracket2.orders[2], None)
+        self.cache.add_order_list(bracket1)
+        self.cache.add_order_list(bracket2)
+
+        # Act
+        self.cache.cache_order_lists()  # <-- exercise caching
+
+        # Assert
+        assert self.cache.order_list_ids() == {bracket1.id, bracket2.id}
+
+    def test_order_lists(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket1 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        bracket2 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order_list(bracket1)
+        self.cache.add_order_list(bracket2)
+
+        # Act
+        result = self.cache.order_lists(
+            venue=AUDUSD_SIM.venue,
+            instrument_id=AUDUSD_SIM.id,
+            strategy_id=StrategyId("S-001"),
+        )
+
+        # Assert
+        assert result == [bracket1, bracket2]
 
     def test_add_and_load_submit_order_list_command(self):
         order_factory = OrderFactory(
@@ -570,7 +698,7 @@ class TestCache:
 
         # Assert
         assert command.has_emulated_order
-        assert command == result
+        assert result == command
 
     def test_update_order_for_submitted_order(self):
         # Arrange
@@ -772,7 +900,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         # Act
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -820,7 +948,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position, OMSType.HEDGING)
+        self.cache.add_position(position, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -897,7 +1025,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -920,7 +1048,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2, OMSType.HEDGING)
+        self.cache.add_position(position2, OmsType.HEDGING)
 
         # Assert
         assert position1.is_open
@@ -979,7 +1107,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -1002,7 +1130,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2, OMSType.HEDGING)
+        self.cache.add_position(position2, OmsType.HEDGING)
 
         order3 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
@@ -1095,7 +1223,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1144,7 +1272,7 @@ class TestCache:
         )
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1198,7 +1326,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position1, OmsType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1235,7 +1363,7 @@ class TestExecutionCacheIntegrityCheck:
         # Setup venue
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

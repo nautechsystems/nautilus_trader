@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,9 +22,9 @@ import pytz
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport AssetClass
+from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -35,7 +35,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class SimulationModule:
     """
-    The abstract base class for all simulation modules.
+    The base class for all simulation modules.
 
     Warnings
     --------
@@ -43,7 +43,7 @@ cdef class SimulationModule:
     """
 
     def __init__(self):
-        self._exchange = None  # Must be registered
+        self.exchange = None  # Must be registered
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -60,7 +60,7 @@ cdef class SimulationModule:
         """
         Condition.not_none(exchange, "exchange")
 
-        self._exchange = exchange
+        self.exchange = exchange
 
     cpdef void process(self, uint64_t now_ns) except *:
         """Abstract method (implement in subclass)."""
@@ -127,7 +127,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             self._rollover_applied = True
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        cdef list open_positions = self._exchange.cache.positions_open()
+        cdef list open_positions = self.exchange.cache.positions_open()
 
         cdef Position position
         cdef Instrument instrument
@@ -139,13 +139,13 @@ cdef class FXRolloverInterestModule(SimulationModule):
         cdef double xrate
         cdef Money rollover_total
         for position in open_positions:
-            instrument = self._exchange.instruments[position.instrument_id]
+            instrument = self.exchange.instruments[position.instrument_id]
             if instrument.asset_class != AssetClass.FX:
                 continue  # Only applicable to FX
 
             mid = mid_prices.get(instrument.id, 0.0)
             if mid == 0.0:
-                book = self._exchange.get_book(instrument.id)
+                book = self.exchange.get_book(instrument.id)
                 mid = book.midpoint()
                 if mid is None:
                     mid = book.best_bid_price()
@@ -167,9 +167,9 @@ cdef class FXRolloverInterestModule(SimulationModule):
             elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
                 rollover *= 3
 
-            if self._exchange.base_currency is not None:
-                currency = self._exchange.base_currency
-                xrate = self._exchange.cache.get_xrate(
+            if self.exchange.base_currency is not None:
+                currency = self.exchange.base_currency
+                xrate = self.exchange.cache.get_xrate(
                     venue=instrument.id.venue,
                     from_currency=instrument.quote_currency,
                     to_currency=currency,
@@ -182,7 +182,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             rollover_total = Money(self._rollover_totals.get(currency, 0.0) + rollover, currency)
             self._rollover_totals[currency] = rollover_total
 
-            self._exchange.adjust_account(Money(-rollover, currency))
+            self.exchange.adjust_account(Money(-rollover, currency))
 
     cpdef void log_diagnostics(self, LoggerAdapter log) except *:
         """
@@ -194,7 +194,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             The logger to log to.
 
         """
-        account_balances_starting = ', '.join([b.to_str() for b in self._exchange.starting_balances])
+        account_balances_starting = ', '.join([b.to_str() for b in self.exchange.starting_balances])
         account_starting_length = len(account_balances_starting)
         rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
         log.info(f"Rollover interest (totals): {rollover_totals}")

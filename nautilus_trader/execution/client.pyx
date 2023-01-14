@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -32,10 +31,11 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -65,7 +65,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class ExecutionClient(Component):
     """
-    The abstract base class for all execution clients.
+    The base class for all execution clients.
 
     Parameters
     ----------
@@ -73,7 +73,7 @@ cdef class ExecutionClient(Component):
         The client ID.
     venue : Venue, optional with no default so ``None`` must be passed explicitly
         The client venue. If multi-venue then can be ``None``.
-    oms_type : OMSType
+    oms_type : OmsType
         The venues order management system type.
     account_type : AccountType
         The account type for the client.
@@ -95,7 +95,7 @@ cdef class ExecutionClient(Component):
     ValueError
         If `client_id` is not equal to `account_id.get_issuer()`.
     ValueError
-        If `oms_type` is ``NONE`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` (must be specified).
 
     Warnings
     --------
@@ -106,7 +106,7 @@ cdef class ExecutionClient(Component):
         self,
         ClientId client_id not None,
         Venue venue: Optional[Venue],
-        OMSType oms_type,
+        OmsType oms_type,
         AccountType account_type,
         Currency base_currency: Optional[Currency],
         MessageBus msgbus not None,
@@ -115,7 +115,7 @@ cdef class ExecutionClient(Component):
         Logger logger not None,
         dict config = None,
     ):
-        Condition.not_equal(oms_type, OMSType.NONE, "oms_type", "OMSType")
+        Condition.not_equal(oms_type, OmsType.UNSPECIFIED, "oms_type", "UNSPECIFIED")
         if config is None:
             config = {}
         super().__init__(
@@ -823,7 +823,7 @@ cdef class ExecutionClient(Component):
             The currency of the price.
         commission : Money
             The fill commission.
-        liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
+        liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
             The execution liquidity side.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order filled event occurred.

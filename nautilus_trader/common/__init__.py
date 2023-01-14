@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,8 +20,8 @@ More domain specific concepts are introduced above the `core` base layer. The
 ID cache is implemented, a base `Clock` with `Test` and `Live`
 implementations which can control many `Timer` instances.
 
-Trading domain specific components for generating `Order` and `Identifier` objects.
-Common logging components. A high performance `Queue`. Common `UUID4` factory.
+Trading domain specific components for generating `Order` and `Identifier` objects,
+common logging components, a high performance `Queue` and `UUID4` factory.
 """
 
 from enum import Enum

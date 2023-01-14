@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,7 @@ API which may be presented directly by an exchange, or broker intermediary.
 import asyncio
 import functools
 from asyncio import Task
+from collections.abc import Coroutine
 from datetime import timedelta
 from typing import Any, Callable, Optional
 
@@ -44,9 +45,9 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -57,7 +58,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class LiveExecutionClient(ExecutionClient):
     """
-    The abstract base class for all live execution clients.
+    The base class for all live execution clients.
 
     Parameters
     ----------
@@ -87,7 +88,7 @@ class LiveExecutionClient(ExecutionClient):
     Raises
     ------
     ValueError
-        If `oms_type` is ``NONE`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` (must be specified).
 
     Warnings
     --------
@@ -99,7 +100,7 @@ class LiveExecutionClient(ExecutionClient):
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
         venue: Optional[Venue],
-        oms_type: OMSType,
+        oms_type: OmsType,
         account_type: AccountType,
         base_currency: Optional[Currency],
         instrument_provider: InstrumentProvider,
@@ -129,23 +130,81 @@ class LiveExecutionClient(ExecutionClient):
 
         self.reconciliation_active = False
 
-    async def run_after_delay(self, delay: float, coro) -> None:
+    async def run_after_delay(
+        self,
+        delay: float,
+        coro: Coroutine,
+    ) -> None:
+        """
+        Run the given coroutine after a delay.
+
+        Parameters
+        ----------
+        delay : float
+            The delay (seconds) before running the coroutine.
+        coro : Coroutine
+            The coroutine to run after the initial delay.
+
+        """
         await asyncio.sleep(delay)
         return await coro
+
+    def create_task(
+        self,
+        coro: Coroutine,
+        log_msg: Optional[str] = None,
+        actions: Optional[Callable] = None,
+        success: Optional[str] = None,
+    ) -> None:
+        """
+        Run the given coroutine with error handling and optional callback
+        actions when done.
+
+        Parameters
+        ----------
+        coro : Coroutine
+            The coroutine to run.
+        log_msg : str, optional
+            The log message for the task.
+        actions : Callable, optional
+            The actions callback to run when the coroutine is done.
+        success : str, optional
+            The log message to write on actions success.
+
+        """
+        log_msg = log_msg or coro.__name__
+        self._log.debug(f"Creating task {log_msg}.")
+        task = self._loop.create_task(
+            coro,
+            name=coro.__name__,
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                actions,
+                success,
+            ),
+        )
 
     def _on_task_completed(
         self,
         actions: Optional[Callable],
         success: Optional[str],
         task: Task,
-    ):
+    ) -> None:
         if task.exception():
             self._log.error(
                 f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
             )
         else:
             if actions:
-                actions()
+                try:
+                    actions()
+                except Exception as e:
+                    self._log.error(
+                        f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
+                        f"{repr(e)}",
+                    )
             if success:
                 self._log.info(success, LogColor.GREEN)
 
@@ -154,16 +213,10 @@ class LiveExecutionClient(ExecutionClient):
         Connect the client.
         """
         self._log.info("Connecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._connect(),
-            name="connect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(True),
-                "Connected",
-            ),
+            actions=lambda: self._set_connected(True),
+            success="Connected",
         )
 
     def disconnect(self) -> None:
@@ -171,130 +224,46 @@ class LiveExecutionClient(ExecutionClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._disconnect(),
-            name="disconnect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(False),
-                "Disconnected",
-            ),
+            actions=lambda: self._set_connected(False),
+            success="Disconnected",
         )
 
     def submit_order(self, command: SubmitOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to execute.
-
-        """
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._submit_order(command),
-            name="submit_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"submit_order: {command}",
         )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to execute.
-
-        """
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._submit_order_list(command),
-            name="submit_order_list",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"submit_order_list: {command}",
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : ModifyOrder
-            The command to execute.
-
-        """
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._modify_order(command),
-            name="modify_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"modify_order: {command}",
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : CancelOrder
-            The command to execute.
-
-        """
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._cancel_order(command),
-            name="cancel_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"cancel_order: {command}",
         )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : CancelAllOrders
-            The command to execute.
-
-        """
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._cancel_all_orders(command),
-            name="cancel_all_orders",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"cancel_all_orders: {command}",
         )
 
     def query_order(self, command: QueryOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : QueryOrder
-            The command to execute.
-
-        """
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._query_order(command),
-            name="query_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"query_order: {command}",
         )
 
     async def generate_order_status_report(
@@ -484,35 +453,37 @@ class LiveExecutionClient(ExecutionClient):
     ############################################################################
     # Coroutines to implement
     ############################################################################
-    async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine")  # pragma: no cover
+    async def _connect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_connect` coroutine",  # pragma: no cover
+        )
 
-    async def _disconnect(self):
-        raise NotImplementedError(
-            "please implement the `_disconnect` coroutine",
-        )  # pragma: no cover
+    async def _disconnect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_disconnect` coroutine",  # pragma: no cover
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        raise NotImplementedError(
-            "please implements the `_submit_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_submit_order` coroutine",  # pragma: no cover
+        )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        raise NotImplementedError(
-            "please implements the `_submit_order_list` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_submit_order_list` coroutine",  # pragma: no cover
+        )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        raise NotImplementedError(
-            "please implements the `_modify_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_modify_order` coroutine",  # pragma: no cover
+        )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        raise NotImplementedError(
-            "please implements the `_cancel_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_cancel_order` coroutine",  # pragma: no cover
+        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        raise NotImplementedError(
-            "please implements the `_cancel_all_orders` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_cancel_all_orders` coroutine",  # pragma: no cover
+        )

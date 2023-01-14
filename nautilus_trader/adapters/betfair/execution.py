@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,7 +47,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -65,7 +65,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.account import AccountState
@@ -124,7 +124,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
             instrument_provider=instrument_provider
@@ -182,7 +182,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """Ensure socket stream is connected"""
         while self.stream.is_running:
             if not self.stream.is_connected:
-                self.stream.connect()
+                await self.stream.connect()
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
@@ -638,16 +638,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- DEBUGGING --------------------------------------------------------------------------------
 
-    def create_task(self, coro):
-        self._loop.create_task(self._check_task(coro))
-
-    async def _check_task(self, coro):
-        try:
-            awaitable = await coro
-            return awaitable
-        except Exception as e:
-            self._log.exception("Unhandled exception", e)
-
     def client(self) -> BetfairClient:
         return self._client
 
@@ -687,8 +677,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
-                    selection_id=str(selection.id),
-                    selection_handicap=selection.hc,
+                    runner_id=str(selection.id),
+                    runner_handicap=selection.hc,
                 )
                 orders = self._cache.orders()
                 venue_orders = {o.venue_order_id: o for o in orders}
@@ -780,7 +770,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
-                    liquidity_side=LiquiditySide.NONE,
+                    liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                     ts_event=millis_to_nanos(unmatched_order.md),
                 )
                 self.published_executions[client_order_id].append(trade_id)

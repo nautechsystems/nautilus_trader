@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,7 +36,6 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
@@ -44,6 +43,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_type_from_str
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -82,16 +82,16 @@ def _order_quantity_to_stake(quantity: Quantity) -> str:
     return str(quantity.as_double())
 
 
-def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
+def _make_limit_order(order: LimitOrder):
     price = str(float(_probability_to_price(probability=order.price, side=order.side)))
     size = _order_quantity_to_stake(quantity=order.quantity)
 
-    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
+    if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
             "orderType": "LIMIT_ON_CLOSE",
             "limitOnCloseOrder": {"price": price, "liability": size},
         }
-    else:
+    elif order.time_in_force in (TimeInForce.GTC, TimeInForce.IOC, TimeInForce.FOK):
         parsed = {
             "orderType": "LIMIT",
             "limitOrder": {"price": price, "size": size, "persistenceType": "PERSIST"},
@@ -100,17 +100,19 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
             parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]  # type: ignore
             parsed["limitOrder"]["persistenceType"] = "LAPSE"  # type: ignore
         return parsed
+    else:
+        raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
 
 
-def _make_market_order(order: Union[LimitOrder, MarketOrder]):
-    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
+def _make_market_order(order: MarketOrder):
+    if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
             "orderType": "MARKET_ON_CLOSE",
             "marketOnCloseOrder": {
                 "liability": str(order.quantity.as_double()),
             },
         }
-    else:
+    elif order.time_in_force == TimeInForce.GTC:
         # Betfair doesn't really support market orders, return a limit order with min/max price
         limit_order = LimitOrder(
             trader_id=order.trader_id,
@@ -129,6 +131,8 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
         # the size as is.
         limit_order["limitOrder"]["size"] = str(order.quantity.as_double())
         return limit_order
+    else:
+        raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
 
 
 def make_order(order: Union[LimitOrder, MarketOrder]):
@@ -157,7 +161,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 "selectionId": instrument.selection_id,
                 "side": N2B_SIDE[command.order.side],
                 "handicap": instrument.selection_handicap,
-                # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
+                # Remove the strategy name from customer_order_ref; it has a limited size and don't control what
                 # length the strategy might be or what characters users might append
                 "customerOrderRef": make_custom_order_ref(
                     client_order_id=command.order.client_order_id,
@@ -265,7 +269,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
             ts_init=ts_event,
         ),
@@ -302,8 +306,8 @@ def bet_to_order_status_report(
         venue_order_id=venue_order_id,
         client_order_id=client_order_id,
         order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-        order_type=OrderTypeParser.from_str_py(order["orderType"]),
-        contingency_type=ContingencyType.NONE,
+        order_type=order_type_from_str(order["orderType"]),
+        contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
         order_status=determine_order_status(order),
         price=price_to_probability(str(order["priceSize"]["price"])),

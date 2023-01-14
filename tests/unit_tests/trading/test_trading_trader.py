@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,7 +33,7 @@ from nautilus_trader.examples.strategies.blank import MyStrategyConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -93,7 +93,7 @@ class TestTrader:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -159,7 +159,7 @@ class TestTrader:
         self.trader.add_strategy(Strategy())
 
         # Assert
-        assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "INITIALIZED"}
+        assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "READY"}
 
     def test_add_strategies_with_no_order_id_tags(self):
         # Arrange
@@ -170,8 +170,8 @@ class TestTrader:
 
         # Assert
         assert self.trader.strategy_states() == {
-            StrategyId("Strategy-000"): "INITIALIZED",
-            StrategyId("Strategy-001"): "INITIALIZED",
+            StrategyId("Strategy-000"): "READY",
+            StrategyId("Strategy-001"): "READY",
         }
 
     def test_add_strategies_with_duplicate_order_id_tags_raises_runtime_error(self):
@@ -198,8 +198,8 @@ class TestTrader:
 
         # Assert
         assert self.trader.strategy_states() == {
-            StrategyId("Strategy-001"): "INITIALIZED",
-            StrategyId("Strategy-002"): "INITIALIZED",
+            StrategyId("Strategy-001"): "READY",
+            StrategyId("Strategy-002"): "READY",
         }
 
     def test_clear_strategies(self):
@@ -271,8 +271,8 @@ class TestTrader:
         # Assert
         assert StrategyId("Strategy-001") in status
         assert StrategyId("Strategy-002") in status
-        assert status[StrategyId("Strategy-001")] == "INITIALIZED"
-        assert status[StrategyId("Strategy-002")] == "INITIALIZED"
+        assert status[StrategyId("Strategy-001")] == "READY"
+        assert status[StrategyId("Strategy-002")] == "READY"
         assert len(status) == 2
 
     def test_change_strategies(self):

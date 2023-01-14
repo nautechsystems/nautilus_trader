@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -73,15 +73,17 @@ class BinanceExecClientConfig(LiveExecClientConfig):
         The account type for the client.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
-    base_ws_http : str, optional
+    base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
     clock_sync_interval_secs : int, default 900 (15 mins)
-        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
+    warn_gtd_to_gtc : bool, default True
+        If log warning for GTD time in force transformed to GTC.
     """
 
     api_key: Optional[str] = None
@@ -92,3 +94,4 @@ class BinanceExecClientConfig(LiveExecClientConfig):
     us: bool = False
     testnet: bool = False
     clock_sync_interval_secs: int = 900
+    warn_gtd_to_gtc: bool = True

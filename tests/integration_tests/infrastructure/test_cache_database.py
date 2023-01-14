@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,9 +24,9 @@ from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
@@ -41,8 +41,9 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
@@ -52,6 +53,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -241,7 +244,7 @@ class TestRedisCacheDatabase:
         result = self.database.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_update_account(self):
         # Arrange
@@ -555,6 +558,47 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == order
 
+    def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        order = MarketOrder.transform_py(order, 0)
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.order_type == OrderType.MARKET
+
+    def test_load_order_when_transformed_to_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+        )
+
+        order = LimitOrder.transform_py(order, 0)
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.order_type == OrderType.LIMIT
+
     def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
@@ -787,7 +831,7 @@ class TestRedisCacheDatabase:
         result = self.cache.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_load_submit_order_list_command(self):
         order_factory = OrderFactory(
@@ -829,7 +873,7 @@ class TestRedisCacheDatabase:
         result = self.cache.load_submit_order_list_command(bracket.id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_flush(self):
         # Arrange
@@ -888,7 +932,7 @@ class TestRedisCacheDatabaseIntegrity:
         self.engine = BacktestEngine(config=config)
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

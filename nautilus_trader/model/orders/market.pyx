@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,15 +17,15 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.enums_c cimport contingency_type_to_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.enums_c cimport time_in_force_to_str
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -72,7 +72,7 @@ cdef class MarketOrder(Order):
         The order time in force.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
-    contingency_type : ContingencyType, default ``NONE``
+    contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
@@ -87,7 +87,7 @@ cdef class MarketOrder(Order):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
@@ -110,13 +110,13 @@ cdef class MarketOrder(Order):
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
@@ -132,7 +132,7 @@ cdef class MarketOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options={},
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=TriggerType.NO_TRIGGER,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
@@ -142,6 +142,11 @@ cdef class MarketOrder(Order):
             ts_init=ts_init,
         )
         super().__init__(init=init)
+
+    cdef void _updated(self, OrderUpdated event) except*:
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
 
     cdef bint has_price_c(self) except *:
         return False
@@ -159,9 +164,9 @@ cdef class MarketOrder(Order):
 
         """
         return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.order_type)} "
-            f"{TimeInForceParser.to_str(self.time_in_force)}"
+            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)} "
+            f"{time_in_force_to_str(self.time_in_force)}"
         )
 
     cpdef dict to_dict(self):
@@ -183,16 +188,16 @@ cdef class MarketOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.order_type),
-            "side": OrderSideParser.to_str(self.side),
+            "type": order_type_to_str(self.order_type),
+            "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
-            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "time_in_force": time_in_force_to_str(self.time_in_force),
             "reduce_only": self.is_reduce_only,
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
-            "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
@@ -242,7 +247,51 @@ cdef class MarketOrder(Order):
             tags=init.tags,
         )
 
-    cdef void _updated(self, OrderUpdated event) except *:
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+    @staticmethod
+    cdef MarketOrder transform(Order order, uint64_t ts_init):
+        """
+        Transform the given order to a `market` order.
+
+        All existing events will be prepended to the orders internal events
+        prior to the new `OrderInitialized` event.
+
+        Parameters
+        ----------
+        order : Order
+            The order to transform from.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        MarketOrder
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef list original_events = order.events_c()
+        cdef MarketOrder transformed = MarketOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            order_side=order.side,
+            quantity=order.quantity,
+            time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
+            reduce_only=order.is_reduce_only,
+            init_id=UUID4(),
+            ts_init=ts_init,
+            contingency_type=order.contingency_type,
+            order_list_id=order.order_list_id,
+            linked_order_ids=order.linked_order_ids,
+            parent_order_id=order.parent_order_id,
+            tags=order.tags,
+        )
+
+        Order._hydrate_initial_events(original=order, transformed=transformed)
+
+        return transformed
+
+    @staticmethod
+    def transform_py(Order order, uint64_t ts_init) -> MarketOrder:
+        return MarketOrder.transform(order, ts_init)

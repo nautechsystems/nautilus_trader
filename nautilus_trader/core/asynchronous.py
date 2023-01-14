@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,11 +18,14 @@ import types
 
 @types.coroutine
 def sleep0():
-    # Skip one event loop run cycle.
-    #
-    # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-    # of the pure Python function call and integer comparison <= 0.
-    #
-    # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-    # instead of creating a Future object.
+    """
+    Skip one event loop run cycle.
+
+    This is equivalent to `asyncio.sleep(0)` however avoids the overhead
+    of the pure Python function call and integer comparison <= 0.
+
+    Uses a bare 'yield' expression (which Task.__step knows how to handle)
+    instead of creating a Future object.
+
+    """
     yield

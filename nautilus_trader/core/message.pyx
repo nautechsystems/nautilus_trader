@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,54 +15,13 @@
 
 from typing import Any, Callable
 
-from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.rust.core cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID4
-
-
-cdef class MessageCategoryParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "COMMAND"
-        elif value == 2:
-            return "DOCUMENT"
-        elif value == 3:
-            return "EVENT"
-        elif value == 4:
-            return "REQUEST"
-        elif value == 5:
-            return "RESPONSE"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef MessageCategory from_str(str value) except *:
-        if value == "COMMAND":
-            return MessageCategory.COMMAND
-        elif value == "DOCUMENT":
-            return MessageCategory.DOCUMENT
-        elif value == "EVENT":
-            return MessageCategory.EVENT
-        elif value == "REQUEST":
-            return MessageCategory.REQUEST
-        elif value == "RESPONSE":
-            return MessageCategory.RESPONSE
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return MessageCategoryParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return MessageCategoryParser.from_str(value)
 
 
 cdef class Message:
     """
-    The abstract base class for all messages.
+    The base class for all messages.
 
     Parameters
     ----------
@@ -100,7 +59,7 @@ cdef class Message:
 
 cdef class Command(Message):
     """
-    The abstract base class for all commands.
+    The base class for all commands.
 
     Parameters
     ----------
@@ -124,7 +83,7 @@ cdef class Command(Message):
 
 cdef class Document(Message):
     """
-    The abstract base class for all documents.
+    The base class for all documents.
 
     Parameters
     ----------
@@ -148,7 +107,7 @@ cdef class Document(Message):
 
 cdef class Event(Message):
     """
-    The abstract base class for all events.
+    The base class for all events.
 
     Parameters
     ----------
@@ -177,7 +136,7 @@ cdef class Event(Message):
 
 cdef class Request(Message):
     """
-    The abstract base class for all requests.
+    The base class for all requests.
 
     Parameters
     ----------
@@ -206,7 +165,7 @@ cdef class Request(Message):
 
 cdef class Response(Message):
     """
-    The abstract base class for all responses.
+    The base class for all responses.
 
     Parameters
     ----------

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,18 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -34,6 +35,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
 
 
@@ -90,6 +92,7 @@ cdef class CacheFacade:
     cpdef set client_order_ids_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set order_list_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_open_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -116,6 +119,12 @@ cdef class CacheFacade:
     cpdef int orders_emulated_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*) except *
     cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*) except *
     cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*) except *
+
+# -- ORDER LIST QUERIES --------------------------------------------------------------------------------
+
+    cpdef OrderList order_list(self, OrderListId order_list_id)
+    cpdef list order_lists(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef bint order_list_exists(self, OrderListId order_list_id) except *
 
 # -- POSITION QUERIES -----------------------------------------------------------------------------
 

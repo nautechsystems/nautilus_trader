@@ -1,17 +1,17 @@
-// // -------------------------------------------------------------------------------------------------
-// //  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
-// //  https://nautechsystems.io
-// //
-// //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-// //  You may not use this file except in compliance with the License.
-// //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-// //
-// //  Unless required by applicable law or agreed to in writing, software
-// //  distributed under the License is distributed on an "AS IS" BASIS,
-// //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// //  See the License for the specific language governing permissions and
-// //  limitations under the License.
-// // -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
 
 use std::collections::BTreeMap;
 
@@ -21,8 +21,6 @@ use arrow2::{
     datatypes::{DataType, Field, Schema},
     io::parquet::write::{transverse, Encoding},
 };
-
-use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::TradeTick;
 use nautilus_model::enums::AggressorSide;
 use nautilus_model::identifiers::trade_id::TradeId;
@@ -31,11 +29,13 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
+
 impl EncodeToChunk for TradeTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
         let keys = ["instrument_id", "price_precision", "size_precision"];
         for key in keys {
-            (!metadata.contains_key(key)).then(|| panic!("metadata missing key {}", key));
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key {key}"));
         }
     }
 
@@ -105,7 +105,8 @@ impl EncodeToChunk for TradeTick {
 
 impl DecodeFromChunk for TradeTick {
     fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self> {
-        let instrument_id = InstrumentId::from(schema.metadata.get("instrument_id").unwrap());
+        let instrument_id =
+            InstrumentId::from(schema.metadata.get("instrument_id").unwrap().as_str());
         let price_precision = schema
             .metadata
             .get("price_precision")

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,9 +16,10 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.c_enums.book_action cimport BookAction
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.enums_c cimport BookAction
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -27,6 +28,8 @@ cdef class OrderBookData(Data):
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly BookType book_type
     """The order book type (L1_TBBO, L2_MBP, L3_MBO).\n\n:returns: `BookType`"""
+    cdef readonly TimeInForce time_in_force
+    """The time in force for this update.\n\n:returns: `TimeInForce`"""
     cdef readonly uint64_t update_id
     """The update ID.\n\n:returns: `uint64`"""
 

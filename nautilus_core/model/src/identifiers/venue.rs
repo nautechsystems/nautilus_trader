@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,14 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -50,14 +49,13 @@ impl Venue {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn venue_new(ptr: *mut ffi::PyObject) -> Venue {
-    Venue::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
+    Venue::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -71,20 +69,15 @@ pub extern "C" fn venue_free(venue: Venue) {
     drop(venue); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [`Venue`] identifier as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn venue_to_pystr(venue: &Venue) -> *mut ffi::PyObject {
-    string_to_pystr(venue.value.as_str())
+pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
+    string_to_cstr(&venue.value)
 }
 
 #[no_mangle]
 pub extern "C" fn venue_eq(lhs: &Venue, rhs: &Venue) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
@@ -106,7 +99,6 @@ mod tests {
     fn test_equality() {
         let venue1 = Venue::new("BINANCE");
         let venue2 = Venue::new("IDEALPRO");
-
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
     }
@@ -114,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let venue = Venue::new("BINANCE");
-
         assert_eq!(venue.to_string(), "BINANCE");
         assert_eq!(format!("{venue}"), "BINANCE");
     }
@@ -122,7 +113,6 @@ mod tests {
     #[test]
     fn test_venue_free() {
         let id = Venue::new("BINANCE");
-
         venue_free(id); // No panic
     }
 }

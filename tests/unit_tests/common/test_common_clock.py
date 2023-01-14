@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -557,7 +556,7 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
+# @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
 class TestLiveClockWithThreadTimer:
     def setup(self):
         # Fixture Setup
@@ -826,7 +825,7 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 2
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
+# @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup

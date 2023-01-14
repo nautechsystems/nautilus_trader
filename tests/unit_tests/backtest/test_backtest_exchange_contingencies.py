@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,15 +21,15 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -99,7 +99,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
         self.exchange = SimulatedExchange(
             venue=BINANCE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-asset wallet
             starting_balances=[Money(200, ETH), Money(1_000_000, USDT)],
@@ -374,7 +374,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),  # <-- in the market
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3000.0),
-            post_only=True,  # <-- will reject placed into the market
+            post_only_entry=True,  # <-- will reject placed into the market
             entry_order_type=OrderType.LIMIT,
         )
 

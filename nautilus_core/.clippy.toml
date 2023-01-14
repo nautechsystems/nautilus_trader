@@ -1,3 +1,2 @@
-avoid-breaking-exported-api = false
 cognitive-complexity-threshold = 15
-allow-expect-in-tests = true
+allow-expect-in-tests = false

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -49,12 +49,12 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -108,7 +108,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(IB_VENUE.value),
             venue=IB_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,
             base_currency=None,
@@ -150,16 +150,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Disconnect clients
         if self._client.isConnected():
             self._client.disconnect()
-
-    def create_task(self, coro):
-        self._loop.create_task(self._check_task(coro))
-
-    async def _check_task(self, coro):
-        try:
-            awaitable = await coro
-            return awaitable
-        except Exception as e:
-            self._log.exception("Unhandled exception", e)
 
     async def generate_order_status_report(
         self,
@@ -356,7 +346,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument = self.instrument_provider.find(order.instrument_id)
         trade_id = TradeId(fill.execution.execId)
         venue_order_id = VenueOrderId(str(trade.order.permId))
-        order_side = OrderSideParser.from_str_py(trade.order.action.upper())
+        order_side = order_side_from_str(trade.order.action.upper())
         order_type = ib_order_to_nautilus_order_type(trade.order)
         last_qty = Quantity(fill.execution.shares, precision=instrument.size_precision)
         last_px = Price(fill.execution.price, precision=instrument.price_precision)
@@ -376,7 +366,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             last_px=last_px,
             quote_currency=currency,
             commission=commission,
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
         )
 

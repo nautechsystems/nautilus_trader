@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,8 +30,8 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookTypeParser
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -166,7 +166,7 @@ class BacktestNode:
             base_currency: Optional[str] = config.base_currency
             engine.add_venue(
                 venue=Venue(config.name),
-                oms_type=OMSType[config.oms_type],
+                oms_type=OmsType[config.oms_type],
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
@@ -176,7 +176,7 @@ class BacktestNode:
                 }
                 if config.leverages
                 else {},
-                book_type=BookTypeParser.from_str_py(config.book_type),
+                book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,

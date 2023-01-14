@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,8 +20,8 @@ import pytest
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
@@ -251,7 +251,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             price=Price.from_str("5010.0"),
             size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
@@ -285,7 +285,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2000),
-            emulation_trigger=TriggerType.INDEX,
+            emulation_trigger=TriggerType.INDEX_PRICE,
         )
 
         # Act
@@ -369,7 +369,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2000),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act
@@ -390,7 +390,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2000),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         self.strategy.submit_order(order)
@@ -408,7 +408,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2000),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         order2 = self.strategy.order_factory.limit(
@@ -416,7 +416,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2010),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         self.strategy.submit_order(order1)
@@ -436,7 +436,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2000),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         order2 = self.strategy.order_factory.limit(
@@ -444,7 +444,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2010),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         self.strategy.submit_order(order1)
@@ -475,7 +475,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=order_side,
             quantity=Quantity.from_int(10),
             price=trigger_price,
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         self.strategy.submit_order(order)
@@ -484,7 +484,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             price=Price.from_str("5000.0"),
             size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
@@ -496,7 +496,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 2
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
@@ -541,7 +541,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 2
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
@@ -587,7 +587,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
@@ -635,7 +635,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.is_triggered
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
@@ -682,7 +682,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 2
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
@@ -728,7 +728,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 2
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
@@ -830,7 +830,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             price=Price.from_str("5010.0"),
             size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
@@ -914,7 +914,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 2
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
@@ -1106,7 +1106,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
@@ -1163,7 +1163,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
-        assert order.emulation_trigger == TriggerType.NONE
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
