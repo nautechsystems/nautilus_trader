@@ -744,20 +744,6 @@ cdef class Order:
         """
         return Order.closing_side_c(position_side)
 
-    @staticmethod
-    cdef Order transform(Order order, uint64_t ts_init):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    @staticmethod
-    cdef void _hydrate_initial_events(Order original, Order transformed) except *:
-        cdef list original_events = original.events_c()
-
-        cdef OrderEvent event
-        for event in reversed(original_events):
-            # Insert each event to the beginning of the events list in reverse
-            # to preserve correct order of events.
-            transformed._events.insert(0, event)
-
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *:
         """
         Whether the current order would only reduce the given position if applied
@@ -821,8 +807,7 @@ cdef class Order:
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInitialized):
-            # Previous event is not necessarily another OrderInitialized
-            self.emulation_trigger = event.emulation_trigger
+            Condition.true(not self._events, "Initialization should be the first order event")
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)
@@ -949,3 +934,13 @@ cdef class Order:
 
     cdef void _set_slippage(self) except *:
         pass  # Optionally implement
+
+    @staticmethod
+    cdef void _hydrate_initial_events(Order original, Order transformed) except *:
+        cdef list original_events = original.events_c()
+
+        cdef OrderEvent event
+        for event in reversed(original_events):
+            # Insert each event to the beginning of the events list in reverse
+            # to preserve correct order of events.
+            transformed._events.insert(0, event)

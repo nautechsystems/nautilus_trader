@@ -291,3 +291,7 @@ cdef class MarketOrder(Order):
         Order._hydrate_initial_events(original=order, transformed=transformed)
 
         return transformed
+
+    @staticmethod
+    def transform_py(Order order, uint64_t ts_init) -> MarketOrder:
+        return MarketOrder.transform(order, ts_init)
