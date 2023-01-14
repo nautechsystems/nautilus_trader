@@ -1150,7 +1150,7 @@ class TestMsgPackSerializer:
         order = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill = TestEventStubs.order_filled(
@@ -1178,7 +1178,7 @@ class TestMsgPackSerializer:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -1192,7 +1192,7 @@ class TestMsgPackSerializer:
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(50000),
+            Quantity.from_int(50_000),
         )
 
         fill2 = TestEventStubs.order_filled(
@@ -1221,7 +1221,7 @@ class TestMsgPackSerializer:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -1235,7 +1235,7 @@ class TestMsgPackSerializer:
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill2 = TestEventStubs.order_filled(

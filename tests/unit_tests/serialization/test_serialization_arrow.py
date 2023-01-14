@@ -78,7 +78,7 @@ class TestParquetSerializer:
         self.order = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
         self.order_submitted = copy.copy(self.order)
         self.order_submitted.apply(TestEventStubs.order_submitted(self.order))
@@ -376,7 +376,7 @@ class TestParquetSerializer:
         order3 = self.order_factory.market(
             instrument.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
         fill3 = TestEventStubs.order_filled(
             order3,
@@ -403,7 +403,7 @@ class TestParquetSerializer:
         open_order = self.order_factory.market(
             instrument.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
         open_fill = TestEventStubs.order_filled(
             open_order,
@@ -415,7 +415,7 @@ class TestParquetSerializer:
         close_order = self.order_factory.market(
             instrument.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
         close_fill = TestEventStubs.order_filled(
             close_order,
