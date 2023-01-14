@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
@@ -45,6 +47,7 @@ from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -477,6 +480,86 @@ class TestCache:
         position_dict = position.to_dict()
         del position_dict["position_id"]
         assert snapshot_dict == position_dict
+
+    def test_snapshot_multiple_netted_positions(self):
+        # Arrange
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        order3 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order4 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+        self.cache.add_order(order2, position_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("1"),
+        )
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.10000"),
+            trade_id=TradeId("2"),
+        )
+
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position1.apply(fill2)
+        self.cache.snapshot_position(position1)
+
+        # Create new position (NETTING)
+        self.cache.add_order(order3, position_id)
+        self.cache.add_order(order4, position_id)
+
+        fill3 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("3"),
+        )
+        fill4 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.10000"),
+            trade_id=TradeId("4"),
+        )
+
+        # Act
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill3)
+        position2.apply(fill4)
+        self.cache.snapshot_position(position2)
+
+        # Assert
+        snapshots = self.cache.position_snapshots(position_id)
+        assert len(snapshots) == 2
+        assert position1.is_closed
+        assert position2.is_closed
+        assert position1.realized_return == pytest.approx(0.1)
+        assert position2.realized_return == pytest.approx(0.1)
+        assert position1.realized_pnl == Money(9995.80, USD)
+        assert position2.realized_pnl == Money(9995.80, USD)
 
     def test_load_position(self):
         # Arrange
