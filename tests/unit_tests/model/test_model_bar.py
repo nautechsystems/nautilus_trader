@@ -96,7 +96,7 @@ class TestBarSpecification:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
-            spec.timedelta
+            _ = spec.timedelta
 
     @pytest.mark.parametrize(
         "step, aggregation, expected",
