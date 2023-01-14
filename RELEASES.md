@@ -1,6 +1,6 @@
 # NautilusTrader 1.165.0 Beta
 
-Released on TBD (UTC).
+Released on 14th January 2023 (UTC).
 
 A number of enum variant names have been changed in favour of explicitness, 
 and also to avoid C naming collisions.
@@ -35,9 +35,9 @@ and also to avoid C naming collisions.
 - Added `Cache.order_lists(...)`
 - Added `Cache.order_list_exists(...)`
 - Added `Cache.order_list_ids(...)`
+- Improved generation of `OrderListId` from factory to ensure uniqueness
 - Added auction matches for backtests, thanks @limx0
 - Added `.timedelta` property to `BarSpecification`, thanks @rsmb7z
-- Improved generation of `OrderListId` from factory to ensure uniqueness
 - Numerous improvements to the Betfair adapter, thanks @limx0
 - Improvements to Interactive Brokers data subscriptions, thanks @rsmb7z
 
