@@ -157,12 +157,6 @@ cdef class Order:
     @staticmethod
     cdef OrderSide closing_side_c(PositionSide position_side) except *
 
-    @staticmethod
-    cdef Order transform(Order order, uint64_t ts_init)
-
-    @staticmethod
-    cdef void _hydrate_initial_events(Order original, Order transformed) except *
-
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *
 
     cpdef void apply(self, OrderEvent event) except *
@@ -178,3 +172,6 @@ cdef class Order:
     cdef void _filled(self, OrderFilled event) except *
     cdef double _calculate_avg_px(self, double last_qty, double last_px)
     cdef void _set_slippage(self) except *
+
+    @staticmethod
+    cdef void _hydrate_initial_events(Order original, Order transformed) except *

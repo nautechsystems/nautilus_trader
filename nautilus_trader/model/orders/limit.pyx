@@ -376,3 +376,7 @@ cdef class LimitOrder(Order):
         Order._hydrate_initial_events(original=order, transformed=transformed)
 
         return transformed
+
+    @staticmethod
+    def transform_py(Order order, uint64_t ts_init) -> LimitOrder:
+        return LimitOrder.transform(order, ts_init)
