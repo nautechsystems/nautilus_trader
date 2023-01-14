@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, ARM64]
+        arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
     name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
