@@ -35,6 +35,10 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.config import ActorConfig
 
 
+class SimulationModuleConfig(ActorConfig):
+    pass
+
+
 cdef class SimulationModule(Actor):
     """
     The base class for all simulation modules.
@@ -44,7 +48,7 @@ cdef class SimulationModule(Actor):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: ActorConfig):
+    def __init__(self, config: SimulationModuleConfig):
         super().__init__(config)
         self.exchange = None  # Must be registered
 
