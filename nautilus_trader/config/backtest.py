@@ -49,7 +49,7 @@ class BacktestVenueConfig(NautilusConfig):
     routing: bool = False
     frozen_account: bool = False
     reject_stop_orders: bool = True
-    fill_model: Optional[ImportableConfig] = None
+    # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     modules: Optional[list[ImportableConfig]] = None
 
 

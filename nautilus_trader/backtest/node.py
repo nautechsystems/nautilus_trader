@@ -63,8 +63,10 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        # TODO (bm) Breaking with `TypeError: Expected type, got ModelMetaclass`
-        # PyCondition.list_type(configs, BacktestRunConfig, "configs")
+        PyCondition.true(
+            all([isinstance(config, BacktestRunConfig) for config in configs]),
+            "configs",
+        )
 
         self._validate_configs(configs)
 
@@ -180,7 +182,6 @@ class BacktestNode:
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
                 modules=[ActorFactory.create(module) for module in (config.modules or [])],
-                fill_model=config.fill_model.create() if config.fill_model else None,
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
             )

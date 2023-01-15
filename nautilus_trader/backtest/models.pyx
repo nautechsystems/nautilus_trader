@@ -68,22 +68,6 @@ cdef class FillModel:
         self.prob_fill_on_stop = prob_fill_on_stop
         self.prob_slippage = prob_slippage
 
-    @classmethod
-    def fully_qualified_name(cls) -> str:
-        """
-        Return the fully qualified name for the `PortfolioStatistic` class.
-
-        Returns
-        -------
-        str
-
-        References
-        ----------
-        https://www.python.org/dev/peps/pep-3155/
-
-        """
-        return cls.__module__ + ":" + cls.__qualname__
-
     cpdef bint is_limit_filled(self) except *:
         """
         Return a value indicating whether a ``LIMIT`` order filled.
