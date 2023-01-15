@@ -3,6 +3,7 @@
 import itertools
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 from datetime import datetime
@@ -71,6 +72,30 @@ def _build_rust_libs() -> None:
     build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
     print(build_cmd)
     os.system(build_cmd)  # noqa
+
+    try:
+        # Build the Python bindings from pyo3 using maturin
+        print("Building Python bindings...")
+        manifest_path = "nautilus_core/pyo3/Cargo.toml"
+        command = [
+            "maturin",
+            "develop",
+            "--manifest-path",
+            manifest_path,
+            "--features",
+            "extension-module",
+        ]
+
+        subprocess.run(
+            shlex.join(command),
+            check=True,
+            shell=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"Error running maturin: {e.stderr.decode()}",
+        ) from e
 
 
 ################################################################################

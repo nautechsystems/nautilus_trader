@@ -74,7 +74,7 @@ fn test_parquet_reader_native() {
 
     let reader: ParquetReader<QuoteTick, File> =
         ParquetReader::new(file, 100, GroupFilterArg::None);
-    let data: Vec<QuoteTick> = reader.flat_map(|v| v).collect();
+    let data: Vec<QuoteTick> = reader.flatten().collect();
 
     assert_eq!("EUR/USD.SIM", data[0].instrument_id.to_string());
     assert_eq!(data.len(), 9500);
@@ -143,10 +143,7 @@ fn test_parquet_filter() {
         data_filtered.len() < data_unfiltered.len(),
         "Filtered data must be less than unfiltered data"
     );
-    assert_eq!(
-        data_filtered
-            .iter()
-            .all(|tick| tick.ts_init > ts_init_cutoff),
-        true
-    );
+    assert!(data_filtered
+        .iter()
+        .all(|tick| tick.ts_init > ts_init_cutoff),);
 }
