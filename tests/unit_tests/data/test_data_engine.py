@@ -1694,14 +1694,58 @@ class TestDataEngine:
             0,
         )
 
+        bar4 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1049.00000"),
+            Price.from_str("1049.50000"),
+            Quantity.from_int(100),
+            2,
+            0,
+        )
+
         # Act
         self.data_engine.process(bar1)
         self.data_engine.process(bar2)
         self.data_engine.process(bar3)
+        self.data_engine.process(bar4)
 
         # Assert
         assert handler == [bar1]
         assert self.cache.bar(bar_type) == bar1
+
+        bar1_r1 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1052.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1051.00000"),
+            Quantity.from_int(100),
+            1,
+            2,
+            is_revision=True,
+        )
+
+        bar1_r2 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1053.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1051.00000"),
+            Quantity.from_int(100),
+            1,
+            3,
+            is_revision=True,
+        )
+
+        # Act
+        self.data_engine.process(bar1_r2)
+        self.data_engine.process(bar1_r1)
+
+        # Assert
+        assert handler == [bar1, bar1_r2]
+        assert self.cache.bar(bar_type) == bar1_r2
 
     def test_request_instrument_reaches_client(self):
         # Arrange
