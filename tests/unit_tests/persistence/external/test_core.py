@@ -174,8 +174,8 @@ class _TestPersistenceCore:
             instrument_id=TestIdStubs.audusd_id(),
             bid=Price.from_str("0.80"),
             ask=Price.from_str("0.81"),
-            bid_size=Quantity.from_int(1000),
-            ask_size=Quantity.from_int(1000),
+            bid_size=Quantity.from_int(1_000),
+            ask_size=Quantity.from_int(1_000),
             ts_event=0,
             ts_init=0,
         )

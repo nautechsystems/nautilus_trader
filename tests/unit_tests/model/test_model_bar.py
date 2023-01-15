@@ -398,7 +398,7 @@ class TestBar:
                 Price.from_str("1.00000"),  # <-- High below open
                 Price.from_str("1.00000"),
                 Price.from_str("1.00000"),
-                Quantity.from_int(100000),
+                Quantity.from_int(100_000),
                 0,
                 0,
             )
@@ -412,7 +412,7 @@ class TestBar:
                 Price.from_str("1.00000"),  # <-- High below low
                 Price.from_str("1.00002"),
                 Price.from_str("1.00003"),
-                Quantity.from_int(100000),
+                Quantity.from_int(100_000),
                 0,
                 0,
             )
@@ -426,7 +426,7 @@ class TestBar:
                 Price.from_str("1.00000"),  # <-- High below close
                 Price.from_str("1.00000"),
                 Price.from_str("1.00001"),
-                Quantity.from_int(100000),
+                Quantity.from_int(100_000),
                 0,
                 0,
             )
@@ -440,7 +440,7 @@ class TestBar:
                 Price.from_str("1.00005"),
                 Price.from_str("1.00000"),
                 Price.from_str("0.99999"),  # <-- Close below low
-                Quantity.from_int(100000),
+                Quantity.from_int(100_000),
                 0,
                 0,
             )
@@ -454,7 +454,7 @@ class TestBar:
                 Price.from_str("1.00000"),
                 Price.from_str("1.00000"),
                 Price.from_str("1.00000"),
-                Quantity.from_int(100000),
+                Quantity.from_int(100_000),
                 0,
                 0,
             )
@@ -467,7 +467,7 @@ class TestBar:
             Price.from_str("1.00004"),
             Price.from_str("1.00001"),
             Price.from_str("1.00001"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )
@@ -478,7 +478,7 @@ class TestBar:
             Price.from_str("1.00004"),
             Price.from_str("1.00000"),
             Price.from_str("1.00003"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )
@@ -495,7 +495,7 @@ class TestBar:
             Price.from_str("1.00004"),
             Price.from_str("1.00000"),
             Price.from_str("1.00003"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )
@@ -518,7 +518,7 @@ class TestBar:
             Price.from_str("1.00000"),
             Price.from_str("1.00000"),
             Price.from_str("1.00000"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )
@@ -529,7 +529,7 @@ class TestBar:
             Price.from_str("1.00004"),
             Price.from_str("1.00000"),
             Price.from_str("1.00003"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )
@@ -546,7 +546,7 @@ class TestBar:
             Price.from_str("1.00004"),
             Price.from_str("1.00000"),
             Price.from_str("1.00003"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )
@@ -585,7 +585,7 @@ class TestBar:
             Price.from_str("1.00004"),
             Price.from_str("1.00000"),
             Price.from_str("1.00003"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )

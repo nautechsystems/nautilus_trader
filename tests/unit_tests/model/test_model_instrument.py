@@ -401,7 +401,7 @@ class TestInstrument:
 
         # Act
         result = instrument.notional_value(
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("11493.60"),
             inverse_as_quote=inverse_as_quote,
         )

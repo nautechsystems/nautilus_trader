@@ -59,7 +59,7 @@ class TestCommands:
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -90,7 +90,7 @@ class TestCommands:
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -128,7 +128,7 @@ class TestCommands:
         bracket = self.order_factory.bracket(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
         )
@@ -161,7 +161,7 @@ class TestCommands:
         bracket = self.order_factory.bracket(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
         )
@@ -207,7 +207,7 @@ class TestCommands:
             venue_order_id=VenueOrderId("001"),
             price=Price.from_str("1.00000"),
             trigger_price=Price.from_str("1.00010"),
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
@@ -235,7 +235,7 @@ class TestCommands:
             venue_order_id=None,
             price=Price.from_str("1.00000"),
             trigger_price=Price.from_str("1.00010"),
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
