@@ -429,6 +429,8 @@ cdef class Position:
             self.duration_ns = 0
             self.avg_px_open = fill.last_px.as_f64_c()
             self.avg_px_close = 0.0
+            self.realized_return = 0.0
+            self.realized_pnl = None
 
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)
@@ -590,6 +592,7 @@ cdef class Position:
 
     cdef void _handle_buy_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
+        cdef double realized_pnl
         if fill.commission.currency == self.cost_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
@@ -622,6 +625,7 @@ cdef class Position:
 
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
+        cdef double realized_pnl
         if fill.commission.currency == self.cost_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:

@@ -1454,7 +1454,7 @@ cdef class Cache(CacheFacade):
         """
         Snapshot the given position in its current state.
 
-        The position ID will be appended with a UUID4 string.
+        The position ID will be appended with a UUID v4 string.
 
         Parameters
         ----------
@@ -1467,7 +1467,7 @@ cdef class Cache(CacheFacade):
 
         # Reassign position ID
         cdef Position copied_position = copy.deepcopy(position)
-        copied_position.id = PositionId(position.id.to_str() + "-" + str(uuid.uuid4()))
+        copied_position.id = PositionId(f"{position.id.to_str()}-{uuid.uuid4()}")
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
         if snapshots is not None:

@@ -9,7 +9,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
-None
+- Fixed netted `Position` `realized_pnl` and `realized_return` fields, which were incorrectly cumulative
 
 ---
 
