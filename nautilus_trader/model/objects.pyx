@@ -68,6 +68,7 @@ MONEY_MIN = RUST_MONEY_MIN
 
 FIXED_SCALAR = RUST_FIXED_SCALAR
 
+
 @cython.auto_pickle(True)
 cdef class Quantity:
     """

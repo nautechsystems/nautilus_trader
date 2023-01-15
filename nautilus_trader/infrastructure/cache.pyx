@@ -127,7 +127,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._serializer = serializer
 
         # Redis client
-        self._redis = redis.Redis(host=config.host, port=config.port, db=0)
+        self._redis = redis.Redis(
+            host=config.host,
+            port=config.port or 6379,
+            db=0,
+            username=config.username,
+            password=config.password,
+        )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

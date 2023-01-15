@@ -1,3 +1,18 @@
+# NautilusTrader 1.166.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- `Position.unrealized_pnl` now `None` until any realized PnL is generated (to reduce ambiguity)
+
+### Enhancements
+None
+
+### Fixes
+- Fixed netted `Position` `realized_pnl` and `realized_return` fields, which were incorrectly cumulative
+
+---
+
 # NautilusTrader 1.165.0 Beta
 
 Released on 14th January 2023 (UTC).

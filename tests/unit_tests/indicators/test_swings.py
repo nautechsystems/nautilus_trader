@@ -61,7 +61,7 @@ class TestSwings:
             Price.from_str("1.00004"),
             Price.from_str("1.00000"),
             Price.from_str("1.00003"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             0,
             0,
         )

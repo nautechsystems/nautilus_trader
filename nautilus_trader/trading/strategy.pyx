@@ -301,8 +301,8 @@ cdef class Strategy(Actor):
         cdef int order_list_id_count = len(order_list_ids)
         self.order_factory.set_order_id_count(order_id_count)
         self.order_factory.set_order_list_id_count(order_list_id_count)
-        self.log.info(f"Set ClientOrderIdGenerator order ID count to {order_id_count}.")
-        self.log.info(f"Set ClientOrderIdGenerator order list ID count to {order_list_id_count}.")
+        self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
+        self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
 
         # Required subscriptions
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)

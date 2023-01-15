@@ -574,7 +574,7 @@ class TestModelEvents:
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
             account_id=AccountId("SIM-000"),
-            quantity=Quantity.from_int(500000),
+            quantity=Quantity.from_int(500_000),
             price=Price.from_str("1.95000"),
             trigger_price=None,
             ts_event=0,
@@ -645,7 +645,7 @@ class TestPositionEvents:
         order = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill = TestEventStubs.order_filled(
@@ -677,7 +677,7 @@ class TestPositionEvents:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -691,7 +691,7 @@ class TestPositionEvents:
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(50000),
+            Quantity.from_int(50_000),
         )
 
         fill2 = TestEventStubs.order_filled(
@@ -724,7 +724,7 @@ class TestPositionEvents:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -738,7 +738,7 @@ class TestPositionEvents:
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill2 = TestEventStubs.order_filled(

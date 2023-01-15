@@ -143,7 +143,7 @@ class TestMarginAccount:
 
         result = account.calculate_margin_init(
             instrument=instrument,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             price=Price.from_str("0.80000"),
         )
 
@@ -158,7 +158,7 @@ class TestMarginAccount:
 
         result = account.calculate_margin_init(
             instrument=instrument,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             price=Price.from_str("0.80000"),
         )
 
@@ -179,7 +179,7 @@ class TestMarginAccount:
 
         result = account.calculate_margin_init(
             instrument=instrument,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             price=Price.from_str("11493.60"),
             inverse_as_quote=inverse_as_quote,
         )
@@ -196,7 +196,7 @@ class TestMarginAccount:
         result = account.calculate_margin_maint(
             instrument=instrument,
             side=PositionSide.LONG,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             price=Price.from_str("11493.60"),
         )
 
@@ -230,7 +230,7 @@ class TestMarginAccount:
         result = account.calculate_margin_maint(
             instrument=instrument,
             side=PositionSide.LONG,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             price=Price.from_str("100000.00"),
         )
 

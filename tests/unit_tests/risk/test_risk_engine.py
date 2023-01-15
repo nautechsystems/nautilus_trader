@@ -290,7 +290,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -326,7 +326,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -364,7 +364,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -400,20 +400,20 @@ class TestRiskEngineWithCashAccount:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             reduce_only=True,
         )
 
         order3 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             reduce_only=True,
         )
 
@@ -481,13 +481,13 @@ class TestRiskEngineWithCashAccount:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(200000),
+            Quantity.from_int(200_000),
             reduce_only=True,
         )
 
@@ -543,7 +543,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             reduce_only=True,
         )
 
@@ -580,7 +580,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             GBPUSD_SIM.id,  # <-- not in the cache
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -616,7 +616,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("0.999999999"),  # <- invalid price
         )
 
@@ -653,7 +653,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("-1.0"),  # <- invalid price
         )
 
@@ -690,7 +690,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.stop_limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
             Price.from_str("0.999999999"),  # <- invalid trigger
         )
@@ -841,7 +841,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(10000000),
+            Quantity.from_int(10_000_000),
         )
 
         submit_order = SubmitOrder(
@@ -882,7 +882,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(10000000),
+            Quantity.from_int(10_000_000),
         )
 
         submit_order = SubmitOrder(
@@ -971,7 +971,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(10000000),
+            Quantity.from_int(10_000_000),
         )
 
         submit_order = SubmitOrder(
@@ -1010,13 +1010,13 @@ class TestRiskEngineWithCashAccount:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(500000),
+            Quantity.from_int(500_000),
         )
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(500000),
+            Quantity.from_int(500_000),
         )
 
         order_list = OrderList(
@@ -1060,13 +1060,13 @@ class TestRiskEngineWithCashAccount:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(500000),
+            Quantity.from_int(500_000),
         )
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(500000),
+            Quantity.from_int(500_000),
         )
 
         order_list = OrderList(
@@ -1113,7 +1113,7 @@ class TestRiskEngineWithCashAccount:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order1 = SubmitOrder(
@@ -1131,7 +1131,7 @@ class TestRiskEngineWithCashAccount:
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order2 = SubmitOrder(
@@ -1179,7 +1179,7 @@ class TestRiskEngineWithCashAccount:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order1 = SubmitOrder(
@@ -1197,7 +1197,7 @@ class TestRiskEngineWithCashAccount:
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order2 = SubmitOrder(
@@ -1239,7 +1239,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1278,7 +1278,7 @@ class TestRiskEngineWithCashAccount:
         bracket1 = strategy.order_factory.bracket(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
             emulation_trigger=TriggerType.BID_ASK,
@@ -1287,20 +1287,20 @@ class TestRiskEngineWithCashAccount:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
@@ -1353,20 +1353,20 @@ class TestRiskEngineWithCashAccount:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
@@ -1413,7 +1413,7 @@ class TestRiskEngineWithCashAccount:
         long = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1434,20 +1434,20 @@ class TestRiskEngineWithCashAccount:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
@@ -1494,7 +1494,7 @@ class TestRiskEngineWithCashAccount:
         short = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1515,20 +1515,20 @@ class TestRiskEngineWithCashAccount:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
@@ -1576,7 +1576,7 @@ class TestRiskEngineWithCashAccount:
         bracket = strategy.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00010"),
         )
@@ -1613,7 +1613,7 @@ class TestRiskEngineWithCashAccount:
         bracket = strategy.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00010"),
             emulation_trigger=TriggerType.BID_ASK,
@@ -1653,7 +1653,7 @@ class TestRiskEngineWithCashAccount:
         bracket = strategy.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00010"),
         )
@@ -1691,33 +1691,33 @@ class TestRiskEngineWithCashAccount:
         entry1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss = strategy.order_factory.stop_market(  # <-- duplicate
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit1 = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
         entry2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         take_profit2 = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
@@ -1775,33 +1775,33 @@ class TestRiskEngineWithCashAccount:
         entry1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss1 = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(  # <-- duplicate
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
 
         entry2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss2 = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -1859,7 +1859,7 @@ class TestRiskEngineWithCashAccount:
         bracket = strategy.order_factory.bracket(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00010"),
         )
@@ -1929,7 +1929,7 @@ class TestRiskEngineWithCashAccount:
             AUDUSD_SIM.id,
             ClientOrderId("invalid"),
             VenueOrderId("1"),
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00010"),
             None,
             UUID4(),
@@ -1961,7 +1961,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00010"),
         )
 
@@ -2018,7 +2018,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00010"),
         )
 
@@ -2075,7 +2075,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00010"),
         )
 
@@ -2132,7 +2132,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00010"),
         )
 
@@ -2185,7 +2185,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00020"),
             emulation_trigger=TriggerType.BID_ASK,
         )
@@ -2255,7 +2255,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit = SubmitOrder(
@@ -2306,7 +2306,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit = SubmitOrder(
@@ -2360,7 +2360,7 @@ class TestRiskEngineWithCashAccount:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit = SubmitOrder(
