@@ -532,17 +532,17 @@ class TestCache:
         self.cache.add_order(order4, position_id)
 
         fill3 = TestEventStubs.order_filled(
-            order1,
-            instrument=AUDUSD_SIM,
-            position_id=PositionId("P-1"),
-            last_px=Price.from_str("1.00000"),
-            trade_id=TradeId("3"),
-        )
-        fill4 = TestEventStubs.order_filled(
-            order2,
+            order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             last_px=Price.from_str("1.10000"),
+            trade_id=TradeId("3"),
+        )
+        fill4 = TestEventStubs.order_filled(
+            order4,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.30000"),
             trade_id=TradeId("4"),
         )
 
@@ -557,9 +557,9 @@ class TestCache:
         assert position1.is_closed
         assert position2.is_closed
         assert position1.realized_return == pytest.approx(0.1)
-        assert position2.realized_return == pytest.approx(0.1)
+        assert position2.realized_return == pytest.approx(0.1818181818)
         assert position1.realized_pnl == Money(9995.80, USD)
-        assert position2.realized_pnl == Money(9995.80, USD)
+        assert position2.realized_pnl == Money(19995.20, USD)
 
     def test_load_position(self):
         # Arrange
