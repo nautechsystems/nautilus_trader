@@ -1150,18 +1150,21 @@ cdef class DataEngine(Component):
             int i
         if self._validate_data_sequence:
             last_bar = self._cache.bar(bar_type)
-            if bar.is_revision:
-                bars = self._cache._bars.get(bar_type)  # noqa
-                if bars:  # If not bars then just fall through and add to cache
-                    for i, cached_bar in enumerate(bars):
-                        if bar.ts_event == cached_bar.ts_event:
-                            # Replace bar at index, previously cached bar will fall out of scope
-                            bars[i] = bar
-                            break
-                else:
-                    self._cache.add_bar(bar)
-            elif last_bar is not None and (bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init):
-                return
+            if last_bar is not None:
+                if bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init:
+                    self._log.warning(
+                        f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}.",
+                    )
+                    return  # `bar` is out of sequence
+                if bar.is_revision:
+                    if bar.ts_event == last_bar.ts_event:
+                        # Replace `last_bar`, previously cached bar will fall out of scope
+                        self._cache._bars.get(bar_type)[0] = bar  # noqa
+                    else:
+                        self._log.warning(
+                            f"Bar revision {bar} was not at last bar `ts_event` {last_bar.ts_event}.",
+                        )
+                        return  # Revision SHOULD be at `last_bar.ts_event`
 
         if not bar.is_revision:
             self._cache.add_bar(bar)

@@ -66,8 +66,8 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].instrument_id == usdjpy.id
         assert ticks[0].bid == Price.from_str("86.655")
         assert ticks[0].ask == Price.from_str("86.728")
-        assert ticks[0].bid_size == Quantity.from_int(1000000)
-        assert ticks[0].ask_size == Quantity.from_int(1000000)
+        assert ticks[0].bid_size == Quantity.from_int(1_000_000)
+        assert ticks[0].ask_size == Quantity.from_int(1_000_000)
         assert ticks[0].ts_event == 1357077600295000064
         assert ticks[0].ts_event == 1357077600295000064
 
@@ -90,8 +90,8 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].instrument_id == usdjpy.id
         assert ticks[0].bid == Price.from_str("86.655")
         assert ticks[0].ask == Price.from_str("86.728")
-        assert ticks[0].bid_size == Quantity.from_int(1000000)
-        assert ticks[0].ask_size == Quantity.from_int(1000000)
+        assert ticks[0].bid_size == Quantity.from_int(1_000_000)
+        assert ticks[0].ask_size == Quantity.from_int(1_000_000)
         assert ticks[0].ts_event == 1357077600295000064
         assert ticks[0].ts_init == 1357077600296000564  # <-- delta diff
 
@@ -117,8 +117,8 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].instrument_id == usdjpy.id
         assert ticks[0].bid == Price.from_str("91.715")
         assert ticks[0].ask == Price.from_str("91.717")
-        assert ticks[0].bid_size == Quantity.from_int(1000000)
-        assert ticks[0].ask_size == Quantity.from_int(1000000)
+        assert ticks[0].bid_size == Quantity.from_int(1_000_000)
+        assert ticks[0].ask_size == Quantity.from_int(1_000_000)
         assert ticks[0].ts_event == 1359676799700000000
         assert ticks[0].ts_init == 1359676799701000500  # <-- delta diff
 
@@ -223,7 +223,7 @@ class TestBarDataWrangler:
         assert bars[0].high == Price.from_str("1.57606")
         assert bars[0].low == Price.from_str("1.57576")
         assert bars[0].close == Price.from_str("1.57576")
-        assert bars[0].volume == Quantity.from_int(1000000)
+        assert bars[0].volume == Quantity.from_int(1_000_000)
         assert bars[0].ts_event == 1328054400000000000
         assert bars[0].ts_init == 1328054400000000000
 

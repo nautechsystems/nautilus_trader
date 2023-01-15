@@ -104,7 +104,7 @@ class TestExecutionReports:
             venue_position_id=PositionId("2"),
             trade_id=TradeId("3"),
             order_side=OrderSide.BUY,
-            last_qty=Quantity.from_int(10000000),
+            last_qty=Quantity.from_int(10_000_000),
             last_px=Price.from_str("100.50"),
             commission=Money("4.50", USD),
             liquidity_side=LiquiditySide.TAKER,
