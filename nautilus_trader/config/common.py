@@ -351,9 +351,9 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        strategy_cls = resolve_path(config.actor_path)
+        actor_cls = resolve_path(config.actor_path)
         config_cls = resolve_path(config.config_path)
-        return strategy_cls(config=config_cls(**config.config))
+        return actor_cls(config=config_cls(**config.config))
 
 
 class StrategyConfig(NautilusConfig, kw_only=True):

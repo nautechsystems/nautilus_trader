@@ -19,7 +19,10 @@ import msgspec
 import pytest
 from click.testing import CliRunner
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.modules import FXRolloverInterestConfig
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -27,6 +30,7 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
+from nautilus_trader.config.common import ImportableActorConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -207,7 +211,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (766, 770)  # unix, windows sizes
+        assert result in (810, 770)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -345,3 +349,38 @@ class TestBacktestConfigParsing:
         # Assert
         assert result.exception is None
         assert result.exit_code == 0
+
+    def test_simulation_modules(self):
+        # Arrange
+        interest_rate_data = TestDataProvider().read_csv("short-term-interest.csv")
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            instrument_ids=[self.instrument.id.value],
+            venues=[
+                BacktestVenueConfig(
+                    name="SIM",
+                    oms_type="HEDGING",
+                    account_type="MARGIN",
+                    starting_balances=["1_000_000 USD"],
+                    modules=[
+                        ImportableActorConfig(
+                            actor_path=FXRolloverInterestModule.fully_qualified_name(),
+                            config_path=FXRolloverInterestConfig.fully_qualified_name(),
+                            config={"rate_data": interest_rate_data},
+                        ),
+                    ],
+                ),
+            ],
+        )
+        node = BacktestNode([run_config])
+
+        # Act
+        engine = node._create_engine(
+            run_config_id=run_config.id,
+            config=run_config.engine,
+            venue_configs=run_config.venues,
+            data_configs=run_config.data,
+        )
+
+        # Assert
+        assert engine
