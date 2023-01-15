@@ -32,8 +32,10 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.position cimport Position
 
+from nautilus_trader.config import ActorConfig
 
-cdef class SimulationModule:
+
+cdef class SimulationModule(Actor):
     """
     The base class for all simulation modules.
 
@@ -42,13 +44,14 @@ cdef class SimulationModule:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self):
+    def __init__(self, config: ActorConfig):
+        super().__init__(config)
         self.exchange = None  # Must be registered
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
 
-    cpdef void register_exchange(self, SimulatedExchange exchange) except *:
+    cpdef void register_venue(self, SimulatedExchange exchange) except *:
         """
         Register the given simulated exchange with the module.
 
@@ -77,7 +80,8 @@ cdef class SimulationModule:
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
-cdef class FXRolloverInterestModule(SimulationModule):
+
+class FXRolloverInterestConfig(ActorConfig):
     """
     Provides an FX rollover interest simulation module.
 
@@ -85,12 +89,24 @@ cdef class FXRolloverInterestModule(SimulationModule):
     ----------
     rate_data : pd.DataFrame
         The interest rate data for the internal rollover interest calculator.
+
+    """
+    rate_data: pd.DataFrame
+
+
+cdef class FXRolloverInterestModule(SimulationModule):
+    """
+    Provides an FX rollover interest simulation module.
+
+    Parameters
+    ----------
+    config  : FXRolloverInterestConfig
     """
 
-    def __init__(self, rate_data not None: pd.DataFrame):
-        super().__init__()
+    def __init__(self, config: FXRolloverInterestConfig):
+        super().__init__(config)
 
-        self._calculator = RolloverInterestCalculator(data=rate_data)
+        self._calculator = RolloverInterestCalculator(data=config.rate_data)
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
         self._rollover_totals = {}

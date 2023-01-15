@@ -21,6 +21,7 @@ import pandas as pd
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
@@ -178,6 +179,8 @@ class BacktestNode:
                 else {},
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
+                modules=[ActorFactory.create(module) for module in config.modules],
+                fill_model=config.fill_model.create() if config.fill_model else None,
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
             )

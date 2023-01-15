@@ -180,7 +180,7 @@ cdef class SimulatedExchange:
         self.modules = []
         for module in modules:
             Condition.not_in(module, self.modules, "module", "modules")
-            module.register_exchange(self)
+            module.register_venue(self)
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
