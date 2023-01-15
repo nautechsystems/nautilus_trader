@@ -30,7 +30,6 @@ include = [
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
     # Cython definitions must be included in the wheel distributions
-    { path = "nautilus_trader/**/*.pxd", format = "wheel" },
     { path = "nautilus_trader/**/*.pyd", format = "wheel" },
 ]
 
@@ -42,9 +41,6 @@ requires = [
     "Cython==3.0.0a11",
 ]
 build-backend = "poetry.core.masonry.api"
-
-[tool.setuptools.package_data]
-nautilus_trader = ["*.pxd"]
 
 [tool.poetry.build]
 script = "build.py"
@@ -63,7 +59,7 @@ numpy = "^1.24.1"
 pandas = "^1.5.2"
 psutil = "^5.9.4"
 pyarrow = "^10.0.1"
-pytz = "^2022.2.7"
+pytz = "^2022.7.1"
 tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.64.1"
