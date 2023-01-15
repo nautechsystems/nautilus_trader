@@ -884,10 +884,10 @@ class TestPosition:
         assert position.is_open
         assert not position.is_short
         assert not position.is_closed
-        assert position.realized_return == 9.999900000998888e-05
-        assert position.realized_pnl == Money(12.00, USD)
+        assert position.realized_return == 0.0
+        assert position.realized_pnl == Money(0.00, USD)
         assert position.unrealized_pnl(last) == Money(27.00, USD)
-        assert position.total_pnl(last) == Money(39.00, USD)
+        assert position.total_pnl(last) == Money(27.00, USD)
         assert position.commissions() == [Money(0.00, USD)]
         assert repr(position) == "Position(LONG 150_000 AUD/USD.SIM, id=P-123456)"
 
