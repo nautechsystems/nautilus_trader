@@ -873,7 +873,10 @@ class TestPosition:
         last = Price.from_str("1.00030")
         assert position.is_opposite_side(fill2.order_side)
         assert position.quantity == Quantity.from_int(150_000)
+        assert position.peak_qty == Quantity.from_int(150_000)
         assert position.side == PositionSide.LONG
+        assert position.opening_order_id == fill3.client_order_id
+        assert position.closing_order_id is None
         assert position.ts_opened == 3_000_000_000
         assert position.duration_ns == 0
         assert position.avg_px_open == 1.00012
