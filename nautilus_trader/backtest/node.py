@@ -179,7 +179,7 @@ class BacktestNode:
                 else {},
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
-                modules=[ActorFactory.create(module) for module in config.modules],
+                modules=[ActorFactory.create(module) for module in (config.modules or [])],
                 fill_model=config.fill_model.create() if config.fill_model else None,
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
