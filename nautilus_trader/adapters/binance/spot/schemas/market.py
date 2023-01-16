@@ -152,7 +152,7 @@ class BinanceSpotTradeData(msgspec.Struct):
 
     e: str  # Event type
     E: int  # Event time
-    s: str  # Symbol
+    s: BinanceSymbol  # Symbol
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity

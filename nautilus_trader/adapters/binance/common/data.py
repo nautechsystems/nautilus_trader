@@ -21,16 +21,13 @@ import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
-from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
-from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_depth_stream_ws
-from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tick_ws
-from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceCandlestickMsg
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceDataMsgWrapper
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrderBookMsg
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceQuoteMsg
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceTickerMsg
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestickMsg
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceDataMsgWrapper
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceQuoteMsg
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerMsg
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
@@ -50,10 +47,8 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -107,6 +102,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
+        enum_parser: BinanceEnumParser,
         base_url_ws: Optional[str] = None,
     ):
         super().__init__(
@@ -135,6 +131,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._http_client = client
         self._http_market = market
 
+        # Enum parser
+        self._enum_parser = enum_parser
+
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
             loop=loop,
@@ -159,6 +158,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             "@ticker": self._handle_ticker,
             "@kline": self._handle_kline,
         }
+        # Websocket msgspec decoders
+        self._decoder_data_msg_wrapper = msgspec.json.Decoder(BinanceDataMsgWrapper)
+        self._decoder_order_book_msg = msgspec.json.Decoder(BinanceOrderBookMsg)
+        self._decoder_quote_msg = msgspec.json.Decoder(BinanceQuoteMsg)
+        self._decoder_ticker_msg = msgspec.json.Decoder(BinanceTickerMsg)
+        self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
 
     async def _connect(self) -> None:
         # Connect HTTP client
@@ -183,9 +188,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         while True:
             self._log.debug(
                 f"Scheduled `update_instruments` to run in "
-                f"{self._update_instruments_interval}s.",
+                f"{self._update_instrument_interval}s.",
             )
-            await asyncio.sleep(self._update_instruments_interval)
+            await asyncio.sleep(self._update_instrument_interval)
             await self._instrument_provider.load_all_async()
             self._send_all_instruments_to_data_engine()
 
@@ -289,14 +294,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         while not self._ws_client.is_connected:
             await sleep0()
 
-        endpoint = self._http_market.endpoint_depth
-        parameters = endpoint.GetParameters(
+        snapshot: OrderBookSnapshot = await self._http_market.request_order_book_snapshot(
+            instrument_id=instrument_id,
             symbol=instrument_id.symbol.value,
             limit=depth,
-        )
-        snapshot: OrderBookSnapshot = await endpoint.request_order_book_snapshot(
-            instrument_id=instrument_id,
-            parameters=parameters,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(snapshot)
@@ -326,38 +327,22 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        bars_avail = [
-            BarAggregation.MINUTE,
-            BarAggregation.HOUR,
-            BarAggregation.DAY,
-        ]
-        if self._binance_account_type.is_spot_or_margin:
-            bars_avail.append(BarAggregation.SECOND)
-        if bar_type.spec.aggregation not in bars_avail:
+        resolution = self._enum_parser.parse_internal_bar_agg(bar_type.spec.aggregation)
+        if not self._binance_account_type.is_spot_or_margin and resolution == "s":
             self._log.error(
-                f"Cannot request {bar_type}: "
-                f"{bar_aggregation_to_str(bar_type.spec.aggregation)} "
-                f"bars are not aggregated by Binance.",
+                f"Cannot request {bar_type}.",
+                "Second interval bars are not aggregated by Binance Futures.",
             )
-            return
-
-        if bar_type.spec.aggregation == BarAggregation.SECOND:
-            resolution = "s"
-        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
-            resolution = "m"
-        elif bar_type.spec.aggregation == BarAggregation.HOUR:
-            resolution = "h"
-        elif bar_type.spec.aggregation == BarAggregation.DAY:
-            resolution = "d"
-        else:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BarAggregation`, "  # pragma: no cover
-                f"was {bar_aggregation_to_str(bar_type.spec.aggregation)}",  # pragma: no cover
+        try:
+            interval = BinanceKlineInterval[f"{bar_type.spec.step}{resolution}"]
+        except KeyError:
+            self._log.error(
+                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
             )
 
         self._ws_client.subscribe_bars(
             symbol=bar_type.instrument_id.symbol.value,
-            interval=f"{bar_type.spec.step}{resolution}",
+            interval=interval.value,
         )
         self._add_subscription_bars(bar_type)
 
@@ -437,14 +422,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 f"however the request will be for the most recent {limit}.",
             )
 
-        endpoint = self._http_market.endpoint_trades
-        parameters = endpoint.GetParameters(
+        ticks = await self._http_market.request_trade_ticks(
+            instrument_id=instrument_id,
             symbol=instrument_id.symbol.value,
             limit=limit,
-        )
-        ticks = await endpoint.request_trade_ticks(
-            instrument_id=instrument_id,
-            parameters=parameters,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
@@ -473,20 +454,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        bar_agg_to_res = {
-            BarAggregation.MINUTE: "m",
-            BarAggregation.HOUR: "h",
-            BarAggregation.DAY: "d",
-        }
-        if self._binance_account_type.is_spot_or_margin:
-            bar_agg_to_res[BarAggregation.SECOND] = "s"
-        try:
-            resolution = bar_agg_to_res[bar_type.spec.aggreagtion]
-        except KeyError:
+        resolution = self._enum_parser.parse_internal_bar_agg(bar_type.spec.aggregation)
+        if not self._binance_account_type.is_spot_or_margin and resolution == "s":
             self._log.error(
-                f"Cannot request {bar_type}: "
-                f"{bar_aggregation_to_str(bar_type.spec.aggregation)} "
-                f"bars are not aggregated by Binance.",
+                f"Cannot request {bar_type}.",
+                "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
             interval = BinanceKlineInterval[f"{bar_type.spec.step}{resolution}"]
@@ -511,17 +483,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if to_datetime is not None:
             end_time_ms = secs_to_millis(to_datetime.timestamp())
 
-        endpoint = self._http_market.endpoint_klines
-        parameters = endpoint.GetParameters(
+        bars = await self._http_market.request_binance_bars(
+            bar_type=bar_type,
             symbol=bar_type.instrument_id.symbol.value,
             interval=interval,
-            startTime=start_time_ms,
-            endTime=end_time_ms,
+            start_time=start_time_ms,
+            end_time=end_time_ms,
             limit=limit,
-        )
-        bars = await endpoint.request_binance_bars(
-            bar_type=bar_type,
-            parameters=parameters,
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -548,8 +516,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # TODO(cs): Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
 
-        wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
-
+        wrapper = self._decoder_data_msg_wrapper.decode(raw)
         try:
             handled = False
             for handler in self._ws_handlers:
@@ -558,17 +525,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     handled = True
             if not handled:
                 self._log.error(
-                    f"Unrecognized websocket message type: {msgspec.json.decode(raw)['stream']}",
+                    f"Unrecognized websocket message type: {wrapper.stream}",
                 )
         except Exception as e:
             self._log.error(f"Error handling websocket message, {e}")
 
     def _handle_book_diff_update(self, raw: bytes) -> None:
-        msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
+        msg = self._decoder_order_book_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_deltas: OrderBookDeltas = parse_diff_depth_stream_ws(
+        book_deltas: OrderBookDeltas = msg.data.parse_to_order_book_deltas(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
@@ -578,34 +544,32 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._handle_data(book_deltas)
 
     def _handle_book_ticker(self, raw: bytes) -> None:
-        msg: BinanceQuoteMsg = msgspec.json.decode(raw, type=BinanceQuoteMsg)
+        msg = self._decoder_quote_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        quote_tick: QuoteTick = parse_quote_tick_ws(
+        quote_tick: QuoteTick = msg.data.parse_to_quote_tick(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(quote_tick)
 
     def _handle_ticker(self, raw: bytes) -> None:
-        msg: BinanceTickerMsg = msgspec.json.decode(raw, type=BinanceTickerMsg)
+        msg = self._decoder_ticker_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        ticker: BinanceTicker = parse_ticker_24hr_ws(
+        ticker: BinanceTicker = msg.data.parse_to_binance_ticker(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(ticker)
 
     def _handle_kline(self, raw: bytes) -> None:
-        msg: BinanceCandlestickMsg = msgspec.json.decode(raw, type=BinanceCandlestickMsg)
+        msg = self._decoder_candlestick_msg.decode(raw)
         if not msg.data.k.x:
             return  # Not closed yet
-
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        bar: BinanceBar = parse_bar_ws(
-            instrument_id=instrument_id,
-            data=msg.data.k,
+        instrument_id = self._get_cached_instrument_id(msg.data.s)
+        bar_spec = self._enum_parser.parse_binance_kline_interval_to_bar_spec(msg.data.k.i)
+        bar: BinanceBar = msg.data.k.parse_to_binance_bar(
+            intrument_id=instrument_id,
+            bar_spec=bar_spec,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(bar)

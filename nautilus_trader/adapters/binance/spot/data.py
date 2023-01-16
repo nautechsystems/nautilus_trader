@@ -20,10 +20,10 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_trade_tick_ws
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookPartialDepthMsg
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeMsg
 from nautilus_trader.cache.cache import Cache
@@ -76,33 +76,34 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         base_url_ws: Optional[str] = None,
     ):
+        if not account_type.is_spot_or_margin:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
+            )
+
+        market = BinanceSpotMarketHttpAPI(client, account_type)
         super().__init__(
             loop=loop,
             client=client,
-            market=BinanceSpotMarketHttpAPI(
-                account_type=account_type,
-                client=client,
-            ),
+            market=market,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
             account_type=account_type,
+            enum_parser=BinanceEnumParser(),
             base_url_ws=base_url_ws,
         )
 
-        if not account_type.is_spot_or_margin:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
-            )
-
         # Register additional spot/margin websocket handlers
-        futures_ws_handlers = {
-            "@depth": self._handle_book_partial_update,
-            "@trade": self._handle_trade,
-        }
-        self._ws_handlers.update(futures_ws_handlers)
+        self._ws_handlers["@depth"] = self._handle_book_partial_update
+        self._ws_handlers["@trade"] = self._handle_trade
+        # Websocket msgspec decoders
+        self._decoder_spot_trade = msgspec.json.Decoder(BinanceSpotTradeMsg)
+        self._decoder_spot_order_book_partial_depth = msgspec.json.Decoder(
+            BinanceSpotOrderBookPartialDepthMsg,
+        )
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -148,16 +149,12 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def _handle_book_partial_update(self, raw: bytes) -> None:
-        msg: BinanceSpotOrderBookPartialDepthMsg = msgspec.json.decode(
-            raw,
-            type=BinanceSpotOrderBookPartialDepthMsg,
-        )
+        msg = self._decoder_spot_order_book_partial_depth.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(
-            msg.stream.partition("@")[0].upper(),
+            BinanceSymbol(msg.stream.partition("@")[0]),
         )
-        book_snapshot: OrderBookSnapshot = parse_spot_book_snapshot(
+        book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
@@ -168,11 +165,10 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             self._handle_data(book_snapshot)
 
     def _handle_trade(self, raw: bytes) -> None:
-        msg: BinanceSpotTradeMsg = msgspec.json.decode(raw, type=BinanceSpotTradeMsg)
+        msg = self._decoder_spot_trade.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = parse_spot_trade_tick_ws(
+        trade_tick: TradeTick = msg.data.parse_to_trade_tick(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(trade_tick)

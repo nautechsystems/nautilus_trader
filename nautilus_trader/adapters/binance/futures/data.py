@@ -20,11 +20,9 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceOrderBookMsg
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_book_snapshot
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_mark_price_ws
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_trade_tick_ws
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
@@ -81,34 +79,35 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
     ):
+        if not account_type.is_futures:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
+            )
+
+        market = BinanceFuturesMarketHttpAPI(client, account_type)
         super().__init__(
             loop=loop,
             client=client,
-            market=BinanceFuturesMarketHttpAPI(
-                account_type=account_type,
-                client=client,
-            ),
+            market=market,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
             account_type=account_type,
+            enum_parser=BinanceEnumParser(),
             base_url_ws=base_url_ws,
         )
 
-        if not account_type.is_futures:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
-            )
-
         # Register additional futures websocket handlers
-        futures_ws_handlers = {
-            "@depth": self._handle_book_partial_update,
-            "@trade": self._handle_trade,  # NOTE @trade is an undocumented endpoint for Futures exchanges
-            "@markPrice": self._handle_mark_price,
-        }
-        self._ws_handlers.update(futures_ws_handlers)
+        self._ws_handlers["@depth"] = self._handle_book_partial_update
+        self._ws_handlers[
+            "@trade"
+        ] = self._handle_trade  # NOTE @trade is an undocumented endpoint for Futures exchanges
+        self._ws_handlers["@markPrice"] = self._handle_mark_price
+        # Websocket msgspec decoders
+        self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
+        self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -200,9 +199,8 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_snapshot: OrderBookSnapshot = parse_futures_book_snapshot(
+        book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
@@ -215,19 +213,17 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     def _handle_trade(self, raw: bytes) -> None:
         msg: BinanceFuturesTradeMsg = msgspec.json.decode(raw, type=BinanceFuturesTradeMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = parse_futures_trade_tick_ws(
+        trade_tick: TradeTick = msg.data.parse_to_trade_tick(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(trade_tick)
 
     def _handle_mark_price(self, raw: bytes) -> None:
-        msg: BinanceFuturesMarkPriceMsg = msgspec.json.decode(raw, type=BinanceFuturesMarkPriceMsg)
+        msg = self._decoder_futures_mark_price_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        data: BinanceFuturesMarkPriceUpdate = parse_futures_mark_price_ws(
+        data = msg.data.parse_to_binance_futures_mark_price_update(
             instrument_id=instrument_id,
-            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         data_type = DataType(
