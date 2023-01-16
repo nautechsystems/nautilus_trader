@@ -825,12 +825,12 @@ cdef class BacktestEngine:
         If more data than can fit in memory is to be run through the backtest
         engine, then streaming mode can be utilized. The expected sequence is as
         follows:
-        - Add initial data batch and strategies.
-        - Call `run_streaming()`.
-        - Call `clear_data()`.
-        - Add next batch of data stream.
-        - Call `run_streaming()`.
-        - Call `end_streaming()` when there is no more data to run on.
+         - Add initial data batch and strategies.
+         - Call `run_streaming()`.
+         - Call `clear_data()`.
+         - Add next batch of data stream.
+         - Call `run_streaming()`.
+         - Call `end_streaming()` when there is no more data to run on.
 
         Parameters
         ----------
