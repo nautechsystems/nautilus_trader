@@ -146,3 +146,11 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
             ts_last=ts_init,
             ts_init=ts_init,
         )
+
+
+class BinanceFuturesDualSidePosition(msgspec.Struct, frozen=True):
+    """
+    HTTP response from `Binance Futures` GET /fapi/v1/positionSide/dual (HMAC SHA256)
+    """
+
+    dualSidePosition: bool

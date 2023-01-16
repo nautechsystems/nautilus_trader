@@ -76,6 +76,7 @@ class BinanceRateLimit(msgspec.Struct):
     interval: BinanceRateLimitInterval
     intervalNum: int
     limit: int
+    count: Optional[int] = None  # SPOT/MARGIN rateLimit/order response only
 
 
 class BinanceSymbolFilter(msgspec.Struct):
