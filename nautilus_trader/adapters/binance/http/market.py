@@ -71,12 +71,12 @@ class BinancePingHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder()
+        self._get_resp_decoder = msgspec.json.Decoder()
 
     async def _get(self) -> dict:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, None)
-        return self.get_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
     async def request_ping(self) -> dict:
         return await self._get()
@@ -108,12 +108,12 @@ class BinanceTimeHttp(BinanceHttpEndpoint):
         }
         url_path = base_endpoint + "time"
         super().__init__(client, methods, url_path)
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceTime)
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceTime)
 
     async def _get(self) -> BinanceTime:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, None)
-        return self.get_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
     async def request_server_time(self) -> int:
         """Request server time from Binance"""
@@ -151,7 +151,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceDepth)
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceDepth)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -176,7 +176,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> BinanceDepth:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
     async def request_order_book_snapshot(
         self,
@@ -234,7 +234,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTrade])
+        self._get_resp_decoder = msgspec.json.Decoder(list[BinanceTrade])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -254,7 +254,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_arr_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
     async def request_trade_ticks(
         self,
@@ -309,7 +309,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTrade])
+        self._get_resp_decoder = msgspec.json.Decoder(list[BinanceTrade])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -332,7 +332,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_arr_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
     async def request_historical_trade_ticks(
         self,
@@ -390,7 +390,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(list[BinanceAggTrade])
+        self._get_resp_decoder = msgspec.json.Decoder(list[BinanceAggTrade])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -419,7 +419,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
 
 class BinanceKlinesHttp(BinanceHttpEndpoint):
@@ -453,7 +453,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(list[BinanceKline])
+        self._get_resp_decoder = msgspec.json.Decoder(list[BinanceKline])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -482,7 +482,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> list[BinanceKline]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
+        return self._get_resp_decoder.decode(raw)
 
     async def request_binance_bars(
         self,
@@ -521,7 +521,7 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
     Warnings
     --------
     Care should be taken when accessing this endpoint with no symbol specified.
-    The weight usage can be very large, which will likely cause rate limits to be hit.
+    The weight usage can be very large, which may cause rate limits to be hit.
 
     References
     ----------
@@ -544,8 +544,8 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_object_resp_decoder = msgspec.json.Decoder(BinanceTicker24hr)
-        self.get_list_resp_decoder = msgspec.json.Decoder(list[BinanceTicker24hr])
+        self._get_obj_resp_decoder = msgspec.json.Decoder(BinanceTicker24hr)
+        self._get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTicker24hr])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -572,9 +572,27 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
-            return [self.get_object_resp_decoder.decode(raw)]
+            return [self._get_obj_resp_decoder.decode(raw)]
         else:
-            return self.get_list_resp_decoder.decode(raw)
+            return self._get_arr_resp_decoder.decode(raw)
+
+    async def request_query_ticker_24hr(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+        type: Optional[str] = None,
+    ) -> list[BinanceTicker24hr]:
+        if symbol is not None and symbols is not None:
+            raise RuntimeError(
+                "Cannot specify both symbol and symbols parameters.",
+            )
+        return await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+                type=type,
+            ),
+        )
 
 
 class BinanceTickerPriceHttp(BinanceHttpEndpoint):
@@ -606,8 +624,8 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_object_resp_decoder = msgspec.json.Decoder(BinanceTickerPrice)
-        self.get_list_resp_decoder = msgspec.json.Decoder(list[BinanceTickerPrice])
+        self._get_obj_resp_decoder = msgspec.json.Decoder(BinanceTickerPrice)
+        self._get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTickerPrice])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -630,9 +648,25 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
-            return [self.get_object_resp_decoder.decode(raw)]
+            return [self._get_obj_resp_decoder.decode(raw)]
         else:
-            return self.get_list_resp_decoder.decode(raw)
+            return self._get_arr_resp_decoder.decode(raw)
+
+    async def request_query_ticker_price(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+    ) -> list[BinanceTickerPrice]:
+        if symbol is not None and symbols is not None:
+            raise RuntimeError(
+                "Cannot specify both symbol and symbols parameters.",
+            )
+        return await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+            ),
+        )
 
 
 class BinanceTickerBookHttp(BinanceHttpEndpoint):
@@ -664,8 +698,8 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTickerBook])
-        self.get_obj_resp_decoder = msgspec.json.Decoder(BinanceTickerBook)
+        self._get_arr_resp_decoder = msgspec.json.Decoder(list[BinanceTickerBook])
+        self._get_obj_resp_decoder = msgspec.json.Decoder(BinanceTickerBook)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -688,9 +722,25 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
-            return [self.get_obj_resp_decoder.decode(raw)]
+            return [self._get_obj_resp_decoder.decode(raw)]
         else:
-            return self.get_arr_resp_decoder.decode(raw)
+            return self._get_arr_resp_decoder.decode(raw)
+
+    async def request_query_ticker_book(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+    ) -> list[BinanceTickerBook]:
+        if symbol is not None and symbols is not None:
+            raise RuntimeError(
+                "Cannot specify both symbol and symbols parameters.",
+            )
+        return await self._get(
+            parameters=self.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+            ),
+        )
 
 
 class BinanceMarketHttpAPI:
