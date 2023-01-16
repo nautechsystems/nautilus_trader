@@ -16,11 +16,13 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import bar_aggregation_to_str
 
 
 """
@@ -272,6 +274,13 @@ class BinanceEnumParser:
             BinanceOrderSide.SELL: OrderSide.SELL,
         }
 
+        self.bar_agg_to_res = {
+            BarAggregation.MINUTE: "m",
+            BarAggregation.HOUR: "h",
+            BarAggregation.DAY: "d",
+            BarAggregation.SECOND: "d",
+        }
+
         # Build symmetrical reverse dictionary hashmaps
         self._build_int_to_ext_dicts()
 
@@ -333,6 +342,15 @@ class BinanceEnumParser:
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"unrecognized internal order type, was {order_type}",  # pragma: no cover
+            )
+
+    def parse_bar_agg_to_binance_resolution(self, bar_agg: BarAggregation) -> str:
+        try:
+            return self.bar_agg_to_res[bar_agg]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                "unrecognized or non-supported BarAggregation,",
+                f"was {bar_aggregation_to_str(bar_agg)}",  # pragma: no cover
             )
 
     def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
