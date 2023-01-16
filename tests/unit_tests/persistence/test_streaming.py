@@ -65,7 +65,7 @@ class TestPersistenceStreaming:
             + self.catalog.order_book_deltas(as_nautilus=True)
             + self.catalog.tickers(as_nautilus=True)
         )
-        assert len(data) == 2533
+        assert len(data) == 2535
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self):

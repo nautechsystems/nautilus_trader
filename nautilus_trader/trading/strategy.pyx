@@ -35,6 +35,7 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -58,7 +59,6 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport ComponentState
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
@@ -291,9 +291,18 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
         )
 
+        cdef set order_list_ids = self.cache.order_list_ids(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
         cdef int order_id_count = len(client_order_ids)
-        self.order_factory.set_count(order_id_count)
-        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
+        cdef int order_list_id_count = len(order_list_ids)
+        self.order_factory.set_order_id_count(order_id_count)
+        self.order_factory.set_order_list_id_count(order_list_id_count)
+        self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
+        self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
 
         # Required subscriptions
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)

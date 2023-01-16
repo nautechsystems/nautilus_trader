@@ -427,7 +427,9 @@ class TradingNode:
             ):
                 self.kernel.log.error("Execution state could not be reconciled.")
                 return
-            self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
+
+            if self.kernel.exec_engine.reconciliation:
+                self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
 
             self.kernel.emulator.start()
 

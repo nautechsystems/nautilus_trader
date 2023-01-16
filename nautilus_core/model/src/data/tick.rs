@@ -16,14 +16,15 @@
 use std::ffi::c_char;
 use std::fmt::{Display, Formatter, Result};
 
+use nautilus_core::correctness;
+use nautilus_core::string::string_to_cstr;
+use nautilus_core::time::Timestamp;
+
 use crate::enums::AggressorSide;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
-use nautilus_core::time::Timestamp;
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]

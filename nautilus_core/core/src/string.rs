@@ -66,8 +66,9 @@ pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use pyo3::AsPyPointer;
+
+    use super::*;
 
     #[test]
     fn test_pystr_to_string() {

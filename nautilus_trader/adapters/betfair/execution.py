@@ -182,7 +182,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """Ensure socket stream is connected"""
         while self.stream.is_running:
             if not self.stream.is_connected:
-                self.stream.connect()
+                await self.stream.connect()
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
@@ -638,16 +638,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- DEBUGGING --------------------------------------------------------------------------------
 
-    def create_task(self, coro):
-        self._loop.create_task(self._check_task(coro))
-
-    async def _check_task(self, coro):
-        try:
-            awaitable = await coro
-            return awaitable
-        except Exception as e:
-            self._log.exception("Unhandled exception", e)
-
     def client(self) -> BetfairClient:
         return self._client
 
@@ -687,8 +677,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
-                    selection_id=str(selection.id),
-                    selection_handicap=selection.hc,
+                    runner_id=str(selection.id),
+                    runner_handicap=selection.hc,
                 )
                 orders = self._cache.orders()
                 venue_orders = {o.venue_order_id: o for o in orders}

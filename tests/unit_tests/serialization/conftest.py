@@ -57,10 +57,14 @@ def nautilus_objects() -> list[Any]:
     closed_position.apply(sell_filled)
 
     return [
+        # DATA
         TestDataStubs.ticker(),
         TestDataStubs.quote_tick_5decimal(),
         TestDataStubs.trade_tick_5decimal(),
         TestDataStubs.bar_5decimal(),
+        TestDataStubs.instrument_status_update(),
+        TestDataStubs.instrument_close(),
+        # EVENTS
         TestDataStubs.venue_status_update(),
         TestDataStubs.instrument_status_update(),
         TestEventStubs.component_state_changed(),

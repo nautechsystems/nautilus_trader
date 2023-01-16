@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import cython
+
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.model.enums_c cimport DepthType
@@ -41,3 +43,26 @@ cdef class Ladder:
     cpdef list exposures(self)
     cpdef Level top(self)
     cpdef list simulate_order_fills(self, BookOrder order, DepthType depth_type=*)
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef inline int bisect_right(list a, double x, int lo = 0, hi = None) except *:
+    # Return the index where to insert item x in list `a`, assuming `a` is sorted.
+    # The return value `i` is such that all e in `a[:i]` have `e` <= `x`, and all `e` in
+    # `a[i:]` have `e` > `x`.  So if `x` already appears in the list, `a.insert(i, x)` will
+    # insert just after the rightmost `x` already there.
+    # Optional args `lo` (default 0) and `hi` (default len(a)) bound the
+    # slice of `a` to be searched.
+    if hi is None:
+        hi = len(a)
+    # Note, the comparison uses "<" to match the
+    # __lt__() logic in list.sort() and in heapq.
+    cdef int mid
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if x < a[mid]:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo

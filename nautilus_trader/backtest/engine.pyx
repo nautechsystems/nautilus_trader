@@ -44,6 +44,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.enums_c cimport log_level_from_str
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport log_memory
@@ -57,11 +58,12 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport log_level_from_str
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -125,7 +127,7 @@ cdef class BacktestEngine:
             trader_id=TraderId(config.trader_id),
             instance_id=config.instance_id,
             cache_config=config.cache or CacheConfig(),
-            cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
+            cache_database_config=config.cache_database or CacheDatabaseConfig(),
             data_config=config.data_engine or DataEngineConfig(),
             risk_config=config.risk_engine or RiskEngineConfig(),
             exec_config=config.exec_engine or ExecEngineConfig(),
@@ -985,6 +987,10 @@ cdef class BacktestEngine:
                 self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
                 self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+            elif isinstance(data, VenueStatusUpdate):
+                self._venues[data.venue].process_venue_status(data)
+            elif isinstance(data, InstrumentStatusUpdate):
+                self._venues[data.instrument_id.venue].process_instrument_status(data)
 
             self._data_engine.process(data)
 

@@ -16,17 +16,16 @@
 """Defines system level enums for use with framework components."""
 
 
+from nautilus_trader.common.enums_c import component_state_from_str
+from nautilus_trader.common.enums_c import component_state_to_str
+from nautilus_trader.common.enums_c import component_trigger_from_str
+from nautilus_trader.common.enums_c import component_trigger_to_str
+from nautilus_trader.common.enums_c import log_level_from_str
+from nautilus_trader.common.enums_c import log_level_to_str
 from nautilus_trader.core.rust.common import ComponentState
 from nautilus_trader.core.rust.common import ComponentTrigger
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.rust.common import LogLevel
-
-from nautilus_trader.model.enums_c cimport component_state_from_str
-from nautilus_trader.model.enums_c cimport component_state_to_str
-from nautilus_trader.model.enums_c cimport component_trigger_from_str
-from nautilus_trader.model.enums_c cimport component_trigger_to_str
-from nautilus_trader.model.enums_c cimport log_level_from_str
-from nautilus_trader.model.enums_c cimport log_level_to_str
 
 
 __all__ = [

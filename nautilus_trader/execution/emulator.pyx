@@ -716,7 +716,7 @@ cdef class OrderEmulator(Actor):
 
         matching_core.delete_order(order)
 
-        cdef MarketOrder transformed = self._transform_to_market_order(order)
+        cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
 
         # Cast to writable cache
         cdef Cache cache = <Cache>self.cache
@@ -754,7 +754,7 @@ cdef class OrderEmulator(Actor):
 
         matching_core.delete_order(order)
 
-        cdef LimitOrder transformed = self._transform_to_limit_order(order)
+        cdef LimitOrder transformed = LimitOrder.transform(order, self.clock.timestamp_ns())
 
         # Cast to writable cache
         cdef Cache cache = <Cache>self.cache
@@ -880,70 +880,6 @@ cdef class OrderEmulator(Actor):
         order.apply(event)
 
         self._send_risk_event(event)
-
-    cdef MarketOrder _transform_to_market_order(self, Order order):
-        cdef list original_events = order.events_c()
-        cdef MarketOrder transformed = MarketOrder(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            order_side=order.side,
-            quantity=order.quantity,
-            time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
-            reduce_only=order.is_reduce_only,
-            init_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-            contingency_type=order.contingency_type,
-            order_list_id=order.order_list_id,
-            linked_order_ids=order.linked_order_ids,
-            parent_order_id=order.parent_order_id,
-            tags=order.tags,
-        )
-
-        self._hydrate_initial_events(original=order, transformed=transformed)
-
-        return transformed
-
-    cdef LimitOrder _transform_to_limit_order(self, Order order):
-        cdef LimitOrder transformed = LimitOrder(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            order_side=order.side,
-            quantity=order.quantity,
-            price=order.price,
-            time_in_force=order.time_in_force,
-            expire_time_ns=order.expire_time_ns,
-            init_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-            post_only=order.is_post_only,
-            reduce_only=order.is_reduce_only,
-            display_qty=order.display_qty,
-            contingency_type=order.contingency_type,
-            order_list_id=order.order_list_id,
-            linked_order_ids=order.linked_order_ids,
-            parent_order_id=order.parent_order_id,
-            tags=order.tags,
-        )
-        transformed.liquidity_side = order.liquidity_side
-        cdef Price triggered_price = order.get_triggered_price_c()
-        if triggered_price:
-            transformed.set_triggered_price_c(triggered_price)
-
-        self._hydrate_initial_events(original=order, transformed=transformed)
-
-        return transformed
-
-    cdef void _hydrate_initial_events(self, Order original, Order transformed) except *:
-        cdef list original_events = original.events_c()
-
-        cdef OrderEvent event
-        for event in reversed(original_events):
-            # Insert each event to the beginning of the events list in reverse
-            # to preserve correct order of events.
-            transformed._events.insert(0, event)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

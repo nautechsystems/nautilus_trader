@@ -13,14 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+"""Defines core level enums."""
 
 
-def serialize(price: InstrumentClose):
-    result = price.to_dict(price)
-    result["close_price"] = price.close_price.as_double()
-    return result
+from nautilus_trader.core.rust.core cimport MessageCategory
+from nautilus_trader.core.rust.core cimport message_category_from_cstr
+from nautilus_trader.core.rust.core cimport message_category_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 
 
-register_parquet(InstrumentClose, serializer=serialize)
+cpdef MessageCategory message_category_from_str(str value) except *:
+    return message_category_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str message_category_to_str(MessageCategory value):
+    return cstr_to_pystr(message_category_to_cstr(value))

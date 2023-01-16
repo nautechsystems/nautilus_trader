@@ -15,7 +15,6 @@
 
 from libc.stdint cimport uint8_t
 
-from nautilus_trader.core.collections cimport bisect_right
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport DepthType
 from nautilus_trader.model.objects cimport Price

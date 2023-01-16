@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import datetime
 from functools import partial
 from typing import Callable, Optional
 
 import ib_insync
 import pandas as pd
+from ib_insync import BarData
+from ib_insync import BarDataList
 from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import RealTimeBar
@@ -39,7 +42,9 @@ from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.bar_aggregation import BarAggregation
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -104,6 +109,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._client = client
         self._tickers: dict[ContractId, list[Ticker]] = defaultdict(list)
         self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
+        self._bar_type_to_last_bar_time: dict[BarType, pd.Timestamp] = defaultdict(
+            lambda: pd.Timestamp("1970-01-01", tz="UTC"),
+        )
+
+        # Event hooks
+        self._client.errorEvent += self._on_error_event
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
@@ -189,14 +200,80 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             PriceType.MID: "MIDPOINT",
         }
 
-        bar_list: RealTimeBarList = self._client.reqRealTimeBars(
+        realtime_request, bar_size_setting = self._bar_spec_to_bar_size(bar_type.spec)
+        if realtime_request:
+            bar_list: RealTimeBarList = self._client.reqRealTimeBars(
+                contract=contract_details.contract,
+                barSize=bar_type.spec.step,
+                whatToShow=what_to_show[price_type],
+                useRTH=False,
+            )
+
+            bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
+        else:
+            self.create_task(
+                self._handle_historical_data_request(
+                    contract_details,
+                    bar_type,
+                    bar_size_setting,
+                    what_to_show,
+                ),
+            )
+
+    async def _handle_historical_data_request(
+        self,
+        contract_details,
+        bar_type,
+        bar_size_setting,
+        what_to_show,
+    ):
+        bar_data_list: BarDataList = await self._client.reqHistoricalDataAsync(
             contract=contract_details.contract,
-            barSize=5,
-            whatToShow=what_to_show[price_type],
-            useRTH=False,
+            endDateTime="",
+            durationStr=self._bar_spec_to_duration_str(bar_type.spec),
+            barSizeSetting=bar_size_setting,
+            whatToShow=what_to_show[bar_type.spec.price_type],
+            useRTH=True if contract_details.contract.secType == "STK" else False,
+            formatDate=2,
+            keepUpToDate=True,
         )
 
-        bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
+        self._on_historical_bar_update(bars=bar_data_list, has_new_bar=True, bar_type=bar_type)
+        bar_data_list.updateEvent += partial(self._on_historical_bar_update, bar_type=bar_type)
+
+    def _bar_spec_to_bar_size(self, bar_spec: BarSpecification):
+        aggregation = bar_spec.aggregation
+        step = bar_spec.step
+        if aggregation == BarAggregation.SECOND and step == 5:
+            return True, f"{step} secs"  # Use RealTimeBar Subscription
+            # return False, f"{step} secs"    # Subscription in addition to historical data
+        elif aggregation == BarAggregation.SECOND and step in [10, 15, 30]:
+            return False, f"{step} secs"
+        elif aggregation == BarAggregation.MINUTE and step in [1, 2, 3, 5, 10, 15, 20, 30]:
+            return False, f"{step} min{'' if step == 1 else 's'}"
+        elif aggregation == BarAggregation.HOUR and step in [1, 2, 3, 4, 8]:
+            return False, f"{step} hour{'' if step == 1 else 's'}"
+        elif aggregation == BarAggregation.DAY and step == 1:
+            return False, f"{step} day"
+        elif aggregation == BarAggregation.WEEK and step == 1:
+            return False, f"{step} week"
+        else:
+            raise ValueError(
+                f"InteractiveBrokers doesn't support subscription for {repr(bar_spec)}",
+            )
+
+    def _bar_spec_to_duration_str(self, bar_spec: BarSpecification):
+        duration: datetime.timedelta = bar_spec.timedelta * self._cache.bar_capacity
+        if duration.days >= 365:
+            return f"{duration.days / 365:.0f} Y"
+        elif duration.days >= 30:
+            return f"{duration.days / 30:.0f} M"
+        elif duration.days >= 7:
+            return f"{duration.days / 7:.0f} W"
+        elif duration.days >= 1:
+            return f"{duration.days:.0f} D"
+        else:
+            return f"{duration.total_seconds():.0f} S"
 
     def _request_top_of_book(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self.instrument_provider.contract_details[
@@ -321,11 +398,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def _on_bar_update(
         self,
         bars: list[RealTimeBar],
-        hasNewBar: bool,
+        has_new_bar: bool,
         bar_type: BarType,
     ):
 
-        if not hasNewBar:
+        if not has_new_bar:
             return
 
         for bar in bars:
@@ -346,3 +423,45 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             self._handle_data(data)
             self._last_bar_time = bar.time
+
+    def _on_historical_bar_update(
+        self,
+        bars: list[BarDataList],
+        has_new_bar: bool,
+        bar_type: BarType,
+    ):
+        if not has_new_bar:
+            return
+
+        instrument = self.instrument_provider.find(bar_type.instrument_id)
+
+        bar: BarData
+        for bar in bars[:-1]:  # Exclude incomplete bar
+            if bar.date <= self._bar_type_to_last_bar_time[bar_type]:
+                continue
+
+            ts_event = dt_to_unix_nanos(bar.date)
+            ts_init = self._clock.timestamp_ns()
+
+            data = Bar(
+                bar_type=bar_type,
+                open=instrument.make_price(bar.open),
+                high=instrument.make_price(bar.high),
+                low=instrument.make_price(bar.low),
+                close=instrument.make_price(bar.close),
+                volume=instrument.make_qty(max(bar.volume, 0)),
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            self._handle_data(data)
+            self._bar_type_to_last_bar_time[bar_type] = pd.Timestamp(bar.date)
+
+    def _on_error_event(self, req_id, error_code, error_string, contract):
+        # Connectivity between IB and Trader Workstation has been restored
+        if error_code == 1101 or error_code == 1102:
+            self._log.info(f"{error_code}: {error_string}")
+            for bar_type in self._bar_type_to_last_bar_time.keys():
+                self._log.info(f"Resubscribe to {repr(bar_type)}")
+                self.subscribe_bars(bar_type)
+        else:
+            self._log.warning(f"{error_code}: {error_string}")

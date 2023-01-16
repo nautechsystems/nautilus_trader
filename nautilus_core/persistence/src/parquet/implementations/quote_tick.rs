@@ -21,19 +21,19 @@ use arrow2::{
     datatypes::{DataType, Field, Schema},
     io::parquet::write::{transverse, Encoding},
 };
-
-use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::QuoteTick;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
+
 impl EncodeToChunk for QuoteTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
         let keys = ["instrument_id", "price_precision", "size_precision"];
         for key in keys {
-            (!metadata.contains_key(key)).then(|| panic!("metadata missing key \"{}\"", key));
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key \"{key}\""));
         }
     }
 

@@ -19,8 +19,9 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use crate::string::string_to_cstr;
 use uuid::Uuid;
+
+use crate::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -113,9 +114,11 @@ pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::ffi::CString;
+
     use uuid;
+
+    use super::*;
 
     #[test]
     fn test_uuid4_new() {
@@ -156,7 +159,7 @@ mod tests {
     fn test_uuid4_display() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
-        let result_string = format!("{}", uuid);
+        let result_string = format!("{uuid}");
         assert_eq!(result_string, uuid_string);
     }
 

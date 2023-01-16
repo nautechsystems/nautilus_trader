@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
@@ -42,8 +44,10 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -147,6 +151,13 @@ class TestCache:
     def test_cache_orders_with_no_orders(self):
         # Arrange, Act
         self.cache.cache_orders()
+
+        # Assert
+        assert True  # No exception raised
+
+    def test_cache_order_lists_with_no_orders(self):
+        # Arrange, Act
+        self.cache.cache_order_lists()
 
         # Assert
         assert True  # No exception raised
@@ -277,6 +288,24 @@ class TestCache:
         # Arrange, Act, Assert
         assert not self.cache.order_exists(ClientOrderId("O-123456"))
 
+    def test_order_list_exists_when_no_order_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.order_list_exists(OrderListId("OL-123456"))
+
+    def test_order_list_ids_when_no_order_lists_returns_empty_set(self):
+        # Arrange, Act
+        result = self.cache.order_list_ids()
+
+        # Assert
+        assert result == set()
+
+    def test_order_lists_when_no_order_lists_returns_empty_list(self):
+        # Arrange, Act
+        result = self.cache.order_lists()
+
+        # Assert
+        assert result == []
+
     def test_position_when_no_position_returns_none(self):
         # Arrange
         position_id = PositionId("P-123456")
@@ -306,7 +335,7 @@ class TestCache:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -341,7 +370,7 @@ class TestCache:
         order = self.strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
             emulation_trigger=TriggerType.BID_ASK,
         )
@@ -362,7 +391,7 @@ class TestCache:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -379,7 +408,7 @@ class TestCache:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -423,7 +452,7 @@ class TestCache:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -452,12 +481,92 @@ class TestCache:
         del position_dict["position_id"]
         assert snapshot_dict == position_dict
 
+    def test_snapshot_multiple_netted_positions(self):
+        # Arrange
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order2 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+        order3 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        order4 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+        self.cache.add_order(order2, position_id)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("1"),
+        )
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.10000"),
+            trade_id=TradeId("2"),
+        )
+
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position1.apply(fill2)
+        self.cache.snapshot_position(position1)
+
+        # Create new position (NETTING)
+        self.cache.add_order(order3, position_id)
+        self.cache.add_order(order4, position_id)
+
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.10000"),
+            trade_id=TradeId("3"),
+        )
+        fill4 = TestEventStubs.order_filled(
+            order4,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.30000"),
+            trade_id=TradeId("4"),
+        )
+
+        # Act
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill3)
+        position2.apply(fill4)
+        self.cache.snapshot_position(position2)
+
+        # Assert
+        snapshots = self.cache.position_snapshots(position_id)
+        assert len(snapshots) == 2
+        assert position1.is_closed
+        assert position2.is_closed
+        assert position1.realized_return == pytest.approx(0.1)
+        assert position2.realized_return == pytest.approx(0.1818181818)
+        assert position1.realized_pnl == Money(9995.80, USD)
+        assert position2.realized_pnl == Money(19995.20, USD)
+
     def test_load_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -484,7 +593,7 @@ class TestCache:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -508,7 +617,7 @@ class TestCache:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -529,6 +638,108 @@ class TestCache:
         # Assert
         assert result == command
 
+    def test_add_order_list_command(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order_list(bracket)
+
+        # Act
+        result = self.cache.order_list(bracket.id)
+
+        # Assert
+        assert result == bracket
+
+    def test_cache_order_lists(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket1 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        bracket2 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order(bracket1.orders[0], None)
+        self.cache.add_order(bracket1.orders[1], None)
+        self.cache.add_order(bracket1.orders[2], None)
+        self.cache.add_order(bracket2.orders[0], None)
+        self.cache.add_order(bracket2.orders[1], None)
+        self.cache.add_order(bracket2.orders[2], None)
+        self.cache.add_order_list(bracket1)
+        self.cache.add_order_list(bracket2)
+
+        # Act
+        self.cache.cache_order_lists()  # <-- exercise caching
+
+        # Assert
+        assert self.cache.order_list_ids() == {bracket1.id, bracket2.id}
+
+    def test_order_lists(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket1 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        bracket2 = order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order_list(bracket1)
+        self.cache.add_order_list(bracket2)
+
+        # Act
+        result = self.cache.order_lists(
+            venue=AUDUSD_SIM.venue,
+            instrument_id=AUDUSD_SIM.id,
+            strategy_id=StrategyId("S-001"),
+        )
+
+        # Assert
+        assert result == [bracket1, bracket2]
+
     def test_add_and_load_submit_order_list_command(self):
         order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -539,7 +750,7 @@ class TestCache:
         bracket = order_factory.bracket(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
             emulation_trigger=TriggerType.BID_ASK,
@@ -577,7 +788,7 @@ class TestCache:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -632,7 +843,7 @@ class TestCache:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -688,7 +899,7 @@ class TestCache:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -752,7 +963,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -802,7 +1013,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -825,7 +1036,7 @@ class TestCache:
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
         self.cache.add_order(order2, position_id)
 
@@ -879,7 +1090,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -904,7 +1115,7 @@ class TestCache:
         order2 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2.apply(TestEventStubs.order_submitted(order2))
@@ -961,7 +1172,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -986,7 +1197,7 @@ class TestCache:
         order2 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2.apply(TestEventStubs.order_submitted(order2))
@@ -1007,7 +1218,7 @@ class TestCache:
         order3 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order3.apply(TestEventStubs.order_submitted(order3))
@@ -1074,7 +1285,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position1_id = PositionId("P-1")
@@ -1100,7 +1311,7 @@ class TestCache:
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -1124,7 +1335,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position1_id = PositionId("P-1")
@@ -1149,7 +1360,7 @@ class TestCache:
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -1177,7 +1388,7 @@ class TestCache:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position1_id = PositionId("P-1")
@@ -1203,7 +1414,7 @@ class TestCache:
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 

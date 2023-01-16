@@ -28,15 +28,18 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -136,7 +139,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
             price=price or Price.from_str("1.001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -153,7 +156,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -247,6 +250,18 @@ class TestDataStubs:
         )
 
     @staticmethod
+    def instrument_close() -> InstrumentClose:
+        from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+
+        return InstrumentClose(
+            TestIdStubs.betting_instrument_id(),
+            Price(1.0, BETFAIR_PRICE_PRECISION),
+            InstrumentCloseType.CONTRACT_EXPIRED,
+            0,
+            0,
+        )
+
+    @staticmethod
     def order(price: float = 100, side: OrderSide = OrderSide.BUY, size=10):
         return BookOrder(price=price, size=size, side=side)
 
@@ -295,6 +310,7 @@ class TestDataStubs:
         bid_size=10,
         ask_size=10,
         book_type=BookType.L2_MBP,
+        time_in_force=TimeInForce.GTC,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
@@ -306,6 +322,7 @@ class TestDataStubs:
             asks=[(float(ask_price + i), float(ask_size * (1 + i))) for i in range(ask_levels)],
             ts_event=0,
             ts_init=0,
+            time_in_force=time_in_force,
         )
 
     @staticmethod

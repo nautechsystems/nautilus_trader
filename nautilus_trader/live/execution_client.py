@@ -21,6 +21,7 @@ API which may be presented directly by an exchange, or broker intermediary.
 import asyncio
 import functools
 from asyncio import Task
+from collections.abc import Coroutine
 from datetime import timedelta
 from typing import Any, Callable, Optional
 
@@ -129,9 +130,61 @@ class LiveExecutionClient(ExecutionClient):
 
         self.reconciliation_active = False
 
-    async def run_after_delay(self, delay: float, coro) -> None:
+    async def run_after_delay(
+        self,
+        delay: float,
+        coro: Coroutine,
+    ) -> None:
+        """
+        Run the given coroutine after a delay.
+
+        Parameters
+        ----------
+        delay : float
+            The delay (seconds) before running the coroutine.
+        coro : Coroutine
+            The coroutine to run after the initial delay.
+
+        """
         await asyncio.sleep(delay)
         return await coro
+
+    def create_task(
+        self,
+        coro: Coroutine,
+        log_msg: Optional[str] = None,
+        actions: Optional[Callable] = None,
+        success: Optional[str] = None,
+    ) -> None:
+        """
+        Run the given coroutine with error handling and optional callback
+        actions when done.
+
+        Parameters
+        ----------
+        coro : Coroutine
+            The coroutine to run.
+        log_msg : str, optional
+            The log message for the task.
+        actions : Callable, optional
+            The actions callback to run when the coroutine is done.
+        success : str, optional
+            The log message to write on actions success.
+
+        """
+        log_msg = log_msg or coro.__name__
+        self._log.debug(f"Creating task {log_msg}.")
+        task = self._loop.create_task(
+            coro,
+            name=coro.__name__,
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                actions,
+                success,
+            ),
+        )
 
     def _on_task_completed(
         self,
@@ -145,7 +198,13 @@ class LiveExecutionClient(ExecutionClient):
             )
         else:
             if actions:
-                actions()
+                try:
+                    actions()
+                except Exception as e:
+                    self._log.error(
+                        f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
+                        f"{repr(e)}",
+                    )
             if success:
                 self._log.info(success, LogColor.GREEN)
 
@@ -154,16 +213,10 @@ class LiveExecutionClient(ExecutionClient):
         Connect the client.
         """
         self._log.info("Connecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._connect(),
-            name="connect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(True),
-                "Connected",
-            ),
+            actions=lambda: self._set_connected(True),
+            success="Connected",
         )
 
     def disconnect(self) -> None:
@@ -171,76 +224,46 @@ class LiveExecutionClient(ExecutionClient):
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(
+        self.create_task(
             self._disconnect(),
-            name="disconnect",
-        )
-        task.add_done_callback(
-            functools.partial(
-                self._on_task_completed,
-                lambda: self._set_connected(False),
-                "Disconnected",
-            ),
+            actions=lambda: self._set_connected(False),
+            success="Disconnected",
         )
 
     def submit_order(self, command: SubmitOrder) -> None:
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._submit_order(command),
-            name="submit_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"submit_order: {command}",
         )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._submit_order_list(command),
-            name="submit_order_list",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"submit_order_list: {command}",
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._modify_order(command),
-            name="modify_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"modify_order: {command}",
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._cancel_order(command),
-            name="cancel_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"cancel_order: {command}",
         )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._cancel_all_orders(command),
-            name="cancel_all_orders",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"cancel_all_orders: {command}",
         )
 
     def query_order(self, command: QueryOrder) -> None:
-        self._log.debug(f"{command}.")
-        task = self._loop.create_task(
+        self.create_task(
             self._query_order(command),
-            name="query_order",
-        )
-        task.add_done_callback(
-            functools.partial(self._on_task_completed, None, None),
+            log_msg=f"query_order: {command}",
         )
 
     async def generate_order_status_report(

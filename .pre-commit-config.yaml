@@ -76,10 +76,11 @@ repos:
     rev: v0.991
     hooks:
       - id: mypy
-        types_or: [python, pyi]
-        entry: "poetry"
-        args: ["run", "mypy", "--config", "pyproject.toml"]
-        require_serial: true
+        args: [
+          --no-strict-optional,
+          --ignore-missing-imports,
+          --warn-no-return,
+        ]
         additional_dependencies: [
           msgspec,
           types-frozendict,

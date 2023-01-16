@@ -54,8 +54,9 @@ pub unsafe extern "C" fn message_category_from_cstr(ptr: *const c_char) -> Messa
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::ffi::CStr;
+
+    use super::*;
 
     #[test]
     fn test_message_category_to_cstr() {

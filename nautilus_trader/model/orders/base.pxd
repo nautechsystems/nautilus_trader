@@ -172,3 +172,6 @@ cdef class Order:
     cdef void _filled(self, OrderFilled event) except *
     cdef double _calculate_avg_px(self, double last_qty, double last_px)
     cdef void _set_slippage(self) except *
+
+    @staticmethod
+    cdef void _hydrate_initial_events(Order original, Order transformed) except *

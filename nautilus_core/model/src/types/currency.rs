@@ -18,9 +18,10 @@ use std::ffi::c_char;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use crate::enums::CurrencyType;
 use nautilus_core::correctness;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+
+use crate::enums::CurrencyType;
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
@@ -92,7 +93,7 @@ pub extern "C" fn currency_free(currency: Currency) {
 
 #[no_mangle]
 pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(format!("{:?}", currency).as_str())
+    string_to_cstr(format!("{currency:?}").as_str())
 }
 
 #[no_mangle]

@@ -26,6 +26,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -39,6 +40,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
@@ -50,8 +52,6 @@ from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -268,6 +268,7 @@ class TestBetfairDataClient:
             {
                 "InstrumentStatusUpdate": 270,
                 "OrderBookSnapshot": 270,
+                "BetfairTicker": 170,
                 "InstrumentClose": 22,
                 "OrderBookDeltas": 4,
             },
@@ -278,7 +279,10 @@ class TestBetfairDataClient:
         self.client.on_market_update(BetfairStreaming.mcm_RESUB_DELTA())
         result = [type(event).__name__ for event in self.messages]
         expected = (
-            ["OrderBookDeltas"] * 272 + ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 12
+            ["OrderBookDeltas"] * 272
+            + ["InstrumentStatusUpdate"] * 12
+            + ["GenericData"] * 12
+            + ["OrderBookDeltas"] * 12
         )
         assert result == expected
 
@@ -314,6 +318,7 @@ class TestBetfairDataClient:
         expected = ["TradeTick", "OrderBookDeltas"]
         assert result == expected
 
+    @patch("nautilus_trader.adapters.betfair.parsing.streaming.STRICT_MARKET_DATA_HANDLING", "")
     def test_market_bsp(self):
         # Setup
         update = BetfairStreaming.mcm_BSP()
@@ -328,12 +333,21 @@ class TestBetfairDataClient:
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
             "TradeTick": 95,
-            "BSPOrderBookDeltas": 16,
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
+            "BetfairTicker": 8,
+            "BSPOrderBookDeltas": 8,
             "OrderBookDeltas": 2,
+            "InstrumentClose": 1,
         }
         assert result == expected
+        sp_deltas = [
+            d
+            for deltas in self.messages
+            if isinstance(deltas, BSPOrderBookDeltas)
+            for d in deltas.deltas
+        ]
+        assert len(sp_deltas) == 30
 
     @pytest.mark.asyncio
     async def test_request_search_instruments(self):
@@ -441,14 +455,14 @@ class TestBetfairDataClient:
             isinstance(messages[0], InstrumentStatusUpdate)
             and messages[0].status == MarketStatus.CLOSED
         )
-        assert isinstance(messages[1], InstrumentClose) and messages[1].close_price == 1.0000
+        assert isinstance(messages[2], InstrumentClose) and messages[2].close_price == 1.0000
         assert (
-            isinstance(messages[1], InstrumentClose)
-            and messages[1].close_type == InstrumentCloseType.CONTRACT_EXPIRED
+            isinstance(messages[2], InstrumentClose)
+            and messages[2].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
         assert (
-            isinstance(messages[2], InstrumentStatusUpdate)
-            and messages[2].status == MarketStatus.CLOSED
+            isinstance(messages[1], InstrumentStatusUpdate)
+            and messages[1].status == MarketStatus.CLOSED
         )
         assert isinstance(messages[3], InstrumentClose) and messages[3].close_price == 0.0
         assert (
@@ -459,8 +473,42 @@ class TestBetfairDataClient:
     def test_betfair_ticker(self):
         self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
-        assert ticker.last_traded_price == Price.from_str("0.3174603")
-        assert ticker.traded_volume == Quantity.from_str("364.45")
+        assert ticker.last_traded_price == 0.3174603
+        assert ticker.traded_volume == 364.45
+
+    def test_betfair_ticker_sp(self):
+        # Arrange
+        lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+
+        # Act
+        for line in lines:
+            self.client.on_market_update(line)
+
+        # Assert
+        starting_prices_near = [
+            t for t in self.messages if isinstance(t, BetfairTicker) if t.starting_price_near
+        ]
+        starting_prices_far = [
+            t for t in self.messages if isinstance(t, BetfairTicker) if t.starting_price_far
+        ]
+        assert len(starting_prices_near) == 1739
+        assert len(starting_prices_far) == 1182
+
+    def test_betfair_starting_price(self):
+        # Arrange
+        lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+
+        # Act
+        for line in lines[-100:]:
+            self.client.on_market_update(line)
+
+        # Assert
+        starting_prices = [
+            t
+            for t in self.messages
+            if isinstance(t, GenericData) and isinstance(t.data, BetfairStartingPrice)
+        ]
+        assert len(starting_prices) == 36
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(

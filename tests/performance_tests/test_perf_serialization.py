@@ -48,7 +48,7 @@ class TestSerializationPerformance(PerformanceHarness):
         self.order = self.order_factory.market(
             AUDUSD,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.command = SubmitOrder(

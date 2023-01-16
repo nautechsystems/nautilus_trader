@@ -1,6 +1,21 @@
-# NautilusTrader 1.165.0 Beta
+# NautilusTrader 1.166.0 Beta
 
 Released on TBD (UTC).
+
+### Breaking Changes
+- `Position.unrealized_pnl` now `None` until any realized PnL is generated (to reduce ambiguity)
+
+### Enhancements
+None
+
+### Fixes
+- Fixed netted `Position` `realized_pnl` and `realized_return` fields, which were incorrectly cumulative
+
+---
+
+# NautilusTrader 1.165.0 Beta
+
+Released on 14th January 2023 (UTC).
 
 A number of enum variant names have been changed in favour of explicitness, 
 and also to avoid C naming collisions.
@@ -22,14 +37,29 @@ and also to avoid C naming collisions.
 - Renamed `TriggerType.MARK` to `MARK_PRICE`
 - Renamed `TriggerType.INDEX` to `INDEX_PRICE`
 - Renamed `ComponentState.INITIALIZED` to `READY`
+- Renamed `OrderFactory.bracket(post_only)` to `post_only_entry`
 - Moved `manage_gtd_expiry` to `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
 - Added `DataEngineConfig.build_time_bars_with_no_updates` option
+- Added `OrderFactory.bracket(post_only_tp)` param
+- Added `OrderListIdGenerator` and integrate with `OrderFactory`
+- Added `Cache.add_order_list(...)`
+- Added `Cache.order_list(...)`
+- Added `Cache.order_lists(...)`
+- Added `Cache.order_list_exists(...)`
+- Added `Cache.order_list_ids(...)`
+- Improved generation of `OrderListId` from factory to ensure uniqueness
+- Added auction matches for backtests, thanks @limx0
+- Added `.timedelta` property to `BarSpecification`, thanks @rsmb7z
+- Numerous improvements to the Betfair adapter, thanks @limx0
+- Improvements to Interactive Brokers data subscriptions, thanks @rsmb7z
+- Added `DataEngineConfig.validate_data_sequence` (False by default and currently only for `Bar` data), thanks @rsmb7z
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions
+- Fixed `PARTIALLY_FILLED` -> `EXPIRED` order state transition, thanks @bb01100100
 
 ---
 

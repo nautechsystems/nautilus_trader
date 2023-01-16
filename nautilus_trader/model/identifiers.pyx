@@ -733,7 +733,7 @@ cdef class TradeId(Identifier):
 
     Warnings
     --------
-    - Panics at runtime if `value` is not a valid string containing a hyphen.
+    - Panics at runtime if `value` is not a valid string.
 
     References
     ----------

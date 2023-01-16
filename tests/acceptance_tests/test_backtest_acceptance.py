@@ -29,6 +29,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.engine import ExecEngineConfig
 from nautilus_trader.backtest.engine import RiskEngineConfig
+from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -70,7 +71,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         self.venue = Venue("SIM")
         interest_rate_data = pd.read_csv(os.path.join(TEST_DATA_DIR, "short-term-interest.csv"))
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -193,7 +195,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         interest_rate_data = pd.read_csv(
             os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
         )
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -310,7 +313,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         interest_rate_data = pd.read_csv(
             os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
         )
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -489,7 +493,8 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Setup venue
         provider = TestDataProvider()
         interest_rate_data = provider.read_csv("short-term-interest.csv")
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=Venue("SIM"),

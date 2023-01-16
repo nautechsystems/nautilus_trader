@@ -153,6 +153,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         subscribe_trade_updates=True,
         subscribe_market_definitions=True,
         subscribe_bsp_updates=True,
+        subscribe_bsp_projected=True,
     ):
         filters = (
             market_ids,
@@ -194,6 +195,8 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             data_fields.append("EX_MARKET_DEF")
         if subscribe_bsp_updates:
             data_fields.append("SP_TRADED")
+        if subscribe_bsp_projected:
+            data_fields.append("SP_PROJECTED")
 
         message = {
             "op": "marketSubscription",

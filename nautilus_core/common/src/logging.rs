@@ -19,11 +19,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::enums::{LogColor, LogLevel};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+
+use crate::enums::{LogColor, LogLevel};
 
 pub struct Logger {
     pub trader_id: TraderId,
@@ -252,9 +253,10 @@ pub unsafe extern "C" fn logger_log(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::logging::{LogColor, LogLevel, Logger};
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
+
+    use crate::logging::{LogColor, LogLevel, Logger};
 
     #[test]
     fn test_new_logger() {

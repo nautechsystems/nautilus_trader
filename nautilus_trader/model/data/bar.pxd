@@ -67,6 +67,9 @@ cdef class BarType:
 cdef class Bar(Data):
     cdef Bar_t _mem
 
+    cdef readonly bint is_revision
+    """If this bar is a revision for a previous bar with the same `ts_event`.\n\n:returns: `bool`"""
+
     cdef str to_str(self)
 
     @staticmethod
