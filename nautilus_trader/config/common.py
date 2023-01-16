@@ -357,9 +357,9 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        strategy_cls = resolve_path(config.actor_path)
+        actor_cls = resolve_path(config.actor_path)
         config_cls = resolve_path(config.config_path)
-        return strategy_cls(config=config_cls(**config.config))
+        return actor_cls(config=config_cls(**config.config))
 
 
 class StrategyConfig(NautilusConfig, kw_only=True):
@@ -517,4 +517,5 @@ class ImportableConfig(NautilusConfig):
     def create(self):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
-        return msgspec.json.decode(msgspec.json.encode(self.config), type=cls)
+        cfg = msgspec.json.encode(self.config)
+        return msgspec.json.decode(cfg, type=cls)
