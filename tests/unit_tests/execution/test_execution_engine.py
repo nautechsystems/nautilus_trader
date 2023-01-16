@@ -2065,6 +2065,74 @@ class TestExecutionEngine:
         # Assert
         assert order3.status == OrderStatus.INITIALIZED
 
+    def test_flip_position_when_netting_oms(self):
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="NETTING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+
+        submit_order1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        position_id = PositionId("P-19700101-000-001-1")
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order1, AUDUSD_SIM, position_id=position_id),
+        )
+
+        submit_order2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
+        )
+
+        # Get netted position
+        # position = self.cache.position(position_id)
+
+        # Assert
+        # TODO(cs)
+
     def test_handle_updated_order_event(self):
         # Arrange
         self.exec_engine.start()

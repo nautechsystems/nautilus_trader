@@ -714,7 +714,7 @@ cdef class ExecutionEngine(Component):
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
             self._open_position(instrument, position, fill, oms_type)
-        elif self._will_flip_position(position, fill, oms_type):
+        elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
@@ -776,11 +776,10 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OmsType oms_type) except *:
+    cdef bint _will_flip_position(self, Position position, OrderFilled fill) except *:
         return (
             # Check for flip (last_qty guaranteed to be positive)
-            oms_type == OmsType.HEDGING
-            and position.is_opposite_side(fill.order_side)
+            position.is_opposite_side(fill.order_side)
             and fill.last_qty._mem.raw > position.quantity._mem.raw
         )
 
