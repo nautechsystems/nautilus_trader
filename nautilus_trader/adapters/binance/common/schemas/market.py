@@ -19,6 +19,7 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
@@ -26,9 +27,11 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
@@ -575,7 +578,7 @@ class BinanceCandlestick(msgspec.Struct):
     t: int  # Kline start time
     T: int  # Kline close time
     s: BinanceSymbol  # Symbol
-    i: str  # Interval
+    i: BinanceKlineInterval  # Interval
     f: int  # First trade ID
     L: int  # Last trade ID
     o: str  # Open price
@@ -592,9 +595,15 @@ class BinanceCandlestick(msgspec.Struct):
 
     def parse_to_binance_bar(
         self,
-        bar_type: BarType,
+        intrument_id: InstrumentId,
+        bar_spec: BarSpecification,
         ts_init: int,
     ) -> BinanceBar:
+        bar_type = BarType(
+            instrument_id=intrument_id,
+            bar_spec=bar_spec,
+            aggregation_source=AggregationSource.EXTERNAL,
+        )
         return BinanceBar(
             bar_type=bar_type,
             open=Price.from_str(self.o),
