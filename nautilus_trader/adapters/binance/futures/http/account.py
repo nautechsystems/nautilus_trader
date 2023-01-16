@@ -111,34 +111,6 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self._post_resp_decoder.decode(raw)
 
-    async def request_query_hedge_mode(
-        self,
-        timestamp: str,
-        recv_window: Optional[str] = None,
-    ) -> BinanceFuturesDualSidePosition:
-        """Check Binance Futures hedge mode (dualSidePosition)"""
-        return await self._get(
-            parameters=self.GetParameters(
-                timestamp=timestamp,
-                recvWindow=recv_window,
-            ),
-        )
-
-    async def request_set_hedge_mode(
-        self,
-        timestamp: str,
-        dual_side_position: bool,
-        recv_window: Optional[str] = None,
-    ) -> BinanceStatusCode:
-        """Set Binance Futures hedge mode (dualSidePosition)"""
-        return await self._post(
-            parameters=self.PostParameters(
-                timestamp=timestamp,
-                dualSidePosition=dual_side_position,
-                recvWindow=recv_window,
-            ),
-        )
-
 
 class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
     """
@@ -194,20 +166,6 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self._delete_resp_decoder.decode(raw)
 
-    async def request_delete_all_open_orders(
-        self,
-        timestamp: str,
-        symbol: BinanceSymbol,
-        recv_window: Optional[str] = None,
-    ) -> BinanceStatusCode:
-        return await self._delete(
-            parameters=self.DeleteParameters(
-                timestamp=timestamp,
-                symbol=symbol,
-                recvWindow=recv_window,
-            ),
-        )
-
 
 class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
     """
@@ -259,18 +217,6 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
-
-    async def request_query_account_info(
-        self,
-        timestamp: str,
-        recv_window: Optional[str] = None,
-    ) -> BinanceFuturesAccountInfo:
-        return await self._get(
-            parameters=self.GetParameters(
-                timestamp=timestamp,
-                recvWindow=recv_window,
-            ),
-        )
 
 
 class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
@@ -327,20 +273,6 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
-    async def request_query_position_risk(
-        self,
-        timestamp: str,
-        symbol: BinanceSymbol,
-        recv_window: Optional[str] = None,
-    ) -> list[BinanceFuturesPositionRisk]:
-        return await self._get(
-            parameters=self.GetParameters(
-                timestamp=timestamp,
-                symbol=symbol,
-                recvWindow=recv_window,
-            ),
-        )
-
 
 class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
     """
@@ -372,16 +304,87 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             v2_endpoint_base = "/fapi/v2"
 
         # Create endpoints
-        self.endpoint_futures_position_mode = BinanceFuturesPositionModeHttp(
+        self._endpoint_futures_position_mode = BinanceFuturesPositionModeHttp(
             client,
             self.base_endpoint,
         )
-        self.endpoint_futures_all_open_orders = BinanceFuturesAllOpenOrdersHttp(
+        self._endpoint_futures_all_open_orders = BinanceFuturesAllOpenOrdersHttp(
             client,
             self.base_endpoint,
         )
-        self.endpoint_futures_account = BinanceFuturesAccountHttp(client, v2_endpoint_base)
-        self.endpoint_futures_position_risk = BinanceFuturesPositionRiskHttp(
+        self._endpoint_futures_account = BinanceFuturesAccountHttp(client, v2_endpoint_base)
+        self._endpoint_futures_position_risk = BinanceFuturesPositionRiskHttp(
             client,
             v2_endpoint_base,
+        )
+
+    async def query_futures_hedge_mode(
+        self,
+        timestamp: str,
+        recv_window: Optional[str] = None,
+    ) -> BinanceFuturesDualSidePosition:
+        """Check Binance Futures hedge mode (dualSidePosition)"""
+        return await self._endpoint_futures_position_mode._get(
+            parameters=self._endpoint_futures_position_mode.GetParameters(
+                timestamp=timestamp,
+                recvWindow=recv_window,
+            ),
+        )
+
+    async def set_futures_hedge_mode(
+        self,
+        timestamp: str,
+        dual_side_position: bool,
+        recv_window: Optional[str] = None,
+    ) -> BinanceStatusCode:
+        """Set Binance Futures hedge mode (dualSidePosition)"""
+        return await self._endpoint_futures_position_mode._post(
+            parameters=self._endpoint_futures_position_mode.PostParameters(
+                timestamp=timestamp,
+                dualSidePosition=dual_side_position,
+                recvWindow=recv_window,
+            ),
+        )
+
+    async def delete_futures_all_open_orders(
+        self,
+        timestamp: str,
+        symbol: BinanceSymbol,
+        recv_window: Optional[str] = None,
+    ) -> BinanceStatusCode:
+        """Delete all Futures open orders."""
+        return await self._endpoint_futures_all_open_orders._delete(
+            parameters=self._endpoint_futures_all_open_orders.DeleteParameters(
+                timestamp=timestamp,
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
+        )
+
+    async def query_futures_account_info(
+        self,
+        timestamp: str,
+        recv_window: Optional[str] = None,
+    ) -> BinanceFuturesAccountInfo:
+        """Check Binance Futures account information."""
+        return await self._endpoint_futures_account._get(
+            parameters=self._endpoint_futures_account.GetParameters(
+                timestamp=timestamp,
+                recvWindow=recv_window,
+            ),
+        )
+
+    async def query_futures_position_risk(
+        self,
+        timestamp: str,
+        symbol: BinanceSymbol,
+        recv_window: Optional[str] = None,
+    ) -> list[BinanceFuturesPositionRisk]:
+        """Check all Futures position's info for a symbol."""
+        return await self._endpoint_futures_position_risk._get(
+            parameters=self._endpoint_futures_position_risk.GetParameters(
+                timestamp=timestamp,
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
         )

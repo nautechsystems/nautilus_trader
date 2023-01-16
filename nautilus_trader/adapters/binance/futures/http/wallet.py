@@ -53,7 +53,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
             methods,
             base_endpoint + "commissionRate",
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceFuturesCommissionRate)
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceFuturesCommissionRate)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -77,22 +77,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> BinanceFuturesCommissionRate:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
-
-    async def request_commission_rate(
-        self,
-        timestamp: str,
-        symbol: BinanceSymbol,
-        recv_window: Optional[str] = None,
-    ) -> BinanceFuturesCommissionRate:
-        rate = await self._get(
-            parameters=self.GetParameters(
-                timestamp=timestamp,
-                symbol=symbol,
-                recvWindow=recv_window,
-            ),
-        )
-        return rate
+        return self._get_resp_decoder.decode(raw)
 
 
 class BinanceFuturesWalletHttpAPI:
@@ -122,4 +107,23 @@ class BinanceFuturesWalletHttpAPI:
                 f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
             )
 
-        self.endpoint_commission_rate = BinanceFuturesCommissionRateHttp(client, self.base_endpoint)
+        self._endpoint_futures_commission_rate = BinanceFuturesCommissionRateHttp(
+            client,
+            self.base_endpoint,
+        )
+
+    async def query_futures_commission_rate(
+        self,
+        timestamp: str,
+        symbol: BinanceSymbol,
+        recv_window: Optional[str] = None,
+    ) -> BinanceFuturesCommissionRate:
+        """Get Futures commission rates for a given symbol."""
+        rate = await self._endpoint_futures_commission_rate._get(
+            parameters=self._endpoint_futures_commission_rate.GetParameters(
+                timestamp=timestamp,
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
+        )
+        return rate

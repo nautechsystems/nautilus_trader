@@ -78,9 +78,6 @@ class BinancePingHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
 
-    async def request_ping(self) -> dict:
-        return await self._get()
-
 
 class BinanceTimeHttp(BinanceHttpEndpoint):
     """
@@ -114,11 +111,6 @@ class BinanceTimeHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
-
-    async def request_server_time(self) -> int:
-        """Request server time from Binance"""
-        response = await self._get()
-        return response.serverTime
 
 
 class BinanceDepthHttp(BinanceHttpEndpoint):
@@ -177,24 +169,6 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
-
-    async def request_order_book_snapshot(
-        self,
-        instrument_id: InstrumentId,
-        ts_init: int,
-        symbol: BinanceSymbol,
-        limit: Optional[int] = None,
-    ) -> OrderBookSnapshot:
-        response = await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                limit=limit,
-            ),
-        )
-        return response._parse_to_order_book_snapshot(
-            instrument_id=instrument_id,
-            ts_init=ts_init,
-        )
 
 
 class BinanceTradesHttp(BinanceHttpEndpoint):
@@ -256,28 +230,6 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
-    async def request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        ts_init: int,
-        symbol: BinanceSymbol,
-        limit: Optional[int] = None,
-    ) -> list[TradeTick]:
-        """Request TradeTicks from Binance"""
-        response = await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                limit=limit,
-            ),
-        )
-        return [
-            trade.parse_to_trade_tick(
-                instrument_id=instrument_id,
-                ts_init=ts_init,
-            )
-            for trade in response
-        ]
-
 
 class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
     """
@@ -333,30 +285,6 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
-
-    async def request_historical_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        ts_init: int,
-        symbol: BinanceSymbol,
-        limit: Optional[int] = None,
-        from_id: Optional[str] = None,
-    ) -> list[TradeTick]:
-        """Request historical TradeTicks from Binance"""
-        response = await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                limit=limit,
-                fromId=from_id,
-            ),
-        )
-        return [
-            trade.parse_to_trade_tick(
-                instrument_id=instrument_id,
-                ts_init=ts_init,
-            )
-            for trade in response
-        ]
 
 
 class BinanceAggTradesHttp(BinanceHttpEndpoint):
@@ -484,31 +412,6 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
-    async def request_binance_bars(
-        self,
-        bar_type: BarType,
-        ts_init: int,
-        symbol: BinanceSymbol,
-        interval: BinanceKlineInterval,
-        limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-    ) -> list[BinanceBar]:
-        """Request Binance Bars"""
-        response = await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                interval=interval,
-                limit=limit,
-                startTime=start_time,
-                endTime=end_time,
-            ),
-        )
-        bars: list[BinanceBar] = [
-            kline.parse_to_binance_bar(bar_type, ts_init) for kline in response
-        ]
-        return bars
-
 
 class BinanceTicker24hrHttp(BinanceHttpEndpoint):
     """
@@ -576,24 +479,6 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         else:
             return self._get_arr_resp_decoder.decode(raw)
 
-    async def request_query_ticker_24hr(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-        symbols: Optional[BinanceSymbols] = None,
-        type: Optional[str] = None,
-    ) -> list[BinanceTicker24hr]:
-        if symbol is not None and symbols is not None:
-            raise RuntimeError(
-                "Cannot specify both symbol and symbols parameters.",
-            )
-        return await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                symbols=symbols,
-                type=type,
-            ),
-        )
-
 
 class BinanceTickerPriceHttp(BinanceHttpEndpoint):
     """
@@ -651,22 +536,6 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
             return [self._get_obj_resp_decoder.decode(raw)]
         else:
             return self._get_arr_resp_decoder.decode(raw)
-
-    async def request_query_ticker_price(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-        symbols: Optional[BinanceSymbols] = None,
-    ) -> list[BinanceTickerPrice]:
-        if symbol is not None and symbols is not None:
-            raise RuntimeError(
-                "Cannot specify both symbol and symbols parameters.",
-            )
-        return await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                symbols=symbols,
-            ),
-        )
 
 
 class BinanceTickerBookHttp(BinanceHttpEndpoint):
@@ -726,22 +595,6 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         else:
             return self._get_arr_resp_decoder.decode(raw)
 
-    async def request_query_ticker_book(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-        symbols: Optional[BinanceSymbols] = None,
-    ) -> list[BinanceTickerBook]:
-        if symbol is not None and symbols is not None:
-            raise RuntimeError(
-                "Cannot specify both symbol and symbols parameters.",
-            )
-        return await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                symbols=symbols,
-            ),
-        )
-
 
 class BinanceMarketHttpAPI:
     """
@@ -779,13 +632,165 @@ class BinanceMarketHttpAPI:
             )
 
         # Create Endpoints
-        self.endpoint_ping = BinancePingHttp(client, self.base_endpoint)
-        self.endpoint_time = BinanceTimeHttp(client, self.base_endpoint)
-        self.endpoint_depth = BinanceDepthHttp(client, self.base_endpoint)
-        self.endpoint_trades = BinanceTradesHttp(client, self.base_endpoint)
-        self.endpoint_historical_trades = BinanceHistoricalTradesHttp(client, self.base_endpoint)
-        self.endpoint_agg_trades = BinanceAggTradesHttp(client, self.base_endpoint)
-        self.endpoint_klines = BinanceKlinesHttp(client, self.base_endpoint)
-        self.endpoint_ticker_24hr = BinanceTicker24hrHttp(client, self.base_endpoint)
-        self.endpoint_ticker_price = BinanceTickerPriceHttp(client, self.base_endpoint)
-        self.endpoint_ticker_book = BinanceTickerBookHttp(client, self.base_endpoint)
+        self._endpoint_ping = BinancePingHttp(client, self.base_endpoint)
+        self._endpoint_time = BinanceTimeHttp(client, self.base_endpoint)
+        self._endpoint_depth = BinanceDepthHttp(client, self.base_endpoint)
+        self._endpoint_trades = BinanceTradesHttp(client, self.base_endpoint)
+        self._endpoint_historical_trades = BinanceHistoricalTradesHttp(client, self.base_endpoint)
+        self._endpoint_agg_trades = BinanceAggTradesHttp(client, self.base_endpoint)
+        self._endpoint_klines = BinanceKlinesHttp(client, self.base_endpoint)
+        self._endpoint_ticker_24hr = BinanceTicker24hrHttp(client, self.base_endpoint)
+        self._endpoint_ticker_price = BinanceTickerPriceHttp(client, self.base_endpoint)
+        self._endpoint_ticker_book = BinanceTickerBookHttp(client, self.base_endpoint)
+
+    async def ping(self) -> dict:
+        """Ping Binance REST API"""
+        return await self._endpoint_ping._get()
+
+    async def request_server_time(self) -> int:
+        """Request server time from Binance"""
+        response = await self._endpoint_time._get()
+        return response.serverTime
+
+    async def request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+        symbol: BinanceSymbol,
+        limit: Optional[int] = None,
+    ) -> OrderBookSnapshot:
+        """Request snapshot of order book depth."""
+        response = await self._endpoint_depth._get(
+            parameters=self._endpoint_depth.GetParameters(
+                symbol=symbol,
+                limit=limit,
+            ),
+        )
+        return response._parse_to_order_book_snapshot(
+            instrument_id=instrument_id,
+            ts_init=ts_init,
+        )
+
+    async def request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+        symbol: BinanceSymbol,
+        limit: Optional[int] = None,
+    ) -> list[TradeTick]:
+        """Request TradeTicks from Binance"""
+        response = await self._endpoint_trades._get(
+            parameters=self._endpoint_trades.GetParameters(
+                symbol=symbol,
+                limit=limit,
+            ),
+        )
+        return [
+            trade.parse_to_trade_tick(
+                instrument_id=instrument_id,
+                ts_init=ts_init,
+            )
+            for trade in response
+        ]
+
+    async def request_historical_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+        symbol: BinanceSymbol,
+        limit: Optional[int] = None,
+        from_id: Optional[str] = None,
+    ) -> list[TradeTick]:
+        """Request historical TradeTicks from Binance"""
+        response = await self._endpoint_historical_trades._get(
+            parameters=self._endpoint_historical_trades.GetParameters(
+                symbol=symbol,
+                limit=limit,
+                fromId=from_id,
+            ),
+        )
+        return [
+            trade.parse_to_trade_tick(
+                instrument_id=instrument_id,
+                ts_init=ts_init,
+            )
+            for trade in response
+        ]
+
+    async def request_binance_bars(
+        self,
+        bar_type: BarType,
+        ts_init: int,
+        symbol: BinanceSymbol,
+        interval: BinanceKlineInterval,
+        limit: Optional[int] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> list[BinanceBar]:
+        """Request Binance Bars from Klines"""
+        response = await self._endpoint_klines._get(
+            parameters=self._endpoint_klines.GetParameters(
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+                startTime=start_time,
+                endTime=end_time,
+            ),
+        )
+        bars: list[BinanceBar] = [
+            kline.parse_to_binance_bar(bar_type, ts_init) for kline in response
+        ]
+        return bars
+
+    async def query_ticker_24hr(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+        type: Optional[str] = None,
+    ) -> list[BinanceTicker24hr]:
+        """Query 24hr ticker for symbol or symbols."""
+        if symbol is not None and symbols is not None:
+            raise RuntimeError(
+                "Cannot specify both symbol and symbols parameters.",
+            )
+        return await self._endpoint_ticker_24hr._get(
+            parameters=self._endpoint_ticker_24hr.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+                type=type,
+            ),
+        )
+
+    async def query_ticker_price(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+    ) -> list[BinanceTickerPrice]:
+        """Query price ticker for symbol or symbols."""
+        if symbol is not None and symbols is not None:
+            raise RuntimeError(
+                "Cannot specify both symbol and symbols parameters.",
+            )
+        return await self._endpoint_ticker_price._get(
+            parameters=self._endpoint_ticker_price.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+            ),
+        )
+
+    async def query_ticker_book(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+    ) -> list[BinanceTickerBook]:
+        """Query book ticker for symbol or symbols."""
+        if symbol is not None and symbols is not None:
+            raise RuntimeError(
+                "Cannot specify both symbol and symbols parameters.",
+            )
+        return await self._endpoint_ticker_book._get(
+            parameters=self._endpoint_ticker_book.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+            ),
+        )

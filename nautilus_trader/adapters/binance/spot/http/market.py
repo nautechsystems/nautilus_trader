@@ -56,7 +56,7 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceSpotExchangeInfo)
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceSpotExchangeInfo)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -80,23 +80,7 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotExchangeInfo:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
-
-    async def request_exchange_info(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-        symbols: Optional[BinanceSymbols] = None,
-        permissions: Optional[BinanceSpotPermissions] = None,
-    ) -> BinanceSpotExchangeInfo:
-        if symbol and symbols:
-            raise ValueError("`symbol` and `symbols` cannot be sent together")
-        return await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-                symbols=symbols,
-                permissions=permissions,
-            ),
-        )
+        return self._get_resp_decoder.decode(raw)
 
 
 class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
@@ -125,7 +109,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceSpotAvgPrice)
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceSpotAvgPrice)
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -143,14 +127,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
-
-    async def request_average_price(self, symbol: BinanceSymbol) -> BinanceSpotAvgPrice:
-        return await self._get(
-            parameters=self.GetParameters(
-                symbol=symbol,
-            ),
-        )
+        return self._get_resp_decoder.decode(raw)
 
 
 class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
@@ -181,5 +158,30 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
             )
 
-        self.endpoint_exchange_info = BinanceSpotExchangeInfoHttp(client, self.base_endpoint)
-        self.endpoint_average_price = BinanceSpotAvgPriceHttp(client, self.base_endpoint)
+        self._endpoint_spot_exchange_info = BinanceSpotExchangeInfoHttp(client, self.base_endpoint)
+        self._endpoint_spot_average_price = BinanceSpotAvgPriceHttp(client, self.base_endpoint)
+
+    async def query_spot_exchange_info(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        symbols: Optional[BinanceSymbols] = None,
+        permissions: Optional[BinanceSpotPermissions] = None,
+    ) -> BinanceSpotExchangeInfo:
+        """Check Binance Spot exchange information."""
+        if symbol and symbols:
+            raise ValueError("`symbol` and `symbols` cannot be sent together")
+        return await self._endpoint_spot_exchange_info._get(
+            parameters=self._endpoint_spot_exchange_info.GetParameters(
+                symbol=symbol,
+                symbols=symbols,
+                permissions=permissions,
+            ),
+        )
+
+    async def query_spot_average_price(self, symbol: BinanceSymbol) -> BinanceSpotAvgPrice:
+        """Check average price for a provided symbol on the Spot exchange."""
+        return await self._endpoint_spot_average_price._get(
+            parameters=self._endpoint_spot_average_price.GetParameters(
+                symbol=symbol,
+            ),
+        )

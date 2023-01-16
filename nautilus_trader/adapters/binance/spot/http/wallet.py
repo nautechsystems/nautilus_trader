@@ -51,7 +51,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
             methods,
             base_endpoint + "tradeFee",
         )
-        self.get_resp_decoder = msgspec.json.Decoder(list[BinanceSpotTradeFee])
+        self._get_resp_decoder = msgspec.json.Decoder(list[BinanceSpotTradeFee])
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -75,22 +75,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     async def _get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
-        return self.get_resp_decoder.decode(raw)
-
-    async def request_trade_fees(
-        self,
-        timestamp: str,
-        symbol: Optional[BinanceSymbol] = None,
-        recv_window: Optional[str] = None,
-    ) -> list[BinanceSpotTradeFee]:
-        fees = await self._get(
-            parameters=self.GetParameters(
-                timestamp=timestamp,
-                symbol=symbol,
-                recvWindow=recv_window,
-            ),
-        )
-        return fees
+        return self._get_resp_decoder.decode(raw)
 
 
 class BinanceSpotWalletHttpAPI:
@@ -116,4 +101,19 @@ class BinanceSpotWalletHttpAPI:
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
             )
 
-        self.endpoint_trade_fee = BinanceSpotTradeFeeHttp(client, self.base_endpoint)
+        self._endpoint_spot_trade_fee = BinanceSpotTradeFeeHttp(client, self.base_endpoint)
+
+    async def query_spot_trade_fees(
+        self,
+        timestamp: str,
+        symbol: Optional[BinanceSymbol] = None,
+        recv_window: Optional[str] = None,
+    ) -> list[BinanceSpotTradeFee]:
+        fees = await self._endpoint_spot_trade_fee._get(
+            parameters=self._endpoint_spot_trade_fee.GetParameters(
+                timestamp=timestamp,
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
+        )
+        return fees

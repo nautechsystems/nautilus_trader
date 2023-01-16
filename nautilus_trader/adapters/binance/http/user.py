@@ -73,9 +73,9 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.post_resp_decoder = msgspec.json.Decoder(BinanceListenKey)
-        self.put_resp_decoder = msgspec.json.Decoder()
-        self.delete_resp_decoder = msgspec.json.Decoder()
+        self._post_resp_decoder = msgspec.json.Decoder(BinanceListenKey)
+        self._put_resp_decoder = msgspec.json.Decoder()
+        self._delete_resp_decoder = msgspec.json.Decoder()
 
     class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -107,52 +107,17 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
     async def _post(self, parameters: Optional[PostParameters] = None) -> BinanceListenKey:
         method_type = BinanceMethodType.POST
         raw = await self._method(method_type, parameters)
-        return self.post_resp_decoder.decode(raw)
+        return self._post_resp_decoder.decode(raw)
 
     async def _put(self, parameters: Optional[PutDeleteParameters] = None) -> dict:
         method_type = BinanceMethodType.PUT
         raw = await self._method(method_type, parameters)
-        return self.put_resp_decoder.decode(raw)
+        return self._put_resp_decoder.decode(raw)
 
     async def _delete(self, parameters: Optional[PutDeleteParameters] = None) -> dict:
         method_type = BinanceMethodType.DELETE
         raw = await self._method(method_type, parameters)
-        return self.delete_resp_decoder.decode(raw)
-
-    async def create_listen_key(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-    ) -> BinanceListenKey:
-        key = await self._post(
-            parameters=self.PostParameters(
-                symbol=symbol,
-            ),
-        )
-        return key
-
-    async def keepalive_listen_key(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-        listen_key: Optional[BinanceListenKey] = None,
-    ):
-        await self._put(
-            parameters=self.PutDeleteParameters(
-                symbol=symbol,
-                listenKey=listen_key,
-            ),
-        )
-
-    async def delete_listen_key(
-        self,
-        symbol: Optional[BinanceSymbol] = None,
-        listen_key: Optional[BinanceListenKey] = None,
-    ):
-        await self._delete(
-            parameters=self.PutDeleteParameters(
-                symbol=symbol,
-                listenKey=listen_key,
-            ),
-        )
+        return self._delete_resp_decoder.decode(raw)
 
 
 class BinanceUserDataHttpAPI:
@@ -200,4 +165,42 @@ class BinanceUserDataHttpAPI:
                 f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)  # noqa
             )
 
-        self.endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
+        self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
+
+    async def create_listen_key(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+    ) -> BinanceListenKey:
+        """Create Binance ListenKey."""
+        key = await self._endpoint_listenkey._post(
+            parameters=self._endpoint_listenkey.PostParameters(
+                symbol=symbol,
+            ),
+        )
+        return key
+
+    async def keepalive_listen_key(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        listen_key: Optional[BinanceListenKey] = None,
+    ):
+        """Ping/Keepalive Binance ListenKey."""
+        await self._endpoint_listenkey._put(
+            parameters=self._endpoint_listenkey.PutDeleteParameters(
+                symbol=symbol,
+                listenKey=listen_key,
+            ),
+        )
+
+    async def delete_listen_key(
+        self,
+        symbol: Optional[BinanceSymbol] = None,
+        listen_key: Optional[BinanceListenKey] = None,
+    ):
+        """Delete Binance ListenKey."""
+        await self._endpoint_listenkey._delete(
+            parameters=self._endpoint_listenkey.PutDeleteParameters(
+                symbol=symbol,
+                listenKey=listen_key,
+            ),
+        )

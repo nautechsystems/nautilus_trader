@@ -52,15 +52,12 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self.get_resp_decoder = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
 
     async def _get(self) -> BinanceFuturesExchangeInfo:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, None)
-        return self.get_resp_decoder.decode(raw)
-
-    async def request_exchange_info(self) -> BinanceFuturesExchangeInfo:
-        return await self._get()
+        return self._get_resp_decoder.decode(raw)
 
 
 class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
@@ -91,4 +88,11 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
                 f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
             )
 
-        self.endpoint_exchange_info = BinanceFuturesExchangeInfoHttp(client, self.base_endpoint)
+        self._endpoint_futures_exchange_info = BinanceFuturesExchangeInfoHttp(
+            client,
+            self.base_endpoint,
+        )
+
+    async def query_futures_exchange_info(self) -> BinanceFuturesExchangeInfo:
+        """Retrieve Binance Futures exchange information."""
+        return await self._endpoint_futures_exchange_info._get()
