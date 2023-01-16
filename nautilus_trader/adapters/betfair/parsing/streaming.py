@@ -49,8 +49,6 @@ from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
@@ -255,19 +253,13 @@ def market_definition_to_betfair_starting_prices(
     market_id: str,
     ts_event: int,
     ts_init: int,
-) -> list[GenericData]:
+) -> list[BetfairStartingPrice]:
     updates: list[BetfairStartingPrice] = []
     for runner in market_definition.runners:
         sp = runner_to_betfair_starting_price(runner, market_id, ts_event, ts_init)
         if sp is not None:
             updates.append(sp)
-    return [
-        GenericData(
-            DataType(BetfairStartingPrice, metadata={"instrument_id": upd.instrument_id}),
-            upd,
-        )
-        for upd in updates
-    ]
+    return updates
 
 
 def runner_to_betfair_starting_price(
