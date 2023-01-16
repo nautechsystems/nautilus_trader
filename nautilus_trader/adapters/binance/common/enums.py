@@ -16,10 +16,12 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import bar_aggregation_to_str
@@ -274,11 +276,13 @@ class BinanceEnumParser:
             BinanceOrderSide.SELL: OrderSide.SELL,
         }
 
-        self.bar_agg_to_res = {
-            BarAggregation.MINUTE: "m",
-            BarAggregation.HOUR: "h",
-            BarAggregation.DAY: "d",
-            BarAggregation.SECOND: "d",
+        self.ext_bar_agg_to_int_bar_agg = {
+            "s": BarAggregation.SECOND,
+            "m": BarAggregation.MINUTE,
+            "h": BarAggregation.HOUR,
+            "d": BarAggregation.DAY,
+            "w": BarAggregation.WEEK,
+            "M": BarAggregation.MONTH,
         }
 
         # Build symmetrical reverse dictionary hashmaps
@@ -295,6 +299,12 @@ class BinanceEnumParser:
             map(
                 reversed,
                 self.ext_order_type_to_int_order_type.items(),
+            ),
+        )
+        self.int_bar_agg_to_ext_bar_agg = dict(
+            map(
+                reversed,
+                self.ext_bar_agg_to_int_bar_agg.items(),
             ),
         )
 
@@ -344,14 +354,34 @@ class BinanceEnumParser:
                 f"unrecognized internal order type, was {order_type}",  # pragma: no cover
             )
 
-    def parse_bar_agg_to_binance_resolution(self, bar_agg: BarAggregation) -> str:
+    def parse_binance_bar_agg(self, bar_agg: str) -> BarAggregation:
         try:
-            return self.bar_agg_to_res[bar_agg]
+            return self.ext_bar_agg_to_int_bar_agg[bar_agg]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized binance kline resolution, was {bar_agg}",
+            )
+
+    def parse_internal_bar_agg(self, bar_agg: BarAggregation) -> str:
+        try:
+            return self.int_bar_agg_to_ext_bar_agg[bar_agg]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 "unrecognized or non-supported BarAggregation,",
                 f"was {bar_aggregation_to_str(bar_agg)}",  # pragma: no cover
             )
+
+    def parse_binance_kline_interval_to_bar_spec(
+        self,
+        kline_interval: BinanceKlineInterval,
+    ) -> BarSpecification:
+        step = kline_interval.value[:-1]
+        binance_bar_agg = kline_interval.value[-1]
+        return BarSpecification(
+            step=int(step),
+            aggregation=self.parse_binance_bar_agg(binance_bar_agg),
+            price_type=PriceType.LAST,
+        )
 
     def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
         # Replace method in child class, if compatible
