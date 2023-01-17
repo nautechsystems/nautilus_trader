@@ -612,6 +612,11 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("bar_type"),
             )
+        elif command.data_type.type == VenueStatusUpdate:
+            self._handle_subscribe_venue_status_updates(
+                client,
+                command.data_type.metadata.get("instrument_id"),
+            )
         elif command.data_type.type == InstrumentStatusUpdate:
             self._handle_subscribe_instrument_status_updates(
                 client,
@@ -858,6 +863,17 @@ cdef class DataEngine(Component):
                 f"has not implemented {data_type} subscriptions.",
             )
             return
+
+    cdef void _handle_subscribe_venue_status_updates(
+        self,
+        MarketDataClient client,
+        Venue venue,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(venue, "venue")
+
+        if venue not in client.subscribed_venue_status_updates():
+            client.subscribe_venue_status_updates(venue)
 
     cdef void _handle_subscribe_instrument_status_updates(
         self,
