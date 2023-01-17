@@ -110,6 +110,7 @@ cdef class DataEngine(Component):
     cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type) except *
     cdef void _handle_subscribe_data(self, DataClient client, DataType data_type) except *
+    cdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue) except *
     cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
