@@ -8,7 +8,6 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus"
-crate-type = [ "cdylib" ]
 
 [dependencies]
 nautilus_persistence = { path = "../persistence" }
