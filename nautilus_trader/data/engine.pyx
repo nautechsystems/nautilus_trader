@@ -65,7 +65,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport StatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BarAggregation
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -76,8 +76,6 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.model.data.venue import VenueStatusUpdate
 
 
 cdef class DataEngine(Component):
