@@ -21,9 +21,14 @@ def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class is a builtin nautilus type.
     """
-    return cls.__module__.startswith("nautilus_trader.") and not cls.__module__.startswith(
-        "nautilus_trader.test_kit",
-    )
+    if cls.__module__.startswith("nautilus_trader.model"):
+        return True
+    elif cls.__module__.startswith("nautilus_trader.test_kit"):
+        return False
+    elif any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__):
+        return True
+    else:
+        return False
 
 
 def get_size_of(obj):
