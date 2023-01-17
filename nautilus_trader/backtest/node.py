@@ -200,7 +200,7 @@ class BacktestNode:
         return engine
 
     def _load_engine_data(self, engine: BacktestEngine, data) -> None:
-        if is_nautilus_class(data["type"]) and not data.get("client_id"):
+        if is_nautilus_class(data["type"]):
             engine.add_data(data=data["data"])
         else:
             if "client_id" not in data:
@@ -288,26 +288,21 @@ class BacktestNode:
             engine._log.info(
                 f"Reading {config.data_type} data for instrument={config.instrument_id}.",
             )
-            data = config.load()
-            if config.instrument_id and data["instrument"] is None:
+            d = config.load()
+            if config.instrument_id and d["instrument"] is None:
                 print(
-                    f"Requested instrument_id={data['instrument']} from data_config not found catalog",
+                    f"Requested instrument_id={d['instrument']} from data_config not found catalog",
                 )
                 continue
-            if not data["data"]:
+            if not d["data"]:
                 print(f"No data found for {config}")
                 continue
 
             t1 = pd.Timestamp.now()
             engine._log.info(
-                f"Read {len(data['data']):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
+                f"Read {len(d['data']):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
             )
-            if not is_nautilus_class(data["type"]):
-                # Generic data - wrap before adding
-                data["data"] = [
-                    GenericData(data_type=DataType(config.data_type), data=d) for d in data["data"]
-                ]
-            self._load_engine_data(engine=engine, data=data)
+            self._load_engine_data(engine=engine, data=d)
             t2 = pd.Timestamp.now()
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
