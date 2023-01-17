@@ -302,7 +302,7 @@ class BacktestNode:
             engine._log.info(
                 f"Read {len(data['data']):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
             )
-            if not is_nautilus_class(data.data_type):
+            if not is_nautilus_class(data["type"]):
                 # Generic data - wrap before adding
                 data["data"] = [
                     GenericData(data_type=DataType(config.data_type), data=d) for d in data["data"]
