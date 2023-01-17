@@ -113,6 +113,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers: dict[ContractId, list[Ticker]] = defaultdict(list)
         self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
 
+        # Tasks
+        self._watch_dog_task: Optional[asyncio.Task] = None
+
         # Event hooks
         self._client.errorEvent += self._on_error_event
 
@@ -123,7 +126,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _connect(self):
         if not self._client.isConnected():
             await self._client.connect()
-        self.create_task(self._watch_dog())
+
+        # Create long running tasks
+        self._watch_dog_task = self.create_task(self._watch_dog())
 
         # Load instruments based on config
         await self.instrument_provider.initialize()
@@ -134,27 +139,36 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if self._client.isConnected():
             self._client.disconnect()
 
+        # Cancel tasks
+        if self._watch_dog_task:
+            self._log.debug("Canceling `watch_dog` task...")
+            self._watch_dog_task.cancel()
+            self._watch_dog_task.done()
+
     async def _watch_dog(self):
-        while True:
-            await asyncio.sleep(5)
-            if not self._client.isConnected():
-                try:
-                    self._log.warning(
-                        "IB Gateway disconnected. Trying to reconnect clientId {id} on {host}:{port}".format(
-                            id=self._client.client.clientId,
+        try:
+            while True:
+                await asyncio.sleep(5)
+                if not self._client.isConnected():
+                    try:
+                        self._log.warning(
+                            "IB Gateway disconnected. Trying to reconnect clientId {id} on {host}:{port}".format(
+                                id=self._client.client.clientId,
+                                host=self._client.client.host,
+                                port=self._client.client.port,
+                            ),
+                        )
+                        await self._client.connectAsync(
                             host=self._client.client.host,
                             port=self._client.client.port,
-                        ),
-                    )
-                    await self._client.connectAsync(
-                        host=self._client.client.host,
-                        port=self._client.client.port,
-                        clientId=self._client.client.clientId,
-                        timeout=30,
-                    )
-                    self._resubscribe_on_reset()
-                except Exception as e:
-                    self._log.info(f"{repr(e)}")
+                            clientId=self._client.client.clientId,
+                            timeout=30,
+                        )
+                        self._resubscribe_on_reset()
+                    except Exception as e:
+                        self._log.info(f"{repr(e)}")
+        except asyncio.CancelledError:
+            self._log.debug("`watch_dog` task was canceled.")
 
     async def _subscribe_order_book_snapshots(
         self,
