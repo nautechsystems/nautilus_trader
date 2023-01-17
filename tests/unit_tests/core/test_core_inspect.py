@@ -33,7 +33,6 @@ from nautilus_trader.model.orderbook.data import OrderBookData
         (OrderAccepted, True),
         (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type.
         (BetfairTicker, True),  # BetfairTicker is a subclass of a nautilus type
-        (BetfairTicker, True),  # BetfairTicker is a subclass of a nautilus type
         (pd.DataFrame, False),
     ],
 )
