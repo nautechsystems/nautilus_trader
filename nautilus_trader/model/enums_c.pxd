@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint8_t
-
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
@@ -58,7 +56,7 @@ cpdef AssetType asset_type_from_str(str value) except *
 cpdef str asset_type_to_str(AssetType value)
 
 cpdef BarAggregation bar_aggregation_from_str(str value) except *
-cpdef str bar_aggregation_to_str(uint8_t value)
+cpdef str bar_aggregation_to_str(BarAggregation value)
 
 cpdef BookAction book_action_from_str(str value) except *
 cpdef str book_action_to_str(BookAction value)

@@ -83,8 +83,8 @@ class TestQuoteTick:
             instrument_id=AUDUSD_SIM.id,
             bid=Price.from_str("1.00000"),
             ask=Price.from_str("1.00001"),
-            bid_size=Quantity.from_int(500000),
-            ask_size=Quantity.from_int(800000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(800_000),
             ts_event=0,
             ts_init=0,
         )
@@ -95,9 +95,9 @@ class TestQuoteTick:
         result3 = tick.extract_volume(PriceType.BID)
 
         # Assert
-        assert result1 == Quantity.from_int(800000)
-        assert result2 == Quantity.from_int(650000)  # Average size
-        assert result3 == Quantity.from_int(500000)
+        assert result1 == Quantity.from_int(800_000)
+        assert result2 == Quantity.from_int(650_000)  # Average size
+        assert result3 == Quantity.from_int(500_000)
 
     def test_to_dict_returns_expected_dict(self):
         # Arrange
@@ -199,7 +199,7 @@ class TestTradeTick:
         tick = TradeTick(
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
-            size=Quantity.from_int(50000),
+            size=Quantity.from_int(50_000),
             aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
@@ -216,7 +216,7 @@ class TestTradeTick:
         tick = TradeTick(
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
-            size=Quantity.from_int(10000),
+            size=Quantity.from_int(10_000),
             aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
@@ -243,7 +243,7 @@ class TestTradeTick:
         tick = TradeTick(
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
-            size=Quantity.from_int(10000),
+            size=Quantity.from_int(10_000),
             aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
@@ -261,7 +261,7 @@ class TestTradeTick:
         tick = TradeTick(
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
-            size=Quantity.from_int(50000),
+            size=Quantity.from_int(50_000),
             aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
@@ -296,7 +296,7 @@ class TestTradeTick:
         assert tick.instrument_id == AUDUSD_SIM.id
         assert tick.trade_id == trade_id
         assert tick.price == Price.from_str("1.00001")
-        assert tick.size == Quantity.from_int(10000)
+        assert tick.size == Quantity.from_int(10_000)
         assert tick.aggressor_side == AggressorSide.BUYER
         assert tick.ts_event == 1
         assert tick.ts_init == 2

@@ -219,11 +219,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         self._listen_key = response["listenKey"]
         self._log.info(f"Listen key {self._listen_key}")
-        self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         # Setup clock sync
         if self._clock_sync_interval_secs > 0:
-            self._task_clock_sync = self._loop.create_task(self._sync_clock_with_binance_server())
+            self._task_clock_sync = self.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -249,42 +249,51 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._update_account_state(info=info)
 
     async def _ping_listen_keys(self) -> None:
-        while True:
-            self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s.",
-            )
-            await asyncio.sleep(self._ping_listen_keys_interval)
-            if self._listen_key:
-                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
-                await self._http_user.ping_listen_key(self._listen_key)
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `ping_listen_keys` to run in "
+                    f"{self._ping_listen_keys_interval}s.",
+                )
+                await asyncio.sleep(self._ping_listen_keys_interval)
+                if self._listen_key:
+                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
+                    await self._http_user.ping_listen_key(self._listen_key)
+        except asyncio.CancelledError:
+            self._log.debug("`ping_listen_keys` task was canceled.")
 
     async def _sync_clock_with_binance_server(self) -> None:
-        while True:
-            # self._log.info(
-            #     f"Syncing Nautilus clock with Binance server...",
-            # )
-            response: dict[str, int] = await self._http_market.time()
-            server_time: int = response["serverTime"]
-            self._log.info(f"Binance server time {server_time} UNIX (ms).")
+        try:
+            while True:
+                # self._log.debug(
+                #     f"Syncing Nautilus clock with Binance server...",
+                # )
+                response: dict[str, int] = await self._http_market.time()
+                server_time: int = response["serverTime"]
+                self._log.info(f"Binance server time {server_time} UNIX (ms).")
 
-            nautilus_time = self._clock.timestamp_ms()
-            self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
+                nautilus_time = self._clock.timestamp_ms()
+                self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
 
-            # offset_ns = millis_to_nanos(nautilus_time - server_time)
-            # self._log.info(f"Setting Nautilus clock offset {offset_ns} (ns).")
-            # self._clock.set_offset(offset_ns)
+                # offset_ns = millis_to_nanos(nautilus_time - server_time)
+                # self._log.info(f"Setting Nautilus clock offset {offset_ns} (ns).")
+                # self._clock.set_offset(offset_ns)
 
-            await asyncio.sleep(self._clock_sync_interval_secs)
+                await asyncio.sleep(self._clock_sync_interval_secs)
+        except asyncio.CancelledError:
+            self._log.debug("`sync_clock_with_binance_server` task was canceled.")
 
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
+            self._ping_listen_keys_task.done()
 
         if self._task_clock_sync:
             self._log.debug("Canceling `task_clock_sync` task...")
             self._task_clock_sync.cancel()
+            self._task_clock_sync.done()
 
         # Disconnect WebSocket clients
         if self._ws_client.is_connected:
@@ -706,7 +715,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             elif wrapper.data.e == BinanceSpotEventType.listStatus:
                 pass  # Implement (OCO order status)
             elif wrapper.data.e == BinanceSpotEventType.balanceUpdate:
-                self._loop.create_task(self._update_account_state_async())
+                self.create_task(self._update_account_state_async())
         except Exception as e:
             self._log.exception(f"Error on handling {repr(raw)}", e)
 

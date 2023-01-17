@@ -127,7 +127,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
         # HTTP API
@@ -164,10 +164,10 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self._loop.create_task(self._update_instruments())
+        self._update_instruments_task = self.create_task(self._update_instruments())
 
         # Connect WebSocket clients
-        self._loop.create_task(self._connect_websockets())
+        self.create_task(self._connect_websockets())
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
@@ -176,24 +176,29 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             await self._ws_client.connect()
 
     async def _update_instruments(self) -> None:
-        while True:
-            self._log.debug(
-                f"Scheduled `update_instruments` to run in "
-                f"{self._update_instruments_interval}s.",
-            )
-            await asyncio.sleep(self._update_instruments_interval)
-            await self._instrument_provider.load_all_async()
-            self._send_all_instruments_to_data_engine()
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `update_instruments` to run in "
+                    f"{self._update_instruments_interval}s.",
+                )
+                await asyncio.sleep(self._update_instruments_interval)
+                await self._instrument_provider.load_all_async()
+                self._send_all_instruments_to_data_engine()
+        except asyncio.CancelledError:
+            self._log.debug("`update_instruments` task was canceled.")
 
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
+            self._update_instruments_task.done()
 
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
+            self._ping_listen_keys_task.done()
 
         # Disconnect WebSocket client
         if self._ws_client.is_connected:

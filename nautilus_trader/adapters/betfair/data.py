@@ -24,6 +24,7 @@ from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
@@ -39,6 +40,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -282,7 +284,14 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
-            if isinstance(data, Data):
+            if isinstance(data, BetfairStartingPrice):
+                # Not a regular data type
+                generic_data = GenericData(
+                    DataType(BetfairStartingPrice, metadata={"instrument_id": data.instrument_id}),
+                    data,
+                )
+                self._handle_data(generic_data)
+            elif isinstance(data, Data):
                 if self._strict_handling:
                     if (
                         hasattr(data, "instrument_id")
@@ -291,11 +300,13 @@ class BetfairDataClient(LiveMarketDataClient):
                         # We receive data for multiple instruments within a subscription, don't emit data if we're not
                         # subscribed to this particular instrument as this will trigger a bunch of error logs
                         continue
-                self._handle_data(data=data)
+                self._handle_data(data)
             elif isinstance(data, Event):
                 self._log.warning(
                     f"Received event: {data}, DataEngine not yet setup to send events",
                 )
+            else:
+                raise RuntimeError()
 
     def _check_stream_unhealthy(self, update: MCM):
         if update.stream_unreliable:

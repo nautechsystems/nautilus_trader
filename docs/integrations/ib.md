@@ -4,8 +4,8 @@ NautilusTrader offers an adapter for integrating with the Interactive Brokers Ga
 [ib_insync](https://github.com/erdewit/ib_insync).
 
 **Note**: If you are planning on using the built-in docker TWS Gateway when using the Interactive Brokers adapter,
-you must manually install `docker` (due to current build issues). Run a manual `pip install docker` inside your
-environment to ensure the Gateway can be run. 
+you must ensure the `docker` package is installed. Run `poetry install --extras "ib docker"` 
+or `poetry install --all-extras` inside your environment to ensure the necessary packages are installed.
 
 ## Overview
 
@@ -18,7 +18,7 @@ The following integration classes are available:
 Interactive Brokers allows searching for instruments via the `qualifyContracts` API, which, if given enough information
 can usually resolve a filter into an actual contract(s). A node can request instruments to be loaded by passing 
 configuration to the `InstrumentProviderConfig` when initialising a `TradingNodeConfig` (note that while `filters`
-is a dict, it must be converted to a tuple when passed to `InstrumentProviderConfig`), 
+is a dict, it must be converted to a tuple when passed to `InstrumentProviderConfig`).
 
 At a minimum, you must specify the `secType` (security type) and `symbol` (equities etc) or `pair` (FX). See examples 
 queries below for common use cases 
@@ -30,10 +30,11 @@ config_node = TradingNodeConfig(
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=InstrumentProviderConfig(
-                load_all=True,
-                filters=tuple({"secType": "CASH", "symbol": "EUR", "currecy": "USD"}.items())
-            )
+            load_all=True,
+            filters=tuple({"secType": "CASH", "symbol": "EUR", "currency": "USD"}.items())
         )
+    ),
+    ...
 )
 ```
 
@@ -50,25 +51,26 @@ config_node = TradingNodeConfig(
 
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include Interactive Brokers
-data and execution clients. To achieve this, add a `IB` section to your client
-configuration(s) and _set the name of the environment variables_ containing your TWS 
-(Traders Workstation) credentials:
+data and execution clients. To achieve this, add an `IB` section to your client
+configuration(s) and set the environment variables to your TWS (Traders Workstation) credentials:
 
 ```python
+import os
+
 config = TradingNodeConfig(
-    ...,  # Omitted 
     data_clients={
-        "IB": {
-            "username": "TWS_USERNAME",
-            "password": "TWS_PASSWORD",
-        },
+        "IB": InteractiveBrokersDataClientConfig(
+            username=os.getenv("TWS_USERNAME"),
+            password=os.getenv("TWS_PASSWORD"),
+            ...  # Omitted
     },
-    exec_clients={
-        "IB": {
-            "username": "TWS_USERNAME",
-            "password": "TWS_PASSWORD",
-        },
-    }
+    exec_clients = {
+        "IB": InteractiveBrokersExecutionClientConfig(
+            username=os.getenv("TWS_USERNAME"),
+            password=os.getenv("TWS_PASSWORD"),
+            ...  # Omitted
+    },
+    ...  # Omitted
 )
 ```
 
@@ -87,7 +89,7 @@ node.build()
 ```
 
 ### API credentials
-There are two options for supplying your credentials to the Betfair clients.
+There are two options for supplying your credentials to the Interactive Brokers clients.
 Either pass the corresponding `username` and `password` values to the config dictionaries, or
 set the following environment variables: 
 - `TWS_USERNAME`
@@ -95,5 +97,3 @@ set the following environment variables:
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
-
-

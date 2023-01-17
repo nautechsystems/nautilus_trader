@@ -105,12 +105,15 @@ class LiveDataClientConfig(NautilusConfig):
 
     Parameters
     ----------
+    handle_revised_bars : bool
+        If DataClient will emit bar updates as soon new bar opens.
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
     """
 
+    handle_revised_bars: bool = False
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
 

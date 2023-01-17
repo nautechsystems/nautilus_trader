@@ -25,6 +25,7 @@ import pandas as pd
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
+from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
@@ -49,7 +50,7 @@ class BacktestVenueConfig(NautilusConfig):
     frozen_account: bool = False
     reject_stop_orders: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
-    # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
+    modules: Optional[list[ImportableConfig]] = None
 
 
 class BacktestDataConfig(NautilusConfig):
@@ -244,7 +245,9 @@ def parse_filters_expr(s: str):
     return safer_eval(s)  # Only allow use of the field object
 
 
-CUSTOM_ENCODINGS: dict[type, Callable] = {}
+CUSTOM_ENCODINGS: dict[type, Callable] = {
+    pd.DataFrame: lambda x: x.to_json(),
+}
 
 
 def json_encoder(x):
@@ -252,8 +255,8 @@ def json_encoder(x):
         return str(x)
     elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
         return x.fully_qualified_name()
-    elif x in CUSTOM_ENCODINGS:
-        func = CUSTOM_ENCODINGS[x]
+    elif type(x) in CUSTOM_ENCODINGS:
+        func = CUSTOM_ENCODINGS[type(x)]
         return func(x)
     raise TypeError(f"Objects of type {type(x)} are not supported")
 

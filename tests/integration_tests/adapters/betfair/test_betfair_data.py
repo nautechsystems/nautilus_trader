@@ -26,6 +26,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -39,6 +40,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
@@ -279,7 +281,7 @@ class TestBetfairDataClient:
         expected = (
             ["OrderBookDeltas"] * 272
             + ["InstrumentStatusUpdate"] * 12
-            + ["BetfairStartingPrice"] * 12
+            + ["GenericData"] * 12
             + ["OrderBookDeltas"] * 12
         )
         assert result == expected
@@ -491,6 +493,22 @@ class TestBetfairDataClient:
         ]
         assert len(starting_prices_near) == 1739
         assert len(starting_prices_far) == 1182
+
+    def test_betfair_starting_price(self):
+        # Arrange
+        lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+
+        # Act
+        for line in lines[-100:]:
+            self.client.on_market_update(line)
+
+        # Assert
+        starting_prices = [
+            t
+            for t in self.messages
+            if isinstance(t, GenericData) and isinstance(t.data, BetfairStartingPrice)
+        ]
+        assert len(starting_prices) == 36
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(

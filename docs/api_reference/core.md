@@ -4,16 +4,6 @@
 .. automodule:: nautilus_trader.core
 ```
 
-## Collections
-
-```{eval-rst}
-.. automodule:: nautilus_trader.core.collections
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Datetime
 
 ```{eval-rst}

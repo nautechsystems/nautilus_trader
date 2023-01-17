@@ -26,6 +26,7 @@ from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -137,8 +138,8 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             interest_rate_data = pd.read_csv(
                 os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
             )
-
-            fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+            config = FXRolloverInterestConfig(interest_rate_data)
+            fx_rollover_interest = FXRolloverInterestModule(config)
 
             engine.add_venue(
                 venue=Venue("SIM"),

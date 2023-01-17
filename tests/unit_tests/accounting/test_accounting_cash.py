@@ -532,7 +532,7 @@ class TestCashAccount:
         with pytest.raises(ValueError):
             account.calculate_commission(
                 instrument=instrument,
-                last_qty=Quantity.from_int(100000),
+                last_qty=Quantity.from_int(100_000),
                 last_px=Price.from_str("11450.50"),
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             )
@@ -552,7 +552,7 @@ class TestCashAccount:
         # Act
         result = account.calculate_commission(
             instrument=instrument,
-            last_qty=Quantity.from_int(100000),
+            last_qty=Quantity.from_int(100_000),
             last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.MAKER,
             inverse_as_quote=inverse_as_quote,
@@ -569,7 +569,7 @@ class TestCashAccount:
         # Act
         result = account.calculate_commission(
             instrument=instrument,
-            last_qty=Quantity.from_int(1500000),
+            last_qty=Quantity.from_int(1_500_000),
             last_px=Price.from_str("0.80050"),
             liquidity_side=LiquiditySide.TAKER,
         )
@@ -585,7 +585,7 @@ class TestCashAccount:
         # Act
         result = account.calculate_commission(
             instrument=instrument,
-            last_qty=Quantity.from_int(100000),
+            last_qty=Quantity.from_int(100_000),
             last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.TAKER,
         )
@@ -601,7 +601,7 @@ class TestCashAccount:
         # Act
         result = account.calculate_commission(
             instrument=instrument,
-            last_qty=Quantity.from_int(2200000),
+            last_qty=Quantity.from_int(2_200_000),
             last_px=Price.from_str("120.310"),
             liquidity_side=LiquiditySide.TAKER,
         )

@@ -46,7 +46,7 @@ def test_l3_feed():
     assert i == 100_047
     assert book.best_ask_level().price == 61405.27923706
     assert book.best_ask_level().volume() == 0.12227
-    assert book.best_bid_level().price == Price.from_int(61391)
+    assert book.best_bid_level().price == Price.from_int(61_391)
     assert book.best_bid_level().volume() == 1
 
 

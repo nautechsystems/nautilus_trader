@@ -165,8 +165,8 @@ class TestL2OrderBookExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("110.000"),
             ask=Price.from_str("110.010"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
+            bid_size=Quantity.from_int(1_500_000),
+            ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
             ts_init=0,
         )
@@ -183,7 +183,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(20000),
+            quantity=Quantity.from_int(20_000),
             price=Price.from_int(20),
             post_only=False,
         )
@@ -206,8 +206,8 @@ class TestL2OrderBookExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("110.000"),
             ask=Price.from_str("110.010"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
+            bid_size=Quantity.from_int(1_500_000),
+            ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
             ts_init=0,
         )
@@ -224,7 +224,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(70000),
+            quantity=Quantity.from_int(70_000),
             price=Price.from_int(20),
             post_only=False,
         )
@@ -253,7 +253,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(2000),
+            quantity=Quantity.from_int(2_000),
             price=Price.from_str("14"),
             post_only=True,
         )
@@ -280,7 +280,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(1000),
+            quantity=Quantity.from_int(1_000),
             price=Price.from_str("14"),
             post_only=False,
         )
@@ -291,8 +291,8 @@ class TestL2OrderBookExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("15"),
             ask=Price.from_str("16"),
-            bid_size=Quantity.from_int(1000),
-            ask_size=Quantity.from_int(1000),
+            bid_size=Quantity.from_int(1_000),
+            ask_size=Quantity.from_int(1_000),
         )
         # New tick will be in cross with our order
         self.exchange.process_quote_tick(tick)
@@ -318,7 +318,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(2000),
+            quantity=Quantity.from_int(2_000),
             price=Price.from_str("14"),
             post_only=False,
         )
@@ -328,7 +328,7 @@ class TestL2OrderBookExchange:
         tick1 = TradeTick(
             instrument_id=USDJPY_SIM.id,
             price=Price.from_str("14.0"),
-            size=Quantity.from_int(1000),
+            size=Quantity.from_int(1_000),
             aggressor_side=AggressorSide.SELLER,
             trade_id=TradeId("123456789"),
             ts_event=0,
