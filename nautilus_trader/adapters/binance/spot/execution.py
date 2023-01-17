@@ -219,11 +219,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         self._listen_key = response["listenKey"]
         self._log.info(f"Listen key {self._listen_key}")
-        self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         # Setup clock sync
         if self._clock_sync_interval_secs > 0:
-            self._task_clock_sync = self._loop.create_task(self._sync_clock_with_binance_server())
+            self._task_clock_sync = self.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -706,7 +706,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             elif wrapper.data.e == BinanceSpotEventType.listStatus:
                 pass  # Implement (OCO order status)
             elif wrapper.data.e == BinanceSpotEventType.balanceUpdate:
-                self._loop.create_task(self._update_account_state_async())
+                self.create_task(self._update_account_state_async())
         except Exception as e:
             self._log.exception(f"Error on handling {repr(raw)}", e)
 

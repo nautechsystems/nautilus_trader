@@ -123,7 +123,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
         # HTTP API
@@ -154,10 +154,10 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self._loop.create_task(self._update_instruments())
+        self._update_instruments_task = self.create_task(self._update_instruments())
 
         # Connect WebSocket clients
-        self._loop.create_task(self._connect_websockets())
+        self.create_task(self._connect_websockets())
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
