@@ -42,7 +42,7 @@ def get_size_of(obj):
 
     Returns
     -------
-    uint64
+    int
 
     """
     marked: set = {id(obj)}
