@@ -28,6 +28,7 @@ from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFutu
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
+from nautilus_trader.common.clock import LiveClock
 
 
 class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
@@ -265,7 +266,7 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        symbol: BinanceSymbol
+        symbol: Optional[BinanceSymbol] = None
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceFuturesPositionRisk]:
@@ -289,10 +290,12 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
     def __init__(
         self,
         client: BinanceHttpClient,
+        clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
     ):
         super().__init__(
             client=client,
+            clock=clock,
             account_type=account_type,
         )
         if not account_type.is_futures:
@@ -320,27 +323,25 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_futures_hedge_mode(
         self,
-        timestamp: str,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesDualSidePosition:
         """Check Binance Futures hedge mode (dualSidePosition)"""
         return await self._endpoint_futures_position_mode._get(
             parameters=self._endpoint_futures_position_mode.GetParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
         )
 
     async def set_futures_hedge_mode(
         self,
-        timestamp: str,
         dual_side_position: bool,
         recv_window: Optional[str] = None,
     ) -> BinanceStatusCode:
         """Set Binance Futures hedge mode (dualSidePosition)"""
         return await self._endpoint_futures_position_mode._post(
             parameters=self._endpoint_futures_position_mode.PostParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 dualSidePosition=dual_side_position,
                 recvWindow=recv_window,
             ),
@@ -348,14 +349,13 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def delete_futures_all_open_orders(
         self,
-        timestamp: str,
         symbol: BinanceSymbol,
         recv_window: Optional[str] = None,
     ) -> BinanceStatusCode:
         """Delete all Futures open orders."""
         return await self._endpoint_futures_all_open_orders._delete(
             parameters=self._endpoint_futures_all_open_orders.DeleteParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 symbol=symbol,
                 recvWindow=recv_window,
             ),
@@ -363,27 +363,25 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_futures_account_info(
         self,
-        timestamp: str,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesAccountInfo:
         """Check Binance Futures account information."""
         return await self._endpoint_futures_account._get(
             parameters=self._endpoint_futures_account.GetParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
         )
 
     async def query_futures_position_risk(
         self,
-        timestamp: str,
-        symbol: BinanceSymbol,
+        symbol: Optional[BinanceSymbol] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceFuturesPositionRisk]:
         """Check all Futures position's info for a symbol."""
         return await self._endpoint_futures_position_risk._get(
             parameters=self._endpoint_futures_position_risk.GetParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 symbol=symbol,
                 recvWindow=recv_window,
             ),

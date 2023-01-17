@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFuturesCommissionRate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
+from nautilus_trader.common.clock import LiveClock
 
 
 class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
@@ -93,9 +94,11 @@ class BinanceFuturesWalletHttpAPI:
     def __init__(
         self,
         client: BinanceHttpClient,
+        clock: LiveClock,
         account_type: BinanceAccountType,
     ):
         self.client = client
+        self._clock = clock
 
         if account_type == BinanceAccountType.FUTURES_USDT:
             self.base_endpoint = "/fapi/v1/"
@@ -112,16 +115,19 @@ class BinanceFuturesWalletHttpAPI:
             self.base_endpoint,
         )
 
+    def _timestamp(self) -> str:
+        """Create Binance timestamp from internal clock"""
+        return str(self._clock.timestamp_ms())
+
     async def query_futures_commission_rate(
         self,
-        timestamp: str,
         symbol: BinanceSymbol,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesCommissionRate:
         """Get Futures commission rates for a given symbol."""
         rate = await self._endpoint_futures_commission_rate._get(
             parameters=self._endpoint_futures_commission_rate.GetParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 symbol=symbol,
                 recvWindow=recv_window,
             ),

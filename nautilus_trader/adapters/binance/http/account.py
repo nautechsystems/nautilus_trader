@@ -29,6 +29,7 @@ from nautilus_trader.adapters.binance.common.schemas.account import BinanceUserT
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
 
@@ -450,10 +451,12 @@ class BinanceAccountHttpAPI:
     def __init__(
         self,
         client: BinanceHttpClient,
+        clock: LiveClock,
         account_type: BinanceAccountType,
     ):
         PyCondition.not_none(client, "client")
         self.client = client
+        self._clock = clock
 
         if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
@@ -475,10 +478,13 @@ class BinanceAccountHttpAPI:
         self._endpoint_open_orders = BinanceOpenOrdersHttp(client, self.base_endpoint)
         self._endpoint_user_trades = BinanceUserTradesHttp(client, user_trades_url)
 
+    def _timestamp(self) -> str:
+        """Create Binance timestamp from internal clock"""
+        return str(self._clock.timestamp_ms())
+
     async def query_order(
         self,
         symbol: BinanceSymbol,
-        timestamp: str,
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
@@ -491,7 +497,7 @@ class BinanceAccountHttpAPI:
         binance_order = await self._endpoint_order._get(
             parameters=self._endpoint_order.GetDeleteParameters(
                 symbol=symbol,
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 orderId=order_id,
                 origClientOrderId=orig_client_order_id,
                 recvWindow=recv_window,
@@ -502,7 +508,6 @@ class BinanceAccountHttpAPI:
     async def cancel_order(
         self,
         symbol: BinanceSymbol,
-        timestamp: str,
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
@@ -515,7 +520,7 @@ class BinanceAccountHttpAPI:
         binance_order = await self._endpoint_order._delete(
             parameters=self._endpoint_order.GetDeleteParameters(
                 symbol=symbol,
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 orderId=order_id,
                 origClientOrderId=orig_client_order_id,
                 recvWindow=recv_window,
@@ -526,7 +531,6 @@ class BinanceAccountHttpAPI:
     async def new_order(
         self,
         symbol: BinanceSymbol,
-        timestamp: str,
         side: BinanceOrderSide,
         type: BinanceOrderType,
         time_in_force: Optional[BinanceTimeInForce] = None,
@@ -551,7 +555,7 @@ class BinanceAccountHttpAPI:
         binance_order = await self._endpoint_order._post(
             parameters=self._endpoint_order.PostParameters(
                 symbol=symbol,
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 side=side,
                 type=type,
                 timeInForce=time_in_force,
@@ -578,7 +582,6 @@ class BinanceAccountHttpAPI:
     async def query_all_orders(
         self,
         symbol: BinanceSymbol,
-        timestamp: str,
         order_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
@@ -589,7 +592,7 @@ class BinanceAccountHttpAPI:
         return await self._endpoint_all_orders._get(
             parameters=self._endpoint_all_orders.GetParameters(
                 symbol=symbol,
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 orderId=order_id,
                 startTime=start_time,
                 endTime=end_time,
@@ -600,7 +603,6 @@ class BinanceAccountHttpAPI:
 
     async def query_open_orders(
         self,
-        timestamp: str,
         symbol: Optional[BinanceSymbol] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceOrder]:
@@ -608,7 +610,7 @@ class BinanceAccountHttpAPI:
         return await self._endpoint_open_orders._get(
             parameters=self._endpoint_open_orders.GetParameters(
                 symbol=symbol,
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
         )
@@ -616,7 +618,6 @@ class BinanceAccountHttpAPI:
     async def query_user_trades(
         self,
         symbol: BinanceSymbol,
-        timestamp: str,
         order_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
@@ -632,7 +633,7 @@ class BinanceAccountHttpAPI:
         return await self._endpoint_user_trades._get(
             parameters=self._endpoint_user_trades.GetParameters(
                 symbol=symbol,
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 orderId=order_id,
                 startTime=start_time,
                 endTime=end_time,

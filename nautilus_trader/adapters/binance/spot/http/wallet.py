@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
+from nautilus_trader.common.clock import LiveClock
 
 
 class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
@@ -91,9 +92,11 @@ class BinanceSpotWalletHttpAPI:
     def __init__(
         self,
         client: BinanceHttpClient,
+        clock: LiveClock,
         account_type: BinanceAccountType,
     ):
         self.client = client
+        self._clock = clock
         self.base_endpoint = "/sapi/v1/asset/"
 
         if not account_type.is_spot_or_margin:
@@ -103,15 +106,18 @@ class BinanceSpotWalletHttpAPI:
 
         self._endpoint_spot_trade_fee = BinanceSpotTradeFeeHttp(client, self.base_endpoint)
 
+    def _timestamp(self) -> str:
+        """Create Binance timestamp from internal clock"""
+        return str(self._clock.timestamp_ms())
+
     async def query_spot_trade_fees(
         self,
-        timestamp: str,
         symbol: Optional[BinanceSymbol] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceSpotTradeFee]:
         fees = await self._endpoint_spot_trade_fee._get(
             parameters=self._endpoint_spot_trade_fee.GetParameters(
-                timestamp=timestamp,
+                timestamp=self._timestamp(),
                 symbol=symbol,
                 recvWindow=recv_window,
             ),
