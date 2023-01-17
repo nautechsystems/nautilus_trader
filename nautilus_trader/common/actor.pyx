@@ -941,9 +941,20 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.venue.status",
+            topic=f"data.status.{venue.to_str()}",
             handler=self.handle_venue_status_update,
         )
+
+        cdef Subscribe command = Subscribe(
+            client_id=client_id,
+            venue=venue,
+            data_type=DataType(VenueStatusUpdate),
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+        self._log.info(f"Subscribed to {venue} VenueStatusUpdate.")
 
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
@@ -962,8 +973,8 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.venue.status",
-            handler=self.handle_instrument_status_update,
+            topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
+            handler=self.handle_instrument,
         )
 
         cdef Subscribe command = Subscribe(
@@ -975,6 +986,7 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
+        self._log.info(f"Subscribed to {instrument_id} InstrumentStatusUpdate.")
 
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
@@ -1322,7 +1334,7 @@ cdef class Actor(Component):
         Parameters
         ----------
         venue : Venue
-            The venue to subscribe to.
+            The venue to unsubscribe to.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
@@ -1332,9 +1344,52 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.venue.status",
+            topic=f"data.status.{venue.to_str()}",
             handler=self.handle_venue_status_update,
         )
+
+        cdef Unsubscribe command = Unsubscribe(
+            client_id=client_id,
+            venue=venue,
+            data_type=DataType(VenueStatusUpdate),
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+        self._log.info(f"Unsubscribed from {venue} VenueStatusUpdate.")
+
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+        """
+        Unsubscribe to status updates of the given venue.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe to status updates for.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
+            handler=self.handle_venue_status_update,
+        )
+        cdef Unsubscribe command = Unsubscribe(
+            client_id=client_id,
+            venue=instrument_id.venue,
+            data_type=DataType(InstrumentStatusUpdate),
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatusUpdate.")
+
 
     cpdef void publish_data(self, DataType data_type, Data data) except *:
         """
