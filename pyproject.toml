@@ -29,7 +29,6 @@ include = [
     { path = "nautilus_core/*[!target]*/*", format = "sdist" },
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
-    # Cython definitions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.pyd", format = "wheel" },
 ]
 
@@ -96,7 +95,7 @@ optional = true
 
 [tool.poetry.group.test.dependencies]
 coverage = "^6.5.0"
-pytest = "^7.2.0"
+pytest = "^7.2.1"
 pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
