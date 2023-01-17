@@ -225,7 +225,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_venue_status_updates(venue)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_instrument_status_updates(instrument_id)
@@ -283,7 +283,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._remove_subscription_bars(bar_type)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument_status_updates(instrument_id)
