@@ -973,7 +973,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
-            handler=self.handle_instrument,
+            handler=self.handle_instrument_status_update,
         )
 
         cdef Subscribe command = Subscribe(
