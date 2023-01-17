@@ -77,6 +77,8 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.model.data.venue import VenueStatusUpdate
+
 
 cdef class DataEngine(Component):
     """
@@ -1087,8 +1089,10 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, StatusUpdate):
-            self._handle_status_update(data)
+        elif isinstance(data, VenueStatusUpdate):
+            self._handle_venue_status_update(data)
+        elif isinstance(data, InstrumentStatusUpdate):
+            self._handle_instrument_status_update(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
         elif isinstance(data, GenericData):
@@ -1171,8 +1175,11 @@ cdef class DataEngine(Component):
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
-    cdef void _handle_status_update(self, StatusUpdate data) except *:
-        self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
+    cdef void _handle_venue_status_update(self, VenueStatusUpdate data) except *:
+        self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
+
+    cdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data) except *:
+        self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
 
     cdef void _handle_close_price(self, InstrumentClose data) except *:
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
