@@ -94,6 +94,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             The instrument provider.
         handle_revised_bars : bool
             If DataClient will emit bar updates as soon new bar opens.
+
         """
         super().__init__(
             loop=loop,
