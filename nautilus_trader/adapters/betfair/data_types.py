@@ -18,7 +18,6 @@ from enum import Enum
 
 import pyarrow as pa
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.ticker import Ticker
@@ -26,7 +25,6 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -209,7 +207,7 @@ class BetfairStartingPrice(Data):
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            bsp=Price(values["bsp"], BETFAIR_PRICE_PRECISION) if values["bsp"] else None,
+            bsp=values["bsp"] if values["bsp"] else None,
         )
 
     def to_dict(self):
