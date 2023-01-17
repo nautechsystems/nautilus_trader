@@ -508,21 +508,21 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void subscribe_venue_status_updates(self, Venue venue) except *:
         """
-        Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
+        Subscribe to `InstrumentStatusUpdate` data for the venue.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The tick instrument to subscribe to.
+        venue : Venue
+            The venue to subscribe to.
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `VenueStatusUpdates` data for {venue}: not implemented. "  # pragma: no cover
+            f"Cannot subscribe to `VenueStatusUpdate` data for {venue}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `subscribe_venue_status_updates` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
         Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
 
@@ -710,12 +710,12 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void unsubscribe_venue_status_updates(self, Venue venue) except *:
         """
-        Unsubscribe from `InstrumentStatusUpdates` data for the given instrument ID.
+        Unsubscribe from `InstrumentStatusUpdate` data for the given venue.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The tick instrument to unsubscribe from.
+        venue : Venue
+            The venue to unsubscribe from.
 
         """
         self._log.error(  # pragma: no cover
@@ -724,14 +724,14 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `InstrumentStatusUpdates` data for the given instrument ID.
+        Unsubscribe from `InstrumentStatusUpdate` data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument to unsubscribe from.
+            The instrument status updates to unsubscribe from.
 
         """
         self._log.error(  # pragma: no cover
