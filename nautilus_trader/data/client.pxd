@@ -95,7 +95,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void subscribe_venue_status_updates(self, Venue venue) except *
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instruments(self) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
@@ -105,7 +105,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_venue_status_updates(self, Venue venue) except *
     cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *
 

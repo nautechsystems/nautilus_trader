@@ -926,7 +926,7 @@ cdef class Actor(Component):
 
     cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id = None) except *:
         """
-        Subscribe to status updates of the given venue.
+        Subscribe to status updates for the given venue.
 
         Parameters
         ----------
@@ -954,11 +954,10 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Subscribed to {venue} VenueStatusUpdate.")
 
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
-        Subscribe to status updates of the given instrument ID.
+        Subscribe to status updates for the given instrument ID.
 
         Parameters
         ----------
@@ -1329,12 +1328,12 @@ cdef class Actor(Component):
 
     cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id = None) except *:
         """
-        Unsubscribe to status updates of the given venue.
+        Unsubscribe to status updates for the given venue.
 
         Parameters
         ----------
         venue : Venue
-            The venue to unsubscribe to.
+            The venue to unsubscribe from.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue.
@@ -1357,7 +1356,6 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {venue} VenueStatusUpdate.")
 
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
