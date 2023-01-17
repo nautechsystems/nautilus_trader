@@ -447,7 +447,7 @@ class TestInstrumentProvider:
     def betting_instrument(
         market_id: str = "1.179082386",
         selection_id: str = "50214",
-        handicap: Optional[str] = "0.0",
+        handicap: Optional[str] = None,
     ) -> BettingInstrument:
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
