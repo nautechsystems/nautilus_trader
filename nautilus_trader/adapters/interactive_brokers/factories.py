@@ -217,6 +217,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            handle_revised_bars=config.handle_revised_bars,
         )
         return data_client
 

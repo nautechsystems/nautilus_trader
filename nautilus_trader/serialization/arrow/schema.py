@@ -131,8 +131,11 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "close_type": pa.dictionary(pa.int8(), pa.string()),
-            "close_price": pa.float64(),
+            "close_price": pa.string(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
         },
+        metadata={"type": "InstrumentClose"},
     ),
     InstrumentStatusUpdate: pa.schema(
         {

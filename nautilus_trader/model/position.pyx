@@ -422,9 +422,10 @@ cdef class Position:
             self._sell_qty = Quantity.zero_c(precision=self.size_precision)
             self._commissions = {}
             self.opening_order_id = fill.client_order_id
+            self.closing_order_id = None
+            self.peak_qty = Quantity.zero_c(precision=self.size_precision)
             self.ts_init = fill.ts_init
             self.ts_opened = fill.ts_event
-            self.ts_last = fill.ts_event
             self.ts_closed = 0
             self.duration_ns = 0
             self.avg_px_open = fill.last_px.as_f64_c()

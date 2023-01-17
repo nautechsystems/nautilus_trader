@@ -15,7 +15,6 @@
 
 from nautilus_trader.serialization.arrow.implementations import account_state  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import bar  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import closing_prices  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import instruments  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import order_book  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import order_events  # noqa: F401

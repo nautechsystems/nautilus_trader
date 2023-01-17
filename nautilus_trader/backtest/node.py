@@ -21,6 +21,7 @@ import pandas as pd
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
@@ -62,8 +63,10 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        # TODO (bm) Breaking with `TypeError: Expected type, got ModelMetaclass`
-        # PyCondition.list_type(configs, BacktestRunConfig, "configs")
+        PyCondition.true(
+            all([isinstance(config, BacktestRunConfig) for config in configs]),
+            "configs",
+        )
 
         self._validate_configs(configs)
 
@@ -178,6 +181,7 @@ class BacktestNode:
                 else {},
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
+                modules=[ActorFactory.create(module) for module in (config.modules or [])],
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
             )

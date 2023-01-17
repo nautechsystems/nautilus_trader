@@ -256,6 +256,7 @@ cdef class MarketDataClient(DataClient):
         self._subscriptions_quote_tick = set()                # type: set[InstrumentId]
         self._subscriptions_trade_tick = set()                # type: set[InstrumentId]
         self._subscriptions_bar = set()                       # type: set[BarType]
+        self._subscriptions_venue_status_update = set()       # type: set[Venue]
         self._subscriptions_instrument_status_update = set()  # type: set[InstrumentId]
         self._subscriptions_instrument_close = set()          # type: set[InstrumentId]
         self._subscriptions_instrument = set()                # type: set[InstrumentId]
@@ -505,6 +506,22 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void subscribe_venue_status_updates(self, Venue venue) except *:
+        """
+        Subscribe to `InstrumentStatusUpdate` data for the venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `VenueStatusUpdate` data for {venue}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_venue_status_updates` method for this client.",  # pragma: no cover
+        )
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
         Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
@@ -691,14 +708,30 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue) except *:
+        """
+        Unsubscribe from `InstrumentStatusUpdate` data for the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `VenueStatusUpdates` data for {venue}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_venue_status_updates` method for this client.",  # pragma: no cover
+        )
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `InstrumentStatusUpdates` data for the given instrument ID.
+        Unsubscribe from `InstrumentStatusUpdate` data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument to unsubscribe from.
+            The instrument status updates to unsubscribe from.
 
         """
         self._log.error(  # pragma: no cover
@@ -763,6 +796,11 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_bar.add(bar_type)
 
+    cpdef void _add_subscription_venue_status_updates(self, Venue venue) except *:
+        Condition.not_none(venue, "venue")
+
+        self._subscriptions_venue_status_update.add(venue)
+
     cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -812,6 +850,11 @@ cdef class MarketDataClient(DataClient):
         Condition.not_none(bar_type, "bar_type")
 
         self._subscriptions_bar.discard(bar_type)
+
+    cpdef void _remove_subscription_venue_status_updates(self, Venue venue) except *:
+        Condition.not_none(venue, "venue")
+
+        self._subscriptions_venue_status_update.discard(venue)
 
     cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
