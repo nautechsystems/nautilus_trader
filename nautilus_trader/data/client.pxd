@@ -66,6 +66,7 @@ cdef class MarketDataClient(DataClient):
     cdef set _subscriptions_quote_tick
     cdef set _subscriptions_trade_tick
     cdef set _subscriptions_bar
+    cdef set _subscriptions_venue_status_update
     cdef set _subscriptions_instrument_status_update
     cdef set _subscriptions_instrument_close
     cdef set _subscriptions_instrument
@@ -92,6 +93,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
+    cpdef void subscribe_venue_status_updates(self, Venue venue) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instruments(self) except *
@@ -103,6 +105,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue) except *
     cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *
@@ -112,6 +115,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void _add_subscription_bars(self, BarType bar_type) except *
+    cpdef void _add_subscription_venue_status_updates(self, Venue venue) except *
     cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *
@@ -121,6 +125,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_bars(self, BarType bar_type) except *
+    cpdef void _remove_subscription_venue_status_updates(self, Venue venue) except *
     cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id) except *
 

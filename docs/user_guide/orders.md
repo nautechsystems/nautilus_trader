@@ -134,7 +134,7 @@ to BUY 100,000 AUD using USD:
 order: MarketOrder = self.order_factory.market(
         instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
         order_side=OrderSide.BUY,
-        quantity=Quantity.from_int(100000),
+        quantity=Quantity.from_int(100_000),
         time_in_force=TimeInForce.IOC,  # <-- optional (default GTC)
         reduce_only=False,  # <-- optional (default False)
         tags="ENTRY",  # <-- optional (default None)

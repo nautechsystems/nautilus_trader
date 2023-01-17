@@ -250,7 +250,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -314,7 +314,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -385,7 +385,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(

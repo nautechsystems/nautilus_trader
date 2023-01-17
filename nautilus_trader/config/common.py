@@ -132,16 +132,22 @@ class CacheDatabaseConfig(NautilusConfig):
     type : str, {'in-memory', 'redis'}, default 'in-memory'
         The database type.
     host : str, default 'localhost'
-        The database host address (default for Redis).
-    port : int, default 6379
-        The database port (default for Redis).
+        The database host address.
+    port : int, optional
+        The database port.
+    username : str, optional
+        The account username for the database connection.
+    password : str, optional
+        The account password for the database connection.
     flush : bool, default False
         If database should be flushed before start.
     """
 
     type: str = "in-memory"
     host: str = "localhost"
-    port: int = 6379
+    port: Optional[int] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
     flush: bool = False
 
 
@@ -351,9 +357,9 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        strategy_cls = resolve_path(config.actor_path)
+        actor_cls = resolve_path(config.actor_path)
         config_cls = resolve_path(config.config_path)
-        return strategy_cls(config=config_cls(**config.config))
+        return actor_cls(config=config_cls(**config.config))
 
 
 class StrategyConfig(NautilusConfig, kw_only=True):
@@ -511,4 +517,5 @@ class ImportableConfig(NautilusConfig):
     def create(self):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
-        return msgspec.json.decode(msgspec.json.encode(self.config), type=cls)
+        cfg = msgspec.json.encode(self.config)
+        return msgspec.json.decode(cfg, type=cls)

@@ -1622,7 +1622,7 @@ class TestActor:
         actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
-        assert catalog.fs.exists(f"{catalog.path}/SignalTest.feather")
+        assert catalog.fs.exists(f"{catalog.path}/genericdata_SignalTest.feather")
 
     def test_subscribe_bars(self):
         # Arrange

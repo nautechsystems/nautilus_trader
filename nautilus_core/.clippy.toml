@@ -1,2 +1,2 @@
 cognitive-complexity-threshold = 15
-allow-expect-in-tests = false
+allow-expect-in-tests = true

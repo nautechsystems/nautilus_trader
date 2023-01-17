@@ -7,7 +7,7 @@ format (Parquet) for this guide.
 For more details on how to load data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
 
 ## Running in docker
-~~A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
+A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
 installation. This is the fastest way to get up and running to try out Nautilus. Bear in mind that any data will be 
 deleted when the container is deleted. 
 
@@ -18,7 +18,7 @@ deleted when the container is deleted.
 - Run the docker container, exposing the jupyter port (recommended 8889 in case another jupyter server is running): 
   - `docker run -p 8889:8888 ghcr.io/nautechsystems/jupyterlab:develop`
 - Open your web browser to `localhost:{port}`
-  - https://localhost:8889~~
+  - https://localhost:8889
 
 **NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
 The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 

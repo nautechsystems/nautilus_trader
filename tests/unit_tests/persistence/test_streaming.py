@@ -99,8 +99,9 @@ class TestPersistenceStreaming:
             "OrderFilled": 324,
             "OrderInitialized": 325,
             "OrderSubmitted": 324,
-            "PositionOpened": 1,
-            "PositionChanged": 323,
+            "PositionOpened": 3,
+            "PositionClosed": 2,
+            "PositionChanged": 321,
             "OrderDenied": 1,
             "BettingInstrument": 1,
         }

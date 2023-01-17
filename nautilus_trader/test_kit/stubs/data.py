@@ -28,12 +28,14 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -137,7 +139,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
             price=price or Price.from_str("1.001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -154,7 +156,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -245,6 +247,18 @@ class TestDataStubs:
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
+        )
+
+    @staticmethod
+    def instrument_close() -> InstrumentClose:
+        from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+
+        return InstrumentClose(
+            TestIdStubs.betting_instrument_id(),
+            Price(1.0, BETFAIR_PRICE_PRECISION),
+            InstrumentCloseType.CONTRACT_EXPIRED,
+            0,
+            0,
         )
 
     @staticmethod
