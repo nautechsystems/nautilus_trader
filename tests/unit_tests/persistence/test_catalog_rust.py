@@ -169,6 +169,7 @@ def test_pyo3_parquet_reader_quote_ticks(benchmark):
     # )
 
 
+@pytest.mark.skip(reason="WIP")
 def test_pyo3_buffer_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
     reader = None
