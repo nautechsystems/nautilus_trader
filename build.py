@@ -3,7 +3,6 @@
 import itertools
 import os
 import platform
-import shlex
 import shutil
 import subprocess
 from datetime import datetime
@@ -73,25 +72,14 @@ def _build_rust_libs() -> None:
     print(build_cmd)
     os.system(build_cmd)  # noqa
 
+
+def _build_rust_pyo3() -> None:
     try:
         # Build the Python bindings from pyo3 using maturin
-        print("Building Python bindings...")
-        manifest_path = "nautilus_core/pyo3/Cargo.toml"
-        command = [
-            "maturin",
-            "develop",
-            "--manifest-path",
-            manifest_path,
-            "--features",
-            "extension-module",
-        ]
-
-        subprocess.run(
-            shlex.join(command),
-            check=True,
-            shell=True,
-            capture_output=True,
-        )
+        print("Building Pyo3 rust module...")
+        build_cmd = "(cd nautilus_core/pyo3 && maturin develop --features extension-module)"
+        print(build_cmd)
+        os.system(build_cmd)  # noqa
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running maturin: {e.stderr.decode()}",
@@ -275,6 +263,7 @@ def _get_rustc_version() -> str:
 def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
+    _build_rust_pyo3()
 
     # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
