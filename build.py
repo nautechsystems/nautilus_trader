@@ -60,23 +60,28 @@ RUST_LIBS = [
 
 
 def _build_rust_libs() -> None:
-    build_options = ""
-    extra_flags = ""
-    if platform.system() == "Windows":
-        extra_flags = " --target x86_64-pc-windows-msvc"
+    try:
+        # Build the Rust libraries using Cargo
+        build_options = ""
+        extra_flags = ""
+        if platform.system() == "Windows":
+            extra_flags = " --target x86_64-pc-windows-msvc"
 
-    build_options += " --release" if BUILD_MODE == "release" else ""
-    # Build the Rust libraries using Cargo
-    print("Compiling Rust libraries...")
-    build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
-    print(build_cmd)
-    os.system(build_cmd)  # noqa
+        build_options += " --release" if BUILD_MODE == "release" else ""
+        print("Compiling Rust libraries...")
+        build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
+        print(build_cmd)
+        os.system(build_cmd)  # noqa
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"Error running cargo: {e.stderr.decode()}",
+        ) from e
 
 
 def _build_rust_pyo3() -> None:
     try:
         # Build the Python bindings from pyo3 using maturin
-        print("Building Pyo3 rust module...")
+        print("Building pyo3 Rust module...")
         build_cmd = "(cd nautilus_core/pyo3 && maturin develop --features extension-module)"
         print(build_cmd)
         os.system(build_cmd)  # noqa

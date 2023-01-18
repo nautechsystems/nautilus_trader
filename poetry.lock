@@ -1272,6 +1272,36 @@ files = [
 ]
 
 [[package]]
+name = "maturin"
+version = "0.14.10"
+description = "Build and publish crates with pyo3, rust-cpython and cffi bindings as well as rust binaries as python packages"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "maturin-0.14.10-py3-none-linux_armv6l.whl", hash = "sha256:ec8269c02cc435893308dfd50f57f14fb1be3554e4e61c5bf49b97363b289775"},
+    {file = "maturin-0.14.10-py3-none-macosx_10_7_x86_64.whl", hash = "sha256:e9c19dc0a28109280f7d091ca7b78e25f3fc340fcfac92801829a21198fa20eb"},
+    {file = "maturin-0.14.10-py3-none-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl", hash = "sha256:cf950ebfe449a97617b91d75e09766509e21a389ce3f7b6ef15130ad8a95430a"},
+    {file = "maturin-0.14.10-py3-none-manylinux_2_12_i686.manylinux2010_i686.musllinux_1_1_i686.whl", hash = "sha256:c0d25e82cb6e5de9f1c028fcf069784be4165b083e79412371edce05010b68f3"},
+    {file = "maturin-0.14.10-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl", hash = "sha256:9da98bee0a548ecaaa924cc8cb94e49075d5e71511c62a1633a6962c7831a29b"},
+    {file = "maturin-0.14.10-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", hash = "sha256:2f097a63f3bed20a7da56fc7ce4d44ef8376ee9870604da16b685f2d02c87c79"},
+    {file = "maturin-0.14.10-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.musllinux_1_1_armv7l.whl", hash = "sha256:4946ad7545ba5fc0ad08bc98bc8e9f6ffabb6ded71db9ed282ad4596b998d42a"},
+    {file = "maturin-0.14.10-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.musllinux_1_1_ppc64le.whl", hash = "sha256:98bfed21c3498857b3381efeb041d77e004a93b22261bf9690fe2b9fbb4c210f"},
+    {file = "maturin-0.14.10-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:b157e2e8a0216d02df1d0451201fcb977baf0dcd223890abfbfbfd01e0b44630"},
+    {file = "maturin-0.14.10-py3-none-win32.whl", hash = "sha256:5abf311d4618b673efa30cacdac5ae2d462e49da58db9a5bf0d8bde16d9c16be"},
+    {file = "maturin-0.14.10-py3-none-win_amd64.whl", hash = "sha256:11b8550ceba5b81465a18d06f0d3a4cfc1cd6cbf68eda117c253bbf3324b1264"},
+    {file = "maturin-0.14.10-py3-none-win_arm64.whl", hash = "sha256:6cc9afb89f28bd591b62f8f3c29736c81c322cffe88f9ab8eb1749377bbc3521"},
+    {file = "maturin-0.14.10.tar.gz", hash = "sha256:895c48cbe56ae994c2a1eeeef19475ca4819aa4c6412af727a63a772e8ef2d87"},
+]
+
+[package.dependencies]
+tomli = {version = ">=1.1.0", markers = "python_version < \"3.11\""}
+
+[package.extras]
+patchelf = ["patchelf"]
+zig = ["ziglang (>=0.10.0,<0.11.0)"]
+
+[[package]]
 name = "mccabe"
 version = "0.7.0"
 description = "McCabe checker, plugin for flake8"
@@ -2563,7 +2593,7 @@ files = [
 name = "tomli"
 version = "2.0.1"
 description = "A lil' TOML parser"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -2621,14 +2651,14 @@ files = [
 
 [[package]]
 name = "types-redis"
-version = "4.4.0.1"
+version = "4.4.0.2"
 description = "Typing stubs for redis"
 category = "dev"
 optional = false
 python-versions = "*"
 files = [
-    {file = "types-redis-4.4.0.1.tar.gz", hash = "sha256:4d07b278e333921a6a4874bc24f44d7706c93cc164289fa55a888963879c3c07"},
-    {file = "types_redis-4.4.0.1-py3-none-any.whl", hash = "sha256:29610fb7ac57817f5b13c0e96c81ce7da4a94da12a207655c694b6097f89a499"},
+    {file = "types-redis-4.4.0.2.tar.gz", hash = "sha256:c6068a1f1c9d663413cfb6130d17c9c192b1d95f6285b8f6dd75468a39197fbf"},
+    {file = "types_redis-4.4.0.2-py3-none-any.whl", hash = "sha256:2dc67246f3a55c65b8096d610ad403cbc9f564532cbde04583dad6874b7ebed3"},
 ]
 
 [package.dependencies]
@@ -2637,14 +2667,14 @@ types-pyOpenSSL = "*"
 
 [[package]]
 name = "types-requests"
-version = "2.28.11.7"
+version = "2.28.11.8"
 description = "Typing stubs for requests"
 category = "dev"
 optional = false
 python-versions = "*"
 files = [
-    {file = "types-requests-2.28.11.7.tar.gz", hash = "sha256:0ae38633734990d019b80f5463dfa164ebd3581998ac8435f526da6fe4d598c3"},
-    {file = "types_requests-2.28.11.7-py3-none-any.whl", hash = "sha256:b6a2fca8109f4fdba33052f11ed86102bddb2338519e1827387137fefc66a98b"},
+    {file = "types-requests-2.28.11.8.tar.gz", hash = "sha256:e67424525f84adfbeab7268a159d3c633862dafae15c5b19547ce1b55954f0a3"},
+    {file = "types_requests-2.28.11.8-py3-none-any.whl", hash = "sha256:61960554baca0008ae7e2db2bd3b322ca9a144d3e80ce270f5fb640817e40994"},
 ]
 
 [package.dependencies]
@@ -2941,4 +2971,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "e0ba8d7262d2e9ae3e084346500efef2afc7c7dd2bd3f881059674988cbf5b7e"
+content-hash = "aaf50c3dc56bd491d4750a42ff51e842c41df30828d4dd6ed39ef25ae56c4212"
