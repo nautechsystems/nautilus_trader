@@ -82,12 +82,11 @@ def _build_rust_pyo3() -> None:
     try:
         # Build the Python bindings from pyo3 using maturin
         print("Building pyo3 Rust module...")
-        build_cmd1 = "(cd nautilus_core/pyo3 && maturin build --features extension-module)"
+        build_cmd1 = (
+            "(cd nautilus_core/pyo3 && poetry run maturin develop --features extension-module)"
+        )
         print(build_cmd1)
         os.system(build_cmd1)  # noqa
-        build_cmd2 = "poetry run pip install --no-index --find-links nautilus_core/target/wheels nautilus_pyo3"
-        print(build_cmd2)
-        os.system(build_cmd2)  # noqa
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running maturin: {e.stderr.decode()}",
