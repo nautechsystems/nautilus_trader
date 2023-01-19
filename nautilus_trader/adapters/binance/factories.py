@@ -108,6 +108,7 @@ def get_cached_binance_http_client(
 def get_cached_binance_spot_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
+    clock: LiveClock,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
 ) -> BinanceSpotInstrumentProvider:
@@ -122,6 +123,8 @@ def get_cached_binance_spot_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
     config : InstrumentProviderConfig
@@ -135,6 +138,7 @@ def get_cached_binance_spot_instrument_provider(
     return BinanceSpotInstrumentProvider(
         client=client,
         logger=logger,
+        clock=clock,
         account_type=account_type,
         config=config,
     )
@@ -144,6 +148,7 @@ def get_cached_binance_spot_instrument_provider(
 def get_cached_binance_futures_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
+    clock: LiveClock,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
 ) -> BinanceFuturesInstrumentProvider:
@@ -158,6 +163,8 @@ def get_cached_binance_futures_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
     config : InstrumentProviderConfig
@@ -171,6 +178,7 @@ def get_cached_binance_futures_instrument_provider(
     return BinanceFuturesInstrumentProvider(
         client=client,
         logger=logger,
+        clock=clock,
         account_type=account_type,
         config=config,
     )
@@ -246,6 +254,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             provider = get_cached_binance_spot_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
@@ -267,6 +276,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             provider = get_cached_binance_futures_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
