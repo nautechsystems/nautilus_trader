@@ -105,6 +105,12 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
     maxWithdrawAmount: Optional[str] = None  # maximum amount for transfer out, only for USDT asset
     assets: list[BinanceFuturesBalanceInfo]
 
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [asset.parse_to_account_balance() for asset in self.assets]
+
+    def parse_to_margin_balances(self) -> list[MarginBalance]:
+        return [asset.parse_to_margin_balance() for asset in self.assets]
+
 
 class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     """

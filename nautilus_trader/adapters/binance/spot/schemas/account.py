@@ -69,6 +69,9 @@ class BinanceSpotAccountInfo(msgspec.Struct, frozen=True):
     balances: list[BinanceSpotBalanceInfo]
     permissions: list[str]
 
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [balance.parse_to_account_balance() for balance in self.balances]
+
 
 class BinanceSpotOrderOco(msgspec.Struct, frozen=True):
     """
