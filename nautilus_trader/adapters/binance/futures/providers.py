@@ -32,6 +32,8 @@ from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesW
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFuturesCommissionRate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
@@ -68,6 +70,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self,
         client: BinanceHttpClient,
         logger: Logger,
+        clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         config: Optional[InstrumentProviderConfig] = None,
     ):
@@ -80,7 +83,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._http_wallet = BinanceFuturesWalletHttpAPI(self._client, account_type=account_type)
+        self._http_wallet = BinanceFuturesWalletHttpAPI(
+            self._client,
+            clock=clock,
+            account_type=account_type,
+        )
         self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
 
         self._log_warnings = config.log_warnings if config else True
@@ -93,12 +100,20 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get exchange info for all assets
-        endpoint = self._http_market.endpoint_exchange_info
-        exchange_info = await endpoint.request_exchange_info()
+        exchange_info = await self._http_market.query_futures_exchange_info()
         for symbol_info in exchange_info.symbols:
+            try:
+                # Get current commission rates for the symbol
+                fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
+            except BinanceClientError as e:
+                self._log.error(
+                    "Cannot load instruments: API key authentication failed "
+                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                )
+                return
             self._parse_instrument(
                 symbol_info=symbol_info,
-                fee=None,
+                fee=fee,
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
@@ -122,16 +137,24 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         symbols = [BinanceSymbol(instrument_id.symbol.value) for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
-        endpoint = self._http_market.endpoint_exchange_info
-        exchange_info = await endpoint.request_exchange_info()
+        exchange_info = await self._http_market.query_futures_exchange_info()
         symbol_info_dict: dict[BinanceSymbol, BinanceFuturesSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
 
         for symbol in symbols:
+            try:
+                # Get current commission rates for the symbol
+                fee = await self._http_wallet.query_futures_commission_rate(symbol)
+            except BinanceClientError as e:
+                self._log.error(
+                    "Cannot load instruments: API key authentication failed "
+                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                )
+                return
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
-                fee=None,
+                fee=fee,
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
@@ -145,15 +168,23 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         symbol = BinanceSymbol(instrument_id.symbol.value)
 
         # Get exchange info for all assets
-        endpoint = self._http_market.endpoint_exchange_info
-        exchange_info = await endpoint.request_exchange_info()
+        exchange_info = await self._http_market.query_futures_exchange_info()
         symbol_info_dict: dict[BinanceSymbol, BinanceFuturesSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
 
+        try:
+            # Get current commission rates for the symbol
+            fee = await self._http_wallet.query_futures_commission_rate(symbol)
+        except BinanceClientError as e:
+            self._log.error(
+                "Cannot load instruments: API key authentication failed "
+                f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            )
+
         self._parse_instrument(
             symbol_info=symbol_info_dict[symbol],
-            fee=None,
+            fee=fee,
             ts_event=millis_to_nanos(exchange_info.serverTime),
         )
 

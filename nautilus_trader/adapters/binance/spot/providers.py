@@ -31,6 +31,7 @@ from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketH
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
@@ -66,6 +67,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self,
         client: BinanceHttpClient,
         logger: Logger,
+        clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         config: Optional[InstrumentProviderConfig] = None,
     ):
@@ -78,7 +80,11 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._http_wallet = BinanceSpotWalletHttpAPI(self._client, account_type=account_type)
+        self._http_wallet = BinanceSpotWalletHttpAPI(
+            self._client,
+            clock=clock,
+            account_type=account_type,
+        )
         self._http_market = BinanceSpotMarketHttpAPI(self._client, account_type=account_type)
 
         self._log_warnings = config.log_warnings if config else True
@@ -95,10 +101,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {}
         else:
             try:
-                endpoint_trade_fee = self._http_wallet.endpoint_trade_fee
-                parameters = endpoint_trade_fee.GetParameters(timestamp=str(time.time() * 1000))
-                response = await endpoint_trade_fee.request_trade_fees(parameters)
-                fees_dict = {fee.symbol: fee for fee in response.fees}
+                response = await self._http_wallet.query_spot_trade_fees()
+                fees_dict = {fee.symbol: fee for fee in response}
             except BinanceClientError as e:
                 self._log.error(
                     "Cannot load instruments: API key authentication failed "
@@ -107,7 +111,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 return
 
         # Get exchange info for all assets
-        exchange_info = await self._http_market.endpoint_exchange_info.request_exchange_info()
+        exchange_info = await self._http_market.query_spot_exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -133,13 +137,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            endpoint_trade_fee = self._http_wallet.endpoint_trade_fee
-            trade_fee_parameters = endpoint_trade_fee.GetParameters(
-                timestamp=str(time.time() * 1000),
-            )
-            response = await endpoint_trade_fee.request_trade_fees(trade_fee_parameters)
+            response = await self._http_wallet.query_spot_trade_fees()
             fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {
-                fee.symbol: fee for fee in response.fees
+                fee.symbol: fee for fee in response
             }
         except BinanceClientError as e:
             self._log.error(
@@ -153,9 +153,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             [instrument_id.symbol.value for instrument_id in instrument_ids],
         )
         # Get exchange info for all assets
-        endpoint_exchange_info = self._http_market.endpoint_exchange_info
-        exchange_info_parameters = endpoint_exchange_info.GetParameters(symbols=binance_symbols)
-        exchange_info = await endpoint_exchange_info.request_exchange_info(exchange_info_parameters)
+        exchange_info = await self._http_market.query_spot_exchange_info(symbols=binance_symbols)
         symbol_info_dict: dict[BinanceSymbol, BinanceSpotSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
@@ -178,14 +176,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            endpoint_trade_fee = self._http_wallet.endpoint_trade_fee
-            trade_fee_parameters = endpoint_trade_fee.GetParameters(
-                timestamp=str(time.time() * 1000),
-                symbol=symbol,
-            )
-            trade_fees = await endpoint_trade_fee.request_trade_fees(trade_fee_parameters)
+            trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
             fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {
-                fee.symbol: fee for fee in trade_fees.fees
+                fee.symbol: fee for fee in trade_fees
             }
         except BinanceClientError as e:
             self._log.error(
@@ -195,9 +188,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for asset
-        endpoint_exchange_info = self._http_market.endpoint_exchange_info
-        exchange_info_parameters = endpoint_exchange_info.GetParameters(symbol=symbol)
-        exchange_info = await endpoint_exchange_info.request_exchange_info(exchange_info_parameters)
+        exchange_info = await self._http_market.query_spot_exchange_info(symbol=symbol)
         symbol_info_dict: dict[BinanceSymbol, BinanceSpotSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
