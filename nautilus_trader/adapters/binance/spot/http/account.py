@@ -90,7 +90,7 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
         symbol: BinanceSymbol
         recvWindow: Optional[str] = None
 
-    async def _delete(self, parameters: DeleteParameters) -> dict[str, Any]:
+    async def _delete(self, parameters: DeleteParameters) -> list[dict[str, Any]]:
         method_type = BinanceMethodType.DELETE
         raw = await self._method(method_type, parameters)
         return self._delete_resp_decoder.decode(raw)
@@ -566,20 +566,6 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             self.base_endpoint,
         )
 
-    async def delete_spot_open_orders(
-        self,
-        symbol: BinanceSymbol,
-        recv_window: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Cancel all active orders on a symbol, including OCO. Returns raw dictionary."""
-        return await self._endpoint_spot_open_orders._delete(
-            parameters=self._endpoint_spot_open_orders.DeleteParameters(
-                timestamp=self._timestamp(),
-                symbol=symbol,
-                recvWindow=recv_window,
-            ),
-        )
-
     async def new_spot_oco(
         self,
         symbol: BinanceSymbol,
@@ -656,7 +642,22 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             ),
         )
 
-    async def delete_spot_oco(
+    async def cancel_all_open_orders(
+        self,
+        symbol: BinanceSymbol,
+        recv_window: Optional[str] = None,
+    ) -> bool:
+        """Cancel all active orders on a symbol, including OCO. Returns whether successful."""
+        await self._endpoint_spot_open_orders._delete(
+            parameters=self._endpoint_spot_open_orders.DeleteParameters(
+                timestamp=self._timestamp(),
+                symbol=symbol,
+                recvWindow=recv_window,
+            ),
+        )
+        return True
+
+    async def cancel_spot_oco(
         self,
         symbol: BinanceSymbol,
         order_list_id: Optional[str] = None,

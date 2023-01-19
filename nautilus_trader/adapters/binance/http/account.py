@@ -509,6 +509,14 @@ class BinanceAccountHttpAPI:
         )
         return binance_order
 
+    async def cancel_all_open_orders(
+        self,
+        symbol: BinanceSymbol,
+        recv_window: Optional[str] = None,
+    ) -> bool:
+        # Implement in child class
+        raise NotImplementedError
+
     async def cancel_order(
         self,
         symbol: BinanceSymbol,

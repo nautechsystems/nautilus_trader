@@ -347,19 +347,20 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             ),
         )
 
-    async def delete_futures_all_open_orders(
+    async def cancel_all_open_orders(
         self,
         symbol: BinanceSymbol,
         recv_window: Optional[str] = None,
-    ) -> BinanceStatusCode:
-        """Delete all Futures open orders."""
-        return await self._endpoint_futures_all_open_orders._delete(
+    ) -> bool:
+        """Delete all Futures open orders. Returns whether successful."""
+        response = await self._endpoint_futures_all_open_orders._delete(
             parameters=self._endpoint_futures_all_open_orders.DeleteParameters(
                 timestamp=self._timestamp(),
                 symbol=symbol,
                 recvWindow=recv_window,
             ),
         )
+        return response.code == 200
 
     async def query_futures_account_info(
         self,
