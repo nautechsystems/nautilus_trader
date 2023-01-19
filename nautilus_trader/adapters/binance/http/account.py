@@ -157,6 +157,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             Only for SPOT/MARGIN orders
             Can be used with LIMIT, STOP_LOSS_LIMIT, and TAKE_PROFIT_LIMIT to
             create an iceberg order.
+        reduceOnly : bool, optional,
+            Only for FUTURES orders
+            Cannot be sent in Hedge Mode, cannot be sent with closePosition = true
         closePosition : bool, optional
             Only for FUTURES orders
             Can be used with STOP_MARKET or TAKE_PROFIT_MARKET orders
@@ -202,6 +205,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         stopPrice: Optional[str] = None
         trailingDelta: Optional[str] = None
         icebergQty: Optional[str] = None
+        reduceOnly: Optional[bool] = None
         closePosition: Optional[bool] = None
         activationPrice: Optional[str] = None
         callbackRate: Optional[str] = None
@@ -543,6 +547,7 @@ class BinanceAccountHttpAPI:
         stop_price: Optional[str] = None,
         trailing_delta: Optional[str] = None,
         iceberg_qty: Optional[str] = None,
+        reduce_only: Optional[bool] = None,
         close_position: Optional[bool] = None,
         activation_price: Optional[str] = None,
         callback_rate: Optional[str] = None,
@@ -568,6 +573,7 @@ class BinanceAccountHttpAPI:
                 stopPrice=stop_price,
                 trailingDelta=trailing_delta,
                 icebergQty=iceberg_qty,
+                reduceOnly=reduce_only,
                 closePosition=close_position,
                 activationPrice=activation_price,
                 callbackRate=callback_rate,
