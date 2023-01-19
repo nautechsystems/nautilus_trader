@@ -17,6 +17,10 @@ from enum import Enum
 from enum import unique
 
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.orders.base import Order
 
 
 """
@@ -75,3 +79,53 @@ class BinanceSpotEnumParser(BinanceEnumParser):
 
     def __init__(self) -> None:
         super().__init__()
+
+        # Spot specific order type conversion
+        self.spot_ext_to_int_order_type = {
+            BinanceOrderType.LIMIT: OrderType.LIMIT,
+            BinanceOrderType.MARKET: OrderType.MARKET,
+            BinanceOrderType.STOP_LOSS: OrderType.STOP_MARKET,
+            BinanceOrderType.STOP_LOSS_LIMIT: OrderType.STOP_LIMIT,
+            BinanceOrderType.TAKE_PROFIT: OrderType.LIMIT,
+            BinanceOrderType.TAKE_PROFIT_LIMIT: OrderType.STOP_LIMIT,
+            BinanceOrderType.LIMIT_MAKER: OrderType.LIMIT,
+        }
+
+        self.spot_valid_time_in_force = {
+            TimeInForce.GTC,
+            TimeInForce.GTD,  # Will be transformed to GTC with warning
+            TimeInForce.FOK,
+            TimeInForce.IOC,
+        }
+
+        self.spot_valid_order_types = {
+            OrderType.MARKET,
+            OrderType.LIMIT,
+            OrderType.LIMIT_IF_TOUCHED,
+            OrderType.STOP_LIMIT,
+        }
+
+    def parse_binance_order_type(self, order_type: BinanceOrderType) -> OrderType:
+        try:
+            return self.spot_ext_to_int_order_type[order_type]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized Binance Spot/Margin order type, was {order_type}",  # pragma: no cover
+            )
+
+    def parse_internal_order_type(self, order: Order) -> BinanceOrderType:
+        if order.order_type == OrderType.MARKET:
+            return BinanceOrderType.MARKET
+        elif order.order_type == OrderType.LIMIT:
+            if order.is_post_only:
+                return BinanceOrderType.LIMIT_MAKER
+            else:
+                return BinanceOrderType.LIMIT
+        elif order.order_type == OrderType.STOP_LIMIT:
+            return BinanceOrderType.STOP_LOSS_LIMIT
+        elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
+            return BinanceOrderType.TAKE_PROFIT_LIMIT
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid or unsupported `OrderType`, was {order.order_type}",  # pragma: no cover
+            )

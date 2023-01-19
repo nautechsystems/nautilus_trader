@@ -25,6 +25,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.orders.base import Order
 
 
 """
@@ -247,7 +248,7 @@ class BinanceEnumParser:
 
     def __init__(self) -> None:
         # Construct dictionary hashmaps
-        self.ext_status_to_int_status = {
+        self.ext_to_int_status = {
             BinanceOrderStatus.NEW: OrderStatus.ACCEPTED,
             BinanceOrderStatus.CANCELED: OrderStatus.CANCELED,
             BinanceOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
@@ -257,26 +258,13 @@ class BinanceEnumParser:
             BinanceOrderStatus.EXPIRED: OrderStatus.EXPIRED,
         }
 
-        # NOTE: There was some asymmetry in the original `parse_order_type` functions for SPOT & FUTURES
-        # need to check that the below is absolutely correct..
-        self.ext_order_type_to_int_order_type = {
-            BinanceOrderType.STOP: OrderType.STOP_LIMIT,
-            BinanceOrderType.STOP_LOSS: OrderType.STOP_MARKET,
-            BinanceOrderType.STOP_MARKET: OrderType.STOP_MARKET,
-            BinanceOrderType.STOP_LOSS_LIMIT: OrderType.STOP_LIMIT,
-            BinanceOrderType.TAKE_PROFIT: OrderType.LIMIT_IF_TOUCHED,
-            BinanceOrderType.TAKE_PROFIT_LIMIT: OrderType.STOP_LIMIT,
-            BinanceOrderType.TAKE_PROFIT_MARKET: OrderType.MARKET_IF_TOUCHED,
-            BinanceOrderType.LIMIT: OrderType.LIMIT,
-            BinanceOrderType.LIMIT_MAKER: OrderType.LIMIT,
-        }
-
-        self.ext_order_side_to_int_order_side = {
+        self.ext_to_int_order_side = {
             BinanceOrderSide.BUY: OrderSide.BUY,
             BinanceOrderSide.SELL: OrderSide.SELL,
         }
+        self.int_to_ext_order_side = {b: a for a, b in self.ext_to_int_order_side.items()}
 
-        self.ext_bar_agg_to_int_bar_agg = {
+        self.ext_to_int_bar_agg = {
             "s": BarAggregation.SECOND,
             "m": BarAggregation.MINUTE,
             "h": BarAggregation.HOUR,
@@ -284,79 +272,72 @@ class BinanceEnumParser:
             "w": BarAggregation.WEEK,
             "M": BarAggregation.MONTH,
         }
+        self.int_to_ext_bar_agg = {b: a for a, b in self.ext_to_int_bar_agg.items()}
 
-        # Build symmetrical reverse dictionary hashmaps
-        self._build_int_to_ext_dicts()
-
-    def _build_int_to_ext_dicts(self):
-        self.int_status_to_ext_status = dict(
-            map(
-                reversed,
-                self.ext_status_to_int_status.items(),
-            ),
-        )
-        self.int_order_type_to_ext_order_type = dict(
-            map(
-                reversed,
-                self.ext_order_type_to_int_order_type.items(),
-            ),
-        )
-        self.int_bar_agg_to_ext_bar_agg = dict(
-            map(
-                reversed,
-                self.ext_bar_agg_to_int_bar_agg.items(),
-            ),
-        )
+        self.ext_to_int_time_in_force = {
+            BinanceTimeInForce.FOK: TimeInForce.FOK,
+            BinanceTimeInForce.GTC: TimeInForce.GTC,
+            BinanceTimeInForce.GTX: TimeInForce.GTC,  # Convert GTX to GTC
+            BinanceTimeInForce.IOC: TimeInForce.IOC,
+        }
+        self.int_to_ext_time_in_force = {
+            TimeInForce.GTC: BinanceTimeInForce.GTC,
+            TimeInForce.GTD: BinanceTimeInForce.GTC,  # Convert GTD to GTC
+            TimeInForce.FOK: BinanceTimeInForce.FOK,
+            TimeInForce.IOC: BinanceTimeInForce.IOC,
+        }
 
     def parse_binance_order_side(self, order_side: BinanceOrderSide) -> OrderSide:
         try:
-            return self.ext_order_side_to_int_order_side[order_side]
+            return self.ext_to_int_order_side[order_side]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"unrecognized binance order side, was {order_side}",  # pragma: no cover
             )
 
+    def parse_internal_order_side(self, order_side: OrderSide) -> BinanceOrderSide:
+        try:
+            return self.int_to_ext_order_side[order_side]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized internal order side, was {order_side}",  # pragma: no cover
+            )
+
     def parse_binance_time_in_force(self, time_in_force: BinanceTimeInForce) -> TimeInForce:
-        if time_in_force == BinanceTimeInForce.GTX:
-            return TimeInForce.GTC
-        else:
-            return TimeInForce[time_in_force.value]
+        try:
+            return self.ext_to_int_time_in_force[time_in_force]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized binance time in force, was {time_in_force}",  # pragma: no cover
+            )
+
+    def parse_internal_time_in_force(self, time_in_force: TimeInForce) -> BinanceTimeInForce:
+        try:
+            return self.int_to_ext_time_in_force[time_in_force]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized internal time in force, was {time_in_force}",  # pragma: no cover
+            )
 
     def parse_binance_order_status(self, order_status: BinanceOrderStatus) -> OrderStatus:
         try:
-            return self.ext_status_to_int_status[order_status]
+            return self.ext_to_int_status[order_status]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"unrecognized binance order status, was {order_status}",  # pragma: no cover
             )
 
-    def parse_internal_order_status(self, order_status: OrderStatus) -> BinanceOrderStatus:
-        try:
-            return self.int_status_to_ext_status[order_status]
-        except KeyError:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized internal order status, was {order_status}",  # pragma: no cover
-            )
-
     def parse_binance_order_type(self, order_type: BinanceOrderType) -> OrderType:
-        try:
-            return self.ext_order_type_to_int_order_type[order_type]
-        except KeyError:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized binance order type, was {order_type}",  # pragma: no cover
-            )
+        # Implement in child class
+        raise NotImplementedError
 
-    def parse_internal_order_type(self, order_type: OrderType) -> BinanceOrderType:
-        try:
-            return self.int_order_type_to_ext_order_type[order_type]
-        except KeyError:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized internal order type, was {order_type}",  # pragma: no cover
-            )
+    def parse_internal_order_type(self, order: Order) -> BinanceOrderType:
+        # Implement in child class
+        raise NotImplementedError
 
     def parse_binance_bar_agg(self, bar_agg: str) -> BarAggregation:
         try:
-            return self.ext_bar_agg_to_int_bar_agg[bar_agg]
+            return self.ext_to_int_bar_agg[bar_agg]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"unrecognized binance kline resolution, was {bar_agg}",
@@ -364,7 +345,7 @@ class BinanceEnumParser:
 
     def parse_internal_bar_agg(self, bar_agg: BarAggregation) -> str:
         try:
-            return self.int_bar_agg_to_ext_bar_agg[bar_agg]
+            return self.int_to_ext_bar_agg[bar_agg]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 "unrecognized or non-supported BarAggregation,",
@@ -385,6 +366,6 @@ class BinanceEnumParser:
 
     def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
         # Replace method in child class, if compatible
-        raise RuntimeError(  # pragma: no cover (design-time error)
+        raise NotImplementedError(  # pragma: no cover (design-time error)
             "Cannot parse binance trigger type (not implemented).",  # pragma: no cover
         )
