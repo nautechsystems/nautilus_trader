@@ -14,13 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import datetime
 from functools import partial
 from typing import Callable, Optional
 
 import ib_insync
 import pandas as pd
-from ib_insync import BarData
 from ib_insync import BarDataList
 from ib_insync import Contract
 from ib_insync import ContractDetails
@@ -31,7 +29,10 @@ from ib_insync.ticker import nan
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
+from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
+from nautilus_trader.adapters.interactive_brokers.parsing.data import parse_bar_data
+from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
@@ -42,9 +43,7 @@ from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.bar_aggregation import BarAggregation
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -72,6 +71,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InteractiveBrokersInstrumentProvider,
+        handle_revised_bars: bool,
     ):
         """
         Initialize a new instance of the ``InteractiveBrokersDataClient`` class.
@@ -92,6 +92,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             The logger for the client.
         instrument_provider : InteractiveBrokersInstrumentProvider
             The instrument provider.
+        handle_revised_bars : bool
+            If DataClient will emit bar updates as soon new bar opens.
 
         """
         super().__init__(
@@ -107,11 +109,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
         self._client = client
+        self._handle_revised_bars = handle_revised_bars
         self._tickers: dict[ContractId, list[Ticker]] = defaultdict(list)
         self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
-        self._bar_type_to_last_bar_time: dict[BarType, pd.Timestamp] = defaultdict(
-            lambda: pd.Timestamp("1970-01-01", tz="UTC"),
-        )
+
+        # Tasks
+        self._watch_dog_task: Optional[asyncio.Task] = None
 
         # Event hooks
         self._client.errorEvent += self._on_error_event
@@ -124,6 +127,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not self._client.isConnected():
             await self._client.connect()
 
+        # Create long running tasks
+        self._watch_dog_task = self.create_task(self._watch_dog())
+
         # Load instruments based on config
         await self.instrument_provider.initialize()
         for instrument in self.instrument_provider.get_all().values():
@@ -133,7 +139,38 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if self._client.isConnected():
             self._client.disconnect()
 
-    def subscribe_order_book_snapshots(
+        # Cancel tasks
+        if self._watch_dog_task:
+            self._log.debug("Canceling `watch_dog` task...")
+            self._watch_dog_task.cancel()
+            self._watch_dog_task.done()
+
+    async def _watch_dog(self):
+        try:
+            while True:
+                await asyncio.sleep(5)
+                if not self._client.isConnected():
+                    try:
+                        self._log.warning(
+                            "IB Gateway disconnected. Trying to reconnect clientId {id} on {host}:{port}".format(
+                                id=self._client.client.clientId,
+                                host=self._client.client.host,
+                                port=self._client.client.port,
+                            ),
+                        )
+                        await self._client.connectAsync(
+                            host=self._client.client.host,
+                            port=self._client.client.port,
+                            clientId=self._client.client.clientId,
+                            timeout=30,
+                        )
+                        self._resubscribe_on_reset()
+                    except Exception as e:
+                        self._log.info(f"{repr(e)}")
+        except asyncio.CancelledError:
+            self._log.debug("`watch_dog` task was canceled.")
+
+    async def _subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -155,7 +192,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         else:
             raise NotImplementedError("L3 orderbook not available for Interactive Brokers")
 
-    def subscribe_order_book_deltas(
+    async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -164,7 +201,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ):
         raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId):
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self.instrument_provider.contract_details[
             instrument_id.value
         ]
@@ -174,7 +211,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ticker.updateEvent += self._on_trade_ticker_update
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId):
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self.instrument_provider.contract_details[
             instrument_id.value
         ]
@@ -187,7 +224,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
-    def subscribe_bars(self, bar_type: BarType):
+    async def _subscribe_bars(self, bar_type: BarType):
         price_type: PriceType = bar_type.spec.price_type
         contract_details: ContractDetails = self.instrument_provider.contract_details[
             bar_type.instrument_id.value
@@ -200,7 +237,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             PriceType.MID: "MIDPOINT",
         }
 
-        realtime_request, bar_size_setting = self._bar_spec_to_bar_size(bar_type.spec)
+        realtime_request, bar_size_setting = bar_spec_to_bar_size(bar_type.spec)
         if realtime_request:
             bar_list: RealTimeBarList = self._client.reqRealTimeBars(
                 contract=contract_details.contract,
@@ -208,72 +245,63 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 whatToShow=what_to_show[price_type],
                 useRTH=False,
             )
+            bar_list.bar_type = bar_type
+            bar_list.instrument = self.instrument_provider.find(bar_type.instrument_id)
 
             bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
         else:
-            self.create_task(
-                self._handle_historical_data_request(
-                    contract_details,
-                    bar_type,
-                    bar_size_setting,
-                    what_to_show,
-                ),
+            last_bar: Bar = self._cache.bar(bar_type)
+            if last_bar is None:
+                duration = pd.Timedelta(
+                    bar_type.spec.timedelta.total_seconds() * self._cache.bar_capacity,
+                    "sec",
+                )
+            else:
+                duration = pd.Timedelta(
+                    self._clock.timestamp_ns() - last_bar.ts_event,
+                    "ns",
+                )
+            bar_data_list: BarDataList = await self._client.reqHistoricalDataAsync(
+                contract=contract_details.contract,
+                endDateTime="",
+                durationStr=timedelta_to_duration_str(duration),
+                barSizeSetting=bar_size_setting,
+                whatToShow=what_to_show[bar_type.spec.price_type],
+                useRTH=True if contract_details.contract.secType == "STK" else False,
+                formatDate=2,
+                keepUpToDate=True,
             )
+            bar_data_list.bar_type = bar_type
+            bar_data_list.instrument = self.instrument_provider.find(bar_type.instrument_id)
 
-    async def _handle_historical_data_request(
-        self,
-        contract_details,
-        bar_type,
-        bar_size_setting,
-        what_to_show,
-    ):
-        bar_data_list: BarDataList = await self._client.reqHistoricalDataAsync(
-            contract=contract_details.contract,
-            endDateTime="",
-            durationStr=self._bar_spec_to_duration_str(bar_type.spec),
-            barSizeSetting=bar_size_setting,
-            whatToShow=what_to_show[bar_type.spec.price_type],
-            useRTH=True if contract_details.contract.secType == "STK" else False,
-            formatDate=2,
-            keepUpToDate=True,
-        )
-
-        self._on_historical_bar_update(bars=bar_data_list, has_new_bar=True, bar_type=bar_type)
-        bar_data_list.updateEvent += partial(self._on_historical_bar_update, bar_type=bar_type)
-
-    def _bar_spec_to_bar_size(self, bar_spec: BarSpecification):
-        aggregation = bar_spec.aggregation
-        step = bar_spec.step
-        if aggregation == BarAggregation.SECOND and step == 5:
-            return True, f"{step} secs"  # Use RealTimeBar Subscription
-            # return False, f"{step} secs"    # Subscription in addition to historical data
-        elif aggregation == BarAggregation.SECOND and step in [10, 15, 30]:
-            return False, f"{step} secs"
-        elif aggregation == BarAggregation.MINUTE and step in [1, 2, 3, 5, 10, 15, 20, 30]:
-            return False, f"{step} min{'' if step == 1 else 's'}"
-        elif aggregation == BarAggregation.HOUR and step in [1, 2, 3, 4, 8]:
-            return False, f"{step} hour{'' if step == 1 else 's'}"
-        elif aggregation == BarAggregation.DAY and step == 1:
-            return False, f"{step} day"
-        elif aggregation == BarAggregation.WEEK and step == 1:
-            return False, f"{step} week"
-        else:
-            raise ValueError(
-                f"InteractiveBrokers doesn't support subscription for {repr(bar_spec)}",
+            self._on_historical_bar_update(
+                bar_data_list=bar_data_list,
+                has_new_bar=True,
+                process_all=True,
             )
+            bar_data_list.updateEvent += partial(self._on_historical_bar_update)
 
-    def _bar_spec_to_duration_str(self, bar_spec: BarSpecification):
-        duration: datetime.timedelta = bar_spec.timedelta * self._cache.bar_capacity
-        if duration.days >= 365:
-            return f"{duration.days / 365:.0f} Y"
-        elif duration.days >= 30:
-            return f"{duration.days / 30:.0f} M"
-        elif duration.days >= 7:
-            return f"{duration.days / 7:.0f} W"
-        elif duration.days >= 1:
-            return f"{duration.days:.0f} D"
-        else:
-            return f"{duration.total_seconds():.0f} S"
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            instrument_id.value
+        ]
+        self._client.cancelMktData(contract_details.contract)
+
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            instrument_id.value
+        ]
+        self._client.cancelMktData(contract_details.contract)
+
+    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+        for bars_list in self._client.wrapper.reqId2Subscriber.values():
+            self._log.debug(f"Trying to unsubscribe {bars_list.contract}, reqId: {bars_list.reqId}")
+            if getattr(bars_list, "bar_type", None) == bar_type:
+                if isinstance(bars_list, RealTimeBarList):
+                    self._client.cancelRealTimeBars(bars_list)
+                elif isinstance(bars_list, BarDataList):
+                    self._client.cancelHistoricalData(bars_list)
+                break
 
     def _request_top_of_book(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self.instrument_provider.contract_details[
@@ -426,42 +454,81 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def _on_historical_bar_update(
         self,
-        bars: list[BarDataList],
+        bar_data_list: BarDataList,
         has_new_bar: bool,
-        bar_type: BarType,
-    ):
-        if not has_new_bar:
-            return
+        process_all: bool = False,
+    ) -> None:
 
-        instrument = self.instrument_provider.find(bar_type.instrument_id)
+        if not process_all:
+            if self._handle_revised_bars:
+                bars = [bar_data_list[-1]]
+                is_revision = not has_new_bar
+            elif not self._handle_revised_bars and has_new_bar:
+                bars = [bar_data_list[-2]]
+                is_revision = False
+            else:
+                return
+        else:
+            bars = bar_data_list
+            is_revision = False
 
-        bar: BarData
-        for bar in bars[:-1]:  # Exclude incomplete bar
-            if bar.date <= self._bar_type_to_last_bar_time[bar_type]:
-                continue
-
-            ts_event = dt_to_unix_nanos(bar.date)
-            ts_init = self._clock.timestamp_ns()
-
-            data = Bar(
-                bar_type=bar_type,
-                open=instrument.make_price(bar.open),
-                high=instrument.make_price(bar.high),
-                low=instrument.make_price(bar.low),
-                close=instrument.make_price(bar.close),
-                volume=instrument.make_qty(max(bar.volume, 0)),
-                ts_event=ts_event,
-                ts_init=ts_init,
+        for bar in bars:
+            data = parse_bar_data(
+                bar=bar,
+                is_revision=is_revision,
+                bar_type=bar_data_list.bar_type,
+                instrument=bar_data_list.instrument,
+                ts_init=self._clock.timestamp_ns(),
             )
             self._handle_data(data)
-            self._bar_type_to_last_bar_time[bar_type] = pd.Timestamp(bar.date)
 
-    def _on_error_event(self, req_id, error_code, error_string, contract):
+    def _on_error_event(self, req_id, error_code, error_string, contract) -> None:
         # Connectivity between IB and Trader Workstation has been restored
-        if error_code == 1101 or error_code == 1102:
+        if error_code in (1101, 1102):
             self._log.info(f"{error_code}: {error_string}")
-            for bar_type in self._bar_type_to_last_bar_time.keys():
-                self._log.info(f"Resubscribe to {repr(bar_type)}")
-                self.subscribe_bars(bar_type)
+            self._resubscribe_on_reset()
         else:
             self._log.warning(f"{error_code}: {error_string}")
+
+    def _resubscribe_on_reset(self) -> None:
+        self._handle_resubscribe_on_reset(
+            list(self.subscribed_order_book_deltas()),
+            self.subscribe_order_book_deltas,
+            self.unsubscribe_order_book_deltas,
+        )
+        self._handle_resubscribe_on_reset(
+            list(self.subscribed_order_book_snapshots()),
+            self.subscribe_order_book_snapshots,
+            self.unsubscribe_order_book_snapshots,
+        )
+        self._handle_resubscribe_on_reset(
+            list(self.subscribed_tickers()),
+            self.subscribe_ticker,
+            self.unsubscribe_ticker,
+        )
+        self._handle_resubscribe_on_reset(
+            list(self.subscribed_quote_ticks()),
+            self.subscribe_quote_ticks,
+            self.unsubscribe_quote_ticks,
+        )
+        self._handle_resubscribe_on_reset(
+            list(self.subscribed_trade_ticks()),
+            self.subscribe_trade_ticks,
+            self.unsubscribe_trade_ticks,
+        )
+        self._handle_resubscribe_on_reset(
+            list(self.subscribed_bars()),
+            self.subscribe_bars,
+            self.unsubscribe_bars,
+        )
+
+    @staticmethod
+    def _handle_resubscribe_on_reset(
+        subscription: list,
+        subscriber: Callable,
+        unsubscriber: Callable,
+    ) -> None:
+        for instrument_id in subscription:
+            unsubscriber(instrument_id)
+        for instrument_id in subscription:
+            subscriber(instrument_id)

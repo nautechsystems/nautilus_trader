@@ -23,7 +23,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
@@ -44,22 +44,22 @@ if __name__ == "__main__":
         venue=BETFAIR_VENUE,
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
-        base_currency=USD,  # Multi-currency account
-        starting_balances=[Money(100_000, USD)],
+        base_currency=GBP,  # Multi-currency account
+        starting_balances=[Money(100_000, GBP)],
         book_type=BookType.L2_MBP,
     )
 
     # Add instruments
     instruments = [
         TestInstrumentProvider.betting_instrument(
-            market_id="1.180737206",
+            market_id="1.166811431",
             selection_id="19248890",
-            handicap=None,
+            handicap="0.0",
         ),
         TestInstrumentProvider.betting_instrument(
-            market_id="1.180737206",
+            market_id="1.166811431",
             selection_id="38848248",
-            handicap=None,
+            handicap="0.0",
         ),
     ]
     engine.add_instrument(instruments[0])
