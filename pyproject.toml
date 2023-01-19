@@ -50,7 +50,6 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 cython = "==3.0.0a11"
-maturin = ">=0.14.10,<0.15"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.3"
 click = "^8.1.3"
@@ -85,6 +84,7 @@ optional = true
 black = "^22.12.0"
 flake8 = "^6.0.0"
 isort = "^5.11.4"
+maturin = ">=0.14.10,<0.15"
 mypy = "^0.991"
 pre-commit = "^2.21.0"
 pyproject-flake8 = "^6.0.0"

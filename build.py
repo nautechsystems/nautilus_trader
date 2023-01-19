@@ -85,7 +85,7 @@ def _build_rust_pyo3() -> None:
         build_cmd1 = "(cd nautilus_core/pyo3 && maturin build --features extension-module)"
         print(build_cmd1)
         os.system(build_cmd1)  # noqa
-        build_cmd2 = "pip install --no-index --find-links nautilus_core/target/wheels nautilus_pyo3"
+        build_cmd2 = "poetry run pip install --no-index --find-links nautilus_core/target/wheels nautilus_pyo3"
         print(build_cmd2)
         os.system(build_cmd2)  # noqa
     except subprocess.CalledProcessError as e:
