@@ -227,4 +227,4 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         self._log.warning("List status (OCO) received.")  # Implement
 
     def _handle_balance_update(self, raw: bytes) -> None:
-        self._loop.create_task(self._update_account_state_async())
+        self.create_task(self._update_account_state_async())

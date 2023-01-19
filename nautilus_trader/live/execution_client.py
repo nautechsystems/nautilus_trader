@@ -155,7 +155,7 @@ class LiveExecutionClient(ExecutionClient):
         log_msg: Optional[str] = None,
         actions: Optional[Callable] = None,
         success: Optional[str] = None,
-    ) -> None:
+    ) -> asyncio.Task:
         """
         Run the given coroutine with error handling and optional callback
         actions when done.
@@ -171,6 +171,10 @@ class LiveExecutionClient(ExecutionClient):
         success : str, optional
             The log message to write on actions success.
 
+        Returns
+        -------
+        asyncio.Task
+
         """
         log_msg = log_msg or coro.__name__
         self._log.debug(f"Creating task {log_msg}.")
@@ -185,6 +189,7 @@ class LiveExecutionClient(ExecutionClient):
                 success,
             ),
         )
+        return task
 
     def _on_task_completed(
         self,

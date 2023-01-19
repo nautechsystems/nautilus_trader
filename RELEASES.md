@@ -1,15 +1,21 @@
 # NautilusTrader 1.166.0 Beta
 
-Released on TBD (UTC).
+Released on 17th January 2023 (UTC).
 
 ### Breaking Changes
 - `Position.unrealized_pnl` now `None` until any realized PnL is generated (to reduce ambiguity)
 
 ### Enhancements
-None
+- Added instrument status update subscription handlers, thanks @limx0
+- Improvements to InteractiveBrokers `DataClient`, thanks @rsmb7z
+- Improvements to async task handling for live clients
+- Various improvements to Betfair adapter, thanks @limx0
 
 ### Fixes
 - Fixed netted `Position` `realized_pnl` and `realized_return` fields, which were incorrectly cumulative
+- Fixed netted `Position` flip logic (now correctly 'resets' position)
+- Various fixes for Betfair adapter, thanks @limx0
+- InteractiveBrokers integration docs fixes
 
 ---
 
