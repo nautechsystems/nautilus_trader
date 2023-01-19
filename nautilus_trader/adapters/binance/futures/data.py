@@ -84,10 +84,18 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                 f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
             )
 
+        # Futures HTTP API
+        self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)
+
+        # Futures enum parser
+        self._futures_enum_parser = BinanceFuturesEnumParser()
+
         # Instantiate common base class
         super().__init__(
             loop=loop,
             client=client,
+            market=self._futures_http_market,
+            enum_parser=self._futures_enum_parser,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -97,9 +105,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             base_url_ws=base_url_ws,
         )
 
-        # Override with futures HTTP API
-        self._http_market = BinanceFuturesMarketHttpAPI(client, account_type)
-
         # Register additional futures websocket handlers
         self._ws_handlers["@depth"] = self._handle_book_partial_update
         self._ws_handlers["@trade"] = self._handle_trade
@@ -108,9 +113,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         # Websocket msgspec decoders
         self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
         self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
-
-        # Override with futures enum parser
-        self._enum_parser = BinanceFuturesEnumParser()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 

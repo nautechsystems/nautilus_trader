@@ -81,9 +81,17 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
             )
 
+        # Spot HTTP API
+        self._spot_http_market = BinanceSpotMarketHttpAPI(client, account_type)
+
+        # Spot enum parser
+        self._spot_enum_parser = BinanceSpotEnumParser()
+
         super().__init__(
             loop=loop,
             client=client,
+            market=self._spot_http_market,
+            enum_parser=self._spot_enum_parser,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -92,9 +100,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             account_type=account_type,
             base_url_ws=base_url_ws,
         )
-
-        # Override with spot HTTP API
-        self._http_market = BinanceSpotMarketHttpAPI(client, account_type)
 
         # Register additional spot/margin websocket handlers
         self._ws_handlers["@depth"] = self._handle_book_partial_update
@@ -105,9 +110,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         self._decoder_spot_order_book_partial_depth = msgspec.json.Decoder(
             BinanceSpotOrderBookPartialDepthMsg,
         )
-
-        # Override with spot enum parser
-        self._enum_parser = BinanceSpotEnumParser()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 

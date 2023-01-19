@@ -71,6 +71,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The binance HTTP client.
     market : BinanceMarketHttpAPI
         The binance Market HTTP API.
+    enum_parser : BinanceEnumParser
+        The parser for Binance enums.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -95,6 +97,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BinanceHttpClient,
+        market: BinanceMarketHttpAPI,
+        enum_parser: BinanceEnumParser,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -127,10 +131,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._http_market = BinanceMarketHttpAPI(client, account_type)
+        self._http_market = market
 
         # Enum parser
-        self._enum_parser = BinanceEnumParser()
+        self._enum_parser = enum_parser
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
