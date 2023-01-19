@@ -85,6 +85,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BinanceHttpClient
         The binance HTTP client.
+    account : BinanceAccountHttpAPI
+        The binance Account HTTP API.
+    market : BinanceMarketHttpAPI
+        The binance Market HTTP API.
+    user : BinanceUserHttpAPI
+        The binance User HTTP API.
+    enum_parser : BinanceEnumParser
+        The parser for Binance enums.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -102,6 +110,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     clock_sync_interval_secs : int, default 900
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
+    warn_gtd_to_gtc : bool, default True
+        If log warning for GTD time in force transformed to GTC.
 
     Warnings
     --------
@@ -112,6 +122,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BinanceHttpClient,
+        account: BinanceAccountHttpAPI,
+        market: BinanceMarketHttpAPI,
+        user: BinanceUserDataHttpAPI,
+        enum_parser: BinanceEnumParser,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -120,6 +134,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
         clock_sync_interval_secs: int = 900,
+        warn_gtd_to_gtc: bool = True,
     ):
         super().__init__(
             loop=loop,
@@ -136,6 +151,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         self._binance_account_type = account_type
+        self._warn_gtd_to_gtc = warn_gtd_to_gtc
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
@@ -147,13 +163,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._task_clock_sync: Optional[asyncio.Task] = None
 
         # Enum parser
-        self._enum_parser = BinanceEnumParser()
+        self._enum_parser = enum_parser
 
         # Http API
         self._http_client = client
-        self._http_account = BinanceAccountHttpAPI(client, clock, account_type)
-        self._http_market = BinanceMarketHttpAPI(client, account_type)
-        self._http_user = BinanceUserDataHttpAPI(client, account_type)
+        self._http_account = account
+        self._http_market = market
+        self._http_user = user
 
         # Listen keys
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
@@ -518,7 +534,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
         if order.time_in_force == TimeInForce.GTD and time_in_force == BinanceTimeInForce.GTC:
-            self._log.warning("Converted GTD `time_in_force` to GTC.")
+            if self._warn_gtd_to_gtc:
+                self._log.warning("Converted GTD `time_in_force` to GTC.")
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
