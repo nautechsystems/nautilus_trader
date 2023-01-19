@@ -20,8 +20,8 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
@@ -84,30 +84,33 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                 f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
             )
 
-        market = BinanceFuturesMarketHttpAPI(client, account_type)
+        # Instantiate common base class
         super().__init__(
             loop=loop,
             client=client,
-            market=market,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
             account_type=account_type,
-            enum_parser=BinanceEnumParser(),
             base_url_ws=base_url_ws,
         )
 
+        # Override with futures HTTP API
+        self._http_market = BinanceFuturesMarketHttpAPI(client, account_type)
+
         # Register additional futures websocket handlers
         self._ws_handlers["@depth"] = self._handle_book_partial_update
-        self._ws_handlers[
-            "@trade"
-        ] = self._handle_trade  # NOTE @trade is an undocumented endpoint for Futures exchanges
+        self._ws_handlers["@trade"] = self._handle_trade
         self._ws_handlers["@markPrice"] = self._handle_mark_price
+
         # Websocket msgspec decoders
         self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
         self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
+
+        # Override with futures enum parser
+        self._enum_parser = BinanceFuturesEnumParser()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -194,7 +197,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                 f"Cannot unsubscribe from {data_type.type} (not implemented).",
             )
 
-    # -- REQUESTS ---------------------------------------------------------------------------------
+    # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
@@ -211,6 +214,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             self._handle_data(book_snapshot)
 
     def _handle_trade(self, raw: bytes) -> None:
+        # NOTE @trade is an undocumented endpoint for Futures exchanges
         msg: BinanceFuturesTradeMsg = msgspec.json.decode(raw, type=BinanceFuturesTradeMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         trade_tick: TradeTick = msg.data.parse_to_trade_tick(

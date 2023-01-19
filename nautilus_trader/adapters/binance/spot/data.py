@@ -20,9 +20,9 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookPartialDepthMsg
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeMsg
@@ -81,29 +81,33 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
                 f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
             )
 
-        market = BinanceSpotMarketHttpAPI(client, account_type)
         super().__init__(
             loop=loop,
             client=client,
-            market=market,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             instrument_provider=instrument_provider,
             account_type=account_type,
-            enum_parser=BinanceEnumParser(),
             base_url_ws=base_url_ws,
         )
+
+        # Override with spot HTTP API
+        self._http_market = BinanceSpotMarketHttpAPI(client, account_type)
 
         # Register additional spot/margin websocket handlers
         self._ws_handlers["@depth"] = self._handle_book_partial_update
         self._ws_handlers["@trade"] = self._handle_trade
+
         # Websocket msgspec decoders
         self._decoder_spot_trade = msgspec.json.Decoder(BinanceSpotTradeMsg)
         self._decoder_spot_order_book_partial_depth = msgspec.json.Decoder(
             BinanceSpotOrderBookPartialDepthMsg,
         )
+
+        # Override with spot enum parser
+        self._enum_parser = BinanceSpotEnumParser()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -146,7 +150,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
-    # -- REQUESTS ---------------------------------------------------------------------------------
+    # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg = self._decoder_spot_order_book_partial_depth.decode(raw)

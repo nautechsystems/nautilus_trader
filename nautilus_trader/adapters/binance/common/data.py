@@ -95,14 +95,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BinanceHttpClient,
-        market: BinanceMarketHttpAPI,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
-        enum_parser: BinanceEnumParser,
         base_url_ws: Optional[str] = None,
     ):
         super().__init__(
@@ -129,10 +127,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._http_market = market
+        self._http_market = BinanceMarketHttpAPI(client, account_type)
 
         # Enum parser
-        self._enum_parser = enum_parser
+        self._enum_parser = BinanceEnumParser()
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -151,13 +149,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
         # Register common websocket message handlers
-        # Use update() to add exchange specific handlers to this list in child classes
         self._ws_handlers = {
             "@depth@": self._handle_book_diff_update,
             "@bookTicker": self._handle_book_ticker,
             "@ticker": self._handle_ticker,
             "@kline": self._handle_kline,
         }
+
         # Websocket msgspec decoders
         self._decoder_data_msg_wrapper = msgspec.json.Decoder(BinanceDataMsgWrapper)
         self._decoder_order_book_msg = msgspec.json.Decoder(BinanceOrderBookMsg)
@@ -511,6 +509,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
+
+    # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
