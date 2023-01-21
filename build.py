@@ -5,7 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
+import sysconfig
 from datetime import datetime
 from pathlib import Path
 
@@ -211,23 +211,9 @@ def _copy_rust_dylibs_to_project() -> None:
         dst=f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
     )
 
-    # Make platform tag TODO(cs): hacky solution for now
-    # Linux   .cpython-39-x86_64-linux-gnu.so
-    # maxOS   .cpython-39-darwin.so
-    # Windows .cp39-win_amd64.dll
-    py_version = int(f"{sys.version_info.major}{sys.version_info.minor}")
-
-    if platform.system() == "Linux":
-        platform_tag = f"cpython-{py_version}-{platform.machine()}-linux-gnu.so"
-    elif platform.system() == "Darwin":
-        platform_tag = f"cpython-{py_version}-darwin.so"
-    elif platform.system() == "Windows":
-        platform_tag = f"cp{py_version}-win_amd64.pyd"
-    else:
-        raise RuntimeError(f"operating system {platform.system()} not supported")
-
+    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
     src = f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}"
-    dst = f"nautilus_trader/core/nautilus.{platform_tag}"
+    dst = f"nautilus_trader/core/nautilus{ext_suffix}"
     os.rename(src, dst)
 
     print(f"Copied {src} to {dst}")
