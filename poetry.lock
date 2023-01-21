@@ -218,18 +218,18 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.1.11"
+version = "0.1.9"
 description = ""
 category = "main"
 optional = true
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "betfair_parser-0.1.11-py3-none-any.whl", hash = "sha256:8b32763a70077cfc30d5bfcb06f4d7c81885da8dd6312fa2b3e6111442974b47"},
-    {file = "betfair_parser-0.1.11.tar.gz", hash = "sha256:f1445c7130fac54dbbb88915530c0820729f6107effcf66053190d9e0974f6cd"},
+    {file = "betfair_parser-0.1.9-py3-none-any.whl", hash = "sha256:7c0b1fbdbe5b036a40200335a74ce6ee4a8746d28f6f3e4a4084a6494281e448"},
+    {file = "betfair_parser-0.1.9.tar.gz", hash = "sha256:f9cbfe6438f2978b9c9778ddbf9ab0d212aec36a89f923418295ad8944c9afab"},
 ]
 
 [package.dependencies]
-fsspec = ">=2022"
+fsspec = ">=2022.3,<2023.0"
 msgspec = ">=0.11"
 
 [[package]]
@@ -817,14 +817,14 @@ files = [
 
 [[package]]
 name = "fsspec"
-version = "2023.1.0"
+version = "2022.11.0"
 description = "File-system specification"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "fsspec-2023.1.0-py3-none-any.whl", hash = "sha256:b833e2e541e9e8cde0ab549414187871243177feb3d344f9d27b25a93f5d8139"},
-    {file = "fsspec-2023.1.0.tar.gz", hash = "sha256:fbae7f20ff801eb5f7d0bedf81f25c787c0dfac5e982d98fa3884a9cde2b5411"},
+    {file = "fsspec-2022.11.0-py3-none-any.whl", hash = "sha256:d6e462003e3dcdcb8c7aa84c73a228f8227e72453cd22570e2363e8844edfe7b"},
+    {file = "fsspec-2022.11.0.tar.gz", hash = "sha256:259d5fd5c8e756ff2ea72f42e7613c32667dc2049a4ac3d84364a7ca034acb8b"},
 ]
 
 [package.extras]
@@ -2941,4 +2941,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "85b40d6b8da7ab6fd02763810b315f86a1ed706b4dcb4db56e1a2a473baae025"
+content-hash = "6e55a27cc9e53a845a64fa517322c1aa5f58f2d5fe62f6cc1b37f194edd5e739"
