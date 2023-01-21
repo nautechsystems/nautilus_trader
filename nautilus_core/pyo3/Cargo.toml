@@ -7,7 +7,7 @@ description.workspace = true
 documentation.workspace = true
 
 [lib]
-name = "nautilus"
+name = "nautilus_pyo3"
 crate-type = ["cdylib" ]
 
 [dependencies]

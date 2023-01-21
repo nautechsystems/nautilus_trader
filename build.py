@@ -206,15 +206,10 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 def _copy_rust_dylibs_to_project() -> None:
     # https://pyo3.rs/latest/building_and_distribution#manual-builds
-    shutil.copyfile(
-        src=f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
-        dst=f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
-    )
-
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    src = f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}"
-    dst = f"nautilus_trader/core/nautilus{ext_suffix}"
-    os.rename(src, dst)
+    src = f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_pyo3.{RUST_DYLIB_EXT}"
+    dst = f"nautilus_trader/core/nautilus_pyo3{ext_suffix}"
+    shutil.copyfile(src=src, dst=dst)
 
     print(f"Copied {src} to {dst}")
 
