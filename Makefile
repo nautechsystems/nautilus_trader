@@ -39,7 +39,7 @@ clippy:
 	(cd nautilus_core && cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
 
 cargo-build:
-	(cd nautilus_core && cargo build --release)
+	(cd nautilus_core && cargo build --release --all-features)
 
 cargo-update:
 	(cd nautilus_core && cargo update)

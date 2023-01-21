@@ -75,7 +75,7 @@ unsafe impl Send for PythonParquetReader {}
 #[pymethods]
 impl PythonParquetReader {
     #[new]
-    #[args(ts_init_filter = 0)]
+    #[pyo3(signature = (file_path, chunk_size, parquet_type, reader_type, buffer=None, ts_init_filter=0))]
     fn new(
         file_path: String,
         chunk_size: usize,

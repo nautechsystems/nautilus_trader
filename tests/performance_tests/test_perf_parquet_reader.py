@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from nautilus_trader.core.nautilus import persistence
+from nautilus_trader.core.nautilus_pyo3 import persistence
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
 from tests import TEST_DATA_DIR

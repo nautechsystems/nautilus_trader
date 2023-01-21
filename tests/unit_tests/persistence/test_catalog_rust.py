@@ -23,7 +23,7 @@ import pytest
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.core.nautilus import persistence
+from nautilus_trader.core.nautilus_pyo3 import persistence
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide

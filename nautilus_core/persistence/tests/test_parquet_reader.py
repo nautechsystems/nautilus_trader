@@ -16,7 +16,7 @@
 import os
 
 from nautilus_trader import PACKAGE_ROOT
-from nautilus_trader.core.nautilus import persistence
+from nautilus_trader.core.nautilus_pyo3 import persistence
 from nautilus_trader.model.data.tick import QuoteTick
 
 
