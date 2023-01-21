@@ -27,6 +27,7 @@ use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::cstr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
+use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::{ffi, FromPyPointer, Python};
 
@@ -68,12 +69,16 @@ where
 /// Types that implement parquet reader writer traits should also have a
 /// corresponding enum so that they can be passed across the ffi.
 #[repr(C)]
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
 pub enum ParquetType {
     QuoteTick = 0,
     TradeTick = 1,
 }
 
 #[repr(C)]
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
 pub enum ParquetReaderType {
     File = 0,
     Buffer = 1,
@@ -216,17 +221,13 @@ pub unsafe extern "C" fn parquet_reader_file_new(
 /// - Assumes `data` is a valid CVec with an underlying byte buffer
 #[no_mangle]
 pub unsafe extern "C" fn parquet_reader_buffer_new(
-    data: CVec,
+    ptr: *const u8,
+    len: usize,
     parquet_type: ParquetType,
     chunk_size: usize,
     // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
 ) -> *mut c_void {
-    let CVec {
-        ptr,
-        len,
-        cap: _cap,
-    } = data;
-    let buffer = slice::from_raw_parts(ptr as *const u8, len);
+    let buffer = slice::from_raw_parts(ptr, len);
     let reader = Cursor::new(buffer);
     match parquet_type {
         ParquetType::QuoteTick => {

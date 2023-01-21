@@ -53,6 +53,13 @@ cdef class QuoteTick(Data):
 
     @staticmethod
     cdef dict to_dict_c(QuoteTick obj)
+
+    @staticmethod
+    cdef QuoteTick from_mem_c(QuoteTick_t mem)
+
+    @staticmethod
+    cdef list capsule_to_quote_tick_list(object capsule)
+
     cpdef Price extract_price(self, PriceType price_type)
     cpdef Quantity extract_volume(self, PriceType price_type)
 

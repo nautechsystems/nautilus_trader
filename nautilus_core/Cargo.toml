@@ -3,7 +3,8 @@ members = [
     "common",
     "core",
     "model",
-    "persistence"
+    "persistence",
+    "pyo3"
 ]
 
 [workspace.package]

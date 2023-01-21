@@ -15,6 +15,7 @@ header = '"../includes/persistence.h"'
 
 "libc.stdint" = [
     "uintptr_t",
+    "uint8_t",
 ]
 
 "nautilus_trader.core.rust.core" = [
