@@ -205,6 +205,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 
 def _copy_rust_dylibs_to_project() -> None:
+    # https://pyo3.rs/latest/building_and_distribution#manual-builds
     shutil.copyfile(
         src=f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
         dst=f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
@@ -221,7 +222,7 @@ def _copy_rust_dylibs_to_project() -> None:
     elif platform.system() == "Darwin":
         platform_tag = f"cpython-{py_version}-darwin.so"
     elif platform.system() == "Windows":
-        platform_tag = f"cp{py_version}-win_amd64.dll"
+        platform_tag = f"cp{py_version}-win_amd64.pyd"
     else:
         raise RuntimeError(f"operating system {platform.system()} not supported")
 
