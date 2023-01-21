@@ -23,8 +23,6 @@ import pytest
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-
-# build and load pyo3 module using maturin
 from nautilus_trader.core.nautilus import persistence
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -148,7 +146,7 @@ def test_pyo3_parquet_reader_quote_ticks(benchmark):
             persistence.ParquetReaderType.File,
         )
 
-        data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
+        data = map(QuoteTick.list_from_capsule, reader)
         ticks = list(itertools.chain(*data))
         return ticks
 
@@ -181,7 +179,7 @@ def test_pyo3_buffer_parquet_reader_quote_ticks():
             data,
         )
 
-    data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
+    data = map(QuoteTick.list_from_capsule, reader)
     ticks = list(itertools.chain(*data))
 
     csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
