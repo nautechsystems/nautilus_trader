@@ -1,3 +1,18 @@
+# NautilusTrader 1.167.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Introduce Rust pyo3 based `ParquetReader`, thanks @twitu
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.166.0 Beta
 
 Released on 17th January 2023 (UTC).
