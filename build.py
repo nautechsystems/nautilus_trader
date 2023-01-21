@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -29,8 +30,8 @@ PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else Fals
 COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
 
 if PROFILE_MODE:
-    # For subsequent debugging, the C source needs to be in
-    # the same tree as the Cython code (not in a separate build directory).
+    # For subsequent debugging, the C source needs to be in the same tree as
+    # the Cython code (not in a separate build directory).
     BUILD_DIR = None
 elif ANNOTATION_MODE:
     BUILD_DIR = "build/annotated"
@@ -45,25 +46,31 @@ if platform.system() != "Darwin":
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
 
+TARGET_DIR = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
+
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{TARGET_DIR}"
     RUST_LIB_PFX = ""
-    RUST_LIB_EXT = "lib"
-    TARGET_DIR = "x86_64-pc-windows-msvc/"
-else:
+    RUST_STATIC_LIB_EXT = "lib"
+    RUST_DYLIB_EXT = "dll"
+    TARGET_DIR = TARGET_DIR.replace(BUILD_MODE, "x86_64-pc-windows-msvc/" + BUILD_MODE)
+elif platform.system() == "Darwin":
     RUST_LIB_PFX = "lib"
-    RUST_LIB_EXT = "a"
-    TARGET_DIR = ""
+    RUST_STATIC_LIB_EXT = "a"
+    RUST_DYLIB_EXT = "dylib"
+else:  # Linux
+    RUST_LIB_PFX = "lib"
+    RUST_STATIC_LIB_EXT = "a"
+    RUST_DYLIB_EXT = "so"
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
 RUST_LIBS = [
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_STATIC_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_STATIC_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_STATIC_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_persistence.{RUST_STATIC_LIB_EXT}",
 ]
 
 
@@ -80,6 +87,11 @@ def _build_rust_libs() -> None:
         build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
         print(build_cmd)
         os.system(build_cmd)  # noqa
+
+        # Print all files in build directory
+        for filename in os.listdir(TARGET_DIR):
+            if os.path.isfile(os.path.join(TARGET_DIR, filename)):
+                print(filename)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running cargo: {e.stderr.decode()}",
@@ -194,16 +206,37 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
 
+    print("Copied all compiled dynamic library files into source")
+
+
+def _copy_rust_dylibs_to_project() -> None:
     shutil.copyfile(
-        src=f"nautilus_core/target/{BUILD_MODE}/libnautilus.dylib",
-        dst="nautilus_trader/core/libnautilus.dylib",
-    )
-    os.rename(
-        src="nautilus_trader/core/libnautilus.dylib",
-        dst="nautilus_trader/core/nautilus.cpython-39-darwin.so",
+        src=f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
+        dst=f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
     )
 
-    print("Copied all compiled dynamic library files into source")
+    # Make platform tag
+    py_version = int(f"{sys.version_info.major}{sys.version_info.minor}")
+    arch = platform.machine()
+    os_name = platform.system().lower()
+
+    if os_name == "linux":
+        os_name = "linux-gnu"
+
+    if os.name == "posix":
+        extension = "so"
+    elif os.name == "nt":
+        extension = "dll"
+    else:
+        raise RuntimeError(f"operating system {os.name} not supported")
+
+    platform_tag = f"cpython-{py_version}-{arch}-{os_name}.{extension}"
+
+    src = f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}"
+    dst = f"nautilus_trader/core/nautilus.{platform_tag}"
+    os.rename(src, dst)
+
+    print(f"Copied {src} to {dst}")
 
 
 def _get_clang_version() -> str:
@@ -276,11 +309,10 @@ def build() -> None:
     if COPY_TO_SOURCE:
         # Copy the build back into the source tree for development and wheel packaging
         _copy_build_dir_to_project(cmd)
+        _copy_rust_dylibs_to_project()
 
 
 if __name__ == "__main__":
-    ts_start = datetime.utcnow()
-
     print("\033[36m")
     print("=====================================================================")
     print("Nautilus Builder")
@@ -293,13 +325,14 @@ if __name__ == "__main__":
     print(f"NumPy:  {np.__version__}\n")
 
     print(f"BUILD_MODE={BUILD_MODE}")
-    print(f"BUILD_DIR={BUILD_DIR}\n")
+    print(f"BUILD_DIR={BUILD_DIR}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
-    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
+    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}\n")
 
     print("Starting build...")
+    ts_start = datetime.utcnow()
     build()
     print(f"Build time: {datetime.utcnow() - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")
