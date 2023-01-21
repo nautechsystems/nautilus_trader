@@ -20,14 +20,12 @@ import time
 import pandas as pd
 import pytest
 
-# build and load pyo3 module using maturin
-from nautilus.persistence import ParquetReader
-from nautilus.persistence import ParquetReaderType
-from nautilus.persistence import ParquetType
-
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+
+# build and load pyo3 module using maturin
+from nautilus_trader.core.nautilus import persistence
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -143,11 +141,11 @@ def test_pyo3_parquet_reader_quote_ticks(benchmark):
     @benchmark
     def get_ticks():
         parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-        reader = ParquetReader(
+        reader = persistence.ParquetReader(
             parquet_data_path,
             1000,
-            ParquetType.QuoteTick,
-            ParquetReaderType.File,
+            persistence.ParquetType.QuoteTick,
+            persistence.ParquetReaderType.File,
         )
 
         data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
@@ -175,7 +173,13 @@ def test_pyo3_buffer_parquet_reader_quote_ticks():
     reader = None
     with open(parquet_data_path, "rb") as f:
         data = f.read()
-        reader = ParquetReader("", 1000, ParquetType.QuoteTick, ParquetReaderType.Buffer, data)
+        reader = persistence.ParquetReader(
+            "",
+            1000,
+            persistence.ParquetType.QuoteTick,
+            persistence.ParquetReaderType.Buffer,
+            data,
+        )
 
     data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
     ticks = list(itertools.chain(*data))

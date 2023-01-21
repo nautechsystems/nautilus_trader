@@ -28,6 +28,14 @@ PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else Fals
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
 COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
 
+if PROFILE_MODE:
+    # For subsequent debugging, the C source needs to be in
+    # the same tree as the Cython code (not in a separate build directory).
+    BUILD_DIR = None
+elif ANNOTATION_MODE:
+    BUILD_DIR = "build/annotated"
+else:
+    BUILD_DIR = "build/optimized"
 
 ################################################################################
 #  RUST BUILD
@@ -75,21 +83,6 @@ def _build_rust_libs() -> None:
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running cargo: {e.stderr.decode()}",
-        ) from e
-
-
-def _build_rust_pyo3() -> None:
-    try:
-        # Build the Python bindings from pyo3 using maturin
-        print("Building pyo3 Rust module...")
-        build_cmd1 = (
-            "(cd nautilus_core/pyo3 && poetry run maturin develop --features extension-module)"
-        )
-        print(build_cmd1)
-        os.system(build_cmd1)  # noqa
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(
-            f"Error running maturin: {e.stderr.decode()}",
         ) from e
 
 
@@ -167,18 +160,6 @@ def _build_extensions() -> list[Extension]:
 
 
 def _build_distribution(extensions: list[Extension]) -> Distribution:
-    # Build a Distribution using cythonize()
-    # Determine the build output directory
-    if PROFILE_MODE:
-        # For subsequent debugging, the C source needs to be in
-        # the same tree as the Cython code (not in a separate build directory).
-        build_dir = None
-    elif ANNOTATION_MODE:
-        build_dir = "build/annotated"
-    else:
-        build_dir = "build/optimized"
-    print(f"build_dir={build_dir}")
-
     nthreads = os.cpu_count() or 1
     if platform.system() == "Windows":
         nthreads = min(nthreads, 60)
@@ -191,7 +172,7 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
                 nthreads=nthreads,
-                build_dir=build_dir,
+                build_dir=BUILD_DIR,
                 gdb_debug=PROFILE_MODE,
             ),
             zip_safe=False,
@@ -212,6 +193,15 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         mode = os.stat(relative_extension).st_mode
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
+
+    shutil.copyfile(
+        src=f"nautilus_core/target/{BUILD_MODE}/libnautilus.dylib",
+        dst="nautilus_trader/core/libnautilus.dylib",
+    )
+    os.rename(
+        src="nautilus_trader/core/libnautilus.dylib",
+        dst="nautilus_trader/core/nautilus.cpython-39-darwin.so",
+    )
 
     print("Copied all compiled dynamic library files into source")
 
@@ -270,7 +260,6 @@ def _get_rustc_version() -> str:
 def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
-    _build_rust_pyo3()
 
     # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
@@ -304,10 +293,11 @@ if __name__ == "__main__":
     print(f"NumPy:  {np.__version__}\n")
 
     print(f"BUILD_MODE={BUILD_MODE}")
+    print(f"BUILD_DIR={BUILD_DIR}\n")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
-    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}\n")
+    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
 
     print("Starting build...")
     build()

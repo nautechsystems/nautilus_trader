@@ -34,12 +34,10 @@ include = [
 
 [build-system]
 requires = [
-    "pip",  # Required for maturin
     "setuptools",
     "poetry-core>=1.4.0",
     "numpy>=1.24.1",
     "Cython==3.0.0a11",
-    "maturin>=0.14.10,<0.15",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -57,7 +55,7 @@ frozendict = "^2.3.4"
 fsspec = "^2022.11.0"
 msgspec = "^0.12.0"
 numpy = "^1.24.1"
-pandas = "^1.5.2"
+pandas = "^1.5.3"
 psutil = "^5.9.4"
 pyarrow = "^10.0.1"
 pytz = "^2022.7.1"
@@ -84,7 +82,6 @@ optional = true
 black = "^22.12.0"
 flake8 = "^6.0.0"
 isort = "^5.11.4"
-maturin = ">=0.14.10,<0.15"
 mypy = "^0.991"
 pre-commit = "^2.21.0"
 pyproject-flake8 = "^6.0.0"
