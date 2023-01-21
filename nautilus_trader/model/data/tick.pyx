@@ -13,14 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.core cimport cvec_drop
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport quote_tick_copy
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
@@ -272,6 +276,35 @@ cdef class QuoteTick(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
+
+    @staticmethod
+    cdef QuoteTick from_mem_c(QuoteTick_t mem):
+        cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
+        quote_tick._mem = quote_tick_copy(&mem)
+
+        quote_tick.ts_event = mem.ts_event
+        quote_tick.ts_init = mem.ts_init
+
+        return quote_tick
+
+    # Safety: Do NOT deallocate the capsule here
+    #
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_quote_tick_list(object capsule):
+        cdef CVec* data = <CVec*> PyCapsule_GetPointer(capsule, NULL)
+        cdef QuoteTick_t* ptr = <QuoteTick_t*> data.ptr
+        cdef int len = data.len
+        cdef list ticks = []
+
+        for i in range(0, len):
+            ticks.append(QuoteTick.from_mem_c(ptr[i]))
+
+        return ticks
+
+    @staticmethod
+    def list_from_capsule(capsule):
+        return QuoteTick.capsule_to_quote_tick_list(capsule)
 
     @staticmethod
     def from_raw(

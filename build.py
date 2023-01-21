@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sysconfig
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,14 @@ PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else Fals
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
 COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
 
+if PROFILE_MODE:
+    # For subsequent debugging, the C source needs to be in the same tree as
+    # the Cython code (not in a separate build directory).
+    BUILD_DIR = None
+elif ANNOTATION_MODE:
+    BUILD_DIR = "build/annotated"
+else:
+    BUILD_DIR = "build/optimized"
 
 ################################################################################
 #  RUST BUILD
@@ -37,40 +46,51 @@ if platform.system() != "Darwin":
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
 
+TARGET_DIR = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
+
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{TARGET_DIR}"
     RUST_LIB_PFX = ""
-    RUST_LIB_EXT = "lib"
-    TARGET_DIR = "x86_64-pc-windows-msvc/"
-else:
+    RUST_STATIC_LIB_EXT = "lib"
+    RUST_DYLIB_EXT = "dll"
+    TARGET_DIR = TARGET_DIR.replace(BUILD_MODE, "x86_64-pc-windows-msvc/" + BUILD_MODE)
+elif platform.system() == "Darwin":
     RUST_LIB_PFX = "lib"
-    RUST_LIB_EXT = "a"
-    TARGET_DIR = ""
+    RUST_STATIC_LIB_EXT = "a"
+    RUST_DYLIB_EXT = "dylib"
+else:  # Linux
+    RUST_LIB_PFX = "lib"
+    RUST_STATIC_LIB_EXT = "a"
+    RUST_DYLIB_EXT = "so"
 
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
 RUST_LIBS = [
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_STATIC_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_STATIC_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_STATIC_LIB_EXT}",
+    f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_persistence.{RUST_STATIC_LIB_EXT}",
 ]
 
 
 def _build_rust_libs() -> None:
-    build_options = ""
-    extra_flags = ""
-    if platform.system() == "Windows":
-        extra_flags = " --target x86_64-pc-windows-msvc"
+    try:
+        # Build the Rust libraries using Cargo
+        build_options = ""
+        extra_flags = ""
+        if platform.system() == "Windows":
+            extra_flags = " --target x86_64-pc-windows-msvc"
 
-    build_options += " --release" if BUILD_MODE == "release" else ""
-    # Build the Rust libraries using Cargo
-    print("Compiling Rust libraries...")
-    build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
-    print(build_cmd)
-    os.system(build_cmd)  # noqa
+        build_options += " --release" if BUILD_MODE == "release" else ""
+        print("Compiling Rust libraries...")
+        build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
+        print(build_cmd)
+        os.system(build_cmd)  # noqa
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"Error running cargo: {e.stderr.decode()}",
+        ) from e
 
 
 ################################################################################
@@ -147,18 +167,6 @@ def _build_extensions() -> list[Extension]:
 
 
 def _build_distribution(extensions: list[Extension]) -> Distribution:
-    # Build a Distribution using cythonize()
-    # Determine the build output directory
-    if PROFILE_MODE:
-        # For subsequent debugging, the C source needs to be in
-        # the same tree as the Cython code (not in a separate build directory).
-        build_dir = None
-    elif ANNOTATION_MODE:
-        build_dir = "build/annotated"
-    else:
-        build_dir = "build/optimized"
-    print(f"build_dir={build_dir}")
-
     nthreads = os.cpu_count() or 1
     if platform.system() == "Windows":
         nthreads = min(nthreads, 60)
@@ -171,7 +179,7 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
                 nthreads=nthreads,
-                build_dir=build_dir,
+                build_dir=BUILD_DIR,
                 gdb_debug=PROFILE_MODE,
             ),
             zip_safe=False,
@@ -194,6 +202,21 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         os.chmod(relative_extension, mode)
 
     print("Copied all compiled dynamic library files into source")
+
+
+def _copy_rust_dylibs_to_project() -> None:
+    # https://pyo3.rs/latest/building_and_distribution#manual-builds
+    shutil.copyfile(
+        src=f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
+        dst=f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
+    )
+
+    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
+    src = f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}"
+    dst = f"nautilus_trader/core/nautilus{ext_suffix}"
+    os.rename(src, dst)
+
+    print(f"Copied {src} to {dst}")
 
 
 def _get_clang_version() -> str:
@@ -266,11 +289,10 @@ def build() -> None:
     if COPY_TO_SOURCE:
         # Copy the build back into the source tree for development and wheel packaging
         _copy_build_dir_to_project(cmd)
+        _copy_rust_dylibs_to_project()
 
 
 if __name__ == "__main__":
-    ts_start = datetime.utcnow()
-
     print("\033[36m")
     print("=====================================================================")
     print("Nautilus Builder")
@@ -283,12 +305,14 @@ if __name__ == "__main__":
     print(f"NumPy:  {np.__version__}\n")
 
     print(f"BUILD_MODE={BUILD_MODE}")
+    print(f"BUILD_DIR={BUILD_DIR}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}\n")
 
     print("Starting build...")
+    ts_start = datetime.utcnow()
     build()
     print(f"Build time: {datetime.utcnow() - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")
