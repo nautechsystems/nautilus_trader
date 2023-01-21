@@ -81,7 +81,7 @@ fn test_parquet_reader_native() {
 }
 
 #[test]
-#[ignore]  // Temporarily flaky
+#[ignore] // Temporarily flaky
 fn test_parquet_filter() {
     use rand::Rng;
 
