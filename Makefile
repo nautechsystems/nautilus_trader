@@ -4,7 +4,7 @@ IMAGE?=${REGISTRY}${PROJECT}
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=${IMAGE}:${GIT_TAG}
 .PHONY: install build clean docs format pre-commit
-.PHONY: clippy cargo-update cargo-test cargo-test-arm64
+.PHONY: clippy cargo-build cargo-update cargo-test cargo-test-arm64
 .PHONY: update docker-build docker-build-force docker-push
 .PHONY: docker-build-jupyter docker-push-jupyter
 .PHONY: pytest pytest-coverage
@@ -31,8 +31,15 @@ pre-commit: format
 	(cd nautilus_core && cargo fmt --all -- --check && cargo check -q && cargo clippy --all-targets --all-features -- -D warnings)
 	pre-commit run --all-files
 
+update:
+	(cd nautilus_core && cargo update)
+	poetry update
+
 clippy:
 	(cd nautilus_core && cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
+
+cargo-build:
+	(cd nautilus_core && cargo build --release)
 
 cargo-update:
 	(cd nautilus_core && cargo update)
@@ -42,10 +49,6 @@ cargo-test:
 
 cargo-test-arm64:
 	(cd nautilus_core && cargo test --features extension-module)
-
-update:
-	(cd nautilus_core && cargo update)
-	poetry update
 
 docker-build: clean
 	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true
