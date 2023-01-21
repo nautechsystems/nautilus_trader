@@ -87,11 +87,6 @@ def _build_rust_libs() -> None:
         build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
         print(build_cmd)
         os.system(build_cmd)  # noqa
-
-        # Print all files in build directory
-        for filename in os.listdir(TARGET_DIR):
-            if os.path.isfile(os.path.join(TARGET_DIR, filename)):
-                print(filename)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running cargo: {e.stderr.decode()}",
@@ -215,22 +210,20 @@ def _copy_rust_dylibs_to_project() -> None:
         dst=f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}",
     )
 
-    # Make platform tag
+    # Make platform tag TODO(cs): hacky solution for now
+    # Linux   .cpython-39-x86_64-linux-gnu.so
+    # maxOS   .cpython-39-darwin.so
+    # Windows .cp39-win_amd64.dll
     py_version = int(f"{sys.version_info.major}{sys.version_info.minor}")
-    arch = platform.machine()
-    os_name = platform.system().lower()
 
-    if os_name == "linux":
-        os_name = "linux-gnu"
-
-    if os.name == "posix":
-        extension = "so"
-    elif os.name == "nt":
-        extension = "dll"
+    if platform.system() == "Linux":
+        platform_tag = f"cpython-{py_version}-{platform.machine()}-linux-gnu.so"
+    elif platform.system() == "Darwin":
+        platform_tag = f"cpython-{py_version}-darwin.so"
+    elif platform.system() == "Windows":
+        platform_tag = f"cp{py_version}-win_amd64.dll"
     else:
-        raise RuntimeError(f"operating system {os.name} not supported")
-
-    platform_tag = f"cpython-{py_version}-{arch}-{os_name}.{extension}"
+        raise RuntimeError(f"operating system {platform.system()} not supported")
 
     src = f"nautilus_trader/core/{RUST_LIB_PFX}nautilus.{RUST_DYLIB_EXT}"
     dst = f"nautilus_trader/core/nautilus.{platform_tag}"
