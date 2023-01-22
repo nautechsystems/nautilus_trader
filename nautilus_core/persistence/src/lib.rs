@@ -266,7 +266,7 @@ impl PythonParquetWriter {
                     Box::from_raw(slf.writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
                 let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
                 // TODO: handle errors better
-                writer.write(data).expect("Could not write data to file");
+                writer.write(data).expect("Could not write data");
                 // Leak writer value back otherwise it will be dropped after this function
                 Box::into_raw(writer);
             }
@@ -275,7 +275,7 @@ impl PythonParquetWriter {
                     Box::from_raw(slf.writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
                 let data: &[TradeTick] = slice::from_raw_parts(data as *const TradeTick, len);
                 // TODO: handle errors better
-                writer.write(data).expect("Could not write data to file");
+                writer.write(data).expect("Could not write data");
                 // Leak writer value back otherwise it will be dropped after this function
                 Box::into_raw(writer);
             }

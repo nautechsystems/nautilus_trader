@@ -112,7 +112,7 @@ class TestPersistenceCatalogRust:
         assert os.path.exists(parquet_data_path)
         reader = persistence.ParquetReader(
             parquet_data_path,
-            500,
+            100,
             persistence.ParquetType.TradeTick,
             persistence.ParquetReaderType.File,
         )
@@ -142,7 +142,7 @@ class TestPersistenceCatalogRust:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
             for chunk in reader:
-                writer.write(chunk, 1000)
+                writer.write(chunk, 100)
             data: bytes = writer.flush_bytes()
             f.write(data)
 
