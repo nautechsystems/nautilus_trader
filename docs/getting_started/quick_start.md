@@ -99,6 +99,9 @@ class MACDStrategy(Strategy):
     def on_start(self):
         self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
+    def on_stop(self):
+        self.unsubscribe_quote_ticks(instrument_id=self.instrument_id)
+
     def on_quote_tick(self, tick: QuoteTick):
         # Update our MACD
         self.macd.handle_quote_tick(tick)
