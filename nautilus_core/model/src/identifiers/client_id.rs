@@ -92,8 +92,7 @@ pub extern "C" fn client_id_hash(client_id: &ClientId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::ClientId;
-    use crate::identifiers::client_id::client_id_free;
+    use super::*;
 
     #[test]
     fn test_equality() {
@@ -111,20 +110,47 @@ mod tests {
     }
 
     #[test]
-    fn test_client_id_free() {
+    fn test_client_id_new() {
         let id = ClientId::new("BINANCE");
-
-        client_id_free(id); // No panic
+        assert_eq!(id.value.as_str(), "BINANCE");
     }
 
-    // #[test]
-    // fn test_client_id_new() {
-    //     prepare_freethreaded_python();
-    //     Python::with_gil(|py| {
-    //         let pystr = PyString::new(py, "BINANCE").into_ptr();
-    //         let identifier = unsafe { client_id_new(pystr) };
-    //
-    //         assert_eq!(identifier.to_string(), "BINANCE")
-    //     });
-    // }
+    #[test]
+    fn test_client_id_clone_c() {
+        let id = ClientId::new("BINANCE");
+        let id_clone = client_id_clone(&id);
+        assert_eq!(id, id_clone);
+    }
+
+    #[test]
+    fn test_client_id_free_c() {
+        let id = ClientId::new("BINANCE");
+        client_id_free(id);
+    }
+
+    #[test]
+    fn test_client_id_to_cstr_c() {
+        let id = ClientId::new("BINANCE");
+        let c_string = client_id_to_cstr(&id);
+        let rust_string = unsafe { CStr::from_ptr(c_string) }.to_str().unwrap();
+        assert_eq!(rust_string, "BINANCE");
+    }
+
+    #[test]
+    fn test_client_id_eq_c() {
+        let id1 = ClientId::new("BINANCE");
+        let id2 = ClientId::new("BINANCE");
+        let id3 = ClientId::new("DYDX");
+        assert_eq!(client_id_eq(&id1, &id2), 1);
+        assert_eq!(client_id_eq(&id1, &id3), 0);
+    }
+
+    #[test]
+    fn test_client_id_hash_c() {
+        let id1 = ClientId::new("BINANCE");
+        let id2 = ClientId::new("BINANCE");
+        let id3 = ClientId::new("DYDX");
+        assert_eq!(client_id_hash(&id1), client_id_hash(&id2));
+        assert_ne!(client_id_hash(&id1), client_id_hash(&id3));
+    }
 }
