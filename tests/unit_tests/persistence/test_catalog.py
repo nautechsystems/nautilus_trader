@@ -127,7 +127,7 @@ class TestPersistenceCatalogRust:
             "size_precision": "0",
         }
         writer = persistence.ParquetWriter(
-            persistence.ParquetType.QuoteTick,
+            persistence.ParquetType.TradeTick,
             metadata,
         )
 
