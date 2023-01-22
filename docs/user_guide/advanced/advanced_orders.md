@@ -16,7 +16,7 @@ specific exchange they are being routed to.
 - `OUO` are linked orders with `linked_order_ids` which are contingent on the other(s) (one-updates-other when triggered or modified).
 
 ```{note}
-These contingency types relate to FIX tag <1385> `ContingencyType` https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html.
+These contingency types relate to ContingencyType FIX tag <1385> https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html.
 ```
 
 ### One Triggers the Other (OTO)
@@ -39,6 +39,18 @@ attempt to reduce the remaining quantity of the other order, partial executions 
 
 
 ## Bracket Orders
+Bracket orders are a type of advanced order that allows traders to set a take-profit and stop-loss 
+level for a position at the same time. This is typically done by placing a parent order 
+(also known as the entry order) and two child orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. 
+When the parent order is executed, the two child orders are also placed in the market. 
+If the market moves in favor of the trade, the take-profit order will be filled, closing the position and locking in profits. 
+If the market moves against the trade, the stop-loss order will be filled, closing the position and limiting losses.
 
-Is a group of orders including some entry order bracketed by two child orders being a take-profit `LIMIT` order and stop-loss `STOP_MARKET` order.
-The best way to build this group is via the [OrderFactory](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories).
+Bracket orders can be created using the [OrderFactory](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories) class in the Nautilus Trader API. 
+This allows for easy and efficient creation of bracket orders, with different order types, parameters and instructions.
+
+```{warning}
+The trader must be aware of the margin requirements of the trades, as bracketing a trade will consume 
+more margin than a single trade, and they must also be aware of the fill rules of the venue.
+
+```
