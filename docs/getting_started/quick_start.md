@@ -47,7 +47,7 @@ If everything worked correctly, you should be able to see a single EUR/USD instr
 ```python
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
-catalog = ParquetDataCatalog("./")
+catalog = ParquetDataCatalog("./catalog")
 catalog.instruments()
 ```
 
