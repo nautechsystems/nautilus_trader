@@ -21,8 +21,8 @@ deleted when the container is deleted.
   - https://localhost:8888
 
 ```{warning}
-NautilusTrader currently exceeds the rate limit for Jupyter notebook logging,
-this is why `bypass_logging` is set to True. If you remove this bypass to see
+NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
+this is why `bypass_logging` in the examples is set to True. If you remove this bypass to see
 logging then the notebook will hang during cell execution. A fix is currently
 being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.

@@ -248,14 +248,15 @@ You can launch the backtest example container by running:
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
 
 | :warning: WARNING                                                               |
-|:--------------------------------------------------------------------------------| 
-| NautilusTrader currently exceeds the rate limit for Jupyter notebook logging,   |
-| this is why `bypass_logging` is set to True. If you remove this bypass to see   |
-| logging then the notebook will hang during cell execution. A fix is currently   |
-| being investigated which involves either raising the configured rate limits for |
-| Jupyter, or throttling the log flushing from Nautilus.                          |
-| https://github.com/jupyterlab/jupyterlab/issues/12845                           |
-| https://github.com/deshaw/jupyterlab-limit-output                               |
+|:--------------------------------------------------------------------------------|
+
+**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
+this is why `bypass_logging` in the examples is set to True. If you remove this bypass to see
+logging then the notebook will hang during cell execution. A fix is currently
+being investigated which involves either raising the configured rate limits for
+Jupyter, or throttling the log flushing from Nautilus.**
+https://github.com/jupyterlab/jupyterlab/issues/12845
+https://github.com/deshaw/jupyterlab-limit-output
 
 ## Minimal Strategy
 
