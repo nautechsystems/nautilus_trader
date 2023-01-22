@@ -21,28 +21,7 @@ import pytest
 
 from nautilus_trader.core.nautilus_pyo3 import persistence
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
 from tests import TEST_DATA_DIR
-
-
-@pytest.mark.benchmark(
-    group="parquet-reader",
-    min_rounds=5,
-    timer=time.time,
-    disable_gc=True,
-    warmup=True,
-)
-def test_cython_benchmark_parquet_buffer_reader(benchmark):
-    parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
-    file_data = None
-    with open(parquet_data_path, "rb") as f:
-        file_data = f.read()
-
-    @benchmark
-    def run():
-        reader = ParquetBufferReader(file_data, QuoteTick)
-        ticks = list(itertools.chain(*list(reader)))
-        print(len(ticks))
 
 
 @pytest.mark.benchmark(

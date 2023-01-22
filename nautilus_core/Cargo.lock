@@ -911,7 +911,6 @@ name = "nautilus_persistence"
 version = "0.2.0"
 dependencies = [
  "arrow2",
- "cbindgen",
  "chrono",
  "nautilus_core",
  "nautilus_model",

@@ -22,6 +22,7 @@ use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use parquet::{
     EncodeToChunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType, ParquetWriter,
 };
+use pyo3::types::PyBytes;
 use pyo3::{prelude::*, types::PyCapsule};
 
 #[pyclass(name = "ParquetReader")]
@@ -33,7 +34,7 @@ struct PythonParquetReader {
 }
 
 /// pyo3 automatically calls drop on the underlying rust struct when
-/// the python object is deallocated
+/// the python object is deallocated.
 ///
 /// so answer: https://stackoverflow.com/q/66401814
 impl Drop for PythonParquetReader {
@@ -68,8 +69,8 @@ impl Drop for PythonParquetReader {
     }
 }
 
-/// Empty derivation for Send to satisfy `pyclass` requirements
-/// however this is only designed for single threaded use for now
+/// Empty derivation for Send to satisfy `pyclass` requirements,
+/// however this is only designed for single threaded use for now.
 unsafe impl Send for PythonParquetReader {}
 
 #[pymethods]
@@ -112,7 +113,7 @@ impl PythonParquetReader {
             }
             (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
                 let cursor = Cursor::new(buffer.expect("Buffer reader needs a byte buffer"));
-                let reader = ParquetReader::<QuoteTick, Cursor<&[u8]>>::new(
+                let reader = ParquetReader::<TradeTick, Cursor<&[u8]>>::new(
                     cursor,
                     chunk_size,
                     group_filter,
@@ -130,12 +131,12 @@ impl PythonParquetReader {
         }
     }
 
-    /// the reader implements an iterator
+    /// The reader implements an iterator.
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
 
-    /// each iteration returns a chunk of values read from the parquet file
+    /// Each iteration returns a chunk of values read from the parquet file.
     unsafe fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
         slf.drop_chunk();
 
@@ -187,7 +188,7 @@ impl PythonParquetReader {
     /// # Safety: Do not use the reader after it's been dropped
     ///
     /// May not be necessary as Drop is automatically called on the rust struct
-    /// when the object is deallocated on the python side
+    /// when the object is deallocated on the python side.
     unsafe fn drop(slf: PyRefMut<'_, Self>) {
         drop(slf)
     }
@@ -225,7 +226,7 @@ struct PythonParquetWriter {
 }
 
 /// Empty derivation for Send to satisfy `pyclass` requirements
-/// however this is only designed for single threaded use for now
+/// however this is only designed for single threaded use for now.
 unsafe impl Send for PythonParquetWriter {}
 
 #[pymethods]
@@ -255,9 +256,9 @@ impl PythonParquetWriter {
         }
     }
 
-    /// - Assumes  `data` is a pycapsule that stores a non-null valid pointer
-    /// to a contiguous block of C-style structs with `len` number of elements
-    unsafe fn parquet_writer_write(slf: PyRef<'_, Self>, data: &PyCapsule, len: usize) {
+    /// - Assumes  `data` is a `PyCapsule` that stores a non-null valid pointer
+    /// to a contiguous block of C-style structs with `len` number of elements.
+    unsafe fn write(slf: PyRef<'_, Self>, data: &PyCapsule, len: usize) {
         let data = PyCapsule::pointer(data);
         match slf.parquet_type {
             ParquetType::QuoteTick => {
@@ -282,7 +283,7 @@ impl PythonParquetWriter {
     }
 
     /// Writer is flushed, consumed and dropped. The underlying writer is returned.
-    /// While this is generic for ffi it only considers and returns a vector of bytes
+    /// While this is generic for FFI it only considers and returns a vector of bytes
     /// if the underlying writer is anything else it will fail.
     ///
     /// # Safety Do not use writer after flushing it
@@ -298,16 +299,32 @@ impl PythonParquetWriter {
             }
         };
 
-        slf.writer = null_mut();
+        slf.writer = null_mut(); // Release memory
         Python::with_gil(|py| {
             PyCapsule::new::<CVec>(py, buffer.into(), None)
                 .unwrap()
                 .into_py(py)
         })
     }
+
+    unsafe fn flush_bytes(mut slf: PyRefMut<'_, Self>) -> PyObject {
+        let buffer = match slf.parquet_type {
+            ParquetType::QuoteTick => {
+                let writer = Box::from_raw(slf.writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
+                writer.flush()
+            }
+            ParquetType::TradeTick => {
+                let writer = Box::from_raw(slf.writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
+                writer.flush()
+            }
+        };
+
+        slf.writer = null_mut(); // Release memory
+        Python::with_gil(|py| PyBytes::new(py, &buffer).into_py(py))
+    }
 }
 
-/// loaded as nautilus.persistence
+/// Loaded as nautilus_pyo3.persistence
 #[pymodule]
 pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonParquetReader>()?;

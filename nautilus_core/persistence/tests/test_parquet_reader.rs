@@ -13,62 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::BTreeMap, ffi::CString, fs::File, io::Cursor};
+use std::{collections::BTreeMap, fs::File, io::Cursor};
 
-use nautilus_core::cvec::CVec;
 use nautilus_model::{
     data::tick::{QuoteTick, TradeTick},
     identifiers::trade_id::TradeId,
     types::{price::Price, quantity::Quantity},
 };
-use nautilus_persistence::parquet::{
-    parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
-    parquet_reader_next_chunk, EncodeToChunk, GroupFilterArg, ParquetReader, ParquetReaderType,
-    ParquetType, ParquetWriter,
-};
+use nautilus_persistence::parquet::{EncodeToChunk, GroupFilterArg, ParquetReader, ParquetWriter};
 
 mod test_util;
 
 #[test]
-#[allow(unused_assignments)]
-fn test_parquet_reader_ffi() {
-    let file_path = CString::new("../../tests/test_data/quote_tick_data.parquet").unwrap();
-
-    // return an opaque reader pointer
-    let reader =
-        unsafe { parquet_reader_file_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) };
-
-    let mut total = 0;
-    let mut chunk = CVec::empty();
-    let mut data: Vec<CVec> = Vec::new();
-    unsafe {
-        loop {
-            chunk =
-                parquet_reader_next_chunk(reader, ParquetType::QuoteTick, ParquetReaderType::File);
-            if chunk.len == 0 {
-                parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick);
-                break;
-            } else {
-                total += chunk.len;
-                data.push(chunk);
-            }
-        }
-    }
-
-    let test_tick = unsafe { &*(data[0].ptr as *mut QuoteTick) };
-
-    assert_eq!("EUR/USD.SIM", test_tick.instrument_id.to_string());
-    assert_eq!(total, 9500);
-
-    unsafe {
-        data.into_iter()
-            .for_each(|chunk| parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick));
-        parquet_reader_free(reader, ParquetType::QuoteTick, ParquetReaderType::File);
-    }
-}
-
-#[test]
-fn test_parquet_reader_native() {
+fn test_parquet_reader_native_quote_ticks() {
     let file_path = "../../tests/test_data/quote_tick_data.parquet";
     let file = File::open(file_path).expect("Unable to open given file");
 
@@ -78,6 +35,19 @@ fn test_parquet_reader_native() {
 
     assert_eq!("EUR/USD.SIM", data[0].instrument_id.to_string());
     assert_eq!(data.len(), 9500);
+}
+
+#[test]
+fn test_parquet_reader_native_trade_ticks() {
+    let file_path = "../../tests/test_data/trade_tick_data.parquet";
+    let file = File::open(file_path).expect("Unable to open given file");
+
+    let reader: ParquetReader<TradeTick, File> =
+        ParquetReader::new(file, 100, GroupFilterArg::None);
+    let data: Vec<TradeTick> = reader.flatten().collect();
+
+    assert_eq!("EUR/USD.SIM", data[0].instrument_id.to_string());
+    assert_eq!(data.len(), 100);
 }
 
 #[test]
