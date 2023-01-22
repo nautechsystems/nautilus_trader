@@ -242,9 +242,20 @@ The container images can be pulled as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag>
 
-**NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
-The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
-The cause of this is still being determined.**
+You can launch the backtest example container by running:
+
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop
+    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+
+| :warning: WARNING                                                               |
+|:--------------------------------------------------------------------------------| 
+| NautilusTrader currently exceeds the rate limit for Jupyter notebook logging,   |
+| this is why `bypass_logging` is set to True. If you remove this bypass to see   |
+| logging then the notebook will hang during cell execution. A fix is currently   |
+| being investigated which involves either raising the configured rate limits for |
+| Jupyter, or throttling the log flushing from Nautilus.                          |
+| https://github.com/jupyterlab/jupyterlab/issues/12845                           |
+| https://github.com/deshaw/jupyterlab-limit-output                               |
 
 ## Minimal Strategy
 

@@ -15,14 +15,20 @@ deleted when the container is deleted.
   - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions 
 - From a terminal, download the latest image
   - `docker pull ghcr.io/nautechsystems/jupyterlab:develop`
-- Run the docker container, exposing the jupyter port (recommended 8889 in case another jupyter server is running): 
-  - `docker run -p 8889:8888 ghcr.io/nautechsystems/jupyterlab:develop`
+- Run the docker container, exposing the jupyter port: 
+  - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop`
 - Open your web browser to `localhost:{port}`
-  - https://localhost:8889
+  - https://localhost:8888
 
-**NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
-The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
-The cause of this is still being determined.**
+```{warning}
+NautilusTrader currently exceeds the rate limit for Jupyter notebook logging,
+this is why `bypass_logging` is set to True. If you remove this bypass to see
+logging then the notebook will hang during cell execution. A fix is currently
+being investigated which involves either raising the configured rate limits for
+Jupyter, or throttling the log flushing from Nautilus.
+https://github.com/jupyterlab/jupyterlab/issues/12845
+https://github.com/deshaw/jupyterlab-limit-output
+```
 
 ## Getting the sample data
 
