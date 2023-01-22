@@ -251,7 +251,7 @@ You can launch the backtest example container by running:
 |:--------------------------------------------------------------------------------|
 
 **NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-this is why `bypass_logging` in the examples is set to True. If you remove this bypass to see
+this is why `log_level` in the examples is set to "ERROR". If you lower this level to see more
 logging then the notebook will hang during cell execution. A fix is currently
 being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.**
