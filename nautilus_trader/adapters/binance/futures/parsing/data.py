@@ -244,7 +244,7 @@ def parse_futures_book_snapshot(
         asks=[[float(o[0]), float(o[1])] for o in data.a],
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
-        update_id=data.u,
+        sequence=data.u,
     )
 
 

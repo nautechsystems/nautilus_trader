@@ -718,10 +718,16 @@ cdef class DataEngine(Component):
             kwargs=metadata.get("kwargs"),
         )
 
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+
+        if self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._maintain_order_book,
+        ):
+            return  # Already subscribed
+
         self._msgbus.subscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+            topic=topic,
             handler=self._maintain_order_book,
             priority=10,
         )
@@ -786,6 +792,14 @@ cdef class DataEngine(Component):
                     depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
+
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+
+        if self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._maintain_order_book,
+        ):
+            return  # Already subscribed
 
         self._msgbus.subscribe(
             topic=f"data.book.deltas"

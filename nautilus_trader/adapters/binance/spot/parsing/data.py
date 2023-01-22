@@ -150,7 +150,7 @@ def parse_spot_book_snapshot(
         asks=[[float(o[0]), float(o[1])] for o in data.asks],
         ts_event=ts_init,
         ts_init=ts_init,
-        update_id=data.lastUpdateId,
+        sequence=data.lastUpdateId,
     )
 
 

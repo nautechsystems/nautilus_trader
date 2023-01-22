@@ -39,8 +39,8 @@ def test_l3_feed():
                 book.check_integrity()
             except BookIntegrityError:
                 book.delete(order=m["order"])
-                skip_deletes.append(m["order"].id)
-        elif m["op"] == "delete" and m["order"].id not in skip_deletes:
+                skip_deletes.append(m["order"].order_id)
+        elif m["op"] == "delete" and m["order"].order_id not in skip_deletes:
             book.delete(order=m["order"])
         book.check_integrity()
     assert i == 100_047
@@ -67,7 +67,7 @@ def test_l2_feed():
     for i, m in enumerate(TestDataStubs.l2_feed()):
         if not m or m["op"] == "trade":
             pass
-        elif (i, m["order"].id) in skip:
+        elif (i, m["order"].order_id) in skip:
             continue
         elif m["op"] == "update":
             book.update(order=m["order"])
