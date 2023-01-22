@@ -26,6 +26,9 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(submodule)?;
     let sys = PyModule::import(py, "sys")?;
     let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
-    sys_modules.set_item("nautilus_trader.core.nautilus_pyo3.persistence", m.getattr("persistence")?)?;
+    sys_modules.set_item(
+        "nautilus_trader.core.nautilus_pyo3.persistence",
+        m.getattr("persistence")?,
+    )?;
     Ok(())
 }
