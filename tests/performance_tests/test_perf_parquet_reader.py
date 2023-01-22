@@ -19,7 +19,9 @@ import time
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3 import persistence
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
 from tests import TEST_DATA_DIR
 
@@ -39,11 +41,11 @@ def test_pyo3_benchmark_parquet_buffer_reader(benchmark):
 
     @benchmark
     def run():
-        reader = persistence.ParquetReader(
+        reader = ParquetReader(
             "",
             1000,
-            persistence.ParquetType.QuoteTick,
-            persistence.ParquetReaderType.Buffer,
+            ParquetType.QuoteTick,
+            ParquetReaderType.Buffer,
             file_data,
         )
         data = map(QuoteTick.list_from_capsule, reader)
