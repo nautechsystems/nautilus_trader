@@ -49,16 +49,16 @@ cdef class QuoteTick(Data):
     )
 
     @staticmethod
-    cdef QuoteTick from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(QuoteTick obj)
-
-    @staticmethod
     cdef QuoteTick from_mem_c(QuoteTick_t mem)
 
     @staticmethod
     cdef list capsule_to_quote_tick_list(object capsule)
+
+    @staticmethod
+    cdef QuoteTick from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(QuoteTick obj)
 
     cpdef Price extract_price(self, PriceType price_type)
     cpdef Quantity extract_volume(self, PriceType price_type)
@@ -81,6 +81,12 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     )
+
+    @staticmethod
+    cdef TradeTick from_mem_c(TradeTick_t mem)
+
+    @staticmethod
+    cdef list capsule_to_trade_tick_list(object capsule)
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values)

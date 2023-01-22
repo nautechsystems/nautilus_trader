@@ -26,6 +26,3 @@ extension-module = [
     "nautilus_model/extension-module",
 ]
 default = []
-
-[build-dependencies]
-cbindgen.workspace = true

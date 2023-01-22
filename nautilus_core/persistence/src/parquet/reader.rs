@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io::{Read, Seek};
 use std::marker::PhantomData;
@@ -23,8 +24,6 @@ use arrow2::io::parquet::write::FileMetaData;
 use arrow2::{datatypes::Schema, io::parquet::read::FileReader};
 use pyo3::types::PyInt;
 use pyo3::FromPyObject;
-
-use std::cmp::Ordering;
 
 use super::DecodeFromChunk;
 
