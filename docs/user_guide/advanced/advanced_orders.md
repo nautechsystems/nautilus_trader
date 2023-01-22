@@ -29,7 +29,7 @@ An OTO order can be made up of stock orders, option orders, or a combination of 
 An OCO order is an order whose execution results in the immediate cancellation of another order 
 linked to it. Cancellation of the Contingent Order happens on a best efforts basis. 
 In an OCO order, both orders are live in the marketplace at the same time. The execution of either 
-order triggers an attempt to cancel the unexecuted order. Partial executions will also trigger an attempt to cancel the other order.
+order triggers an attempt to cancel the other unexecuted order. Partial executions will also trigger an attempt to cancel the other order.
 
 ### One Updates the Other (OUO)
 An OUO order is an order whose execution results in the immediate reduction of quantity in another 
@@ -50,7 +50,6 @@ Bracket orders can be created using the [OrderFactory](https://docs.nautilustrad
 This allows for easy and efficient creation of bracket orders, with different order types, parameters and instructions.
 
 ```{warning}
-The trader must be aware of the margin requirements of the trades, as bracketing a trade will consume 
-more margin than a single trade, and they must also be aware of the fill rules of the venue.
-
+You should be aware of the margin requirements of positions, as bracketing a position will consume 
+more order margin.
 ```
