@@ -22,8 +22,8 @@ deleted when the container is deleted.
 
 ```{warning}
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-this is why `bypass_logging` in the examples is set to True. If you remove this bypass to see
-logging then the notebook will hang during cell execution. A fix is currently
+this is why `log_level` in the examples is set to "ERROR". If you lower this level to see
+more logging then the notebook will hang during cell execution. A fix is currently
 being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.
 https://github.com/jupyterlab/jupyterlab/issues/12845
@@ -55,6 +55,7 @@ catalog.instruments()
 
 NautilusTrader includes a handful of indicators built-in, in this example we will use a MACD indicator to 
 build a simple trading strategy. 
+
 You can read more about [MACD here](https://www.investopedia.com/terms/m/macd.asp), so this 
 indicator merely serves as an example without any expected alpha. There is also a way of
 registering indicators to receive certain data types, however in this example we manually pass the received
@@ -150,6 +151,9 @@ class MACDStrategy(Strategy):
                 quantity=self.position.quantity,
             )
             self.submit_order(order)
+
+    def on_dispose(self):
+        pass  # Do nothing else
 ```
 
 ## Configuring Backtests
@@ -263,10 +267,13 @@ config = BacktestRunConfig(
 
 The `BacktestNode` class will orchestrate the backtest run. The reason for this separation between 
 configuration and execution is the `BacktestNode` allows running multiple configurations (different 
-parameters or batches of data). We are now ready to run some backtests!
+parameters or batches of data). 
+
+We are now ready to run some backtests!
 
 ```python
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.results import BacktestResult
 
 
 node = BacktestNode(configs=[config])
@@ -276,7 +283,9 @@ results: list[BacktestResult] = node.run()
 ```
 
 Now that the run is complete, we can also directly query for the `BacktestEngine`(s) used internally by the `BacktestNode`
-by using the run configs ID. The engine(s) can provide additional reports and information.
+by using the run configs ID. 
+
+The engine(s) can provide additional reports and information.
 
 ```python
 from nautilus_trader.backtest.engine import BacktestEngine
