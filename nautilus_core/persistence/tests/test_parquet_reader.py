@@ -16,17 +16,19 @@
 import os
 
 from nautilus_trader import PACKAGE_ROOT
-from nautilus_trader.core.nautilus_pyo3 import persistence
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
 
 
 def test_python_parquet_reader():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-    reader = persistence.ParquetReader(
+    reader = ParquetReader(
         parquet_data_path,
         100,
-        persistence.ParquetType.QuoteTick,
-        persistence.ParquetReaderType.File,
+        ParquetType.QuoteTick,
+        ParquetReaderType.File,
     )
 
     total_count = 0

@@ -26,7 +26,10 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.core.nautilus_pyo3 import persistence
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -71,11 +74,11 @@ class TestPersistenceCatalogRust:
     def _load_quote_ticks_into_catalog_rust(self) -> None:
         parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
-        reader = persistence.ParquetReader(
+        reader = ParquetReader(
             parquet_data_path,
             1000,
-            persistence.ParquetType.QuoteTick,
-            persistence.ParquetReaderType.File,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
         )
         # data = map(QuoteTick.list_from_capsule, reader)
         # ticks = list(itertools.chain(*data))
@@ -87,8 +90,8 @@ class TestPersistenceCatalogRust:
             "price_precision": "5",
             "size_precision": "0",
         }
-        writer = persistence.ParquetWriter(
-            persistence.ParquetType.QuoteTick,
+        writer = ParquetWriter(
+            ParquetType.QuoteTick,
             metadata,
         )
 
@@ -110,11 +113,11 @@ class TestPersistenceCatalogRust:
     def _load_trade_ticks_into_catalog_rust(self) -> None:
         parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
-        reader = persistence.ParquetReader(
+        reader = ParquetReader(
             parquet_data_path,
             100,
-            persistence.ParquetType.TradeTick,
-            persistence.ParquetReaderType.File,
+            ParquetType.TradeTick,
+            ParquetReaderType.File,
         )
         # data = map(TradeTick.list_from_capsule, reader)
         # ticks = list(itertools.chain(*data))
@@ -126,8 +129,8 @@ class TestPersistenceCatalogRust:
             "price_precision": "5",
             "size_precision": "0",
         }
-        writer = persistence.ParquetWriter(
-            persistence.ParquetType.TradeTick,
+        writer = ParquetWriter(
+            ParquetType.TradeTick,
             metadata,
         )
 
