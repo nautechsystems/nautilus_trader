@@ -284,14 +284,14 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             asks=[[float(o[0]), float(o[1])] for o in data.get("asks", [])],
             ts_event=ts_event,
             ts_init=ts_event,
-            update_id=last_update_id,
+            sequence=last_update_id,
         )
 
         self._handle_data(snapshot)
 
-        book_buffer = self._book_buffer.pop(instrument_id)
+        book_buffer = self._book_buffer.pop(instrument_id, [])
         for deltas in book_buffer:
-            if deltas.update_id <= last_update_id:
+            if deltas.sequence <= last_update_id:
                 continue
             self._handle_data(deltas)
 

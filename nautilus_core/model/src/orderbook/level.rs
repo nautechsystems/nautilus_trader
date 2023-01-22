@@ -72,7 +72,7 @@ impl Level {
             let idx = self
                 .orders
                 .iter()
-                .position(|o| o.id == order.id)
+                .position(|o| o.order_id == order.order_id)
                 .expect("Cannot update order: order not found");
             self.orders[idx] = order;
         }
@@ -82,7 +82,7 @@ impl Level {
         let index = self
             .orders
             .iter()
-            .position(|o| o.id == order.id)
+            .position(|o| o.order_id == order.order_id)
             .expect("Cannot delete order: order not found");
         self.orders.remove(index);
     }

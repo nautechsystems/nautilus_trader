@@ -467,8 +467,8 @@ cdef class OrderMatchingEngine:
             PositionId venue_position_id
         # Check filled orders from auction for any client orders and emit fills
         for order in traded_bids + traded_asks:
-            if order.id in client_order_ids:
-                real_order = self.cache.order(ClientOrderId(order.id))
+            if order.order_id in client_order_ids:
+                real_order = self.cache.order(ClientOrderId(order.order_id))
                 venue_position_id = self._get_position_id(real_order)
                 self._generate_order_filled(
                     real_order,
@@ -859,7 +859,7 @@ cdef class OrderMatchingEngine:
                 price=price,
                 size=order.quantity.as_double(),
                 side=order.side,
-                id=order.client_order_id.to_str(),
+                order_id=order.client_order_id.to_str(),
             )
         self._process_auction_book_order(book_order, time_in_force=order.time_in_force)
 
@@ -870,7 +870,7 @@ cdef class OrderMatchingEngine:
                 price=order.price.as_double(),
                 size=order.quantity.as_double(),
                 side=order.side,
-                id=order.client_order_id.to_str(),
+                order_id=order.client_order_id.to_str(),
             )
         self._process_auction_book_order(book_order, time_in_force=order.time_in_force)
 

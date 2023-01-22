@@ -24,16 +24,16 @@ pub struct Order {
     pub price: Price,
     pub size: Quantity,
     pub side: OrderSide,
-    pub id: u64,
+    pub order_id: u64,
 }
 
 impl Order {
-    pub fn new(price: Price, size: Quantity, side: OrderSide, id: u64) -> Self {
+    pub fn new(price: Price, size: Quantity, side: OrderSide, order_id: u64) -> Self {
         Order {
             price,
             size,
             side,
-            id,
+            order_id,
         }
     }
 
@@ -73,6 +73,6 @@ mod tests {
         assert_eq!(order.price, Price::new(1.0, 0));
         assert_eq!(order.size, Quantity::new(100.0, 0));
         assert_eq!(order.side, OrderSide::Buy);
-        assert_eq!(order.id, 0);
+        assert_eq!(order.order_id, 0);
     }
 }

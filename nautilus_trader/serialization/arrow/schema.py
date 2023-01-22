@@ -62,9 +62,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "action": pa.string(),
-            "order_side": pa.string(),
-            "order_price": pa.float64(),
-            "order_size": pa.float64(),
+            "side": pa.string(),
+            "price": pa.float64(),
+            "size": pa.float64(),
             "order_id": pa.string(),
             "book_type": pa.string(),
             # Track grouped OrderBookDeltas
