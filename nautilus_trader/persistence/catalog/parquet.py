@@ -32,7 +32,9 @@ from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.core.nautilus_pyo3 import persistence
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -185,9 +187,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if cls in (QuoteTick, TradeTick) and kwargs.get("use_rust"):
             if cls == QuoteTick:
-                parquet_type = persistence.ParquetType.QuoteTick
+                parquet_type = ParquetType.QuoteTick
             elif cls == TradeTick:
-                parquet_type = persistence.ParquetType.TradeTick
+                parquet_type = ParquetType.TradeTick
             else:
                 RuntimeError()
 
@@ -195,11 +197,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             for file in dataset.files:
                 with open(file, "rb") as f:
                     file_data = f.read()
-                    reader = persistence.ParquetReader(
+                    reader = ParquetReader(
                         "",
                         1000,
                         parquet_type,
-                        persistence.ParquetReaderType.Buffer,
+                        ParquetReaderType.Buffer,
                         file_data,
                     )
                     data = map(QuoteTick.list_from_capsule, reader)

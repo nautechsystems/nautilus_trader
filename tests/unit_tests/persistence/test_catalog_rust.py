@@ -21,7 +21,9 @@ import pandas as pd
 import pytest
 
 from nautilus_trader import PACKAGE_ROOT
-from nautilus_trader.core.nautilus_pyo3 import persistence
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
 from tests import TEST_DATA_DIR
 
@@ -37,11 +39,11 @@ def test_file_parquet_reader_quote_ticks(benchmark):
     @benchmark
     def get_ticks():
         parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-        reader = persistence.ParquetReader(
+        reader = ParquetReader(
             parquet_data_path,
             1000,
-            persistence.ParquetType.QuoteTick,
-            persistence.ParquetReaderType.File,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
         )
 
         data = map(QuoteTick.list_from_capsule, reader)
@@ -69,11 +71,11 @@ def test_buffer_parquet_reader_quote_ticks():
     reader = None
     with open(parquet_data_path, "rb") as f:
         data = f.read()
-        reader = persistence.ParquetReader(
+        reader = ParquetReader(
             "",
             1000,
-            persistence.ParquetType.QuoteTick,
-            persistence.ParquetReaderType.Buffer,
+            ParquetType.QuoteTick,
+            ParquetReaderType.Buffer,
             data,
         )
 
