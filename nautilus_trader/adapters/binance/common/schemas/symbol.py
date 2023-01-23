@@ -36,15 +36,15 @@ class BinanceSymbol(str):
 
     def parse_binance_to_internal(self, account_type: BinanceAccountType) -> str:
         if account_type.is_spot_or_margin:
-            return self
+            return str(self)
 
         # Parse Futures symbol
         if self[-1].isdigit():
-            return self  # Deliverable
+            return str(self)  # Deliverable
         if self.endswith("_PERP"):
-            return self.replace("_", "-")
+            return str(self).replace("_", "-")
         else:
-            return self + "-PERP"
+            return str(self) + "-PERP"
 
 
 class BinanceSymbols(str):
