@@ -32,13 +32,15 @@ from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -50,7 +52,7 @@ from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_di
 
 class ParquetDataCatalog(BaseDataCatalog):
     """
-    Provides a queryable data catalog persisted to file in parquet format.
+    Provides a queryable data catalog persisted to files in parquet format.
 
     Parameters
     ----------
@@ -60,6 +62,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         The fsspec filesystem protocol to use.
     fs_storage_options : dict, optional
         The fs storage options.
+
+    Warnings
+    --------
+    The catalog is not threadsafe.
     """
 
     def __init__(
@@ -180,10 +186,27 @@ class ParquetDataCatalog(BaseDataCatalog):
             return int_to_float_dataframe(table.to_pandas())
 
         if cls in (QuoteTick, TradeTick) and kwargs.get("use_rust"):
+            if cls == QuoteTick:
+                parquet_type = ParquetType.QuoteTick
+            elif cls == TradeTick:
+                parquet_type = ParquetType.TradeTick
+            else:
+                RuntimeError()
+
             ticks = []
-            for fn in dataset.files:
-                reader = ParquetFileReader(cls, fn)
-                ticks.extend(list(itertools.chain(*list(reader))))
+            for file in dataset.files:
+                with open(file, "rb") as f:
+                    file_data = f.read()
+                    reader = ParquetReader(
+                        "",
+                        1000,
+                        parquet_type,
+                        ParquetReaderType.Buffer,
+                        file_data,
+                    )
+                    data = map(QuoteTick.list_from_capsule, reader)
+                    ticks.extend(list(itertools.chain(*data)))
+
             return ticks
 
         if "as_nautilus" in kwargs:

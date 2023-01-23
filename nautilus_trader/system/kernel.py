@@ -694,8 +694,7 @@ class NautilusKernel:
         called after disposal.
 
         """
-        self.trader.dispose()
-
+        # Stop all engines
         if self.data_engine.is_running:
             self.data_engine.stop()
         if self.risk_engine.is_running:
@@ -703,9 +702,16 @@ class NautilusKernel:
         if self.exec_engine.is_running:
             self.exec_engine.stop()
 
-        self.data_engine.dispose()
-        self.risk_engine.dispose()
-        self.exec_engine.dispose()
+        # Dispose all engines
+        if not self.data_engine.is_disposed:
+            self.data_engine.dispose()
+        if not self.risk_engine.is_disposed:
+            self.risk_engine.dispose()
+        if not self.exec_engine.is_disposed:
+            self.exec_engine.dispose()
+
+        if not self.trader.is_disposed:
+            self.trader.dispose()
 
         if self._writer:
             self._writer.close()

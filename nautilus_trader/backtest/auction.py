@@ -82,7 +82,7 @@ def find_trades_for_volume(ladder: Ladder, target_volume: float) -> list[BookOrd
                 elif order_volume < 0:
                     # Less than this whole order volume remaining, add a partial fill
                     fill_volume = remaining_size
-                    partial_order = BookOrder(order.price, fill_volume, order.side, order.id)
+                    partial_order = BookOrder(order.price, fill_volume, order.side, order.order_id)
                     orders.append(partial_order)
                     remaining_size -= partial_order.size
                     break

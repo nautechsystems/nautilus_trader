@@ -90,16 +90,8 @@ def _build_order_book_snapshot(values):
     return OrderBookSnapshot(
         instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
         book_type=book_type_from_str(values[1]["book_type"]),
-        bids=[
-            (order["order_price"], order["order_size"])
-            for order in values[1:]
-            if order["order_side"] == "BUY"
-        ],
-        asks=[
-            (order["order_price"], order["order_size"])
-            for order in values[1:]
-            if order["order_side"] == "SELL"
-        ],
+        bids=[(order["price"], order["size"]) for order in values[1:] if order["side"] == "BUY"],
+        asks=[(order["price"], order["size"]) for order in values[1:] if order["side"] == "SELL"],
         ts_event=values[1]["ts_event"],
         ts_init=values[1]["ts_init"],
     )
@@ -120,7 +112,7 @@ def _sort_func(x):
 
 
 def deserialize(data: list[dict]):
-    assert not {d["order_side"] for d in data}.difference((None, "BUY", "SELL")), "Wrong sides"
+    assert not {d["side"] for d in data}.difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(sorted(data, key=_sort_func), key=_sort_func):
         chunk = list(chunk)  # type: ignore

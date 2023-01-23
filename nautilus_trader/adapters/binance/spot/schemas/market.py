@@ -120,7 +120,7 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
             asks=[[float(o.price), float(o.size)] for o in self.asks],
             ts_event=ts_init,
             ts_init=ts_init,
-            update_id=self.lastUpdateId,
+            sequence=self.lastUpdateId,
         )
 
 

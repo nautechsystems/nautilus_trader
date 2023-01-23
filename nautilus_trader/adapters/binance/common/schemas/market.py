@@ -27,7 +27,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterTyp
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -148,7 +147,7 @@ class BinanceDepth(msgspec.Struct, frozen=True):
             asks=[[float(o[0]), float(o[1])] for o in self.asks or []],
             ts_event=ts_init,
             ts_init=ts_init,
-            update_id=self.lastUpdateId or 0,
+            sequence=self.lastUpdateId or 0,
         )
 
 
@@ -327,7 +326,7 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
             order=order,
             ts_event=ts_event,
             ts_init=ts_init,
-            update_id=update_id,
+            sequence=update_id,
         )
 
 
@@ -375,7 +374,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             deltas=bid_deltas + ask_deltas,
             ts_event=ts_event,
             ts_init=ts_init,
-            update_id=self.u,
+            sequence=self.u,
         )
 
     def parse_to_order_book_snapshot(
@@ -390,7 +389,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             asks=[[float(o.price), float(o.size)] for o in self.a],
             ts_event=millis_to_nanos(self.T),
             ts_init=ts_init,
-            update_id=self.u,
+            sequence=self.u,
         )
 
 

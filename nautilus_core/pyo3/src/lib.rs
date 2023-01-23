@@ -13,13 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use criterion::{criterion_group, Criterion};
-use nautilus_core::time::unix_timestamp_ns;
+use nautilus_persistence::persistence;
+use pyo3::{prelude::*, types::PyDict};
 
-#[allow(clippy::redundant_closure)]
-pub fn criterion_time_benchmark(c: &mut Criterion) {
-    c.bench_function("f64_to_fixed_i64", |b| b.iter(|| unix_timestamp_ns()));
+/// Need to modify sys modules so that submodule can be loaded directly as
+/// import supermodule.submodule
+///
+/// refer: https://github.com/PyO3/pyo3/issues/2644
+#[pymodule]
+fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    let submodule = pyo3::wrap_pymodule!(persistence);
+    m.add_wrapped(submodule)?;
+    let sys = PyModule::import(py, "sys")?;
+    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    sys_modules.set_item(
+        "nautilus_trader.core.nautilus_pyo3.persistence",
+        m.getattr("persistence")?,
+    )?;
+    Ok(())
 }
-
-criterion_group!(benches, criterion_time_benchmark);
-criterion::criterion_main!(benches);

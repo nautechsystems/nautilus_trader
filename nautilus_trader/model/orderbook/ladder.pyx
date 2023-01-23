@@ -99,7 +99,7 @@ cdef class Ladder:
                 price_idx = bisect_right(existing_prices, level.price)
                 self.levels.insert(price_idx, level)
 
-        self._order_id_level_index[order.id] = level
+        self._order_id_level_index[order.order_id] = level
 
     cpdef void update(self, BookOrder order) except *:
         """
@@ -113,12 +113,12 @@ cdef class Ladder:
         """
         Condition.not_none(order, "order")
 
-        if order.id not in self._order_id_level_index:
+        if order.order_id not in self._order_id_level_index:
             self.add(order=order)
             return
 
         # Find the existing order
-        cdef Level level = self._order_id_level_index[order.id]
+        cdef Level level = self._order_id_level_index[order.order_id]
         if order.price == level.price:
             # This update contains a volume update
             level.update(order=order)
@@ -140,18 +140,18 @@ cdef class Ladder:
         Raises
         ------
         KeyError
-            If `order.id` is not contained in the order ID level index.
+            If `order.order_id` is not contained in the order ID level index.
 
         """
         Condition.not_none(order, "order")
 
-        cdef Level level = self._order_id_level_index.get(order.id)
+        cdef Level level = self._order_id_level_index.get(order.order_id)
         if level is None:
             return
             # TODO: raise KeyError("Cannot delete order: not found at level.")
         cdef int price_idx = self.prices().index(level.price)
         level.delete(order=order)
-        self._order_id_level_index.pop(order.id)
+        self._order_id_level_index.pop(order.order_id)
         if not level.orders:
             del self.levels[price_idx]
 
