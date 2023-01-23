@@ -221,7 +221,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _subscribe(self, data_type: DataType) -> None:
         # Replace method in child class, for exchange specific data types.
-        self._log.error("Cannot subscribe to {data_type.type} (not implemented).")
+        raise NotImplementedError("Cannot subscribe to {data_type.type} (not implemented).")
 
     async def _subscribe_instruments(self) -> None:
         pass  # Do nothing further
@@ -236,8 +236,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ) -> None:
-        # Replace method in child class, if compatible
-        self._log.error("Cannot subscribe to order book deltas (not implemented).")
+        update_speed = kwargs.get("update_speed")
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            update_speed=update_speed,
+            depth=depth,
+        )
 
     async def _subscribe_order_book_snapshots(
         self,
@@ -246,14 +251,19 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ) -> None:
-        # Replace method in child class, if compatible
-        self._log.error("Cannot subscribe to order book snapshots (not implemented).")
+        update_speed = kwargs.get("update_speed")
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            update_speed=update_speed,
+            depth=depth,
+        )
 
-    async def _subscribe_order_book(
+    async def _subscribe_order_book(  # noqa (too complex)
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        update_speed: int,
+        update_speed: Optional[int] = None,
         depth: Optional[int] = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
@@ -266,7 +276,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         valid_speeds = [100, 1000]
         if self._binance_account_type.is_futures:
+            if update_speed is None:
+                update_speed = 0  # default 0 ms for futures.
             valid_speeds = [0, 100, 250, 500]  # 0ms option for futures exists but not documented?
+        elif update_speed is None:
+            update_speed = 100  # default 100ms for spot
         if update_speed not in valid_speeds:
             self._log.error(
                 "Cannot subscribe to order book:"
@@ -324,8 +338,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        # Replace method in child class, if compatible
-        self._log.error("Cannot subscribe to trade ticks (not implemented).")
+        if self._binance_account_type.is_futures:
+            self._log.warning(
+                "Trade ticks have been requested from a `Binance Futures` exchange. "
+                "This functionality is not officially documented or supported.",
+            )
+        self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
@@ -357,7 +375,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _unsubscribe(self, data_type: DataType):
         # Replace method in child class, for exchange specific data types.
-        self._log.error(f"Cannot unsubscribe from {data_type.type} (not implemented).")
+        raise NotImplementedError(f"Cannot unsubscribe from {data_type.type} (not implemented).")
 
     async def _unsubscribe_instruments(self) -> None:
         pass  # Do nothing further
@@ -585,3 +603,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(bar)
+
+    def _handle_book_partial_update(self, raw: bytes) -> None:
+        raise NotImplementedError("Please implement book partial update handling in child class.")
+
+    def _handle_trade(self, raw: bytes) -> None:
+        raise NotImplementedError("Please implement trade handling in child class.")

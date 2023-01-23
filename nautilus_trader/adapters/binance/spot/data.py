@@ -30,7 +30,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -109,47 +108,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         self._decoder_spot_order_book_partial_depth = msgspec.json.Decoder(
             BinanceSpotOrderBookPartialDepthMsg,
         )
-
-    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
-
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
-    ) -> None:
-        update_speed = 100
-        if "update_speed" in kwargs:
-            update_speed = kwargs["update_speed"]
-
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
-
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
-    ) -> None:
-        update_speed = 100
-        if "update_speed" in kwargs:
-            update_speed = kwargs["update_speed"]
-
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
-
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 

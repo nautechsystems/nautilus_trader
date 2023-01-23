@@ -20,7 +20,6 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
@@ -34,7 +33,6 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -137,49 +135,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                 f"Cannot subscribe to {data_type.type} (not implemented).",
             )
 
-    async def _subscribe_order_book_deltas(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
-    ) -> None:
-        update_speed = 0  # NOTE undocumented 0ms update speed for Futures
-        if "update_speed" in kwargs:
-            update_speed = kwargs["update_speed"]
-
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
-
-    async def _subscribe_order_book_snapshots(
-        self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
-    ) -> None:
-        update_speed = 0  # NOTE undocumented 0ms update speed for Futures
-        if "update_speed" in kwargs:
-            update_speed = kwargs["update_speed"]
-
-        await self._subscribe_order_book(
-            instrument_id=instrument_id,
-            book_type=book_type,
-            update_speed=update_speed,
-            depth=depth,
-        )
-
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.warning(
-            "Trade ticks have been requested from a `Binance Futures` exchange. "
-            "This functionality is not officially documented or supported.",
-        )
-        self._ws_client.subscribe_trades(instrument_id.symbol.value)
-
     async def _unsubscribe(self, data_type: DataType) -> None:
         if data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
@@ -202,7 +157,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_book_partial_update(self, raw: bytes) -> None:
-        msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
+        msg = self._decoder_order_book_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
@@ -217,7 +172,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
 
     def _handle_trade(self, raw: bytes) -> None:
         # NOTE @trade is an undocumented endpoint for Futures exchanges
-        msg: BinanceFuturesTradeMsg = msgspec.json.decode(raw, type=BinanceFuturesTradeMsg)
+        msg = self._decoder_futures_trade_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         trade_tick: TradeTick = msg.data.parse_to_trade_tick(
             instrument_id=instrument_id,
