@@ -27,12 +27,12 @@ class BinanceSymbol(str):
     """Binance compatible symbol"""
 
     def __new__(cls, symbol: str):
-        # Format the string on construction to be binance compatible
-        symbol.upper()
-        symbol.replace(" ", "")
-        symbol.replace("/", "")
-        symbol.replace("-PERP", "")
-        return super().__new__(cls, symbol)
+        if symbol is not None:
+            # Format the string on construction to be binance compatible
+            return super().__new__(
+                cls,
+                symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
+            )
 
     def parse_binance_to_internal(self, account_type: BinanceAccountType) -> str:
         if account_type.is_spot_or_margin:
@@ -51,8 +51,9 @@ class BinanceSymbols(str):
     """Binance compatible list of symbols"""
 
     def __new__(cls, symbols: list[str]):
-        binance_symbols: list[BinanceSymbol] = [BinanceSymbol(symbol) for symbol in symbols]
-        return super().__new__(cls, json.dumps(binance_symbols))
+        if symbols is not None:
+            binance_symbols: list[BinanceSymbol] = [BinanceSymbol(symbol) for symbol in symbols]
+            return super().__new__(cls, json.dumps(binance_symbols).replace(" ", ""))
 
     def parse_str_to_list(self) -> list[BinanceSymbol]:
         binance_symbols: list[BinanceSymbol] = json.loads(self)

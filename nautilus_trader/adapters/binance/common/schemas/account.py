@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -51,7 +50,7 @@ from nautilus_trader.model.objects import Quantity
 ################################################################################
 
 
-class BinanceUserTrade(msgspec.Struct):
+class BinanceUserTrade(msgspec.Struct, frozen=True):
     """
     HTTP response from `Binance Spot/Margin`
         `GET /api/v3/myTrades`
@@ -67,7 +66,7 @@ class BinanceUserTrade(msgspec.Struct):
     qty: str
 
     # Parameters not present in 'fills' list (see FULL response of BinanceOrder)
-    symbol: Optional[BinanceSymbol] = None
+    symbol: Optional[str] = None
     id: Optional[int] = None
     orderId: Optional[int] = None
     time: Optional[int] = None
@@ -130,7 +129,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         `GET /dapi/v1/order`
     """
 
-    symbol: BinanceSymbol
+    symbol: str
     orderId: int
     clientOrderId: str
 

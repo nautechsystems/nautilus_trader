@@ -21,7 +21,6 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchan
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookDelta
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currency import Currency
@@ -44,7 +43,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
     """HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
 
-    symbol: BinanceSymbol
+    symbol: str
     status: str
     baseAsset: str
     baseAssetPrecision: int
@@ -152,7 +151,7 @@ class BinanceSpotTradeData(msgspec.Struct):
 
     e: str  # Event type
     E: int  # Event time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity

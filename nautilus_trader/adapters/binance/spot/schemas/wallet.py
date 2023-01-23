@@ -15,8 +15,6 @@
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
-
 
 ################################################################################
 # HTTP responses
@@ -26,6 +24,6 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 class BinanceSpotTradeFee(msgspec.Struct, frozen=True):
     """Schema of a single `Binance Spot/Margin` tradeFee"""
 
-    symbol: BinanceSymbol
+    symbol: str
     makerCommission: str
     takerCommission: str

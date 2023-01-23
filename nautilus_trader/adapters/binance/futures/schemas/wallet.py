@@ -15,8 +15,6 @@
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
-
 
 ################################################################################
 # HTTP responses
@@ -26,6 +24,6 @@ from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 class BinanceFuturesCommissionRate(msgspec.Struct, frozen=True):
     """Schema of a single `Binance Futures` commissionRate"""
 
-    symbol: BinanceSymbol
+    symbol: str
     makerCommissionRate: str
     takerCommissionRate: str

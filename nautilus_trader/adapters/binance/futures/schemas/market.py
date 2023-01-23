@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchangeFilter
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -42,7 +41,7 @@ from nautilus_trader.model.objects import Quantity
 ################################################################################
 
 
-class BinanceFuturesAsset(msgspec.Struct):
+class BinanceFuturesAsset(msgspec.Struct, frozen=True):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     asset: str
@@ -50,10 +49,10 @@ class BinanceFuturesAsset(msgspec.Struct):
     autoAssetExchange: str
 
 
-class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
+class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
-    symbol: BinanceSymbol
+    symbol: str
     pair: str
     contractType: str  # Can be '' empty string
     deliveryDate: int
@@ -97,7 +96,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
         )
 
 
-class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
+class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True, frozen=True):
     """HTTP response from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     timezone: str
@@ -108,10 +107,10 @@ class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
     symbols: list[BinanceFuturesSymbolInfo]
 
 
-class BinanceFuturesMarkFunding(msgspec.Struct):
+class BinanceFuturesMarkFunding(msgspec.Struct, frozen=True):
     """HTTP response from `Binance Future` GET /fapi/v1/premiumIndex."""
 
-    symbol: BinanceSymbol
+    symbol: str
     markPrice: str  # Mark price
     indexPrice: str  # Index price
     estimatedSettlePrice: str  # Estimated Settle Price (only useful in the last hour before the settlement starts)
@@ -121,10 +120,10 @@ class BinanceFuturesMarkFunding(msgspec.Struct):
     time: int
 
 
-class BinanceFuturesFundRate(msgspec.Struct):
+class BinanceFuturesFundRate(msgspec.Struct, frozen=True):
     """HTTP response from `Binance Future` GET /fapi/v1/fundingRate."""
 
-    symbol: BinanceSymbol
+    symbol: str
     fundingRate: str
     fundingTime: str
 
@@ -134,7 +133,7 @@ class BinanceFuturesFundRate(msgspec.Struct):
 ################################################################################
 
 
-class BinanceFuturesTradeData(msgspec.Struct):
+class BinanceFuturesTradeData(msgspec.Struct, frozen=True):
     """
     WebSocket message 'inner struct' for `Binance Futures` Trade Streams.
 
@@ -155,7 +154,7 @@ class BinanceFuturesTradeData(msgspec.Struct):
     e: str  # Event type
     E: int  # Event time
     T: int  # Trade time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity
@@ -178,19 +177,19 @@ class BinanceFuturesTradeData(msgspec.Struct):
         )
 
 
-class BinanceFuturesTradeMsg(msgspec.Struct):
+class BinanceFuturesTradeMsg(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance Futures` Trade Streams."""
 
     stream: str
     data: BinanceFuturesTradeData
 
 
-class BinanceFuturesMarkPriceData(msgspec.Struct):
+class BinanceFuturesMarkPriceData(msgspec.Struct, frozen=True):
     """WebSocket message 'inner struct' for `Binance Futures` Mark Price Update events."""
 
     e: str  # Event type
     E: int  # Event time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     p: str  # Mark price
     i: str  # Index price
     P: str  # Estimated Settle Price, only useful in the last hour before the settlement starts
@@ -214,7 +213,7 @@ class BinanceFuturesMarkPriceData(msgspec.Struct):
         )
 
 
-class BinanceFuturesMarkPriceMsg(msgspec.Struct):
+class BinanceFuturesMarkPriceMsg(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance Futures` Mark Price Update events."""
 
     stream: str

@@ -18,9 +18,8 @@ from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
-from nautilus_trader.adapters.binance.futures.parsing.execution import BinanceFuturesExecutionParser
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.currency import Currency
@@ -37,7 +36,7 @@ from nautilus_trader.model.objects import Quantity
 ################################################################################
 
 
-class BinanceFuturesBalanceInfo(msgspec.Struct):
+class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     """
     HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -77,7 +76,7 @@ class BinanceFuturesBalanceInfo(msgspec.Struct):
         )
 
 
-class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
+class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
     """
     HTTP response from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -112,7 +111,7 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
         return [asset.parse_to_margin_balance() for asset in self.assets]
 
 
-class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
+class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     """
     HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC SHA256).
     """
@@ -126,7 +125,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     markPrice: str
     maxNotionalValue: Optional[str] = None
     positionAmt: str
-    symbol: BinanceSymbol
+    symbol: str
     unRealizedProfit: str
     positionSide: BinanceFuturesPositionSide
     updateTime: int
@@ -135,7 +134,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
         self,
         account_id: AccountId,
         instrument_id: InstrumentId,
-        enum_parser: BinanceFuturesExecutionParser,
+        enum_parser: BinanceFuturesEnumParser,
         report_id: UUID4,
         ts_init: int,
     ) -> PositionStatusReport:

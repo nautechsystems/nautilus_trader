@@ -23,9 +23,8 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
-from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -49,7 +48,7 @@ from nautilus_trader.model.objects import Quantity
 ################################################################################
 
 
-class BinanceSpotUserMsgData(msgspec.Struct):
+class BinanceSpotUserMsgData(msgspec.Struct, frozen=True):
     """
     Inner struct for execution WebSocket messages from `Binance`
     """
@@ -57,7 +56,7 @@ class BinanceSpotUserMsgData(msgspec.Struct):
     e: BinanceSpotEventType
 
 
-class BinanceSpotUserMsgWrapper(msgspec.Struct):
+class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
     """
     Provides a wrapper for execution WebSocket messages from `Binance`.
     """
@@ -66,7 +65,7 @@ class BinanceSpotUserMsgWrapper(msgspec.Struct):
     data: BinanceSpotUserMsgData
 
 
-class BinanceSpotBalance(msgspec.Struct):
+class BinanceSpotBalance(msgspec.Struct, frozen=True):
     """Inner struct for `Binance Spot/Margin` balances."""
 
     a: str  # Asset
@@ -85,7 +84,7 @@ class BinanceSpotBalance(msgspec.Struct):
         )
 
 
-class BinanceSpotAccountUpdateMsg(msgspec.Struct):
+class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
     """WebSocket message for `Binance Spot/Margin` Account Update events."""
 
     e: str  # Event Type
@@ -96,7 +95,7 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct):
     def parse_to_account_balances(self) -> list[AccountBalance]:
         return [balance.parse_to_account_balance() for balance in self.B]
 
-    def handle_account_update(self, exec_client: BinanceSpotExecutionClient):
+    def handle_account_update(self, exec_client: BinanceCommonExecutionClient):
         """Handle BinanceSpotAccountUpdateMsg as payload of outboundAccountPosition"""
         exec_client.generate_account_state(
             balances=self.parse_to_account_balances(),
@@ -106,14 +105,14 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct):
         )
 
 
-class BinanceSpotAccountUpdateWrapper(msgspec.Struct):
+class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
     """WebSocket message wrapper for `Binance Spot/Margin` Account Update events."""
 
     stream: str
     data: BinanceSpotAccountUpdateMsg
 
 
-class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
+class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
     """
     WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update events.
 
@@ -121,7 +120,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
     e: BinanceSpotEventType
     E: int  # Event time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     c: str  # Client order ID
     S: BinanceOrderSide
     o: BinanceOrderType
@@ -152,7 +151,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     Y: str  # Last quote asset transacted quantity (i.e. lastPrice * lastQty)
     Q: str  # Quote Order Qty
 
-    def resolve_internal_variables(self, exec_client: BinanceSpotExecutionClient) -> None:
+    def resolve_internal_variables(self, exec_client: BinanceCommonExecutionClient) -> None:
         client_order_id_str: str = self.c
         if not client_order_id_str or not client_order_id_str.startswith("O"):
             client_order_id_str = self.C
@@ -165,7 +164,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
     def parse_to_order_status_report(
         self,
-        exec_client: BinanceSpotExecutionClient,
+        exec_client: BinanceCommonExecutionClient,
     ) -> OrderStatusReport:
         if self.resolved is not True:
             self.resolve_internal_variables(exec_client)
@@ -209,7 +208,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
     def handle_execution_report(
         self,
-        exec_client: BinanceSpotExecutionClient,
+        exec_client: BinanceCommonExecutionClient,
     ):
         """Handle BinanceSpotOrderUpdateData as payload of executionReport event."""
         if self.resolved is not True:
@@ -274,7 +273,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
             exec_client._log.warning(f"Received unhandled {self}")
 
 
-class BinanceSpotOrderUpdateWrapper(msgspec.Struct):
+class BinanceSpotOrderUpdateWrapper(msgspec.Struct, frozen=True):
     """WebSocket message wrapper for `Binance Spot/Margin` Order Update events."""
 
     stream: str

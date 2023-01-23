@@ -18,12 +18,12 @@ from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -93,7 +93,7 @@ class BinanceSymbolFilter(msgspec.Struct):
     tickSize: Optional[str] = None
     multiplierUp: Optional[str] = None
     multiplierDown: Optional[str] = None
-    multiplierDecimal: Optional[int] = None
+    multiplierDecimal: Optional[str] = None
     avgPriceMins: Optional[int] = None
     minQty: Optional[str] = None
     maxQty: Optional[str] = None
@@ -130,7 +130,7 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     bids: list[tuple[str, str]]
     asks: list[tuple[str, str]]
 
-    symbol: Optional[BinanceSymbol] = None  # COIN-M FUTURES only
+    symbol: Optional[str] = None  # COIN-M FUTURES only
     pair: Optional[str] = None  # COIN-M FUTURES only
 
     E: Optional[int] = None  # FUTURES only, Message output time
@@ -234,7 +234,7 @@ class BinanceKline(msgspec.Struct, array_like=True):
 class BinanceTicker24hr(msgspec.Struct, frozen=True):
     """Schema of single Binance 24hr ticker (FULL/MINI)"""
 
-    symbol: Optional[BinanceSymbol]
+    symbol: Optional[str]
     lastPrice: Optional[str]
     openPrice: Optional[str]
     highPrice: Optional[str]
@@ -266,7 +266,7 @@ class BinanceTicker24hr(msgspec.Struct, frozen=True):
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
     """Schema of single Binance Price Ticker"""
 
-    symbol: Optional[BinanceSymbol]
+    symbol: Optional[str]
     price: Optional[str]
     time: Optional[int] = None  # FUTURES only
     ps: Optional[str] = None  # COIN-M FUTURES only, pair
@@ -275,7 +275,7 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
 class BinanceTickerBook(msgspec.Struct, frozen=True):
     """Schema of a single Binance Order Book Ticker"""
 
-    symbol: Optional[BinanceSymbol]
+    symbol: Optional[str]
     bidPrice: Optional[str]
     bidQty: Optional[str]
     askPrice: Optional[str]
@@ -331,12 +331,12 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
         )
 
 
-class BinanceOrderBookData(msgspec.Struct, kw_only=True):
+class BinanceOrderBookData(msgspec.Struct, frozen=True):
     """WebSocket message 'inner struct' for `Binance` Partial & Diff. Book Depth Streams."""
 
     e: str  # Event type
     E: int  # Event time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     U: int  # First update ID in event
     u: int  # Final update ID in event
     b: list[BinanceOrderBookDelta]  # Bids to be updated
@@ -394,17 +394,17 @@ class BinanceOrderBookData(msgspec.Struct, kw_only=True):
         )
 
 
-class BinanceOrderBookMsg(msgspec.Struct):
+class BinanceOrderBookMsg(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance` Partial & Diff. Book Depth Streams."""
 
     stream: str
     data: BinanceOrderBookData
 
 
-class BinanceQuoteData(msgspec.Struct):
+class BinanceQuoteData(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance` Individual Symbol Book Ticker Streams."""
 
-    s: BinanceSymbol  # symbol
+    s: str  # symbol
     u: int  # order book updateId
     b: str  # best bid price
     B: str  # best bid qty
@@ -427,19 +427,19 @@ class BinanceQuoteData(msgspec.Struct):
         )
 
 
-class BinanceQuoteMsg(msgspec.Struct):
+class BinanceQuoteMsg(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance` Individual Symbol Book Ticker Streams."""
 
     stream: str
     data: BinanceQuoteData
 
 
-class BinanceAggregatedTradeData(msgspec.Struct):
+class BinanceAggregatedTradeData(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance` Aggregate Trade Streams."""
 
     e: str  # Event type
     E: int  # Event time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     a: int  # Aggregate trade ID
     p: str  # Price
     q: str  # Quantity
@@ -449,14 +449,14 @@ class BinanceAggregatedTradeData(msgspec.Struct):
     m: bool  # Is the buyer the market maker?
 
 
-class BinanceAggregatedTradeMsg(msgspec.Struct):
+class BinanceAggregatedTradeMsg(msgspec.Struct, frozen=True):
     """WebSocket message."""
 
     stream: str
     data: BinanceAggregatedTradeData
 
 
-class BinanceTickerData(msgspec.Struct, kw_only=True):
+class BinanceTickerData(msgspec.Struct, kw_only=True, frozen=True):
     """
     WebSocker message from `Binance` 24hr Ticker
 
@@ -489,7 +489,7 @@ class BinanceTickerData(msgspec.Struct, kw_only=True):
 
     e: str  # Event type
     E: int  # Event time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     p: str  # Price change
     P: str  # Price change percent
     w: str  # Weighted average price
@@ -543,14 +543,14 @@ class BinanceTickerData(msgspec.Struct, kw_only=True):
         )
 
 
-class BinanceTickerMsg(msgspec.Struct):
+class BinanceTickerMsg(msgspec.Struct, frozen=True):
     """WebSocket message."""
 
     stream: str
     data: BinanceTickerData
 
 
-class BinanceCandlestick(msgspec.Struct):
+class BinanceCandlestick(msgspec.Struct, frozen=True):
     """
     WebSocket message 'inner struct' for `Binance` Kline/Candlestick Streams.
 
@@ -577,7 +577,7 @@ class BinanceCandlestick(msgspec.Struct):
 
     t: int  # Kline start time
     T: int  # Kline close time
-    s: BinanceSymbol  # Symbol
+    s: str  # Symbol
     i: BinanceKlineInterval  # Interval
     f: int  # First trade ID
     L: int  # Last trade ID
@@ -596,12 +596,12 @@ class BinanceCandlestick(msgspec.Struct):
     def parse_to_binance_bar(
         self,
         intrument_id: InstrumentId,
-        bar_spec: BarSpecification,
+        enum_parser: BinanceEnumParser,
         ts_init: int,
     ) -> BinanceBar:
         bar_type = BarType(
             instrument_id=intrument_id,
-            bar_spec=bar_spec,
+            bar_spec=enum_parser.parse_binance_kline_interval_to_bar_spec(self.i),
             aggregation_source=AggregationSource.EXTERNAL,
         )
         return BinanceBar(
@@ -620,16 +620,16 @@ class BinanceCandlestick(msgspec.Struct):
         )
 
 
-class BinanceCandlestickData(msgspec.Struct):
+class BinanceCandlestickData(msgspec.Struct, frozen=True):
     """WebSocket message 'inner struct'."""
 
     e: str
     E: int
-    s: BinanceSymbol
+    s: str
     k: BinanceCandlestick
 
 
-class BinanceCandlestickMsg(msgspec.Struct):
+class BinanceCandlestickMsg(msgspec.Struct, frozen=True):
     """WebSocket message for `Binance` Kline/Candlestick Streams."""
 
     stream: str
