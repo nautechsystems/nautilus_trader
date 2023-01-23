@@ -365,6 +365,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             provider = get_cached_binance_spot_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
@@ -388,6 +389,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             provider = get_cached_binance_futures_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
