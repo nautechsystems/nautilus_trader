@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.common.clock import LiveClock
@@ -36,8 +37,12 @@ class TestBinanceUserHttpAPI:
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
         )
-
-        self.api = BinanceSpotUserDataHttpAPI(self.client)
+        self.test_symbol = "ETHUSDT"
+        self.spot_api = BinanceSpotUserDataHttpAPI(self.client, BinanceAccountType.SPOT)
+        self.isolated_margin_api = BinanceSpotUserDataHttpAPI(
+            self.client,
+            BinanceAccountType.MARGIN_ISOLATED,
+        )
 
     @pytest.mark.asyncio
     async def test_create_listen_key_spot(self, mocker):
@@ -46,7 +51,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.create_listen_key()
+        await self.spot_api.create_listen_key()
 
         # Assert
         request = mock_send_request.call_args.kwargs
@@ -54,13 +59,13 @@ class TestBinanceUserHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/userDataStream"
 
     @pytest.mark.asyncio
-    async def test_ping_listen_key_spot(self, mocker):
+    async def test_keepalive_listen_key_spot(self, mocker):
         # Arrange
         await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.ping_listen_key(
+        await self.spot_api.keepalive_listen_key(
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
@@ -74,13 +79,13 @@ class TestBinanceUserHttpAPI:
         )
 
     @pytest.mark.asyncio
-    async def test_close_listen_key_spot(self, mocker):
+    async def test_delete_listen_key_spot(self, mocker):
         # Arrange
         await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.close_listen_key(
+        await self.spot_api.delete_listen_key(
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
@@ -100,7 +105,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.create_listen_key_isolated_margin(symbol="ETHUSDT")
+        await self.isolated_margin_api.create_listen_key(symbol=self.test_symbol)
 
         # Assert
         request = mock_send_request.call_args.kwargs
@@ -109,14 +114,14 @@ class TestBinanceUserHttpAPI:
         assert request["params"] == "symbol=ETHUSDT"
 
     @pytest.mark.asyncio
-    async def test_ping_listen_key_isolated_margin(self, mocker):
+    async def test_keepalive_listen_key_isolated_margin(self, mocker):
         # Arrange
         await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.ping_listen_key_isolated_margin(
-            symbol="ETHUSDT",
+        await self.isolated_margin_api.keepalive_listen_key(
+            symbol=self.test_symbol,
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
@@ -130,14 +135,14 @@ class TestBinanceUserHttpAPI:
         )
 
     @pytest.mark.asyncio
-    async def test_close_listen_key_isolated_margin(self, mocker):
+    async def test_delete_listen_key_isolated_margin(self, mocker):
         # Arrange
         await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.close_listen_key_isolated_margin(
-            symbol="ETHUSDT",
+        await self.isolated_margin_api.delete_listen_key(
+            symbol=self.test_symbol,
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 

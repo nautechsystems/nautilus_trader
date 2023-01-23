@@ -16,9 +16,8 @@
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
-from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
-from nautilus_trader.adapters.binance.common.schemas.schemas import BinanceCandlestick
-from nautilus_trader.adapters.binance.spot.parsing.execution import BinanceSpotExecutionParser
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestick
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
@@ -34,22 +33,24 @@ BTCUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 class TestBinanceCommonParsing:
     def __init__(self) -> None:
-        self._execution_parser = BinanceSpotExecutionParser()
+        self._spot_enum_parser = BinanceSpotEnumParser()
 
     @pytest.mark.parametrize(
         "order_type, expected",
         [
-            [BinanceOrderType.MARKET, OrderType.MARKET],
             [BinanceOrderType.LIMIT, OrderType.LIMIT],
+            [BinanceOrderType.MARKET, OrderType.MARKET],
             [BinanceOrderType.STOP, OrderType.STOP_MARKET],
             [BinanceOrderType.STOP_LOSS, OrderType.STOP_MARKET],
+            [BinanceOrderType.STOP_LOSS_LIMIT, OrderType.STOP_LIMIT],
             [BinanceOrderType.TAKE_PROFIT, OrderType.LIMIT],
             [BinanceOrderType.TAKE_PROFIT_LIMIT, OrderType.STOP_LIMIT],
+            [BinanceOrderType.LIMIT_MAKER, OrderType.LIMIT],
         ],
     )
     def test_parse_order_type(self, order_type, expected):
         # Arrange, # Act
-        result = self._execution_parser.parse_binance_order_type(order_type)
+        result = self._spot_enum_parser.parse_binance_order_type(order_type)
 
         # Assert
         assert result == expected
@@ -202,9 +203,9 @@ class TestBinanceCommonParsing:
         )
 
         # Act
-        bar = parse_bar_ws(
+        bar = candle.parse_to_binance_bar(
             instrument_id=BTCUSDT_BINANCE.id,
-            data=candle,
+            enum_parser=self._spot_enum_parser,
             ts_init=millis_to_nanos(1638747720000),
         )
 
