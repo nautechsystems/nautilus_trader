@@ -1918,7 +1918,7 @@ cdef class OrderMatchingEngine:
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-    cdef void _generate_order_filled(
+    cpdef void _generate_order_filled(
         self,
         Order order,
         PositionId venue_position_id,

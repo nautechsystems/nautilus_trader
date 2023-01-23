@@ -226,7 +226,7 @@ cdef class OrderMatchingEngine:
     cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, Order order) except *
     cdef void _generate_order_expired(self, Order order) except *
-    cdef void _generate_order_filled(
+    cpdef void _generate_order_filled(
         self,
         Order order,
         PositionId venue_position_id,
