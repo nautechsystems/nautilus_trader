@@ -47,6 +47,8 @@ If everything worked correctly, you should be able to see a single EUR/USD instr
 ```python
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
+# You can also use `ParquetDataCatalog.from_env()` which will use the `NAUTILUS_PATH` environment variable 
+# catalog = ParquetDataCatalog.from_env()
 catalog = ParquetDataCatalog("./catalog")
 catalog.instruments()
 ```
