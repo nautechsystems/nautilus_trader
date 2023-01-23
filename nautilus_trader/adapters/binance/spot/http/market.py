@@ -163,8 +163,8 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
 
     async def query_spot_exchange_info(
         self,
-        symbol: Optional[BinanceSymbol] = None,
-        symbols: Optional[BinanceSymbols] = None,
+        symbol: Optional[str] = None,
+        symbols: Optional[list[str]] = None,
         permissions: Optional[BinanceSpotPermissions] = None,
     ) -> BinanceSpotExchangeInfo:
         """Check Binance Spot exchange information."""
@@ -172,16 +172,16 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
             raise ValueError("`symbol` and `symbols` cannot be sent together")
         return await self._endpoint_spot_exchange_info._get(
             parameters=self._endpoint_spot_exchange_info.GetParameters(
-                symbol=symbol,
-                symbols=symbols,
+                symbol=BinanceSymbol(symbol),
+                symbols=BinanceSymbols(symbols),
                 permissions=permissions,
             ),
         )
 
-    async def query_spot_average_price(self, symbol: BinanceSymbol) -> BinanceSpotAvgPrice:
+    async def query_spot_average_price(self, symbol: str) -> BinanceSpotAvgPrice:
         """Check average price for a provided symbol on the Spot exchange."""
         return await self._endpoint_spot_average_price._get(
             parameters=self._endpoint_spot_average_price.GetParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
             ),
         )

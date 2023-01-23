@@ -83,7 +83,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
         Parameters
         ----------
-        symbol : str
+        symbol : BinanceSymbol
             The trading pair. Only required for ISOLATED MARGIN accounts!
         """
 
@@ -95,7 +95,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
         Parameters
         ----------
-        symbol : str
+        symbol : BinanceSymbol
             The trading pair. Only required for ISOLATED MARGIN accounts!
         listenKey : str
             The listenkey to manage. Only required for SPOT/MARGIN accounts!
@@ -169,38 +169,38 @@ class BinanceUserDataHttpAPI:
 
     async def create_listen_key(
         self,
-        symbol: Optional[BinanceSymbol] = None,
+        symbol: Optional[str] = None,
     ) -> BinanceListenKey:
         """Create Binance ListenKey."""
         key = await self._endpoint_listenkey._post(
             parameters=self._endpoint_listenkey.PostParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
             ),
         )
         return key
 
     async def keepalive_listen_key(
         self,
-        symbol: Optional[BinanceSymbol] = None,
+        symbol: Optional[str] = None,
         listen_key: Optional[BinanceListenKey] = None,
     ):
         """Ping/Keepalive Binance ListenKey."""
         await self._endpoint_listenkey._put(
             parameters=self._endpoint_listenkey.PutDeleteParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 listenKey=listen_key,
             ),
         )
 
     async def delete_listen_key(
         self,
-        symbol: Optional[BinanceSymbol] = None,
+        symbol: Optional[str] = None,
         listen_key: Optional[BinanceListenKey] = None,
     ):
         """Delete Binance ListenKey."""
         await self._endpoint_listenkey._delete(
             parameters=self._endpoint_listenkey.PutDeleteParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 listenKey=listen_key,
             ),
         )

@@ -304,7 +304,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             )
         v2_endpoint_base = self.base_endpoint
         if account_type == BinanceAccountType.FUTURES_USDT:
-            v2_endpoint_base = "/fapi/v2"
+            v2_endpoint_base = "/fapi/v2/"
 
         # Create endpoints
         self._endpoint_futures_position_mode = BinanceFuturesPositionModeHttp(
@@ -349,14 +349,14 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def cancel_all_open_orders(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         recv_window: Optional[str] = None,
     ) -> bool:
         """Delete all Futures open orders. Returns whether successful."""
         response = await self._endpoint_futures_all_open_orders._delete(
             parameters=self._endpoint_futures_all_open_orders.DeleteParameters(
                 timestamp=self._timestamp(),
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 recvWindow=recv_window,
             ),
         )
@@ -376,14 +376,14 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_futures_position_risk(
         self,
-        symbol: Optional[BinanceSymbol] = None,
+        symbol: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceFuturesPositionRisk]:
         """Check all Futures position's info for a symbol."""
         return await self._endpoint_futures_position_risk._get(
             parameters=self._endpoint_futures_position_risk.GetParameters(
                 timestamp=self._timestamp(),
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 recvWindow=recv_window,
             ),
         )

@@ -488,7 +488,7 @@ class BinanceAccountHttpAPI:
 
     async def query_order(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
@@ -500,7 +500,7 @@ class BinanceAccountHttpAPI:
             )
         binance_order = await self._endpoint_order._get(
             parameters=self._endpoint_order.GetDeleteParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 orderId=order_id,
                 origClientOrderId=orig_client_order_id,
@@ -511,7 +511,7 @@ class BinanceAccountHttpAPI:
 
     async def cancel_all_open_orders(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         recv_window: Optional[str] = None,
     ) -> bool:
         # Implement in child class
@@ -519,7 +519,7 @@ class BinanceAccountHttpAPI:
 
     async def cancel_order(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
@@ -531,7 +531,7 @@ class BinanceAccountHttpAPI:
             )
         binance_order = await self._endpoint_order._delete(
             parameters=self._endpoint_order.GetDeleteParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 orderId=order_id,
                 origClientOrderId=orig_client_order_id,
@@ -542,7 +542,7 @@ class BinanceAccountHttpAPI:
 
     async def new_order(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         side: BinanceOrderSide,
         type: BinanceOrderType,
         time_in_force: Optional[BinanceTimeInForce] = None,
@@ -562,12 +562,12 @@ class BinanceAccountHttpAPI:
         working_type: Optional[str] = None,
         price_protect: Optional[bool] = None,
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
-        recv_window: Optional[int] = None,
+        recv_window: Optional[str] = None,
     ) -> BinanceOrder:
         """Send in a new order to Binance"""
         binance_order = await self._endpoint_order._post(
             parameters=self._endpoint_order.PostParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 side=side,
                 type=type,
@@ -595,7 +595,7 @@ class BinanceAccountHttpAPI:
 
     async def query_all_orders(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         order_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
@@ -605,7 +605,7 @@ class BinanceAccountHttpAPI:
         """Query all orders, active or filled."""
         return await self._endpoint_all_orders._get(
             parameters=self._endpoint_all_orders.GetParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 orderId=order_id,
                 startTime=start_time,
@@ -617,13 +617,13 @@ class BinanceAccountHttpAPI:
 
     async def query_open_orders(
         self,
-        symbol: Optional[BinanceSymbol] = None,
+        symbol: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceOrder]:
         """Query open orders."""
         return await self._endpoint_open_orders._get(
             parameters=self._endpoint_open_orders.GetParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
@@ -631,7 +631,7 @@ class BinanceAccountHttpAPI:
 
     async def query_user_trades(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         order_id: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
@@ -646,7 +646,7 @@ class BinanceAccountHttpAPI:
             )
         return await self._endpoint_user_trades._get(
             parameters=self._endpoint_user_trades.GetParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 orderId=order_id,
                 startTime=start_time,

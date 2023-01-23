@@ -19,7 +19,18 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+
+
+def enc_hook(obj: Any) -> Any:
+    if isinstance(obj, BinanceSymbol):
+        return str(obj)  # serialize BinanceSymbol as string.
+    elif isinstance(obj, BinanceSymbols):
+        return str(obj)  # serialize BinanceSymbol as string.
+    else:
+        raise TypeError(f"Objects of type {type(obj)} are not supported")
 
 
 class BinanceHttpEndpoint:
@@ -42,7 +53,7 @@ class BinanceHttpEndpoint:
         self.url_path = url_path
 
         self.decoder = msgspec.json.Decoder()
-        self.encoder = msgspec.json.Encoder()
+        self.encoder = msgspec.json.Encoder(enc_hook=enc_hook)
 
         self._method_request = {
             BinanceSecurityType.NONE: self.client.send_request,

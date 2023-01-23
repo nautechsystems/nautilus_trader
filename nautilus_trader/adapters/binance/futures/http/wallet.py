@@ -95,7 +95,7 @@ class BinanceFuturesWalletHttpAPI:
         self,
         client: BinanceHttpClient,
         clock: LiveClock,
-        account_type: BinanceAccountType,
+        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
     ):
         self.client = client
         self._clock = clock
@@ -121,14 +121,14 @@ class BinanceFuturesWalletHttpAPI:
 
     async def query_futures_commission_rate(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesCommissionRate:
         """Get Futures commission rates for a given symbol."""
         rate = await self._endpoint_futures_commission_rate._get(
             parameters=self._endpoint_futures_commission_rate.GetParameters(
                 timestamp=self._timestamp(),
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 recvWindow=recv_window,
             ),
         )

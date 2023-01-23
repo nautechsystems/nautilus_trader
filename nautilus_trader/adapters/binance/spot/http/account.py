@@ -529,6 +529,8 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     ----------
     client : BinanceHttpClient
         The Binance REST API client.
+    clock : LiveClock,
+        The clock for the API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint prefix
 
@@ -568,7 +570,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def new_spot_oco(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         side: BinanceOrderSide,
         quantity: str,
         price: str,
@@ -599,7 +601,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             )
         return await self._endpoint_spot_order_oco._post(
             parameters=self._endpoint_spot_order_oco.PostParameters(
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 side=side,
                 quantity=quantity,
@@ -644,14 +646,14 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def cancel_all_open_orders(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         recv_window: Optional[str] = None,
     ) -> bool:
         """Cancel all active orders on a symbol, including OCO. Returns whether successful."""
         await self._endpoint_spot_open_orders._delete(
             parameters=self._endpoint_spot_open_orders.DeleteParameters(
                 timestamp=self._timestamp(),
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 recvWindow=recv_window,
             ),
         )
@@ -659,7 +661,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def cancel_spot_oco(
         self,
-        symbol: BinanceSymbol,
+        symbol: str,
         order_list_id: Optional[str] = None,
         list_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
@@ -673,7 +675,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         return await self._endpoint_spot_order_list._delete(
             parameters=self._endpoint_spot_order_list.DeleteParameters(
                 timestamp=self._timestamp(),
-                symbol=symbol,
+                symbol=BinanceSymbol(symbol),
                 orderListId=order_list_id,
                 listClientOrderId=list_client_order_id,
                 newClientOrderId=new_client_order_id,
