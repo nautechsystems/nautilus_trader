@@ -101,16 +101,21 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
+
         for symbol_info in exchange_info.symbols:
-            try:
-                # Get current commission rates for the symbol
-                fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
-            except BinanceClientError as e:
-                self._log.error(
-                    "Cannot load instruments: API key authentication failed "
-                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                )
-                return
+            if self._client.base_url.__contains__("testnet.binancefuture.com"):
+                fee = None
+            else:
+                try:
+                    # Get current commission rates for the symbol
+                    fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
+                except BinanceClientError as e:
+                    self._log.error(
+                        "Cannot load instruments: API key authentication failed "
+                        f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                    )
+                    return
+
             self._parse_instrument(
                 symbol_info=symbol_info,
                 fee=fee,
@@ -134,24 +139,27 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         # Extract all symbol strings
-        symbols = [BinanceSymbol(instrument_id.symbol.value) for instrument_id in instrument_ids]
+        symbols = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
-        symbol_info_dict: dict[BinanceSymbol, BinanceFuturesSymbolInfo] = {
+        symbol_info_dict: dict[str, BinanceFuturesSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
 
         for symbol in symbols:
-            try:
-                # Get current commission rates for the symbol
-                fee = await self._http_wallet.query_futures_commission_rate(symbol)
-            except BinanceClientError as e:
-                self._log.error(
-                    "Cannot load instruments: API key authentication failed "
-                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                )
-                return
+            if self._client.base_url.__contains__("testnet.binancefuture.com"):
+                fee = None
+            else:
+                try:
+                    # Get current commission rates for the symbol
+                    fee = await self._http_wallet.query_futures_commission_rate(symbol)
+                except BinanceClientError as e:
+                    self._log.error(
+                        "Cannot load instruments: API key authentication failed "
+                        f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                    )
+
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
                 fee=fee,
@@ -165,34 +173,37 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = BinanceSymbol(instrument_id.symbol.value)
+        symbol = instrument_id.symbol.value
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
-        symbol_info_dict: dict[BinanceSymbol, BinanceFuturesSymbolInfo] = {
+        symbol_info_dict: dict[str, BinanceFuturesSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
 
-        try:
-            # Get current commission rates for the symbol
-            fee = await self._http_wallet.query_futures_commission_rate(symbol)
-        except BinanceClientError as e:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                f"(this is needed to fetch the applicable account fee tier). {e.message}",
-            )
+        if self._client.base_url.__contains__("testnet.binancefuture.com"):
+            fee = None
+        else:
+            try:
+                # Get current commission rates for the symbol
+                fee = await self._http_wallet.query_futures_commission_rate(symbol)
+            except BinanceClientError as e:
+                self._log.error(
+                    "Cannot load instruments: API key authentication failed "
+                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                )
 
         self._parse_instrument(
             symbol_info=symbol_info_dict[symbol],
-            fee=fee,
             ts_event=millis_to_nanos(exchange_info.serverTime),
+            fee=fee,
         )
 
     def _parse_instrument(  # noqa (C901 too complex)
         self,
         symbol_info: BinanceFuturesSymbolInfo,
-        fee: Optional[BinanceFuturesCommissionRate],
         ts_event: int,
+        fee: Optional[BinanceFuturesCommissionRate] = None,
     ) -> None:
         contract_type_str = symbol_info.contractType
 
@@ -200,6 +211,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             contract_type_str == ""
             or symbol_info.status == BinanceFuturesContractStatus.PENDING_TRADING
         ):
+            self._log.debug(f"Instrument not yet defined: {symbol_info.symbol}")
             return  # Not yet defined
 
         ts_init = time.time_ns()
@@ -208,9 +220,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             base_currency = symbol_info.parse_to_base_currency()
             quote_currency = symbol_info.parse_to_quote_currency()
 
-            native_symbol = Symbol(symbol_info.symbol)
-            symbol = symbol_info.symbol.parse_binance_to_internal(BinanceAccountType.FUTURES_USDT)
-            instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
+            binance_symbol = BinanceSymbol(symbol_info.symbol).parse_binance_to_internal(
+                self._account_type,
+            )
+            native_symbol = Symbol(binance_symbol)
+            instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
 
             # Parse instrument filters
             filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {

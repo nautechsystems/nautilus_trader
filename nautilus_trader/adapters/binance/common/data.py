@@ -36,7 +36,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.asynchronous import sleep0
@@ -169,11 +169,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         # Connect HTTP client
+        self._log.info("Connecting client...")
         if not self._http_client.connected:
             await self._http_client.connect()
 
+        self._log.info("Initialising instruments...")
         await self._instrument_provider.initialize()
 
+        self._log.info("Connected!")
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
 
@@ -509,9 +512,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _get_cached_instrument_id(self, symbol: BinanceSymbol) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        nautilus_symbol: str = symbol.parse_binance_to_internal(self._binance_account_type)
+        nautilus_symbol: str = BinanceSymbol(symbol).parse_binance_to_internal(
+            self._binance_account_type,
+        )
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
@@ -574,10 +579,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if not msg.data.k.x:
             return  # Not closed yet
         instrument_id = self._get_cached_instrument_id(msg.data.s)
-        bar_spec = self._enum_parser.parse_binance_kline_interval_to_bar_spec(msg.data.k.i)
         bar: BinanceBar = msg.data.k.parse_to_binance_bar(
             intrument_id=instrument_id,
-            bar_spec=bar_spec,
+            enum_parser=self._enum_parser,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(bar)

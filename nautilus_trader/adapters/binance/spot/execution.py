@@ -20,7 +20,6 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
@@ -163,15 +162,15 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: BinanceSymbol = None,
+        symbol: str = None,
     ) -> list[PositionStatusReport]:
         # Never cash positions
         return []
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: BinanceSymbol = None,
-    ) -> list[BinanceSymbol]:
+        symbol: str = None,
+    ) -> list[str]:
         # Never cash positions
         return []
 

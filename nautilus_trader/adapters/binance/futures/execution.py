@@ -22,7 +22,6 @@ import msgspec
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
@@ -175,7 +174,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: BinanceSymbol = None,
+        symbol: str = None,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
         # Check Binance for all active positions
@@ -197,10 +196,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: BinanceSymbol = None,
-    ) -> list[BinanceSymbol]:
+        symbol: str = None,
+    ) -> list[str]:
         # Check Binance for all active positions
-        active_symbols: list[BinanceSymbol] = []
+        active_symbols: list[str] = []
         binance_positions: list[BinanceFuturesPositionRisk]
         binance_positions = await self._futures_http_account.query_futures_position_risk(symbol)
         for position in binance_positions:

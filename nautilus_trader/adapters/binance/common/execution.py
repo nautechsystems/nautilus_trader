@@ -337,28 +337,28 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.debug(f"Received {report}.")
         return report
 
-    def _get_cache_active_symbols(self) -> list[BinanceSymbol]:
+    def _get_cache_active_symbols(self) -> list[str]:
         # Check cache for all active symbols
         open_orders: list[Order] = self._cache.orders_open(venue=self.venue)
         open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
-        active_symbols: list[BinanceSymbol] = []
+        active_symbols: list[str] = []
         for o in open_orders:
-            active_symbols.append(BinanceSymbol(o.instrument_id.symbol.value))
+            active_symbols.append(o.instrument_id.symbol.value)
         for p in open_positions:
-            active_symbols.append(BinanceSymbol(p.instrument_id.symbol.value))
+            active_symbols.append(p.instrument_id.symbol.value)
         return active_symbols
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: BinanceSymbol = None,
-    ) -> list[BinanceSymbol]:
+        symbol: str = None,
+    ) -> list[str]:
         # Implement in child class
         raise NotImplementedError
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: BinanceSymbol = None,
-    ) -> list[BinanceSymbol]:
+        symbol: str = None,
+    ) -> list[str]:
         # Implement in child class
         raise NotImplementedError
 
@@ -373,9 +373,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         try:
             # Check Binance for all order active symbols
-            symbol = (
-                BinanceSymbol(instrument_id.symbol.value) if instrument_id is not None else None
-            )
+            symbol = instrument_id.symbol.value if instrument_id is not None else None
             active_symbols = self._get_cache_active_symbols()
             active_symbols.extend(await self._get_binance_active_position_symbols(symbol))
             binance_open_orders = await self._http_account.query_open_orders(symbol)
@@ -431,9 +429,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         try:
             # Check Binance for all trades on active symbols
-            symbol = (
-                BinanceSymbol(instrument_id.symbol.value) if instrument_id is not None else None
-            )
+            symbol = instrument_id.symbol.value if instrument_id is not None else None
             active_symbols = self._get_cache_active_symbols()
             active_symbols.extend(await self._get_binance_active_position_symbols(symbol))
             binance_trades: list[BinanceUserTrade] = []
@@ -485,9 +481,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
         try:
-            symbol = (
-                BinanceSymbol(instrument_id.symbol.value) if instrument_id is not None else None
-            )
+            symbol = instrument_id.symbol.value if instrument_id is not None else None
             reports = await self._get_binance_position_status_reports(symbol)
         except BinanceError as e:
             self._log.exception(f"Cannot generate position status report: {e.message}", e)
@@ -532,12 +526,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
-            symbol=BinanceSymbol(order.instrument_id.symbol.value),
+            symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
             type=self._enum_parser.parse_internal_order_type(order),
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
-            recv_window=5000,
+            recv_window=str(5000),
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
@@ -551,15 +545,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             time_in_force = BinanceTimeInForce.GTX
 
         await self._http_account.new_order(
-            symbol=BinanceSymbol(order.instrument_id.symbol.value),
+            symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
             type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
+            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
-            recv_window=5000,
+            recv_window=str(5000),
         )
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
@@ -579,7 +574,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         await self._http_account.new_order(
-            symbol=BinanceSymbol(order.instrument_id.symbol.value),
+            symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
             type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
@@ -588,8 +583,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             stop_price=str(order.trigger_price),
             working_type=working_type,
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
+            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
-            recv_window=5000,
+            recv_window=str(5000),
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -623,7 +619,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         await self._http_account.new_order(
-            symbol=BinanceSymbol(order.instrument_id.symbol.value),
+            symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
             type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
@@ -632,7 +628,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type=working_type,
             reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
-            recv_window=5000,
+            recv_window=str(5000),
         )
 
     async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
@@ -676,7 +672,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
 
         await self._http_account.new_order(
-            symbol=BinanceSymbol(order.instrument_id.symbol.value),
+            symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
             type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
@@ -686,12 +682,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type=working_type,
             reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
-            recv_window=5000,
+            recv_window=str(5000),
         )
 
-    def _get_cached_instrument_id(self, symbol: BinanceSymbol) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        nautilus_symbol: str = symbol.parse_binance_to_internal(self._binance_account_type)
+        nautilus_symbol: str = BinanceSymbol(symbol).parse_binance_to_internal(
+            self._binance_account_type,
+        )
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
@@ -742,7 +740,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         try:
             if open_orders_total_count == len(open_orders_strategy):
                 await self._http_account.cancel_all_open_orders(
-                    symbol=BinanceSymbol(command.instrument_id.symbol.value),
+                    symbol=command.instrument_id.symbol.value,
                 )
             else:
                 for order in open_orders_strategy:
@@ -763,12 +761,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         try:
             if venue_order_id is not None:
                 await self._http_account.cancel_order(
-                    symbol=BinanceSymbol(instrument_id.symbol.value),
+                    symbol=instrument_id.symbol.value,
                     order_id=venue_order_id.value,
                 )
             else:
                 await self._http_account.cancel_order(
-                    symbol=BinanceSymbol(instrument_id.symbol.value),
+                    symbol=instrument_id.symbol.value,
                     orig_client_order_id=client_order_id.value,
                 )
         except BinanceError as e:

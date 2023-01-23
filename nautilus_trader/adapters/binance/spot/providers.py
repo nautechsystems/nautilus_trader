@@ -23,8 +23,6 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
@@ -98,7 +96,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         if self._client.base_url.__contains__("testnet.binance.vision"):
-            fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {}
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
         else:
             try:
                 response = await self._http_wallet.query_spot_trade_fees()
@@ -138,9 +136,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         # Get current commission rates
         try:
             response = await self._http_wallet.query_spot_trade_fees()
-            fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {
-                fee.symbol: fee for fee in response
-            }
+            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -149,16 +145,14 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Extract all symbol strings
-        binance_symbols = BinanceSymbols(
-            [instrument_id.symbol.value for instrument_id in instrument_ids],
-        )
+        symbols = [instrument_id.symbol.value for instrument_id in instrument_ids]
         # Get exchange info for all assets
-        exchange_info = await self._http_market.query_spot_exchange_info(symbols=binance_symbols)
-        symbol_info_dict: dict[BinanceSymbol, BinanceSpotSymbolInfo] = {
+        exchange_info = await self._http_market.query_spot_exchange_info(symbols=symbols)
+        symbol_info_dict: dict[str, BinanceSpotSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
 
-        for symbol in binance_symbols.parse_str_to_list():
+        for symbol in symbols:
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
                 fee=fees_dict[symbol],
@@ -172,14 +166,12 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = BinanceSymbol(instrument_id.symbol.value)
+        symbol = instrument_id.symbol.value
 
         # Get current commission rates
         try:
             trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
-            fees_dict: dict[BinanceSymbol, BinanceSpotTradeFee] = {
-                fee.symbol: fee for fee in trade_fees
-            }
+            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in trade_fees}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -189,7 +181,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get exchange info for asset
         exchange_info = await self._http_market.query_spot_exchange_info(symbol=symbol)
-        symbol_info_dict: dict[BinanceSymbol, BinanceSpotSymbolInfo] = {
+        symbol_info_dict: dict[str, BinanceSpotSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
 

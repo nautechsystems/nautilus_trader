@@ -84,6 +84,7 @@ class BinanceSpotEnumParser(BinanceEnumParser):
         self.spot_ext_to_int_order_type = {
             BinanceOrderType.LIMIT: OrderType.LIMIT,
             BinanceOrderType.MARKET: OrderType.MARKET,
+            BinanceOrderType.STOP: OrderType.STOP_MARKET,
             BinanceOrderType.STOP_LOSS: OrderType.STOP_MARKET,
             BinanceOrderType.STOP_LOSS_LIMIT: OrderType.STOP_LIMIT,
             BinanceOrderType.TAKE_PROFIT: OrderType.LIMIT,

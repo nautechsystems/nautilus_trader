@@ -20,7 +20,6 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
@@ -157,7 +156,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg = self._decoder_spot_order_book_partial_depth.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(
-            BinanceSymbol(msg.stream.partition("@")[0]),
+            msg.stream.partition("@")[0],
         )
         book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
