@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
 from decimal import Decimal
 from typing import Optional
 
@@ -77,10 +76,11 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         self._client = client
         self._account_type = account_type
+        self._clock = clock
 
         self._http_wallet = BinanceSpotWalletHttpAPI(
             self._client,
-            clock=clock,
+            clock=self._clock,
             account_type=account_type,
         )
         self._http_market = BinanceSpotMarketHttpAPI(self._client, account_type=account_type)
@@ -197,7 +197,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         fee: Optional[BinanceSpotTradeFee],
         ts_event: int,
     ) -> None:
-        ts_init = time.time_ns()
+        ts_init = self._clock.timestamp_ns()
         try:
             base_currency = symbol_info.parse_to_base_asset()
             quote_currency = symbol_info.parse_to_quote_asset()

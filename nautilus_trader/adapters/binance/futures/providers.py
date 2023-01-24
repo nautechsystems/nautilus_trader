@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
 from datetime import datetime as dt
 from decimal import Decimal
 from typing import Optional
@@ -82,10 +81,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         self._client = client
         self._account_type = account_type
+        self._clock = clock
 
         self._http_wallet = BinanceFuturesWalletHttpAPI(
             self._client,
-            clock=clock,
+            clock=self._clock,
             account_type=account_type,
         )
         self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
@@ -214,7 +214,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             self._log.debug(f"Instrument not yet defined: {symbol_info.symbol}")
             return  # Not yet defined
 
-        ts_init = time.time_ns()
+        ts_init = self._clock.timestamp_ns()
         try:
             # Create quote and base assets
             base_currency = symbol_info.parse_to_base_currency()
