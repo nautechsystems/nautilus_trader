@@ -67,12 +67,8 @@ def test_buffer_parquet_reader_quote_ticks():
         data,
     )
 
-    # Note: this must not be named data because map
-    # and itertools are lazy. So this updates the reference
-    # "data" that was passed to reader, while the data is
-    # still being read.
-    mapped_chunk = map(QuoteTick.list_from_capsule, reader)
-    ticks = list(itertools.chain.from_iterable(mapped_chunk))
+    data = map(QuoteTick.list_from_capsule, reader)
+    ticks = list(itertools.chain.from_iterable(data))
 
     csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
     df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
