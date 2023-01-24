@@ -15,10 +15,8 @@
 
 import itertools
 import os
-import time
 
 import pandas as pd
-import pytest
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
@@ -28,29 +26,18 @@ from nautilus_trader.model.data.tick import QuoteTick
 from tests import TEST_DATA_DIR
 
 
-@pytest.mark.benchmark(
-    group="parquet-reader",
-    timer=time.time,
-    disable_gc=True,
-    min_rounds=5,
-    warmup=False,
-)
-def test_file_parquet_reader_quote_ticks(benchmark):
-    @benchmark
-    def get_ticks():
-        parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-        reader = ParquetReader(
-            parquet_data_path,
-            1000,
-            ParquetType.QuoteTick,
-            ParquetReaderType.File,
-        )
+def test_file_parquet_reader_quote_ticks():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    reader = ParquetReader(
+        parquet_data_path,
+        1000,
+        ParquetType.QuoteTick,
+        ParquetReaderType.File,
+    )
 
-        data = map(QuoteTick.list_from_capsule, reader)
-        ticks = list(itertools.chain(*data))
-        return ticks
+    data = map(QuoteTick.list_from_capsule, reader)
+    ticks = list(itertools.chain(*data))
 
-    ticks = get_ticks
     csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
     df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
 
