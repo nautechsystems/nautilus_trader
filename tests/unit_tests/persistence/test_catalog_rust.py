@@ -65,22 +65,27 @@ def test_file_parquet_reader_quote_ticks(benchmark):
     # )
 
 
-@pytest.mark.skip(reason="WIP")
 def test_buffer_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-    reader = None
+    data = None
+
     with open(parquet_data_path, "rb") as f:
         data = f.read()
-        reader = ParquetReader(
-            "",
-            1000,
-            ParquetType.QuoteTick,
-            ParquetReaderType.Buffer,
-            data,
-        )
 
-    data = map(QuoteTick.list_from_capsule, reader)
-    ticks = list(itertools.chain(*data))
+    reader = ParquetReader(
+        "",
+        1000,
+        ParquetType.QuoteTick,
+        ParquetReaderType.Buffer,
+        data,
+    )
+
+    # Note: this must not be named data because map
+    # and itertools are lazy. So this updates the reference
+    # "data" that was passed to reader, while the data is
+    # still being read.
+    mapped_chunk = map(QuoteTick.list_from_capsule, reader)
+    ticks = list(itertools.chain.from_iterable(mapped_chunk))
 
     csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
     df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
