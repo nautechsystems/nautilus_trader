@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.enums import MessageCategory
-from nautilus_trader.core.message import Message
+from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
-MESSAGE = Message(MessageCategory.COMMAND, UUID4(), 0)
+EVENT = Event(UUID4(), 0, 0)
 
 
 class Experiments:
@@ -58,18 +57,8 @@ class TestPerformanceExperiments(PerformanceHarness):
     def test_is_instance(benchmark):
         benchmark.pedantic(
             target=isinstance,
-            args=(MESSAGE, SubmitOrder),
+            args=(EVENT, OrderSubmitted),
             iterations=100_000,
             rounds=1,
         )
         # ~0.0ms / ~0.2μs / 153ns minimum of 100,000 runs @ 1 iteration each run.
-
-    @staticmethod
-    def test_is_message_type(benchmark):
-        benchmark.pedantic(
-            target=MESSAGE.category.__eq__,
-            args=(0,),
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.2μs / 150ns minimum of 100,000 runs @ 1 iteration each run.

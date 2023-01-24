@@ -30,9 +30,11 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
-    cdef object _run_queue_task
+    cdef object _cmd_queue_task
+    cdef object _evt_queue_task
     cdef object _inflight_check_task
-    cdef Queue _queue
+    cdef Queue _cmd_queue
+    cdef Queue _evt_queue
     cdef uint64_t _inflight_check_threshold_ns
 
     cdef readonly bint is_running
@@ -45,11 +47,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """The in-flight check interval (milliseconds).\n\n:returns: `int`"""
     cdef readonly int inflight_check_threshold_ms
     """The in-flight check threshold (milliseconds).\n\n:returns: `int`"""
-
-    cpdef int qsize(self) except *
-
-    cpdef void kill(self) except *
-    cdef void _enqueue_sentinel(self) except *
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

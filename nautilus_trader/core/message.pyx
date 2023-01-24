@@ -15,51 +15,12 @@
 
 from typing import Any, Callable
 
-from nautilus_trader.core.rust.core cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID4
 
 
-cdef class Message:
+cdef class Command:
     """
-    The base class for all messages.
-
-    Parameters
-    ----------
-    category : MessageCategory
-        The message category.
-    message_id : UUID4
-        The message ID.
-    ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(
-        self,
-        MessageCategory category,
-        UUID4 message_id not None,
-        uint64_t ts_init,
-    ):
-        self.category = category
-        self.id = message_id
-        self.ts_init = ts_init
-
-    def __eq__(self, Message other) -> bool:
-        return self.category == other.category and self.id == other.id
-
-    def __hash__(self) -> int:
-        return hash((self.category, self.id))
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init})"
-
-
-cdef class Command(Message):
-    """
-    The base class for all commands.
+    The base class for all command messages.
 
     Parameters
     ----------
@@ -78,17 +39,27 @@ cdef class Command(Message):
         UUID4 command_id not None,
         uint64_t ts_init,
     ):
-        super().__init__(MessageCategory.COMMAND, command_id, ts_init)
+        self.id = command_id
+        self.ts_init = ts_init
+
+    def __eq__(self, Command other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init})"
 
 
-cdef class Document(Message):
+cdef class Document:
     """
-    The base class for all documents.
+    The base class for all document messages.
 
     Parameters
     ----------
     document_id : UUID4
-        The document ID.
+        The command ID.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
@@ -102,12 +73,22 @@ cdef class Document(Message):
         UUID4 document_id not None,
         uint64_t ts_init,
     ):
-        super().__init__(MessageCategory.DOCUMENT, document_id, ts_init)
+        self.id = document_id
+        self.ts_init = ts_init
+
+    def __eq__(self, Document other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init})"
 
 
-cdef class Event(Message):
+cdef class Event:
     """
-    The base class for all events.
+    The base class for all event messages.
 
     Parameters
     ----------
@@ -129,14 +110,23 @@ cdef class Event(Message):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(MessageCategory.EVENT, event_id, ts_init)
-
+        self.id = event_id
         self.ts_event = ts_event
+        self.ts_init = ts_init
+
+    def __eq__(self, Event other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(id={self.id}, ts_event={self.ts_event}, ts_init={self.ts_init})"
 
 
-cdef class Request(Message):
+cdef class Request:
     """
-    The base class for all requests.
+    The base class for all request messages.
 
     Parameters
     ----------
@@ -158,14 +148,23 @@ cdef class Request(Message):
         UUID4 request_id not None,
         uint64_t ts_init,
     ):
-        super().__init__(MessageCategory.REQUEST, request_id, ts_init)
-
         self.callback = callback
+        self.id = request_id
+        self.ts_init = ts_init
+
+    def __eq__(self, Request other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(id={self.id}, callback={self.callback}, ts_init={self.ts_init})"
 
 
-cdef class Response(Message):
+cdef class Response:
     """
-    The base class for all responses.
+    The base class for all response messages.
 
     Parameters
     ----------
@@ -187,9 +186,15 @@ cdef class Response(Message):
         UUID4 response_id not None,
         uint64_t ts_init,
     ):
-        super().__init__(MessageCategory.RESPONSE, response_id, ts_init)
-
         self.correlation_id = correlation_id
+        self.id = response_id
+        self.ts_init = ts_init
+
+    def __eq__(self, Response other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def __repr__(self) -> str:
         return (

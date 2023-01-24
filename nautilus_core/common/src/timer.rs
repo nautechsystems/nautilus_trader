@@ -16,7 +16,6 @@
 use std::ffi::c_char;
 use std::rc::Rc;
 
-use nautilus_core::enums::MessageCategory;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use nautilus_core::time::{Timedelta, Timestamp};
 use nautilus_core::uuid::UUID4;
@@ -29,8 +28,6 @@ pub struct TimeEvent {
     /// The event name.
     pub name: Box<Rc<String>>,
     /// The event ID.
-    pub category: MessageCategory, // Only applicable to generic messages in the future
-    /// The UNIX timestamp (nanoseconds) when the time event occurred.
     pub event_id: UUID4,
     /// The message category
     pub ts_event: Timestamp,
@@ -65,7 +62,6 @@ pub unsafe extern "C" fn time_event_new(
 ) -> TimeEvent {
     TimeEvent {
         name: Box::new(Rc::new(cstr_to_string(name))),
-        category: MessageCategory::Event,
         event_id,
         ts_event,
         ts_init,
@@ -145,7 +141,6 @@ impl TestTimer {
     pub fn pop_event(&self, event_id: UUID4, ts_init: Timestamp) -> TimeEvent {
         TimeEvent {
             name: Box::new(Rc::new(self.name.clone())),
-            category: MessageCategory::Event,
             event_id,
             ts_event: self.next_time_ns,
             ts_init,
@@ -177,7 +172,6 @@ impl Iterator for TestTimer {
             let item = (
                 TimeEvent {
                     name: Box::new(Rc::new(self.name.clone())),
-                    category: MessageCategory::Event,
                     event_id: UUID4::new(),
                     ts_event: self.next_time_ns,
                     ts_init: self.next_time_ns,
