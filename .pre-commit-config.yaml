@@ -43,7 +43,7 @@ repos:
         args: ["--py39-plus"]
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v2.1.2
+    rev: v2.1.3
     hooks:
       - id: pycln
         name: pycln (remove unused imports)
@@ -101,7 +101,7 @@ repos:
           - Flake8-pyproject
 
   - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.2.2
+    rev: 6.3.0
     hooks:
       - id: pydocstyle
         files: ^nautilus_trader/

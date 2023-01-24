@@ -967,14 +967,14 @@ nest-asyncio = "*"
 
 [[package]]
 name = "identify"
-version = "2.5.13"
+version = "2.5.15"
 description = "File identification library for Python"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "identify-2.5.13-py2.py3-none-any.whl", hash = "sha256:8aa48ce56e38c28b6faa9f261075dea0a942dfbb42b341b4e711896cbb40f3f7"},
-    {file = "identify-2.5.13.tar.gz", hash = "sha256:abb546bca6f470228785338a01b539de8a85bbf46491250ae03363956d8ebb10"},
+    {file = "identify-2.5.15-py2.py3-none-any.whl", hash = "sha256:1f4b36c5f50f3f950864b2a047308743f064eaa6f6645da5e5c780d1c7125487"},
+    {file = "identify-2.5.15.tar.gz", hash = "sha256:c22aa206f47cc40486ecf585d27ad5f40adbfc494a3fa41dc3ed0499a23b123f"},
 ]
 
 [package.extras]
@@ -1719,14 +1719,14 @@ testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
 name = "pre-commit"
-version = "2.21.0"
+version = "3.0.0"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
 category = "dev"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 files = [
-    {file = "pre_commit-2.21.0-py2.py3-none-any.whl", hash = "sha256:e2f91727039fc39a92f58a588a25b87f936de6567eed4f0e673e0507edc75bad"},
-    {file = "pre_commit-2.21.0.tar.gz", hash = "sha256:31ef31af7e474a8d8995027fefdfcf509b5c913ff31f2015b4ec4beb26a6f658"},
+    {file = "pre_commit-3.0.0-py2.py3-none-any.whl", hash = "sha256:6af0a0b4137c0903794632f77b7223c4af0373f5cd3337056d2dab32aa3a5caf"},
+    {file = "pre_commit-3.0.0.tar.gz", hash = "sha256:de265f74325f0c3ff1a727a974449315ea9b11975cf6b02c11f26e50acfa48f1"},
 ]
 
 [package.dependencies]
@@ -2427,14 +2427,14 @@ sphinx = ["matplotlib", "myst-nb", "numpy", "sphinx-book-theme", "sphinx-design"
 
 [[package]]
 name = "sphinxcontrib-applehelp"
-version = "1.0.3"
+version = "1.0.4"
 description = "sphinxcontrib-applehelp is a Sphinx extension which outputs Apple help books"
 category = "dev"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "sphinxcontrib.applehelp-1.0.3-py3-none-any.whl", hash = "sha256:ba0f2a22e6eeada8da6428d0d520215ee8864253f32facf958cca81e426f661d"},
-    {file = "sphinxcontrib.applehelp-1.0.3.tar.gz", hash = "sha256:83749f09f6ac843b8cb685277dbc818a8bf2d76cc19602699094fe9a74db529e"},
+    {file = "sphinxcontrib-applehelp-1.0.4.tar.gz", hash = "sha256:828f867945bbe39817c210a1abfd1bc4895c8b73fcaade56d45357a348a07d7e"},
+    {file = "sphinxcontrib_applehelp-1.0.4-py3-none-any.whl", hash = "sha256:29d341f67fb0f6f586b23ad80e072c8e6ad0b48417db2bde114a4c9746feb228"},
 ]
 
 [package.extras]
@@ -2941,4 +2941,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "6e55a27cc9e53a845a64fa517322c1aa5f58f2d5fe62f6cc1b37f194edd5e739"
+content-hash = "1cc1e7cad7ac27e14130b4741e68ae642d041bb026c7e739495fd7e611852bbb"
