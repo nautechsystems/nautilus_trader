@@ -102,7 +102,7 @@ class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
-    """Websocker message 'inner struct' for 'Binance Spot/Margin Partial Book Depth Streams.'"""
+    """Websocket message 'inner struct' for 'Binance Spot/Margin Partial Book Depth Streams.'"""
 
     lastUpdateId: int
     bids: list[BinanceOrderBookDelta]

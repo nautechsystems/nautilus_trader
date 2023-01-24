@@ -457,7 +457,7 @@ class BinanceAggregatedTradeMsg(msgspec.Struct, frozen=True):
 
 class BinanceTickerData(msgspec.Struct, kw_only=True, frozen=True):
     """
-    WebSocker message from `Binance` 24hr Ticker
+    WebSocket message from `Binance` 24hr Ticker
 
     Fields
     ------
