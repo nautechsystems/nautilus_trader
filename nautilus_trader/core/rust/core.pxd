@@ -4,13 +4,6 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
-    cpdef enum MessageCategory:
-        COMMAND # = 1,
-        DOCUMENT # = 2,
-        EVENT # = 3,
-        REQUEST # = 4,
-        RESPONSE # = 5,
-
     cdef struct Rc_String:
         pass
 
@@ -56,14 +49,6 @@ cdef extern from "../includes/core.h":
 
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
-
-    const char *message_category_to_cstr(MessageCategory value);
-
-    # Returns an enum from a C string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    MessageCategory message_category_from_cstr(const char *ptr);
 
     # Return the decimal precision inferred from the given C string.
     #

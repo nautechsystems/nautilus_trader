@@ -137,14 +137,6 @@ class TestLiveRiskEngine:
         self.risk_engine.stop()
 
     @pytest.mark.asyncio
-    async def test_get_event_loop_returns_expected_loop(self):
-        # Arrange, Act
-        loop = self.risk_engine.get_event_loop()
-
-        # Assert
-        assert loop == self.loop
-
-    @pytest.mark.asyncio
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
@@ -191,7 +183,7 @@ class TestLiveRiskEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.qsize() == 1
+        assert self.risk_engine.cmd_qsize() == 1
         assert self.risk_engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -243,7 +235,7 @@ class TestLiveRiskEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.qsize() == 1
+        assert self.risk_engine.cmd_qsize() == 1
         assert self.risk_engine.event_count == 0
 
     @pytest.mark.asyncio
@@ -274,7 +266,8 @@ class TestLiveRiskEngine:
         self.risk_engine.kill()
 
         # Assert
-        assert self.risk_engine.qsize() == 0
+        assert self.risk_engine.cmd_qsize() == 0
+        assert self.risk_engine.evt_qsize() == 0
 
     @pytest.mark.asyncio
     async def test_execute_command_places_command_on_queue(self):
@@ -311,12 +304,13 @@ class TestLiveRiskEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.qsize() == 0
+        assert self.risk_engine.cmd_qsize() == 0
         assert self.risk_engine.command_count == 1
 
         # Tear Down
         self.risk_engine.stop()
-        await self.risk_engine.get_run_queue_task()
+        await self.risk_engine.get_cmd_queue_task()
+        await self.risk_engine.get_evt_queue_task()
 
     @pytest.mark.asyncio
     async def test_handle_position_opening_with_position_id_none(self):
@@ -346,9 +340,10 @@ class TestLiveRiskEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.qsize() == 0
+        assert self.risk_engine.cmd_qsize() == 0
         assert self.risk_engine.event_count == 1
 
         # Tear Down
         self.risk_engine.stop()
-        await self.risk_engine.get_run_queue_task()
+        await self.risk_engine.get_cmd_queue_task()
+        await self.risk_engine.get_evt_queue_task()

@@ -823,7 +823,7 @@ cdef class LiveLogger(Logger):
 
     cpdef void stop(self) except *:
         """
-        Stop the logger by cancelling the internal event loop task.
+        Stop the logger by canceling the internal event loop task.
 
         Future messages sent to the logger will be passed directly to the
         `Logger` base class for logging.

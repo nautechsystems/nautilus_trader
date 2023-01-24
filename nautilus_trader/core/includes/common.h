@@ -79,10 +79,6 @@ typedef struct TimeEvent_t {
     /**
      * The event ID.
      */
-    MessageCategory category;
-    /**
-     * The UNIX timestamp (nanoseconds) when the time event occurred.
-     */
     UUID4_t event_id;
     /**
      * The message category

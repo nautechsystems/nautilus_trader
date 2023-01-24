@@ -21,7 +21,6 @@ header = '"../includes/common.h"'
 
 "nautilus_trader.core.rust.core" = [
     "UUID4_t",
-    "MessageCategory",
 ]
 
 [enum]

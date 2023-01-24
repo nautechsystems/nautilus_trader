@@ -55,12 +55,12 @@ cdef class DataEngine(Component):
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of data commands received by the engine.\n\n:returns: `int`"""
-    cdef readonly int data_count
-    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
     cdef readonly int request_count
     """The total count of data requests received by the engine.\n\n:returns: `int`"""
     cdef readonly int response_count
     """The total count of data responses received by the engine.\n\n:returns: `int`"""
+    cdef readonly int data_count
+    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
 
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *

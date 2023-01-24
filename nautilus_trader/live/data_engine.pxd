@@ -19,15 +19,14 @@ from nautilus_trader.data.engine cimport DataEngine
 
 cdef class LiveDataEngine(DataEngine):
     cdef object _loop
-    cdef object _run_queues_task
+    cdef object _cmd_queue_task
+    cdef object _req_queue_task
+    cdef object _res_queue_task
+    cdef object _data_queue_task
+    cdef Queue _cmd_queue
+    cdef Queue _req_queue
+    cdef Queue _res_queue
     cdef Queue _data_queue
-    cdef Queue _message_queue
 
     cdef readonly bint is_running
     """If the data engine is running.\n\n:returns: `bool`"""
-
-    cpdef int data_qsize(self) except *
-    cpdef int message_qsize(self) except *
-
-    cpdef void kill(self) except *
-    cdef void _enqueue_sentinels(self) except *
