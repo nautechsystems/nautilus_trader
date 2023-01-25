@@ -106,7 +106,7 @@ class TestPersistenceCatalogRust:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
             for chunk in reader:
-                writer.write(chunk, 1000)
+                writer.write(chunk)
             data: bytes = writer.flush_bytes()
             f.write(data)
 
@@ -145,11 +145,10 @@ class TestPersistenceCatalogRust:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
             for chunk in reader:
-                writer.write(chunk, 100)
+                writer.write(chunk)
             data: bytes = writer.flush_bytes()
             f.write(data)
 
-    @pytest.mark.skip(reason="writer currently not working")
     def test_data_catalog_quote_ticks_as_nautilus_use_rust(self):
         # Arrange
         self._load_quote_ticks_into_catalog_rust()
@@ -161,7 +160,6 @@ class TestPersistenceCatalogRust:
         assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
         assert len(quote_ticks) == 9500
 
-    @pytest.mark.skip(reason="writer currently not working")
     def test_data_catalog_quote_ticks_use_rust(self):
         # Arrange
         self._load_quote_ticks_into_catalog_rust()
@@ -177,7 +175,6 @@ class TestPersistenceCatalogRust:
         # assert qdf.bid_size.equals(pd.Series([float(q.bid_size) for q in quotes]))
         # assert qdf.ask_size.equals(pd.Series([float(q.ask_size) for q in quotes]))
 
-    @pytest.mark.skip(reason="segfaults")
     def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
         # Arrange
         self._load_trade_ticks_into_catalog_rust()

@@ -204,8 +204,14 @@ class ParquetDataCatalog(BaseDataCatalog):
                         ParquetReaderType.Buffer,
                         file_data,
                     )
-                    data = map(QuoteTick.list_from_capsule, reader)
-                    ticks.extend(list(itertools.chain(*data)))
+
+                    if cls == QuoteTick:
+                        data = map(QuoteTick.list_from_capsule, reader)
+                    elif cls == TradeTick:
+                        data = map(TradeTick.list_from_capsule, reader)
+                    else:
+                        RuntimeError()
+                    ticks.extend(list(itertools.chain.from_iterable(data)))
 
             return ticks
 

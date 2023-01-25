@@ -256,15 +256,17 @@ impl PythonParquetWriter {
         }
     }
 
-    /// - Assumes  `data` is a `PyCapsule` that stores a non-null valid pointer
-    /// to a contiguous block of C-style structs with `len` number of elements.
-    unsafe fn write(slf: PyRef<'_, Self>, data: &PyCapsule, len: usize) {
-        let data = PyCapsule::pointer(data);
+    /// # Safety
+    /// Assumes  `data` is a `PyCapsule` that stores a CVec with a non-null
+    /// pointer to a contiguous buffer of C-style structs with `len`
+    /// number of elements.
+    unsafe fn write(slf: PyRef<'_, Self>, data: &PyCapsule) {
+        let CVec { ptr, len, cap: _ } = *(PyCapsule::pointer(data) as *const CVec);
         match slf.parquet_type {
             ParquetType::QuoteTick => {
                 let mut writer =
                     Box::from_raw(slf.writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
-                let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
+                let data: &[QuoteTick] = slice::from_raw_parts(ptr as *const QuoteTick, len);
                 // TODO: handle errors better
                 writer.write(data).expect("Could not write data");
                 // Leak writer value back otherwise it will be dropped after this function
@@ -273,7 +275,7 @@ impl PythonParquetWriter {
             ParquetType::TradeTick => {
                 let mut writer =
                     Box::from_raw(slf.writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
-                let data: &[TradeTick] = slice::from_raw_parts(data as *const TradeTick, len);
+                let data: &[TradeTick] = slice::from_raw_parts(ptr as *const TradeTick, len);
                 // TODO: handle errors better
                 writer.write(data).expect("Could not write data");
                 // Leak writer value back otherwise it will be dropped after this function
@@ -286,27 +288,10 @@ impl PythonParquetWriter {
     /// While this is generic for FFI it only considers and returns a vector of bytes
     /// if the underlying writer is anything else it will fail.
     ///
+    /// The vector of bytes is converted to PyBytes which is the bytes type
+    /// in python.
+    ///
     /// # Safety Do not use writer after flushing it
-    unsafe fn flush(mut slf: PyRefMut<'_, Self>) -> PyObject {
-        let buffer = match slf.parquet_type {
-            ParquetType::QuoteTick => {
-                let writer = Box::from_raw(slf.writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
-                writer.flush()
-            }
-            ParquetType::TradeTick => {
-                let writer = Box::from_raw(slf.writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
-                writer.flush()
-            }
-        };
-
-        slf.writer = null_mut(); // Release memory
-        Python::with_gil(|py| {
-            PyCapsule::new::<CVec>(py, buffer.into(), None)
-                .unwrap()
-                .into_py(py)
-        })
-    }
-
     unsafe fn flush_bytes(mut slf: PyRefMut<'_, Self>) -> PyObject {
         let buffer = match slf.parquet_type {
             ParquetType::QuoteTick => {
