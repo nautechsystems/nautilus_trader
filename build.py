@@ -28,7 +28,7 @@ ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
 COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
-# If Pyo3 only then don't build c extensions to reduce compilation time
+# If PyO3 only then don't build C extensions to reduce compilation time
 PYO3_ONLY = False if os.getenv("PYO3_ONLY", "") == "" else True
 
 if PROFILE_MODE:
