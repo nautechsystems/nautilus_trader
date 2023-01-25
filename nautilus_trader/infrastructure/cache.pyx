@@ -133,6 +133,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
             db=0,
             username=config.username,
             password=config.password,
+            ssl=config.ssl,
         )
 
 # -- COMMANDS -------------------------------------------------------------------------------------

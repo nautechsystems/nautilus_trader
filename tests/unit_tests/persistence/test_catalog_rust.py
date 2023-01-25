@@ -67,8 +67,12 @@ def test_buffer_parquet_reader_quote_ticks():
         data,
     )
 
-    data = map(QuoteTick.list_from_capsule, reader)
-    ticks = list(itertools.chain.from_iterable(data))
+    # Note: Naming the variable data gives an error
+    # because somehow the iteration terminates after
+    # 1 step. Something related to the variable data
+    # being passed to reader and map function being lazy
+    mapped_chunk = map(QuoteTick.list_from_capsule, reader)
+    ticks = list(itertools.chain(*mapped_chunk))
 
     csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
     df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
