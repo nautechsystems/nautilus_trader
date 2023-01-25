@@ -38,6 +38,32 @@ fn test_parquet_reader_native_quote_ticks() {
 }
 
 #[test]
+fn test_parquet_trade_ticks_round_trip() {
+    let file_path = "../../tests/test_data/trade_tick_data.parquet";
+    let file = File::open(file_path).expect("Unable to open given file");
+
+    let reader: ParquetReader<TradeTick, File> =
+        ParquetReader::new(file, 1000, GroupFilterArg::None);
+    let data: Vec<TradeTick> = reader.flatten().collect();
+
+    let metadata: BTreeMap<String, String> = BTreeMap::from([
+        ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
+        ("price_precision".to_string(), "5".to_string()),
+        ("size_precision".to_string(), "0".to_string()),
+    ]);
+    let schema = TradeTick::encode_schema(metadata);
+    let mut writer: ParquetWriter<TradeTick, Vec<u8>> = ParquetWriter::new(Vec::new(), schema);
+    writer.write(&data).unwrap();
+    let buffer = writer.flush();
+
+    let buf_reader: ParquetReader<TradeTick, Cursor<&[u8]>> =
+        ParquetReader::new(Cursor::new(&buffer), 1000, GroupFilterArg::None);
+    let buf_data: Vec<TradeTick> = buf_reader.flatten().collect();
+
+    assert_eq!(buf_data, data);
+}
+
+#[test]
 fn test_parquet_reader_native_trade_ticks() {
     let file_path = "../../tests/test_data/trade_tick_data.parquet";
     let file = File::open(file_path).expect("Unable to open given file");
