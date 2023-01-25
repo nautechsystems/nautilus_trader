@@ -139,6 +139,8 @@ class CacheDatabaseConfig(NautilusConfig):
         The account username for the database connection.
     password : str, optional
         The account password for the database connection.
+    ssl : bool, default False
+        If database should use an SSL enabled connection.
     flush : bool, default False
         If database should be flushed before start.
     """
@@ -148,6 +150,7 @@ class CacheDatabaseConfig(NautilusConfig):
     port: Optional[int] = None
     username: Optional[str] = None
     password: Optional[str] = None
+    ssl: bool = False
     flush: bool = False
 
 
