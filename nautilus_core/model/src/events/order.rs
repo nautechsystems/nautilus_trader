@@ -32,6 +32,7 @@ use crate::types::quantity::Quantity;
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum OrderEvent {
     OrderInitialized(OrderInitialized),
     OrderDenied(OrderDenied),
