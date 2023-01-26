@@ -15,6 +15,7 @@ nautilus_core = { path = "../core" }
 pyo3.workspace = true
 rust-fsm.workspace = true
 strum.workspace = true
+thiserror.workspace = true
 
 [features]
 extension-module = [

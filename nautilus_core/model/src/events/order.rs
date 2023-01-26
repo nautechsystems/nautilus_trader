@@ -46,6 +46,7 @@ pub enum OrderEvent {
     OrderModifyRejected(OrderModifyRejected),
     OrderCancelRejected(OrderCancelRejected),
     OrderUpdated(OrderUpdated),
+    OrderPartiallyFilled(OrderFilled),
     OrderFilled(OrderFilled),
 }
 
