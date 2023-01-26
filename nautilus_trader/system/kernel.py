@@ -260,7 +260,7 @@ class NautilusKernel:
         else:
             raise ValueError(
                 "The `cache_db_config.type` is unrecognized. "
-                "Please use one of {{'in-memory', 'redis'}}.",
+                "Use one of {{'in-memory', 'redis'}}.",
             )
 
         ########################################################################

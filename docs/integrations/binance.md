@@ -6,7 +6,7 @@ derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
 ```{warning}
-This integration is still under construction. Please consider it to be in an
+This integration is still under construction. Consider it to be in an
 unstable beta phase and exercise caution.
 ```
 

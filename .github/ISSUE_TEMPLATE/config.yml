@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: General Questions
     url: https://github.com/nautechsystems/nautilus_trader/discussions
-    about: Please ask questions like "How do I achieve x?" here.
+    about: Ask questions like "How do I achieve x?" here.
   - name: Discord
     url: https://discord.gg/AUWVs3XaCS
     about: Chat with contributors and active users of NautilusTrader on our Discord server!
