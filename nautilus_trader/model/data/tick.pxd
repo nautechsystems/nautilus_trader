@@ -55,6 +55,9 @@ cdef class QuoteTick(Data):
     cdef list capsule_to_quote_tick_list(object capsule)
 
     @staticmethod
+    cdef object quote_tick_list_to_capsule(list items)
+
+    @staticmethod
     cdef QuoteTick from_dict_c(dict values)
 
     @staticmethod

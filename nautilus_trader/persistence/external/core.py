@@ -32,17 +32,18 @@ from pyarrow import parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.util import parse_filename_start
+from nautilus_trader.persistence.external.util import py_type_to_parquet_type
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
@@ -291,27 +292,28 @@ def write_parquet_rust(catalog: ParquetDataCatalog, objs: list, instrument: Inst
 
     assert cls in (QuoteTick, TradeTick)
     instrument_id = str(instrument.id)
+
+    min_timestamp = str(objs[0].ts_init).rjust(19, "0")
+    max_timestamp = str(objs[-1].ts_init).rjust(19, "0")
+
+    parent = catalog.make_path(cls=cls, instrument_id=instrument_id)
+    file_path = f"{parent}/{min_timestamp}-{max_timestamp}-0.parquet"
+
     metadata = {
         "instrument_id": instrument_id,
         "price_precision": str(instrument.price_precision),
         "size_precision": str(instrument.size_precision),
     }
-    writer = ParquetWriter(cls, metadata)
-    writer.write(objs)
+    writer = ParquetWriter(py_type_to_parquet_type(cls), metadata)
 
-    min_timestamp = objs[0].ts_init
-    max_timestamp = objs[-1].ts_init
+    capsule = QuoteTick.capsule_from_list(objs)
 
-    parent = catalog.make_path(cls=cls, instrument_id=instrument_id)
-
-    os.makedirs(parent, exist_ok=True)
+    writer.write(capsule)
 
     data: bytes = writer.flush()
 
-    fn = f"{parent}/{str(min_timestamp).rjust(19, '0')}-{str(max_timestamp).rjust(19, '0')}-0.parquet"
-
-    os.makedirs(os.path.dirname(fn), exist_ok=True)
-    with open(fn, "wb") as f:
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "wb") as f:
         f.write(data)
 
     write_objects(catalog, [instrument], existing_data_behavior="overwrite_or_ignore")

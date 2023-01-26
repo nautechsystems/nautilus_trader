@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from cpython.mem cimport PyMem_Malloc
 from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -301,8 +302,24 @@ cdef class QuoteTick(Data):
         return ticks
 
     @staticmethod
+    cdef inline quote_tick_list_to_capsule(list items):
+        cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
+        if not data:
+            raise MemoryError()
+
+        cdef int i
+        for i in range(len(items)):
+            data[i] = (<QuoteTick> items[i])._mem
+
+        return PyCapsule_New(data, NULL, NULL)
+
+    @staticmethod
     def list_from_capsule(capsule) -> list[QuoteTick]:
         return QuoteTick.capsule_to_quote_tick_list(capsule)
+
+    @staticmethod
+    def capsule_from_list(capsule):
+        return QuoteTick.quote_tick_list_to_capsule(capsule)
 
     @staticmethod
     def from_raw(
