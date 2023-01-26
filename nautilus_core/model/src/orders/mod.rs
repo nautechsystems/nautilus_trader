@@ -209,6 +209,7 @@ impl PartialEq<Self> for Order {
 impl Eq for Order {} // Marker trait
 
 impl Order {
+    /// Initialize a new `Order` by consuming the given `OrderInitialized` event.
     pub fn new(init: OrderInitialized) -> Self {
         Self {
             events: Vec::new(),
@@ -274,6 +275,38 @@ impl Order {
 
     pub fn last_event(&self) -> Option<&OrderEvent> {
         self.events.last()
+    }
+
+    pub fn events(&self) -> Vec<OrderEvent> {
+        self.events.clone()
+    }
+
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn venue_order_ids(&self) -> Vec<VenueOrderId> {
+        self.venue_order_ids.clone()
+    }
+
+    pub fn trade_ids(&self) -> Vec<TradeId> {
+        self.trade_ids.clone()
+    }
+
+    pub fn is_buy(&self) -> bool {
+        self.side == OrderSide::Buy
+    }
+
+    pub fn is_sell(&self) -> bool {
+        self.side == OrderSide::Sell
+    }
+
+    pub fn is_passive(&self) -> bool {
+        self.order_type != OrderType::Market
+    }
+
+    pub fn is_aggressive(&self) -> bool {
+        self.order_type == OrderType::Market
     }
 
     pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
