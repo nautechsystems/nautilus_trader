@@ -30,25 +30,16 @@ from pyarrow.lib import ArrowInvalid
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.external.util import py_type_to_parquet_type
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
 
 
 FileMeta = namedtuple("FileMeta", "filename datatype instrument_id client_id start end")
-
-
-def py_type_to_parquet_type(cls: type) -> ParquetType:
-    if cls == QuoteTick:
-        return ParquetType.QuoteTick
-    elif cls == TradeTick:
-        return ParquetType.TradeTick
-    else:
-        raise RuntimeError(f"Type {cls} not supported as a `ParquetType` yet.")
 
 
 def _generate_batches(
