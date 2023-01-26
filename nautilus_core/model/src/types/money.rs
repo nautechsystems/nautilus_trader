@@ -27,7 +27,7 @@ pub const MONEY_MAX: f64 = 9_223_372_036.0;
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
-#[derive(Eq, Clone)]
+#[derive(Eq, Clone, Debug)]
 pub struct Money {
     raw: i64,
     pub currency: Currency,
