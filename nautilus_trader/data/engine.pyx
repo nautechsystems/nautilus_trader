@@ -1183,9 +1183,14 @@ cdef class DataEngine(Component):
         if self._validate_data_sequence:
             last_bar = self._cache.bar(bar_type)
             if last_bar is not None:
-                if bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init:
+                if bar.ts_event < last_bar.ts_event:
                     self._log.warning(
                         f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}.",
+                    )
+                    return  # `bar` is out of sequence
+                if bar.ts_init < last_bar.ts_init:
+                    self._log.warning(
+                        f"Bar {bar} was prior to last bar `ts_init` {last_bar.ts_init}.",
                     )
                     return  # `bar` is out of sequence
                 if bar.is_revision:

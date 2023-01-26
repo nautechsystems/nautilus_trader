@@ -205,7 +205,7 @@ class DataEngineConfig(NautilusConfig):
     """
 
     build_time_bars_with_no_updates: bool = True
-    validate_data_sequence: bool = True
+    validate_data_sequence: bool = False
     debug: bool = False
 
 
