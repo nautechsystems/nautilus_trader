@@ -93,3 +93,9 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef dict to_dict_c(TradeTick obj)
+
+    @staticmethod
+    cdef TradeTick from_mem_c(TradeTick_t mem)
+
+    @staticmethod
+    cdef list capsule_to_trade_tick_list(object capsule)

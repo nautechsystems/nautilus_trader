@@ -18,14 +18,21 @@ import itertools
 import sys
 from collections import namedtuple
 from collections.abc import Iterator
+from pathlib import Path
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
 
 from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -33,6 +40,99 @@ from nautilus_trader.serialization.arrow.util import clean_key
 
 
 FileMeta = namedtuple("FileMeta", "filename datatype instrument_id client_id start end")
+
+
+def py_type_to_parquet_type(cls: type) -> ParquetType:
+    if cls == QuoteTick:
+        return ParquetType.QuoteTick
+    elif cls == TradeTick:
+        return ParquetType.TradeTick
+    else:
+        raise RuntimeError(f"Type {cls} not supported as a `ParquetType` yet.")
+
+
+def _generate_batches(
+    files: list[str],
+    cls: type,
+    fs: fsspec.AbstractFileSystem,
+    use_rust: bool = False,
+    n_rows: int = 10_000,
+):
+
+    use_rust = use_rust and cls in (QuoteTick, TradeTick)
+    files = sorted(files, key=lambda x: Path(x).stem)
+    for file in files:
+
+        if use_rust:
+            reader = ParquetReader(
+                file,
+                n_rows,
+                py_type_to_parquet_type(cls),
+                ParquetReaderType.File,
+            )
+
+            for capsule in reader:
+
+                # PyCapsule > List
+                if cls == QuoteTick:
+                    objs = QuoteTick.list_from_capsule(capsule)
+                elif cls == TradeTick:
+                    objs = TradeTick.list_from_capsule(capsule)
+
+                yield objs
+
+        else:
+            for batch in pq.ParquetFile(fs.open(file)).iter_batches(batch_size=n_rows):
+                if batch.num_rows == 0:
+                    break
+                objs = ParquetSerializer.deserialize(cls=cls, chunk=batch.to_pylist())
+                yield objs
+
+
+def generate_batches(
+    files: list[str],
+    cls: type,
+    fs: fsspec.AbstractFileSystem,
+    use_rust: bool = False,
+    n_rows: int = 10_000,
+    start_time: int = None,
+    end_time: int = None,
+):
+    if start_time is None:
+        start_time = 0
+
+    if end_time is None:
+        end_time = sys.maxsize
+
+    batches = _generate_batches(files, cls, fs, use_rust=use_rust, n_rows=n_rows)
+
+    start = start_time
+    end = end_time
+    started = False
+    for batch in batches:
+
+        min = batch[0].ts_init
+        max = batch[-1].ts_init
+        if min < start and max < start:
+            batch = []  # not started yet
+
+        if max >= start and not started:
+            timestamps = np.array([x.ts_init for x in batch])
+            mask = timestamps >= start
+            masked = list(itertools.compress(batch, mask))
+            batch = masked
+            started = True
+
+        if max > end:
+            timestamps = np.array([x.ts_init for x in batch])
+            mask = timestamps <= end
+            masked = list(itertools.compress(batch, mask))
+            batch = masked
+            if batch:
+                yield batch
+            return  # stop iterating
+
+        yield batch
 
 
 def dataset_batches(

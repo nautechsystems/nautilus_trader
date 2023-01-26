@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
+import os
 import pathlib
-import re
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -25,20 +25,24 @@ from typing import Optional, Union
 import fsspec
 import pandas as pd
 import pyarrow as pa
-import pyarrow.dataset as ds
-import pyarrow.parquet as pq
 from fsspec.core import OpenFile
 from pyarrow import ArrowInvalid
+from pyarrow import dataset as ds
+from pyarrow import parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
+from nautilus_trader.persistence.external.util import parse_filename_start
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
@@ -95,13 +99,23 @@ class RawFile:
                 yield raw
 
 
-def process_raw_file(catalog: ParquetDataCatalog, raw_file: RawFile, reader: Reader):
+def process_raw_file(
+    catalog: ParquetDataCatalog,
+    raw_file: RawFile,
+    reader: Reader,
+    use_rust=False,
+    instrument=None,
+):
     n_rows = 0
     for block in raw_file.iter():
         objs = [x for x in reader.parse(block) if x is not None]
-        dicts = split_and_serialize(objs)
-        dataframes = dicts_to_dataframes(dicts)
-        n_rows += write_tables(catalog=catalog, tables=dataframes)
+        if use_rust:
+            write_parquet_rust(catalog, objs, instrument)
+            n_rows += len(objs)
+        else:
+            dicts = split_and_serialize(objs)
+            dataframes = dicts_to_dataframes(dicts)
+            n_rows += write_tables(catalog=catalog, tables=dataframes)
     reader.on_file_complete()
     return n_rows
 
@@ -113,9 +127,13 @@ def process_files(
     block_size: str = "128mb",
     compression: str = "infer",
     executor: Optional[Executor] = None,
+    use_rust=False,
+    instrument: Instrument = None,
     **kwargs,
 ):
     PyCondition.type_or_none(executor, Executor, "executor")
+    if use_rust:
+        assert instrument, "Instrument needs to be provided when saving rust data."
 
     executor = executor or ThreadPoolExecutor()
 
@@ -128,7 +146,14 @@ def process_files(
 
     futures = {}
     for rf in raw_files:
-        futures[rf] = executor.submit(process_raw_file, catalog=catalog, raw_file=rf, reader=reader)
+        futures[rf] = executor.submit(
+            process_raw_file,
+            catalog=catalog,
+            raw_file=rf,
+            reader=reader,
+            instrument=instrument,
+            use_rust=use_rust,
+        )
 
     # Show progress
     for _ in tqdm(list(futures.values())):
@@ -260,6 +285,38 @@ def write_tables(
     return rows_written
 
 
+def write_parquet_rust(catalog: ParquetDataCatalog, objs: list, instrument: Instrument):
+
+    cls = type(objs[0])
+
+    assert cls in (QuoteTick, TradeTick)
+    instrument_id = str(instrument.id)
+    metadata = {
+        "instrument_id": instrument_id,
+        "price_precision": str(instrument.price_precision),
+        "size_precision": str(instrument.size_precision),
+    }
+    writer = ParquetWriter(cls, metadata)
+    writer.write(objs)
+
+    min_timestamp = objs[0].ts_init
+    max_timestamp = objs[-1].ts_init
+
+    parent = catalog.make_path(cls=cls, instrument_id=instrument_id)
+
+    os.makedirs(parent, exist_ok=True)
+
+    data: bytes = writer.flush()
+
+    fn = f"{parent}/{str(min_timestamp).rjust(19, '0')}-{str(max_timestamp).rjust(19, '0')}-0.parquet"
+
+    os.makedirs(os.path.dirname(fn), exist_ok=True)
+    with open(fn, "wb") as f:
+        f.write(data)
+
+    write_objects(catalog, [instrument], existing_data_behavior="overwrite_or_ignore")
+
+
 def write_parquet(
     fs: fsspec.AbstractFileSystem,
     path: str,
@@ -362,30 +419,6 @@ def read_progress(func, total):
     return inner
 
 
-def _parse_file_start_by_filename(fn: str):
-    """
-    Parse start time by filename.
-
-    >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet')
-    '1577836800000000000'
-
-    >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/0648140b1fd7491a97983c0c6ece8d57.parquet')
-
-    """
-    match = re.match(r"(?P<start>\d{19})\-\d{19}\-\d", pathlib.Path(fn).stem)
-    if match:
-        return int(match.groups()[0])
-
-
-def _parse_file_start(fn: str) -> Optional[tuple[str, pd.Timestamp]]:
-    instrument_id = re.findall(r"instrument_id\=(.*)\/", fn)[0] if "instrument_id" in fn else None
-    start = _parse_file_start_by_filename(fn=fn)
-    if start is not None:
-        start = pd.Timestamp(start)
-        return instrument_id, start
-    return None
-
-
 def _validate_dataset(catalog: ParquetDataCatalog, path: str, new_partition_format="%Y%m%d"):
     """
     Repartition dataset into sorted time chunks (default dates) and drop duplicates.
@@ -393,7 +426,7 @@ def _validate_dataset(catalog: ParquetDataCatalog, path: str, new_partition_form
     fs = catalog.fs
     dataset = ds.dataset(path, filesystem=fs)
     fn_to_start = [
-        (fn, _parse_file_start(fn=fn)) for fn in dataset.files if _parse_file_start(fn=fn)
+        (fn, parse_filename_start(fn=fn)) for fn in dataset.files if parse_filename_start(fn=fn)
     ]
 
     sort_key = lambda x: (x[1][0], x[1][1].strftime(new_partition_format))  # noqa: E731

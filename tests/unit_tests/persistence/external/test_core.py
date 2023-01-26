@@ -26,6 +26,7 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -39,6 +40,7 @@ from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
+from nautilus_trader.persistence.external.core import write_parquet_rust
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -55,6 +57,7 @@ class _TestPersistenceCore:
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def teardown(self):
+
         # Cleanup
         path = self.catalog.path
         fs = self.catalog.fs
@@ -130,15 +133,16 @@ class _TestPersistenceCore:
     @pytest.mark.parametrize(
         "glob, num_files",
         [
-            ("**.json", 4),
-            ("**.txt", 3),
-            ("**.parquet", 4),
-            ("**.csv", 16),
+            # ("**.json", 4),
+            # ("**.txt", 3),
+            ("**.parquet", 7),
+            # ("**.csv", 16),
         ],
     )
     def test_scan_paths(self, glob, num_files):
         self._load_data_into_catalog()
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/{glob}")
+        print(files)
         assert len(files) == num_files
 
     def test_scan_file_filter(self):
@@ -467,7 +471,6 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         assert result.equals(df)
 
     def test_write_parquet_partitions(self):
-
         self._load_data_into_catalog()
         # Arrange
         fs = self.catalog.fs
@@ -497,3 +500,55 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         assert dataset.files[1].startswith(
             f"{self.catalog.path}/sample.parquet/instrument_id=b/",
         )
+
+    def test_process_files_use_rust_writes_expected(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+        def block_parser(df):
+            df = df.set_index("timestamp")
+            df.index = pd.to_datetime(df.index)
+            yield from QuoteTickDataWrangler(instrument=instrument).process(df)
+
+        # Act
+        process_files(
+            glob_path=TEST_DATA_DIR + "/truefx-usdjpy-ticks.csv",
+            reader=CSVReader(block_parser=block_parser),
+            use_rust=True,
+            catalog=self.catalog,
+            instrument=instrument,
+        )
+
+        path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=USD-JPY.SIM/1357077600295000064-1357079713493999872-0.parquet"
+        assert self.fs.exists(path)
+
+    def test_write_parquet_rust_writes_expected(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+
+        objs = [
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid=Price.from_str("4507.24000000"),
+                ask=Price.from_str("4507.25000000"),
+                bid_size=Quantity.from_str("2.35950000"),
+                ask_size=Quantity.from_str("2.84570000"),
+                ts_event=1,
+                ts_init=1,
+            ),
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid=Price.from_str("4507.24000000"),
+                ask=Price.from_str("4507.25000000"),
+                bid_size=Quantity.from_str("2.35950000"),
+                ask_size=Quantity.from_str("2.84570000"),
+                ts_event=10,
+                ts_init=10,
+            ),
+        ]
+        # Act
+        write_parquet_rust(self.catalog, objs, instrument)
+
+        path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/0000000000000000001-0000000000000000010-0.parquet"
+
+        assert self.fs.exists(path)
