@@ -206,7 +206,7 @@ impl PartialEq<Self> for Order {
     }
 }
 
-impl Eq for Order {} // Marker trait
+impl Eq for Order {}
 
 impl Order {
     /// Initialize a new `Order` by consuming the given `OrderInitialized` event.
