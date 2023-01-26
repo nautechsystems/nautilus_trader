@@ -16,10 +16,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Represents a timestamp in nanoseconds since UNIX epoch.
-pub type Timestamp = u64;
+pub type UnixNanos = u64;
 
 /// Represents a timedelta in nanoseconds.
-pub type Timedelta = i64;
+pub type TimedeltaNanos = i64;
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
