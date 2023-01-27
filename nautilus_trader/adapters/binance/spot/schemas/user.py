@@ -18,6 +18,7 @@ from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
@@ -34,7 +35,9 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
@@ -112,7 +115,7 @@ class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
     data: BinanceSpotAccountUpdateMsg
 
 
-class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
+class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     """
     WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update events.
 
@@ -151,23 +154,16 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
     Y: str  # Last quote asset transacted quantity (i.e. lastPrice * lastQty)
     Q: str  # Quote Order Qty
 
-    def resolve_internal_variables(self, exec_client: BinanceCommonExecutionClient) -> None:
-        client_order_id_str: str = self.c
-        if not client_order_id_str or not client_order_id_str.startswith("O"):
-            client_order_id_str = self.C
-        self.client_order_id = ClientOrderId(client_order_id_str)
-        self.ts_event = millis_to_nanos(self.T)
-        self.venue_order_id = VenueOrderId(str(self.i))
-        self.instrument_id = exec_client._get_cached_instrument_id(self.s)
-        self.strategy_id = exec_client._cache.strategy_id_for_order(self.client_order_id)
-        self.resolved = True
-
     def parse_to_order_status_report(
         self,
-        exec_client: BinanceCommonExecutionClient,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+        ts_init: int,
+        enum_parser: BinanceEnumParser,
     ) -> OrderStatusReport:
-        if self.resolved is not True:
-            self.resolve_internal_variables(exec_client)
         price = Price.from_str(self.p) if self.p is not None else None
         trigger_price = Price.from_str(self.P) if self.P is not None else None
         order_side = (OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL,)
@@ -181,13 +177,13 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
         )
 
         return OrderStatusReport(
-            account_id=exec_client.account_id,
-            instrument_id=self.instrument_id,
-            client_order_id=self.client_order_id,
-            venue_order_id=self.venue_order_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             order_side=order_side,
-            order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
-            time_in_force=exec_client._enum_parser.parse_binance_time_in_force(self.f),
+            order_type=enum_parser.parse_binance_order_type(self.o),
+            time_in_force=enum_parser.parse_binance_time_in_force(self.f),
             order_status=OrderStatus.ACCEPTED,
             price=price,
             trigger_price=trigger_price,
@@ -201,9 +197,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
             post_only=post_only,
             reduce_only=False,
             report_id=UUID4(),
-            ts_accepted=self.ts_event,
-            ts_last=self.ts_event,
-            ts_init=exec_client._clock.timestamp_ns(),
+            ts_accepted=ts_event,
+            ts_last=ts_event,
+            ts_init=ts_init,
         )
 
     def handle_execution_report(
@@ -211,21 +207,35 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
         exec_client: BinanceCommonExecutionClient,
     ):
         """Handle BinanceSpotOrderUpdateData as payload of executionReport event."""
-        if self.resolved is not True:
-            self.resolve_internal_variables(exec_client)
-        if self.strategy_id is None:
-            report = self.parse_to_order_status_report(exec_client)
+        client_order_id_str: str = self.c
+        if not client_order_id_str or not client_order_id_str.startswith("O"):
+            client_order_id_str = self.C
+        client_order_id = ClientOrderId(client_order_id_str)
+        ts_event = millis_to_nanos(self.T)
+        venue_order_id = VenueOrderId(str(self.i))
+        instrument_id = exec_client._get_cached_instrument_id(self.s)
+        strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
+        if strategy_id is None:
+            report = self.parse_to_order_status_report(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                enum_parser=exec_client._enum_parser,
+            )
             exec_client._send_order_status_report(report)
         elif self.x == BinanceExecutionType.NEW:
             exec_client.generate_order_accepted(
-                strategy_id=self.strategy_id,
-                instrument_id=self.instrument_id,
-                client_order_id=self.client_order_id,
-                venue_order_id=self.venue_order_id,
-                ts_event=self.ts_event,
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.TRADE:
-            instrument = exec_client._instrument_provider.find(instrument_id=self.instrument_id)
+            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
 
             # Determine commission
             commission_asset: str = self.N
@@ -237,10 +247,10 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
                 commission = Money(0, instrument.base_currency)
 
             exec_client.generate_order_filled(
-                strategy_id=self.strategy_id,
-                instrument_id=self.instrument_id,
-                client_order_id=self.client_order_id,
-                venue_order_id=self.venue_order_id,
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
                 venue_position_id=None,  # NETTING accounts
                 trade_id=TradeId(str(self.t)),  # Trade ID
                 order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
@@ -250,23 +260,23 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True, frozen=True):
                 quote_currency=instrument.quote_currency,
                 commission=commission,
                 liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
-                ts_event=self.ts_event,
+                ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.CANCELED:
             exec_client.generate_order_canceled(
-                strategy_id=self.strategy_id,
-                instrument_id=self.instrument_id,
-                client_order_id=self.client_order_id,
-                venue_order_id=self.venue_order_id,
-                ts_event=self.ts_event,
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.EXPIRED:
             exec_client.generate_order_expired(
-                strategy_id=self.strategy_id,
-                instrument_id=self.instrument_id,
-                client_order_id=self.client_order_id,
-                venue_order_id=self.venue_order_id,
-                ts_event=self.ts_event,
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
             )
         else:
             # Event not handled
