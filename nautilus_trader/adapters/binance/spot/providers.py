@@ -113,7 +113,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
-                fee=fees_dict[symbol_info.symbol],
+                fee=fees_dict.get(symbol_info.symbol),
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
