@@ -361,8 +361,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
-            interval = BinanceKlineInterval[f"{bar_type.spec.step}{resolution}"]
-        except KeyError:
+            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+        except ValueError:
             self._log.error(
                 f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
             )
@@ -488,8 +488,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:
-            interval = BinanceKlineInterval[f"{bar_type.spec.step}{resolution}"]
-        except KeyError:
+            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+        except ValueError:
             self._log.error(
                 f"Cannot create Binance Kline interval. {bar_type.spec.step}{resolution} "
                 "not supported.",
