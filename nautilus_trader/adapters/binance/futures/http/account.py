@@ -90,16 +90,16 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         ----------
         timestamp : str
             The millisecond timestamp of the request
-        dualSidePosition : bool
+        dualSidePosition : str ('true', 'false')
             The dual side position mode to set...
-            true: Hedge Mode, false: One-way mode
+            `true`: Hedge Mode, `false`: One-way mode
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
 
         """
 
         timestamp: str
-        dualSidePosition: bool
+        dualSidePosition: str
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> BinanceFuturesDualSidePosition:
@@ -342,7 +342,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         return await self._endpoint_futures_position_mode._post(
             parameters=self._endpoint_futures_position_mode.PostParameters(
                 timestamp=self._timestamp(),
-                dualSidePosition=dual_side_position,
+                dualSidePosition=str(dual_side_position).lower(),
                 recvWindow=recv_window,
             ),
         )

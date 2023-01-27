@@ -157,10 +157,10 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             Only for SPOT/MARGIN orders
             Can be used with LIMIT, STOP_LOSS_LIMIT, and TAKE_PROFIT_LIMIT to
             create an iceberg order.
-        reduceOnly : bool, optional,
+        reduceOnly : str ('true', 'false'), optional
             Only for FUTURES orders
-            Cannot be sent in Hedge Mode, cannot be sent with closePosition = true
-        closePosition : bool, optional
+            Cannot be sent in Hedge Mode, cannot be sent with closePosition = 'true'
+        closePosition : str ('true', 'false'), optional
             Only for FUTURES orders
             Can be used with STOP_MARKET or TAKE_PROFIT_MARKET orders
             Whether to close all open positions for the given symbol.
@@ -176,10 +176,10 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             Only for FUTURES orders
             The trigger type for the order.
             Defaults to "CONTRACT_PRICE"
-        priceProtect : bool, optional
+        priceProtect : str ('true', 'false'), optional
             Only for FUTURES orders
             Whether price protection is active.
-            Defaults to "FALSE"
+            Defaults to 'false'
         newOrderRespType : NewOrderRespType, optional
             The response type for the order request.
             SPOT/MARGIN MARKET, LIMIT orders default to FULL.
@@ -205,12 +205,12 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         stopPrice: Optional[str] = None
         trailingDelta: Optional[str] = None
         icebergQty: Optional[str] = None
-        reduceOnly: Optional[bool] = None
-        closePosition: Optional[bool] = None
+        reduceOnly: Optional[str] = None
+        closePosition: Optional[str] = None
         activationPrice: Optional[str] = None
         callbackRate: Optional[str] = None
         workingType: Optional[str] = None
-        priceProtect: Optional[bool] = None
+        priceProtect: Optional[str] = None
         newOrderRespType: Optional[BinanceNewOrderRespType] = None
         recvWindow: Optional[str] = None
 
@@ -555,12 +555,12 @@ class BinanceAccountHttpAPI:
         stop_price: Optional[str] = None,
         trailing_delta: Optional[str] = None,
         iceberg_qty: Optional[str] = None,
-        reduce_only: Optional[bool] = None,
-        close_position: Optional[bool] = None,
+        reduce_only: Optional[str] = None,
+        close_position: Optional[str] = None,
         activation_price: Optional[str] = None,
         callback_rate: Optional[str] = None,
         working_type: Optional[str] = None,
-        price_protect: Optional[bool] = None,
+        price_protect: Optional[str] = None,
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
