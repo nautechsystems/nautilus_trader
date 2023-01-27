@@ -182,7 +182,7 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
         elif trigger_type == BinanceFuturesWorkingType.MARK_PRICE:
             return TriggerType.MARK_PRICE
         else:
-            return TriggerType.NO_TRIGGER  # pragma: no cover (design-time error)
+            return None
 
     def parse_futures_position_side(
         self,
