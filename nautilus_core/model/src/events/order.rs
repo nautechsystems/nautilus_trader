@@ -282,3 +282,41 @@ pub struct OrderFilled {
     pub ts_init: UnixNanos,
     pub reconciliation: bool,
 }
+
+pub fn stub_order_initialized() -> OrderInitialized {
+    OrderInitialized {
+        trader_id: TraderId::new("TRADER-001"),
+        strategy_id: StrategyId::new("S-001"),
+        instrument_id: InstrumentId::from("AUD/USD.SIM"),
+        client_order_id: ClientOrderId::new("O-123456789"),
+        order_side: OrderSide::Buy,
+        order_type: OrderType::Market,
+        quantity: Quantity::new(100_000.0, 0),
+        time_in_force: TimeInForce::Day,
+        post_only: false,
+        reduce_only: false,
+        emulation_trigger: None,
+        contingency_type: None,
+        order_list_id: None,
+        linked_order_ids: None,
+        parent_order_id: None,
+        tags: None,
+        event_id: Default::default(),
+        ts_event: 0,
+        ts_init: 0,
+        reconciliation: false,
+    }
+}
+
+pub fn stub_order_denied() -> OrderDenied {
+    OrderDenied {
+        trader_id: TraderId::new("TRADER-001"),
+        strategy_id: StrategyId::new("S-001"),
+        instrument_id: InstrumentId::from("AUD/USD.SIM"),
+        client_order_id: ClientOrderId::new("O-123456789"),
+        reason: "".to_string(),
+        event_id: Default::default(),
+        ts_event: 0,
+        ts_init: 0,
+    }
+}

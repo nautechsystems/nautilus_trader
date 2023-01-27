@@ -16,7 +16,8 @@
 #![allow(dead_code)]
 
 use crate::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+    TriggerType,
 };
 use crate::events::order::{OrderEvent, OrderInitialized};
 use crate::identifiers::account_id::AccountId;
@@ -46,8 +47,8 @@ pub enum OrderError {
 struct OrderFsm;
 
 impl StateMachineImpl for OrderFsm {
-    type State = OrderStatus;
     type Input = OrderEvent;
+    type State = OrderStatus;
     type Output = OrderStatus;
     const INITIAL_STATE: Self::State = OrderStatus::Initialized;
 
@@ -242,13 +243,13 @@ impl Order {
             leaves_qty: init.quantity,
             avg_px: None,
             slippage: None,
-            init_id: Default::default(),
+            init_id: init.event_id,
             ts_init: init.ts_event,
             ts_last: init.ts_event,
         }
     }
 
-    pub fn init_event(self) -> OrderInitialized {
+    pub fn init_event(&self) -> OrderInitialized {
         OrderInitialized {
             trader_id: self.trader_id.clone(),
             strategy_id: self.strategy_id.clone(),
@@ -309,6 +310,92 @@ impl Order {
         self.order_type == OrderType::Market
     }
 
+    pub fn is_emulated(&self) -> bool {
+        self.emulation_trigger.is_some()
+    }
+
+    pub fn is_contingency(&self) -> bool {
+        self.contingency_type.is_some()
+    }
+
+    pub fn is_parent_order(&self) -> bool {
+        match self.contingency_type {
+            Some(c) => c == ContingencyType::Oto,
+            None => false,
+        }
+    }
+
+    pub fn is_child_order(&self) -> bool {
+        self.parent_order_id.is_some()
+    }
+
+    pub fn is_open(&self) -> bool {
+        if self.emulation_trigger.is_some() {
+            return false;
+        }
+        self.status == OrderStatus::Accepted
+            || self.status == OrderStatus::Triggered
+            || self.status == OrderStatus::PendingCancel
+            || self.status == OrderStatus::PendingUpdate
+            || self.status == OrderStatus::PartiallyFilled
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.status == OrderStatus::Denied
+            || self.status == OrderStatus::Rejected
+            || self.status == OrderStatus::Canceled
+            || self.status == OrderStatus::Expired
+            || self.status == OrderStatus::Filled
+    }
+
+    pub fn is_inflight(&self) -> bool {
+        if self.emulation_trigger.is_some() {
+            return false;
+        }
+        self.status == OrderStatus::Submitted
+            || self.status == OrderStatus::PendingCancel
+            || self.status == OrderStatus::PendingUpdate
+    }
+
+    pub fn is_pending_update(&self) -> bool {
+        self.status == OrderStatus::PendingUpdate
+    }
+
+    pub fn is_pending_cancel(&self) -> bool {
+        self.status == OrderStatus::PendingCancel
+    }
+
+    pub fn opposite_side(side: OrderSide) -> OrderSide {
+        match side {
+            OrderSide::Buy => OrderSide::Sell,
+            OrderSide::Sell => OrderSide::Buy,
+            OrderSide::NoOrderSide => OrderSide::NoOrderSide,
+        }
+    }
+
+    pub fn closing_side(side: PositionSide) -> OrderSide {
+        match side {
+            PositionSide::Long => OrderSide::Sell,
+            PositionSide::Short => OrderSide::Buy,
+            PositionSide::Flat => OrderSide::NoOrderSide,
+            PositionSide::NoPositionSide => OrderSide::NoOrderSide,
+        }
+    }
+
+    pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        if side == PositionSide::Flat {
+            return false;
+        }
+
+        match (self.side, side) {
+            (OrderSide::Buy, PositionSide::Long) => false,
+            (OrderSide::Buy, PositionSide::Short) => self.leaves_qty > position_qty,
+            (OrderSide::Sell, PositionSide::Short) => false,
+            (OrderSide::Sell, PositionSide::Long) => self.leaves_qty > position_qty,
+            _ => true,
+        }
+    }
+
     pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
         match self.fsm.consume(&event) {
             Ok(status) => {
@@ -339,55 +426,35 @@ impl Order {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::{OrderSide, OrderType, TimeInForce};
-
-    use crate::events::order::OrderDenied;
-    use crate::identifiers::client_order_id::ClientOrderId;
-    use crate::identifiers::instrument_id::InstrumentId;
-    use crate::identifiers::strategy_id::StrategyId;
-    use crate::identifiers::trader_id::TraderId;
-    use crate::types::quantity::Quantity;
+    use crate::enums::*;
+    use crate::events::order::{stub_order_denied, stub_order_initialized};
 
     #[test]
-    fn test_order_state_transition() {
-        let init = OrderInitialized {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            client_order_id: ClientOrderId::new("O-123456789"),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            quantity: Quantity::new(1.0, 8),
-            time_in_force: TimeInForce::Day,
-            post_only: false,
-            reduce_only: false,
-            emulation_trigger: None,
-            contingency_type: None,
-            order_list_id: None,
-            linked_order_ids: None,
-            parent_order_id: None,
-            tags: None,
-            event_id: Default::default(),
-            ts_event: 0,
-            ts_init: 0,
-            reconciliation: false,
-        };
+    fn test_order_initialized() {
+        let init = stub_order_initialized();
+        let order = Order::new(init.clone());
 
+        assert_eq!(order.status, OrderStatus::Initialized);
+        assert_eq!(order.init_event(), init);
+        assert_eq!(order.last_event(), None);
+        assert_eq!(order.event_count(), 0);
+        assert!(order.venue_order_ids.is_empty());
+        assert!(order.trade_ids.is_empty());
+    }
+
+    #[test]
+    fn test_order_state_transition_denied() {
+        let init = stub_order_initialized();
         let mut order = Order::new(init);
-        let denied = OrderDenied {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            client_order_id: ClientOrderId::new("O-123456789"),
-            reason: "".to_string(),
-            event_id: Default::default(),
-            ts_event: 0,
-            ts_init: 0,
-        };
-
+        let denied = stub_order_denied();
         let event = OrderEvent::OrderDenied(denied);
 
-        let _ = order.apply(event);
+        let _ = order.apply(event.clone());
+
         assert_eq!(order.status, OrderStatus::Denied);
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+        assert_eq!(order.event_count(), 1);
+        assert_eq!(order.last_event(), Some(&event));
     }
 }
