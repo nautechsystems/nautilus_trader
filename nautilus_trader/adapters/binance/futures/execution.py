@@ -185,7 +185,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 continue  # Flat position
             report = position.parse_to_position_status_report(
                 account_id=self.account_id,
-                instrument_id=self._get_cached_instrument_id(symbol),
+                instrument_id=self._get_cached_instrument_id(position.symbol),
                 report_id=UUID4(),
                 enum_parser=self._futures_enum_parser,
                 ts_init=self._clock.timestamp_ns(),

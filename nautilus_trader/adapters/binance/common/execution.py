@@ -174,7 +174,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Listen keys
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
         self._ping_listen_keys_task: Optional[asyncio.Task] = None
-        self._listen_key: Optional[BinanceListenKey] = None
+        self._listen_key: Optional[str] = None
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -216,8 +216,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             self._log.exception(f"Error on connect: {e.message}", e)
             return
-        self._listen_key = response
-        self._log.info(f"Listen key {self._listen_key.listenKey}")
+        self._listen_key = response.listenKey
+        self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         # Setup clock sync
@@ -225,7 +225,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._task_clock_sync = self.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
-        self._ws_client.subscribe(key=self._listen_key.listenKey)
+        self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
 
     async def _update_account_state(self) -> None:
@@ -241,7 +241,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
                 if self._listen_key:
-                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key.listenKey}...")
+                    self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
                     await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
         except asyncio.CancelledError:
             self._log.debug("`ping_listen_keys` task was canceled.")
@@ -552,7 +552,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             price=str(order.price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(
+                order.is_reduce_only,
+            ),  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
@@ -583,7 +585,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             stop_price=str(order.trigger_price),
             working_type=working_type,
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(
+                order.is_reduce_only,
+            ),  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
@@ -626,7 +630,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
             working_type=working_type,
-            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(
+                order.is_reduce_only,
+            ),  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
@@ -680,7 +686,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),
             working_type=working_type,
-            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(
+                order.is_reduce_only,
+            ),  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
