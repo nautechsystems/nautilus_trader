@@ -236,7 +236,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ) -> None:
-        update_speed = kwargs.get("update_speed")
+        update_speed = None
+        if kwargs is not None:
+            update_speed = kwargs.get("update_speed")
         await self._subscribe_order_book(
             instrument_id=instrument_id,
             book_type=book_type,
@@ -251,7 +253,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ) -> None:
-        update_speed = kwargs.get("update_speed")
+        update_speed = None
+        if kwargs is not None:
+            update_speed = kwargs.get("update_speed")
         await self._subscribe_order_book(
             instrument_id=instrument_id,
             book_type=book_type,
@@ -327,7 +331,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         book_buffer = self._book_buffer.pop(instrument_id)
         for deltas in book_buffer:
-            if deltas.update_id <= snapshot.update_id:
+            if deltas.sequence <= snapshot.sequence:
                 continue
             self._handle_data(deltas)
 
