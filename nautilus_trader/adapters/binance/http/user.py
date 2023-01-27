@@ -102,7 +102,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         """
 
         symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
-        listenKey: Optional[BinanceListenKey] = None  # SPOT/MARGIN only, mandatory
+        listenKey: Optional[str] = None  # SPOT/MARGIN only, mandatory
 
     async def _post(self, parameters: Optional[PostParameters] = None) -> BinanceListenKey:
         method_type = BinanceMethodType.POST
@@ -182,7 +182,7 @@ class BinanceUserDataHttpAPI:
     async def keepalive_listen_key(
         self,
         symbol: Optional[str] = None,
-        listen_key: Optional[BinanceListenKey] = None,
+        listen_key: Optional[str] = None,
     ):
         """Ping/Keepalive Binance ListenKey."""
         await self._endpoint_listenkey._put(
@@ -195,7 +195,7 @@ class BinanceUserDataHttpAPI:
     async def delete_listen_key(
         self,
         symbol: Optional[str] = None,
-        listen_key: Optional[BinanceListenKey] = None,
+        listen_key: Optional[str] = None,
     ):
         """Delete Binance ListenKey."""
         await self._endpoint_listenkey._delete(
