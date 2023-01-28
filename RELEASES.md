@@ -1,6 +1,6 @@
 # NautilusTrader 1.167.0 Beta
 
-Released on TBD (UTC).
+Released on 28th January 2023 (UTC).
 
 ### Breaking Changes
 - Rename `OrderBookData.update_id` to `sequence`
@@ -9,9 +9,13 @@ Released on TBD (UTC).
 ### Enhancements
 - Introduce Rust pyo3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
 - Added `msgbus.is_subscribed` (to check if topic and handler already subscribed)
+- Simplified message type model and introduce CQRS-ish live messaging architecture
 
 ### Fixes
 - Fixed Binance data clients order book startup buffer handling
+- Fixed `NautilusKernel` redundant initialization of event loop for backtesting, thanks @limx0
+- Fixed `BacktestNode` disposal sequence
+- Fixed quick start docs and notebook
 
 ---
 
