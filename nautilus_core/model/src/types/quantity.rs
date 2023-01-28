@@ -66,6 +66,12 @@ impl From<&str> for Quantity {
     }
 }
 
+impl From<i64> for Quantity {
+    fn from(input: i64) -> Self {
+        Quantity::new(input as f64, 0)
+    }
+}
+
 impl Hash for Quantity {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state)
@@ -232,10 +238,18 @@ mod tests {
     fn test_qty_new() {
         let qty = Quantity::new(0.00812, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8120000);
+        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_qty_from_i64() {
+        let qty = Quantity::from(100_000);
+        assert_eq!(qty, qty);
+        assert_eq!(qty.raw, 100_000_000_000_000);
+        assert_eq!(qty.precision, 0);
     }
 
     #[test]
@@ -259,7 +273,7 @@ mod tests {
     #[test]
     fn test_qty_precision() {
         let qty = Quantity::new(1.001, 2);
-        assert_eq!(qty.raw, 1000000000);
+        assert_eq!(qty.raw, 1_000_000_000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -267,7 +281,7 @@ mod tests {
     fn test_qty_new_from_str() {
         let qty = Quantity::from("0.00812000");
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8120000);
+        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");

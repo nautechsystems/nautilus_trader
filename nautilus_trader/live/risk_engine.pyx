@@ -25,8 +25,6 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
@@ -57,6 +55,7 @@ cdef class LiveRiskEngine(RiskEngine):
     TypeError
         If `config` is not of type `LiveRiskEngineConfig`.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -107,54 +106,73 @@ cdef class LiveRiskEngine(RiskEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.qsize)
+        self._cmd_queue = Queue(maxsize=config.qsize)
+        self._evt_queue = Queue(maxsize=config.qsize)
 
-        self._run_queue_task = None
+        # Async tasks
+        self._cmd_queue_task = None
+        self._evt_queue_task = None
         self.is_running = False
 
-    cpdef object get_event_loop(self):
+    def get_cmd_queue_task(self):
         """
-        Return the internal event loop for the engine.
+        Return the internal command queue task for the engine.
 
         Returns
         -------
-        asyncio.AbstractEventLoop
+        asyncio.Task or ``None``
 
         """
-        return self._loop
+        return self._cmd_queue_task
 
-    cpdef object get_run_queue_task(self):
+    def get_evt_queue_task(self):
         """
-        Return the internal run queue task for the engine.
+        Return the internal event queue task for the engine.
 
         Returns
         -------
-        asyncio.Task
+        asyncio.Task or ``None``
 
         """
-        return self._run_queue_task
+        return self._evt_queue_task
 
-    cpdef int qsize(self) except *:
+    def cmd_qsize(self) -> int:
         """
-        Return the number of messages buffered on the internal queue.
+        Return the number of `Command` messages buffered on the internal queue.
 
         Returns
         -------
         int
 
         """
-        return self._queue.qsize()
+        return self._cmd_queue.qsize()
+
+    def evt_qsize(self) -> int:
+        """
+        Return the number of `Event` messages buffered on the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._evt_queue.qsize()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void kill(self) except *:
+    def kill(self) -> None:
         """
-        Kill the engine by abruptly cancelling the queue task and calling stop.
+        Kill the engine by abruptly canceling the queue task and calling stop.
         """
         self._log.warning("Killing engine...")
-        if self._run_queue_task:
-            self._log.debug("Canceling run_queue_task...")
-            self._run_queue_task.cancel()
+        if self._cmd_queue_task:
+            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
+            self._cmd_queue_task.cancel()
+            self._cmd_queue_task.done()
+        if self._evt_queue_task:
+            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
+            self._evt_queue_task.cancel()
+            self._evt_queue_task.done()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
@@ -181,10 +199,12 @@ cdef class LiveRiskEngine(RiskEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._queue.put_nowait(command)
+            self._cmd_queue.put_nowait(command)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._loop.create_task(self._queue.put(command))
+            self._log.warning(
+                f"Blocking on `_cmd_queue.put` as queue full at {self._cmd_queue.qsize()} items.",
+            )
+            self._loop.create_task(self._cmd_queue.put(command))
 
     cpdef void process(self, Event event) except *:
         """
@@ -208,45 +228,69 @@ cdef class LiveRiskEngine(RiskEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._queue.put_nowait(event)
+            self._evt_queue.put_nowait(event)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._queue.put(event)  # Block until qsize reduces below maxsize
+            self._log.warning(
+                f"Blocking on `_evt_queue.put` as queue full at {self._evt_queue.qsize()} items.",
+            )
+            self._evt_queue.put(event)  # Block until qsize reduces below maxsize
 
 # -- INTERNAL -------------------------------------------------------------------------------------
+
+    def _enqueue_sentinel(self) -> None:
+        self._cmd_queue.put_nowait(self._sentinel)
+        self._evt_queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel messages placed on queues.")
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
         self.is_running = True  # Queue will continue to process
-        self._run_queue_task = self._loop.create_task(self._run())
+        self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
+        self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
 
-        self._log.debug(f"Scheduled {self._run_queue_task}")
+        self._log.debug(f"Scheduled {self._cmd_queue_task}")
+        self._log.debug(f"Scheduled {self._evt_queue_task}")
 
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
-            self._queue.put_nowait(None)  # Sentinel message pattern
-            self._log.debug(f"Sentinel message placed on message queue.")
+            self._enqueue_sentinel()
 
-    async def _run(self):
-        self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
-        cdef Message message
+    async def _run_cmd_queue(self):
+        self._log.debug(
+            f"Command message queue processing starting (qsize={self.cmd_qsize()})...",
+        )
+        cdef Command command
         try:
             while self.is_running:
-                message = await self._queue.get()
-                if message is None:  # Sentinel message (fast C-level check)
+                command = await self._cmd_queue.get()
+                if command is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
-                if message.category == MessageCategory.EVENT:
-                    self._handle_event(message)
-                elif message.category == MessageCategory.COMMAND:
-                    self._execute_command(message)
-                else:
-                    self._log.error(f"Cannot handle message: unrecognized {message}.")
+                self._execute_command(command)
         except asyncio.CancelledError:
-            if self.qsize() > 0:
-                self._log.warning(f"Running canceled "
-                                  f"with {self.qsize()} message(s) on queue.")
+            if not self._cmd_queue.empty():
+                self._log.warning(
+                    f"Running canceled with {self.cmd_qsize()} message(s) on queue.")
             else:
-                self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
+                self._log.debug("Command message queue processing stopped.")
+
+    async def _run_evt_queue(self):
+        self._log.debug(
+            f"Event message queue processing starting (qsize={self.evt_qsize()})...",
+        )
+        cdef Event event
+        try:
+            while self.is_running:
+                event = await self._evt_queue.get()
+                if event is None:  # Sentinel message (fast C-level check)
+                    continue       # Returns to the top to check `self.is_running`
+                self._handle_event(event)
+        except asyncio.CancelledError:
+            if not self._evt_queue.empty():
+                self._log.warning(
+                    f"Running canceled with {self.evt_qsize()} message(s) on queue.",
+                )
+            else:
+                self._log.debug("Event message queue processing stopped.")

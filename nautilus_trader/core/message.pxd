@@ -15,37 +15,45 @@
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.rust.core cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID4
 
 
-cdef class Message:
-    cdef readonly MessageCategory category
-    """The message category.\n\n:returns: `MessageCategory`"""
+cdef class Command:
     cdef readonly UUID4 id
-    """The message ID.\n\n:returns: `UUID4`"""
+    """The command message ID.\n\n:returns: `UUID4`"""
     cdef readonly uint64_t ts_init
     """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
 
-cdef class Command(Message):
-    pass
+cdef class Document:
+    cdef readonly UUID4 id
+    """The document message ID.\n\n:returns: `UUID4`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
 
-cdef class Document(Message):
-    pass
-
-
-cdef class Event(Message):
+cdef class Event:
+    cdef readonly UUID4 id
+    """The event message ID.\n\n:returns: `UUID4`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_event
     """The UNIX timestamp (nanoseconds) when the event occurred.\n\n:returns: `uint64_t`"""
 
 
-cdef class Request(Message):
+cdef class Request:
+    cdef readonly UUID4 id
+    """The request message ID.\n\n:returns: `UUID4`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly object callback
     """The callback for the response.\n\n:returns: `Callable`"""
 
 
-cdef class Response(Message):
+cdef class Response:
+    cdef readonly UUID4 id
+    """The response message ID.\n\n:returns: `UUID4`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly UUID4 correlation_id
     """The response correlation ID.\n\n:returns: `UUID4`"""

@@ -57,7 +57,7 @@ pub fn string_to_cstr(s: &str) -> *const c_char {
 #[no_mangle]
 pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    let cstring = CString::from_raw(ptr as *mut i8);
+    let cstring = CString::from_raw(ptr as *mut c_char);
     drop(cstring);
 }
 

@@ -82,6 +82,7 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
+    cpdef list subscribed_venue_status_updates(self)
     cpdef list subscribed_instrument_status_updates(self)
     cpdef list subscribed_instrument_close(self)
 

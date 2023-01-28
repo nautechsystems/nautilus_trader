@@ -16,9 +16,8 @@
 use std::ffi::c_char;
 use std::rc::Rc;
 
-use nautilus_core::enums::MessageCategory;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
-use nautilus_core::time::{Timedelta, Timestamp};
+use nautilus_core::time::{TimedeltaNanos, UnixNanos};
 use nautilus_core::uuid::UUID4;
 
 #[repr(C)]
@@ -29,13 +28,11 @@ pub struct TimeEvent {
     /// The event name.
     pub name: Box<Rc<String>>,
     /// The event ID.
-    pub category: MessageCategory, // Only applicable to generic messages in the future
-    /// The UNIX timestamp (nanoseconds) when the time event occurred.
     pub event_id: UUID4,
     /// The message category
-    pub ts_event: Timestamp,
+    pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the object was initialized.
-    pub ts_init: Timestamp,
+    pub ts_init: UnixNanos,
 }
 
 impl PartialEq for TimeEvent {
@@ -65,7 +62,6 @@ pub unsafe extern "C" fn time_event_new(
 ) -> TimeEvent {
     TimeEvent {
         name: Box::new(Rc::new(cstr_to_string(name))),
-        category: MessageCategory::Event,
         event_id,
         ts_event,
         ts_init,
@@ -106,12 +102,12 @@ pub struct TimeEventHandler {
 pub trait Timer {
     fn new(
         name: String,
-        interval_ns: Timedelta,
-        start_time_ns: Timestamp,
-        stop_time_ns: Option<Timestamp>,
+        interval_ns: TimedeltaNanos,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
     ) -> Self;
-    fn pop_event(&self, event_id: UUID4, ts_init: Timestamp) -> TimeEvent;
-    fn iterate_next_time(&mut self, ts_now: Timestamp);
+    fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent;
+    fn iterate_next_time(&mut self, ts_now: UnixNanos);
     fn cancel(&mut self);
 }
 
@@ -119,9 +115,9 @@ pub trait Timer {
 pub struct TestTimer {
     pub name: String,
     pub interval_ns: u64,
-    pub start_time_ns: Timestamp,
-    pub stop_time_ns: Option<Timestamp>,
-    pub next_time_ns: Timestamp,
+    pub start_time_ns: UnixNanos,
+    pub stop_time_ns: Option<UnixNanos>,
+    pub next_time_ns: UnixNanos,
     pub is_expired: bool,
 }
 
@@ -129,8 +125,8 @@ impl TestTimer {
     pub fn new(
         name: String,
         interval_ns: u64,
-        start_time_ns: Timestamp,
-        stop_time_ns: Option<Timestamp>,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
     ) -> Self {
         TestTimer {
             name,
@@ -142,10 +138,9 @@ impl TestTimer {
         }
     }
 
-    pub fn pop_event(&self, event_id: UUID4, ts_init: Timestamp) -> TimeEvent {
+    pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
             name: Box::new(Rc::new(self.name.clone())),
-            category: MessageCategory::Event,
             event_id,
             ts_event: self.next_time_ns,
             ts_init,
@@ -155,7 +150,7 @@ impl TestTimer {
     /// Advance the test timer forward to the given time, generating a sequence
     /// of events. A [TimeEvent] is appended for each time a next event is
     /// <= the given `to_time_ns`.
-    pub fn advance(&mut self, to_time_ns: Timestamp) -> impl Iterator<Item = TimeEvent> + '_ {
+    pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         let advances =
             to_time_ns.saturating_sub(self.next_time_ns - self.interval_ns) / self.interval_ns;
         self.take(advances as usize).map(|(event, _)| event)
@@ -168,7 +163,7 @@ impl TestTimer {
 }
 
 impl Iterator for TestTimer {
-    type Item = (TimeEvent, Timestamp);
+    type Item = (TimeEvent, UnixNanos);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_expired {
@@ -177,7 +172,6 @@ impl Iterator for TestTimer {
             let item = (
                 TimeEvent {
                     name: Box::new(Rc::new(self.name.clone())),
-                    category: MessageCategory::Event,
                     event_id: UUID4::new(),
                     ts_event: self.next_time_ns,
                     ts_init: self.next_time_ns,

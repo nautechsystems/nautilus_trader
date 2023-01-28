@@ -21,7 +21,7 @@ use std::ptr::null;
 use nautilus_core::correctness;
 use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
 use nautilus_core::string::cstr_to_string;
-use nautilus_core::time::Timestamp;
+use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
@@ -59,7 +59,7 @@ trait Clock {
     fn set_time_alert_ns(
         &mut self,
         name: String,
-        alert_time_ns: Timestamp,
+        alert_time_ns: UnixNanos,
         callback: Option<Box<dyn Fn(TimeEvent)>>,
     );
 
@@ -70,18 +70,18 @@ trait Clock {
         &mut self,
         name: String,
         interval_ns: u64,
-        start_time_ns: Timestamp,
-        stop_time_ns: Option<Timestamp>,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
         callback: Option<Box<dyn Fn(TimeEvent)>>,
     );
 
-    fn next_time_ns(&mut self, name: &str) -> Timestamp;
+    fn next_time_ns(&mut self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
 }
 
 pub struct TestClock {
-    pub time_ns: Timestamp,
+    pub time_ns: UnixNanos,
     pub timers: HashMap<String, TestTimer>,
     pub handlers: HashMap<String, Box<dyn Fn(TimeEvent)>>,
     pub default_handler: Option<Box<dyn Fn(TimeEvent)>>,
@@ -89,12 +89,12 @@ pub struct TestClock {
 
 impl TestClock {
     #[allow(dead_code)] // Temporary
-    fn set_time(&mut self, to_time_ns: Timestamp) {
+    fn set_time(&mut self, to_time_ns: UnixNanos) {
         self.time_ns = to_time_ns
     }
 
     #[inline]
-    pub fn advance_time(&mut self, to_time_ns: Timestamp, set_time: bool) -> Vec<TimeEvent> {
+    pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
         assert!(
             to_time_ns >= self.time_ns,
@@ -175,7 +175,7 @@ impl Clock for TestClock {
     fn set_time_alert_ns(
         &mut self,
         name: String,
-        alert_time_ns: Timestamp,
+        alert_time_ns: UnixNanos,
         callback: Option<Box<dyn Fn(TimeEvent)>>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
@@ -203,8 +203,8 @@ impl Clock for TestClock {
         &mut self,
         name: String,
         interval_ns: u64,
-        start_time_ns: Timestamp,
-        stop_time_ns: Option<Timestamp>,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
         callback: Option<Box<dyn Fn(TimeEvent)>>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
@@ -221,7 +221,7 @@ impl Clock for TestClock {
         self.timers.insert(name, timer);
     }
 
-    fn next_time_ns(&mut self, name: &str) -> Timestamp {
+    fn next_time_ns(&mut self, name: &str) -> UnixNanos {
         let timer = self.timers.get(name);
         match timer {
             None => 0,
@@ -312,7 +312,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut CTestClock) -> usize {
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     clock: &mut CTestClock,
     name_ptr: *const c_char,
-    alert_time_ns: Timestamp,
+    alert_time_ns: UnixNanos,
 ) {
     let name = cstr_to_string(name_ptr);
     clock.set_time_alert_ns(name, alert_time_ns, None);
@@ -325,8 +325,8 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock: &mut CTestClock,
     name_ptr: *const c_char,
     interval_ns: u64,
-    start_time_ns: Timestamp,
-    stop_time_ns: Timestamp,
+    start_time_ns: UnixNanos,
+    stop_time_ns: UnixNanos,
 ) {
     let name = cstr_to_string(name_ptr);
     let stop_time_ns = match stop_time_ns {
@@ -367,7 +367,7 @@ pub extern "C" fn vec_time_events_drop(v: Vec_TimeEvent) {
 pub unsafe extern "C" fn test_clock_next_time_ns(
     clock: &mut CTestClock,
     name_ptr: *const c_char,
-) -> Timestamp {
+) -> UnixNanos {
     let name = cstr_to_string(name_ptr);
     clock.next_time_ns(&name)
 }

@@ -286,7 +286,7 @@ cdef class Trader(Component):
         # Check for duplicate `order_id_tag`
         if strategy.order_id_tag in order_id_tags:
             raise RuntimeError(
-                f"strategy `order_id_tag` conflict for '{strategy.order_id_tag}', please "
+                f"strategy `order_id_tag` conflict for '{strategy.order_id_tag}', "
                 f"explicitly define all `order_id_tag` values in your strategy configs",
             )
 

@@ -69,7 +69,7 @@ cdef class TrailingStopCalculator:
                 raise RuntimeError(
                     f"cannot process trailing stop, "
                     f"no LAST price for {order.instrument_id} "
-                    f"(please add trade ticks or use bars)",
+                    f"(add trade ticks or use bars)",
                 )
             if order.side == OrderSide.BUY:
                 temp_trigger_price = TrailingStopCalculator.calculate_with_last(
@@ -116,13 +116,13 @@ cdef class TrailingStopCalculator:
                 raise RuntimeError(
                     f"cannot process trailing stop, "
                     f"no BID price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
+                    f"(add quote ticks or use bars)",
                 )
             if ask is None:
                 raise RuntimeError(
                     f"cannot process trailing stop, "
                     f"no ASK price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
+                    f"(add quote ticks or use bars)",
                 )
 
             if order.side == OrderSide.BUY:
@@ -174,19 +174,19 @@ cdef class TrailingStopCalculator:
                 raise RuntimeError(
                     f"cannot process trailing stop, "
                     f"no LAST price for {order.instrument_id} "
-                    f"(please add trade ticks or use bars)",
+                    f"(add trade ticks or use bars)",
                 )
             if bid is None:
                 raise RuntimeError(
                     f"cannot process trailing stop, "
                     f"no BID price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
+                    f"(add quote ticks or use bars)",
                 )
             if ask is None:
                 raise RuntimeError(
                     f"cannot process trailing stop, "
                     f"no ASK price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
+                    f"(add quote ticks or use bars)",
                 )
 
             if order.side == OrderSide.BUY:

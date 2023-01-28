@@ -159,6 +159,35 @@ cdef class MessageBus:
         """
         return len(self.subscriptions(pattern)) > 0
 
+    cpdef bint is_subscribed(self, str topic, handler: Callable[[Any], None]) except*:
+        """
+        Return if topic and handler is subscribed to the message bus.
+
+        Does not consider any previous `priority`.
+
+        Parameters
+        ----------
+        topic : str
+            The topic of the subscription.
+        handler : Callable[[Any], None]
+            The handler of the subscription.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.valid_string(topic, "topic")
+        Condition.callable(handler, "handler")
+
+        # Create subscription
+        cdef Subscription sub = Subscription(
+            topic=topic,
+            handler=handler,
+        )
+
+        return sub in self._subscriptions
+
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
         """
         Register the given `handler` to receive messages at the `endpoint` address.
@@ -356,7 +385,7 @@ cdef class MessageBus:
 
         # Check if already exists
         if sub in self._subscriptions:
-            self._log.warning(f"{sub} already exists.")
+            self._log.debug(f"{sub} already exists.")
             return
 
         cdef list matches = []

@@ -161,7 +161,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 
     PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
 
-See https://pyo3.rs/v0.17.3/getting_started#virtualenvs.
+See https://pyo3.rs/latest/getting_started#virtualenvs.
 
 It's possible to install from source using `pip` if you first install the build dependencies
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
@@ -242,9 +242,21 @@ The container images can be pulled as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag>
 
-**NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
-The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
-The cause of this is still being determined.**
+You can launch the backtest example container by running:
+
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop
+    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+
+| :warning: WARNING                                                               |
+|:--------------------------------------------------------------------------------|
+
+**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
+this is why `log_level` in the examples is set to "ERROR". If you lower this level to see more
+logging then the notebook will hang during cell execution. A fix is currently
+being investigated which involves either raising the configured rate limits for
+Jupyter, or throttling the log flushing from Nautilus.**
+https://github.com/jupyterlab/jupyterlab/issues/12845
+https://github.com/deshaw/jupyterlab-limit-output
 
 ## Minimal Strategy
 
@@ -350,7 +362,7 @@ class EMACross(Strategy):
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
-Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
+Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
 
 ## Contributing
 
@@ -359,11 +371,11 @@ the project. If you have an idea for an enhancement or a bug fix, the first step
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be 
 well-aligned with the goals of the project and avoids duplication of effort.
 
-Once you're ready to start working on your contribution, please make sure to follow the guidelines 
+Once you're ready to start working on your contribution, make sure to follow the guidelines 
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA) 
 to ensure that your contributions can be included in the project.
 
-Please note that all pull requests should be made to the `develop` branch. This is where new features 
+Note that all pull requests should be made to the `develop` branch. This is where new features 
 and improvements are integrated before being released to the public.
 
 Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.

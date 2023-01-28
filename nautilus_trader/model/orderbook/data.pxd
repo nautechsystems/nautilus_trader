@@ -30,8 +30,8 @@ cdef class OrderBookData(Data):
     """The order book type (L1_TBBO, L2_MBP, L3_MBO).\n\n:returns: `BookType`"""
     cdef readonly TimeInForce time_in_force
     """The time in force for this update.\n\n:returns: `TimeInForce`"""
-    cdef readonly uint64_t update_id
-    """The update ID.\n\n:returns: `uint64`"""
+    cdef readonly uint64_t sequence
+    """The unique sequence number.\n\n:returns: `uint64`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -78,12 +78,12 @@ cdef class BookOrder:
     """The orders size.\n\n:returns: `double`"""
     cdef readonly OrderSide side
     """The orders side.\n\n:returns: `OrderSide`"""
-    cdef readonly str id
+    cdef readonly str order_id
     """The orders ID.\n\n:returns: `str`"""
 
     cpdef void update_price(self, double price) except *
     cpdef void update_size(self, double size) except *
-    cpdef void update_id(self, str value) except *
+    cpdef void update_order_id(self, str value) except *
     cpdef double exposure(self)
     cpdef double signed_size(self)
 

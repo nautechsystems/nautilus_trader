@@ -98,7 +98,7 @@ def parse_diff_depth_stream_ws(
         deltas=bid_deltas + ask_deltas,
         ts_event=ts_event,
         ts_init=ts_init,
-        update_id=data.u,
+        sequence=data.u,
     )
 
 
@@ -126,7 +126,7 @@ def parse_book_delta_ws(
         order=order,
         ts_event=ts_event,
         ts_init=ts_init,
-        update_id=update_id,
+        sequence=update_id,
     )
 
 

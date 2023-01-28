@@ -3,7 +3,8 @@ members = [
     "common",
     "core",
     "model",
-    "persistence"
+    "persistence",
+    "pyo3"
 ]
 
 [workspace.package]
@@ -16,9 +17,11 @@ documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
 chrono = "0.4.22"
-pyo3 = "0.17.3"
+pyo3 = "0.18.0"
 rand = "0.8.5"
+rust-fsm = "0.6.1"
 strum = { version = "0.24.1", features = ["derive"] }
+thiserror = "1.0.38"
 uuid = { version = "1.2.2", features = ["v4"] }
 
 # dev-dependencies

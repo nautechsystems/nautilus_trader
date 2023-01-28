@@ -42,8 +42,8 @@ cdef class OrderBookData(Data):
         The instrument ID for the book.
     book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
         The order book type.
-    update_id : uint64, default 0
-        The unique ID for the data.
+    sequence : uint64, default 0
+        The unique sequence number for the update. If default 0 then will increment the `sequence`.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -60,7 +60,7 @@ cdef class OrderBookData(Data):
         self,
         InstrumentId instrument_id not None,
         BookType book_type,
-        uint64_t update_id,
+        uint64_t sequence,
         uint64_t ts_event,
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
@@ -70,7 +70,7 @@ cdef class OrderBookData(Data):
         self.instrument_id = instrument_id
         self.book_type = book_type
         self.time_in_force = time_in_force
-        self.update_id = update_id
+        self.sequence = sequence
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -91,8 +91,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    update_id : uint64, default 0
-        The unique ID for the data. If zero then order book will maintain ID internally.
+    sequence : uint64, default 0
+        The unique sequence number for the update. If default 0 then will increment the `sequence`.
     time_in_force : TimeInForce, default ``GTC``
         The order time in force for this update.
     """
@@ -105,13 +105,13 @@ cdef class OrderBookSnapshot(OrderBookData):
         list asks not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t update_id=0,
+        uint64_t sequence=0,
         TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(
             instrument_id,
             book_type,
-            update_id,
+            sequence,
             ts_event,
             ts_init,
             time_in_force,
@@ -133,7 +133,7 @@ cdef class OrderBookSnapshot(OrderBookData):
             f"book_type={book_type_to_str(self.book_type)}, "
             f"bids={self.bids}, "
             f"asks={self.asks}, "
-            f"update_id={self.update_id}, "
+            f"sequence={self.sequence}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -148,7 +148,7 @@ cdef class OrderBookSnapshot(OrderBookData):
             asks=msgspec.json.decode(values["asks"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            update_id=values.get("update_id", 0),
+            sequence=values.get("sequence", 0),
         )
 
     @staticmethod
@@ -158,7 +158,7 @@ cdef class OrderBookSnapshot(OrderBookData):
             "type": "OrderBookSnapshot",
             "instrument_id": obj.instrument_id.to_str(),
             "book_type": book_type_to_str(obj.book_type),
-            "update_id": obj.update_id,
+            "sequence": obj.sequence,
             "bids": msgspec.json.encode(obj.bids),
             "asks": msgspec.json.encode(obj.asks),
             "ts_event": obj.ts_event,
@@ -211,8 +211,6 @@ cdef class OrderBookDeltas(OrderBookData):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    update_id : uint64, default 0
-        The unique ID for the data. If zero then order book will maintain ID internally.
     time_in_force : TimeInForce, default ``GTC``
         The order time in force for this update.
     """
@@ -224,13 +222,13 @@ cdef class OrderBookDeltas(OrderBookData):
         list deltas not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t update_id=0,
+        uint64_t sequence=0,
         TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(
             instrument_id,
             book_type,
-            update_id,
+            sequence,
             ts_event,
             ts_init,
             time_in_force,
@@ -250,7 +248,7 @@ cdef class OrderBookDeltas(OrderBookData):
             f"'{self.instrument_id}', "
             f"book_type={book_type_to_str(self.book_type)}, "
             f"{self.deltas}, "
-            f"update_id={self.update_id}, "
+            f"sequence={self.sequence}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -264,7 +262,7 @@ cdef class OrderBookDeltas(OrderBookData):
             deltas=[OrderBookDelta.from_dict_c(d) for d in msgspec.json.decode(values["deltas"])],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            update_id=values.get("update_id", 0),
+            sequence=values.get("update_id", 0),
         )
 
     @staticmethod
@@ -275,7 +273,7 @@ cdef class OrderBookDeltas(OrderBookData):
             "instrument_id": obj.instrument_id.to_str(),
             "book_type": book_type_to_str(obj.book_type),
             "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
-            "update_id": obj.update_id,
+            "sequence": obj.sequence,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -328,8 +326,8 @@ cdef class OrderBookDelta(OrderBookData):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    update_id : uint64_t, default 0
-        The unique ID for the data. If zero then order book will maintain ID internally.
+    sequence : uint64, default 0
+        The unique sequence number for the update. If default 0 then will increment the `sequence`.
     time_in_force : TimeInForce, default ``GTC``
         The order time in force for this update.
     """
@@ -342,13 +340,13 @@ cdef class OrderBookDelta(OrderBookData):
         BookOrder order,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t update_id=0,
+        uint64_t sequence=0,
         TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(
             instrument_id,
             book_type,
-            update_id,
+            sequence,
             ts_event,
             ts_init,
             time_in_force,
@@ -370,7 +368,7 @@ cdef class OrderBookDelta(OrderBookData):
             f"book_type={book_type_to_str(self.book_type)}, "
             f"action={book_action_to_str(self.action)}, "
             f"order={self.order}, "
-            f"update_id={self.update_id}, "
+            f"sequence={self.sequence}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -380,10 +378,10 @@ cdef class OrderBookDelta(OrderBookData):
         Condition.not_none(values, "values")
         cdef BookAction action = book_action_from_str(values["action"])
         cdef BookOrder order = BookOrder.from_dict_c({
-            "price": values["order_price"],
-            "size": values["order_size"],
-            "side": values["order_side"],
-            "id": values["order_id"],
+            "price": values["price"],
+            "size": values["size"],
+            "side": values["side"],
+            "order_id": values["order_id"],
         }) if values['action'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
@@ -392,7 +390,7 @@ cdef class OrderBookDelta(OrderBookData):
             order=order,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            update_id=values.get("update_id", 0),
+            sequence=values.get("update_id", 0),
         )
 
     @staticmethod
@@ -403,11 +401,11 @@ cdef class OrderBookDelta(OrderBookData):
             "instrument_id": obj.instrument_id.to_str(),
             "book_type": book_type_to_str(obj.book_type),
             "action": book_action_to_str(obj.action),
-            "order_price": obj.order.price if obj.order else None,
-            "order_size": obj.order.size if obj.order else None,
-            "order_side": order_side_to_str(obj.order.side) if obj.order else None,
-            "order_id": obj.order.id if obj.order else None,
-            "update_id": obj.update_id,
+            "price": obj.order.price if obj.order else None,
+            "size": obj.order.size if obj.order else None,
+            "side": order_side_to_str(obj.order.side) if obj.order else None,
+            "order_id": obj.order.order_id if obj.order else None,
+            "sequence": obj.sequence,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -463,21 +461,21 @@ cdef class BookOrder:
         double price,
         double size,
         OrderSide side,
-        str id = None,  # noqa (shadows built-in name)
+        str order_id = None,
     ):
         self.price = price
         self.size = size
         self.side = side
-        self.id = id or str(uuid.uuid4())
+        self.order_id = order_id or str(uuid.uuid4())
 
     def __eq__(self, BookOrder other) -> bool:
-        return self.id == other.id
+        return self.order_id == other.order_id
 
     def __hash__(self) -> int:
         return hash(frozenset(BookOrder.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return f"{BookOrder.__name__}({self.price}, {self.size}, {order_side_to_str(self.side)}, {self.id})"
+        return f"{BookOrder.__name__}({self.price}, {self.size}, {order_side_to_str(self.side)}, {self.order_id})"
 
     cpdef void update_price(self, double price) except *:
         """
@@ -503,17 +501,17 @@ cdef class BookOrder:
         """
         self.size = size
 
-    cpdef void update_id(self, str value) except *:
+    cpdef void update_order_id(self, str value) except *:
         """
         Update the orders ID.
 
         Parameters
         ----------
         value : str
-            The updated ID.
+            The updated order ID.
 
         """
-        self.id = value
+        self.order_id = value
 
     cpdef double exposure(self):
         """
@@ -547,18 +545,18 @@ cdef class BookOrder:
             price=values["price"],
             size=values["size"],
             side=order_side_from_str(values["side"]),
-            id=values["id"],
+            order_id=values["order_id"],
         )
 
     @staticmethod
     cdef dict to_dict_c(BookOrder obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "Order",
+            "type": "BookOrder",
             "price": obj.price,
             "size": obj.size,
             "side": order_side_to_str(obj.side),
-            "id": str(obj.id),
+            "order_id": str(obj.order_id),
         }
 
     @staticmethod

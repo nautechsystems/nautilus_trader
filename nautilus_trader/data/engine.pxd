@@ -32,7 +32,8 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport StatusUpdate
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -54,12 +55,12 @@ cdef class DataEngine(Component):
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of data commands received by the engine.\n\n:returns: `int`"""
-    cdef readonly int data_count
-    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
     cdef readonly int request_count
     """The total count of data requests received by the engine.\n\n:returns: `int`"""
     cdef readonly int response_count
     """The total count of data responses received by the engine.\n\n:returns: `int`"""
+    cdef readonly int data_count
+    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
 
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *
@@ -109,6 +110,7 @@ cdef class DataEngine(Component):
     cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type) except *
     cdef void _handle_subscribe_data(self, DataClient client, DataType data_type) except *
+    cdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue) except *
     cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
@@ -131,7 +133,8 @@ cdef class DataEngine(Component):
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, Bar bar) except *
     cdef void _handle_generic_data(self, GenericData data) except *
-    cdef void _handle_status_update(self, StatusUpdate data) except *
+    cdef void _handle_venue_status_update(self, VenueStatusUpdate data) except *
+    cdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data) except *
     cdef void _handle_close_price(self, InstrumentClose data) except *
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------

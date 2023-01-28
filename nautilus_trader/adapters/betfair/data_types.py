@@ -83,10 +83,10 @@ class BSPOrderBookDelta(OrderBookDelta):
         order: BookOrder = (
             BookOrder.from_dict(
                 {
-                    "price": values["order_price"],
-                    "size": values["order_size"],
-                    "side": values["order_side"],
-                    "id": values["order_id"],
+                    "price": values["price"],
+                    "size": values["size"],
+                    "side": values["side"],
+                    "order_id": values["order_id"],
                 },
             )
             if values["action"] != "CLEAR"

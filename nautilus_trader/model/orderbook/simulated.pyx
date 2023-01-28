@@ -65,7 +65,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._top_bid_level = None
         self._top_ask_level = None
 
-    cpdef void add(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void add(self, BookOrder order, uint64_t sequence=0) except *:
         """
         NotImplemented (Use `update(order)` for SimulatedOrderBook).
         """
@@ -103,7 +103,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         cdef BookOrder bid
         if self._top_bid is None:
             bid = BookOrder(price, size, OrderSide.BUY, "B")
-            self._add(bid, update_id=0)
+            self._add(bid, sequence=0)
             self._top_bid = bid
             self._top_bid_level = self.bids.top()
         else:
@@ -115,7 +115,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         cdef BookOrder ask
         if self._top_ask is None:
             ask = BookOrder(price, size, OrderSide.SELL, "A")
-            self._add(ask, update_id=0)
+            self._add(ask, sequence=0)
             self._top_ask = ask
             self._top_ask_level = self.asks.top()
         else:
