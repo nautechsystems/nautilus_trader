@@ -22,18 +22,15 @@ use crate::enums::{
     TriggerType,
 };
 use crate::events::order::{
-    OrderAccepted, OrderCancelRejected, OrderDenied, OrderEvent, OrderInitialized, OrderMetaData,
+    OrderAccepted, OrderCancelRejected, OrderDenied, OrderEvent, OrderInitialized, OrderMetadata,
     OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderSubmitted,
     OrderUpdated,
 };
 use crate::identifiers::account_id::AccountId;
 use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::order_list_id::OrderListId;
 use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
 use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::trader_id::TraderId;
 use crate::identifiers::venue_order_id::VenueOrderId;
 use crate::types::fixed::fixed_i64_to_f64;
 use crate::types::price::Price;
@@ -187,7 +184,7 @@ struct Order {
     previous_status: Option<OrderStatus>,
     triggered_price: Option<Price>,
     pub status: OrderStatus,
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub position_id: Option<PositionId>,
     pub account_id: Option<AccountId>,

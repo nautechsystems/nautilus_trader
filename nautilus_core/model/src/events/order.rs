@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::enums::{
-    ContingencyType, CurrencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
+    ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
 };
 use crate::identifiers::account_id::AccountId;
 use crate::identifiers::client_order_id::ClientOrderId;
@@ -32,7 +32,7 @@ use crate::types::quantity::Quantity;
 use derive_builder::{self, Builder};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -57,14 +57,14 @@ pub enum OrderEvent {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 #[builder(default)]
-pub struct OrderMetaData {
+pub struct OrderMetadata {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
 }
 
-impl Default for OrderMetaData {
+impl Default for OrderMetadata {
     fn default() -> Self {
         Self {
             trader_id: TraderId::new("TRADER-001"),
@@ -79,7 +79,7 @@ impl Default for OrderMetaData {
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 #[builder(default)]
 pub struct OrderInitialized {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub order_side: OrderSide,
     pub order_type: OrderType,
     pub quantity: Quantity,
@@ -139,32 +139,20 @@ impl Default for OrderInitialized {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
 #[builder(default)]
 pub struct OrderDenied {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub reason: String,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
 
-impl Default for OrderDenied {
-    fn default() -> Self {
-        Self {
-            metadata: Default::default(),
-            reason: Default::default(),
-            event_id: Default::default(),
-            ts_event: Default::default(),
-            ts_init: Default::default(),
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderSubmitted {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub account_id: AccountId,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
@@ -174,7 +162,7 @@ pub struct OrderSubmitted {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderAccepted {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub event_id: UUID4,
@@ -186,7 +174,7 @@ pub struct OrderAccepted {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderRejected {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub reason: String,
@@ -199,7 +187,7 @@ pub struct OrderRejected {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderCanceled {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub event_id: UUID4,
@@ -211,7 +199,7 @@ pub struct OrderCanceled {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderExpired {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub event_id: UUID4,
@@ -223,7 +211,7 @@ pub struct OrderExpired {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderTriggered {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub event_id: UUID4,
@@ -235,7 +223,7 @@ pub struct OrderTriggered {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderPendingUpdate {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: AccountId,
     pub event_id: UUID4,
@@ -247,7 +235,7 @@ pub struct OrderPendingUpdate {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderPendingCancel {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: AccountId,
     pub event_id: UUID4,
@@ -259,7 +247,7 @@ pub struct OrderPendingCancel {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderModifyRejected {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub reason: String,
@@ -272,7 +260,7 @@ pub struct OrderModifyRejected {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderCancelRejected {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub reason: String,
@@ -285,7 +273,7 @@ pub struct OrderCancelRejected {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderUpdated {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub quantity: Quantity,
@@ -300,7 +288,7 @@ pub struct OrderUpdated {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
 pub struct OrderFilled {
-    pub metadata: Rc<OrderMetaData>,
+    pub metadata: Rc<OrderMetadata>,
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub trade_id: TradeId,
@@ -321,7 +309,7 @@ pub struct OrderFilled {
 macro_rules! impl_derefs_for_order {
     ($struct: ident) => {
         impl Deref for $struct {
-            type Target = OrderMetaData;
+            type Target = OrderMetadata;
 
             fn deref(&self) -> &Self::Target {
                 &self.metadata
