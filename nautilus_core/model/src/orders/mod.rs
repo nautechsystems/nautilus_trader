@@ -19,7 +19,11 @@ use crate::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     TriggerType,
 };
-use crate::events::order::{OrderEvent, OrderInitialized};
+use crate::events::order::{
+    OrderAccepted, OrderCancelRejected, OrderDenied, OrderEvent, OrderInitialized,
+    OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderSubmitted,
+    OrderUpdated,
+};
 use crate::identifiers::account_id::AccountId;
 use crate::identifiers::client_order_id::ClientOrderId;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -29,6 +33,7 @@ use crate::identifiers::strategy_id::StrategyId;
 use crate::identifiers::trade_id::TradeId;
 use crate::identifiers::trader_id::TraderId;
 use crate::identifiers::venue_order_id::VenueOrderId;
+use crate::types::fixed::fixed_i64_to_f64;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::time::UnixNanos;
@@ -42,6 +47,12 @@ pub enum OrderError {
     InvalidStateTransition,
     #[error("Unrecognized event")]
     UnrecognizedEvent,
+}
+
+impl From<TransitionImpossibleError> for OrderError {
+    fn from(_: TransitionImpossibleError) -> Self {
+        OrderError::InvalidStateTransition
+    }
 }
 
 #[derive(Debug)]
@@ -168,8 +179,8 @@ impl StateMachineImpl for OrderFsm {
 
 struct Order {
     events: Vec<OrderEvent>,
-    venue_order_ids: Vec<VenueOrderId>,
-    trade_ids: Vec<TradeId>,
+    venue_order_ids: Vec<VenueOrderId>, // TODO(cs): Should be `Vec<&VenueOrderId>` or similar
+    trade_ids: Vec<TradeId>,            // TODO(cs): Should be `Vec<&TradeId>` or similar
     fsm: StateMachine<OrderFsm>,
     previous_status: Option<OrderStatus>,
     triggered_price: Option<Price>,
@@ -428,26 +439,107 @@ impl Order {
     }
 
     pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
-        match self.fsm.consume(&event) {
-            Ok(status) => {
-                if let Some(status) = status {
-                    self.status = status;
-                } else {
-                    return Err(OrderError::InvalidStateTransition);
-                }
-            }
-            Err(_) => {
-                return Err(OrderError::InvalidStateTransition);
-            }
-        }
+        let status = self
+            .fsm
+            .consume(&event)?
+            .map(|status| {
+                self.previous_status.replace(self.status);
+                status
+            })
+            .ok_or(OrderError::InvalidStateTransition)?;
+        self.status = status;
 
-        match event {
-            OrderEvent::OrderDenied(_) => {} // Do nothing
+        match &event {
+            OrderEvent::OrderDenied(event) => self.denied(event),
+            OrderEvent::OrderSubmitted(event) => self.submitted(event),
+            OrderEvent::OrderRejected(event) => self.rejected(event),
+            OrderEvent::OrderAccepted(event) => self.accepted(event),
+            OrderEvent::OrderPendingUpdate(event) => self.pending_update(event),
+            OrderEvent::OrderUpdated(event) => self.updated(event),
             _ => return Err(OrderError::UnrecognizedEvent),
         }
 
         self.events.push(event);
         Ok(())
+    }
+
+    fn denied(&self, _event: &OrderDenied) {
+        // Do nothing else
+    }
+
+    fn submitted(&mut self, event: &OrderSubmitted) {
+        self.account_id = Some(event.account_id.clone())
+    }
+
+    fn accepted(&mut self, event: &OrderAccepted) {
+        self.venue_order_id = Some(event.venue_order_id.clone());
+    }
+
+    fn rejected(&self, _event: &OrderRejected) {
+        // Do nothing else
+    }
+
+    fn pending_update(&self, _event: &OrderPendingUpdate) {
+        // Do nothing else
+    }
+
+    fn pending_cancel(&self, _event: &OrderPendingCancel) {
+        // Do nothing else
+    }
+
+    fn modify_rejected(&mut self, _event: &OrderModifyRejected) {
+        self.status = self.previous_status.unwrap();
+    }
+
+    fn cancel_rejected(&mut self, _event: &OrderCancelRejected) {
+        self.status = self.previous_status.unwrap();
+    }
+
+    fn updated(&mut self, event: &OrderUpdated) {
+        match &event.venue_order_id {
+            Some(venue_order_id) => {
+                if self.venue_order_id.is_some()
+                    && venue_order_id != self.venue_order_id.as_ref().unwrap()
+                {
+                    self.venue_order_id = Some(venue_order_id.clone());
+                    self.venue_order_ids.push(venue_order_id.clone()); // TODO(cs): Temporary clone
+                }
+            }
+            None => {}
+        }
+        if let Some(price) = &event.price {
+            if self.price.is_some() {
+                self.price.replace(price.clone());
+            } else {
+                panic!("invalid update of `price` when None")
+            }
+        }
+
+        if let Some(trigger_price) = &event.trigger_price {
+            if self.trigger_price.is_some() {
+                self.trigger_price.replace(trigger_price.clone());
+            } else {
+                panic!("invalid update of `trigger_price` when None")
+            }
+        }
+
+        self.quantity = event.quantity.clone();
+        self.leaves_qty =
+            Quantity::from_raw(*self.quantity - *self.filled_qty, self.quantity.precision);
+    }
+
+    fn set_slippage(&mut self) {
+        self.slippage = self.avg_px.and_then(|avg_px| {
+            self.price
+                .as_ref()
+                .map(|price| fixed_i64_to_f64(price.raw))
+                .map(|price| match self.side {
+                    OrderSide::Buy if avg_px > price => Some(avg_px - price),
+                    OrderSide::Sell if avg_px < price => Some(price - avg_px),
+                    _ => None,
+                })
+                .unwrap_or(None)
+        })
     }
 }
 
