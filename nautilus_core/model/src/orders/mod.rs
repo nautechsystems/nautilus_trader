@@ -15,12 +15,14 @@
 
 #![allow(dead_code)]
 
+use std::rc::Rc;
+
 use crate::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     TriggerType,
 };
 use crate::events::order::{
-    OrderAccepted, OrderCancelRejected, OrderDenied, OrderEvent, OrderInitialized,
+    OrderAccepted, OrderCancelRejected, OrderDenied, OrderEvent, OrderInitialized, OrderMetaData,
     OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderSubmitted,
     OrderUpdated,
 };
@@ -185,10 +187,7 @@ struct Order {
     previous_status: Option<OrderStatus>,
     triggered_price: Option<Price>,
     pub status: OrderStatus,
-    pub trader_id: TraderId,
-    pub strategy_id: StrategyId,
-    pub instrument_id: InstrumentId,
-    pub client_order_id: ClientOrderId,
+    pub metadata: Rc<OrderMetaData>,
     pub venue_order_id: Option<VenueOrderId>,
     pub position_id: Option<PositionId>,
     pub account_id: Option<AccountId>,
@@ -226,15 +225,15 @@ struct Order {
 
 impl PartialEq<Self> for Order {
     fn eq(&self, other: &Self) -> bool {
-        self.client_order_id == other.client_order_id
+        // TODO: can implement deref and deref mut for order metadata here too
+        self.metadata.client_order_id == other.metadata.client_order_id
     }
 }
 
 impl Eq for Order {}
 
-impl Order {
-    /// Initialize a new `Order` by consuming the given `OrderInitialized` event.
-    pub fn new(init: OrderInitialized) -> Self {
+impl From<OrderInitialized> for Order {
+    fn from(value: OrderInitialized) -> Self {
         Self {
             events: Vec::new(),
             venue_order_ids: Vec::new(),
@@ -243,79 +242,77 @@ impl Order {
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
-            trader_id: init.trader_id,
-            strategy_id: init.strategy_id,
-            instrument_id: init.instrument_id,
-            client_order_id: init.client_order_id,
+            metadata: value.metadata,
             venue_order_id: None,
             position_id: None,
             account_id: None,
             last_trade_id: None,
-            side: init.order_side,
-            order_type: init.order_type,
-            quantity: init.quantity.clone(),
-            price: init.price,
-            trigger_price: init.trigger_price,
-            trigger_type: init.trigger_type,
-            time_in_force: init.time_in_force,
+            side: value.order_side,
+            order_type: value.order_type,
+            quantity: value.quantity.clone(),
+            price: value.price,
+            trigger_price: value.trigger_price,
+            trigger_type: value.trigger_type,
+            time_in_force: value.time_in_force,
             expire_time: None,
             liquidity_side: None,
-            is_post_only: init.post_only,
-            is_reduce_only: init.reduce_only,
+            is_post_only: value.post_only,
+            is_reduce_only: value.reduce_only,
             display_qty: None,
             limit_offset: None,
             trailing_offset: None,
             trailing_offset_type: None,
-            emulation_trigger: init.emulation_trigger,
-            contingency_type: init.contingency_type,
-            order_list_id: init.order_list_id,
-            linked_order_ids: init.linked_order_ids,
-            parent_order_id: init.parent_order_id,
-            tags: init.tags,
+            emulation_trigger: value.emulation_trigger,
+            contingency_type: value.contingency_type,
+            order_list_id: value.order_list_id,
+            linked_order_ids: value.linked_order_ids,
+            parent_order_id: value.parent_order_id,
+            tags: value.tags,
             filled_qty: Quantity::new(0.0, 0),
-            leaves_qty: init.quantity,
+            leaves_qty: value.quantity,
             avg_px: None,
             slippage: None,
-            init_id: init.event_id,
+            init_id: value.event_id,
             ts_triggered: None,
-            ts_init: init.ts_event,
-            ts_last: init.ts_event,
+            ts_init: value.ts_event,
+            ts_last: value.ts_event,
         }
     }
+}
 
-    pub fn init_event(&self) -> OrderInitialized {
-        OrderInitialized {
-            trader_id: self.trader_id.clone(),
-            strategy_id: self.strategy_id.clone(),
-            instrument_id: self.instrument_id.clone(),
-            client_order_id: self.client_order_id.clone(),
-            order_side: self.side,
-            order_type: self.order_type,
-            quantity: self.quantity.clone(),
-            price: self.price.clone(),
-            trigger_price: self.triggered_price.clone(),
-            trigger_type: self.trigger_type,
-            time_in_force: self.time_in_force,
-            expire_time: self.expire_time,
-            post_only: self.is_post_only,
-            reduce_only: self.is_reduce_only,
-            display_qty: self.display_qty.clone(),
-            limit_offset: self.limit_offset.clone(),
-            trailing_offset: self.trailing_offset.clone(),
-            trailing_offset_type: self.trailing_offset_type,
-            emulation_trigger: self.emulation_trigger,
-            contingency_type: self.contingency_type,
-            order_list_id: self.order_list_id.clone(),
-            linked_order_ids: self.linked_order_ids.clone(),
-            parent_order_id: self.parent_order_id.clone(),
-            tags: self.tags.clone(),
-            event_id: self.init_id.clone(),
-            ts_event: self.ts_init,
-            ts_init: self.ts_init,
+impl From<&Order> for OrderInitialized {
+    fn from(value: &Order) -> Self {
+        Self {
+            metadata: value.metadata.clone(),
+            order_side: value.side,
+            order_type: value.order_type,
+            quantity: value.quantity.clone(),
+            price: value.price.clone(),
+            trigger_price: value.triggered_price.clone(),
+            trigger_type: value.trigger_type,
+            time_in_force: value.time_in_force,
+            expire_time: value.expire_time,
+            post_only: value.is_post_only,
+            reduce_only: value.is_reduce_only,
+            display_qty: value.display_qty.clone(),
+            limit_offset: value.limit_offset.clone(),
+            trailing_offset: value.trailing_offset.clone(),
+            trailing_offset_type: value.trailing_offset_type,
+            emulation_trigger: value.emulation_trigger,
+            contingency_type: value.contingency_type,
+            order_list_id: value.order_list_id.clone(),
+            linked_order_ids: value.linked_order_ids.clone(),
+            parent_order_id: value.parent_order_id.clone(),
+            tags: value.tags.clone(),
+            event_id: value.init_id.clone(),
+            ts_event: value.ts_init,
+            ts_init: value.ts_init,
             reconciliation: false,
         }
     }
+}
 
+impl Order {
     pub fn last_event(&self) -> Option<&OrderEvent> {
         self.events.last()
     }
@@ -556,11 +553,9 @@ mod tests {
 
     #[test]
     fn test_order_initialized() {
-        let init = OrderInitializedBuilder::new().build();
-        let order = Order::new(init.clone());
+        let order: Order = OrderInitializedBuilder::default().build().unwrap().into();
 
         assert_eq!(order.status, OrderStatus::Initialized);
-        assert_eq!(order.init_event(), init);
         assert_eq!(order.last_event(), None);
         assert_eq!(order.event_count(), 0);
         assert!(order.venue_order_ids.is_empty());
@@ -623,11 +618,12 @@ mod tests {
         position_qty: Quantity,
         expected: bool,
     ) {
-        let init = OrderInitializedBuilder::new()
+        let order: Order = OrderInitializedBuilder::default()
             .order_side(order_side)
             .quantity(order_qty)
-            .build();
-        let order = Order::new(init);
+            .build()
+            .unwrap()
+            .into();
 
         assert_eq!(
             order.would_reduce_only(position_side, position_qty),
@@ -637,9 +633,9 @@ mod tests {
 
     #[test]
     fn test_order_state_transition_denied() {
-        let init = OrderInitializedBuilder::new().build();
-        let denied = OrderDeniedBuilder::new(&init).build();
-        let mut order = Order::new(init);
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let denied = OrderDeniedBuilder::default().build().unwrap();
+        let mut order: Order = init.into();
         let event = OrderEvent::OrderDenied(denied);
 
         let _ = order.apply(event.clone());
