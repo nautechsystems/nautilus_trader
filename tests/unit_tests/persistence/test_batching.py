@@ -12,13 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import itertools
 import os
 
 import fsspec
 import pandas as pd
-from nautilus_pyo3.persistence import ParquetReader
-from nautilus_pyo3.persistence import ParquetType
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -26,6 +25,9 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import Venue
@@ -45,9 +47,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 class TestPersistenceBatching:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory")
-
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-
         self._load_data_into_catalog()
 
     def teardown(self):
@@ -431,7 +431,12 @@ class TestGenerateBatches(TestBatchingData):
             use_rust=True,
             n_rows=300,
         )
-        reader = ParquetReader(ParquetType.QuoteTick, parquet_data_path)
+        reader = ParquetReader(
+            parquet_data_path,
+            1000,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
+        )
         mapped_chunk = map(QuoteTick.list_from_capsule, reader)
         expected = list(itertools.chain(*mapped_chunk))
 
@@ -450,7 +455,12 @@ class TestGenerateBatches(TestBatchingData):
         # Arrange
         parquet_data_path = self.test_parquet_files[0]
 
-        reader = ParquetReader(ParquetType.QuoteTick, parquet_data_path)
+        reader = ParquetReader(
+            parquet_data_path,
+            1000,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
+        )
         mapped_chunk = map(QuoteTick.list_from_capsule, reader)
         expected = list(itertools.chain(*mapped_chunk))
 

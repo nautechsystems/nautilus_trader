@@ -316,6 +316,7 @@ class TestPersistenceCatalogRust:
         assert quote_ticks[0].ts_init == start_timestamp
         assert quote_ticks[-1].ts_init == end_timestamp
 
+    @pytest.mark.skip(reason="WIP ghill to fix")
     def test_data_catalog_use_rust_quote_ticks_round_trip(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")

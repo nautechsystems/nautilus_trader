@@ -310,7 +310,7 @@ def write_parquet_rust(catalog: ParquetDataCatalog, objs: list, instrument: Inst
 
     writer.write(capsule)
 
-    data: bytes = writer.flush()
+    data: bytes = writer.flush_bytes()
 
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "wb") as f:
