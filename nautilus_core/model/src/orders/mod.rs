@@ -16,9 +16,14 @@
 #![allow(dead_code)]
 
 use crate::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+    TriggerType,
 };
-use crate::events::order::{OrderEvent, OrderInitialized};
+use crate::events::order::{
+    OrderAccepted, OrderCancelRejected, OrderDenied, OrderEvent, OrderInitialized,
+    OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderSubmitted,
+    OrderUpdated,
+};
 use crate::identifiers::account_id::AccountId;
 use crate::identifiers::client_order_id::ClientOrderId;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -28,6 +33,8 @@ use crate::identifiers::strategy_id::StrategyId;
 use crate::identifiers::trade_id::TradeId;
 use crate::identifiers::trader_id::TraderId;
 use crate::identifiers::venue_order_id::VenueOrderId;
+use crate::types::fixed::fixed_i64_to_f64;
+use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
@@ -42,12 +49,18 @@ pub enum OrderError {
     UnrecognizedEvent,
 }
 
+impl From<TransitionImpossibleError> for OrderError {
+    fn from(_: TransitionImpossibleError) -> Self {
+        OrderError::InvalidStateTransition
+    }
+}
+
 #[derive(Debug)]
 struct OrderFsm;
 
 impl StateMachineImpl for OrderFsm {
-    type State = OrderStatus;
     type Input = OrderEvent;
+    type State = OrderStatus;
     type Output = OrderStatus;
     const INITIAL_STATE: Self::State = OrderStatus::Initialized;
 
@@ -166,9 +179,11 @@ impl StateMachineImpl for OrderFsm {
 
 struct Order {
     events: Vec<OrderEvent>,
-    venue_order_ids: Vec<VenueOrderId>,
-    trade_ids: Vec<TradeId>,
+    venue_order_ids: Vec<VenueOrderId>, // TODO(cs): Should be `Vec<&VenueOrderId>` or similar
+    trade_ids: Vec<TradeId>,            // TODO(cs): Should be `Vec<&TradeId>` or similar
     fsm: StateMachine<OrderFsm>,
+    previous_status: Option<OrderStatus>,
+    triggered_price: Option<Price>,
     pub status: OrderStatus,
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -181,10 +196,18 @@ struct Order {
     pub side: OrderSide,
     pub order_type: OrderType,
     pub quantity: Quantity,
+    pub price: Option<Price>,
+    pub trigger_price: Option<Price>,
+    pub trigger_type: Option<TriggerType>,
     pub time_in_force: TimeInForce,
+    pub expire_time: Option<UnixNanos>,
     pub liquidity_side: Option<LiquiditySide>,
     pub is_post_only: bool,
     pub is_reduce_only: bool,
+    pub display_qty: Option<Quantity>,
+    pub limit_offset: Option<Price>,
+    pub trailing_offset: Option<Price>,
+    pub trailing_offset_type: Option<TriggerType>,
     pub emulation_trigger: Option<TriggerType>,
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
@@ -196,6 +219,7 @@ struct Order {
     pub avg_px: Option<f64>,
     pub slippage: Option<f64>,
     pub init_id: UUID4,
+    pub ts_triggered: Option<UnixNanos>,
     pub ts_init: UnixNanos,
     pub ts_last: UnixNanos,
 }
@@ -216,6 +240,8 @@ impl Order {
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             fsm: StateMachine::new(),
+            previous_status: None,
+            triggered_price: None,
             status: OrderStatus::Initialized,
             trader_id: init.trader_id,
             strategy_id: init.strategy_id,
@@ -228,10 +254,18 @@ impl Order {
             side: init.order_side,
             order_type: init.order_type,
             quantity: init.quantity.clone(),
+            price: init.price,
+            trigger_price: init.trigger_price,
+            trigger_type: init.trigger_type,
             time_in_force: init.time_in_force,
+            expire_time: None,
             liquidity_side: None,
             is_post_only: init.post_only,
             is_reduce_only: init.reduce_only,
+            display_qty: None,
+            limit_offset: None,
+            trailing_offset: None,
+            trailing_offset_type: None,
             emulation_trigger: init.emulation_trigger,
             contingency_type: init.contingency_type,
             order_list_id: init.order_list_id,
@@ -242,13 +276,14 @@ impl Order {
             leaves_qty: init.quantity,
             avg_px: None,
             slippage: None,
-            init_id: Default::default(),
+            init_id: init.event_id,
+            ts_triggered: None,
             ts_init: init.ts_event,
             ts_last: init.ts_event,
         }
     }
 
-    pub fn init_event(self) -> OrderInitialized {
+    pub fn init_event(&self) -> OrderInitialized {
         OrderInitialized {
             trader_id: self.trader_id.clone(),
             strategy_id: self.strategy_id.clone(),
@@ -257,9 +292,17 @@ impl Order {
             order_side: self.side,
             order_type: self.order_type,
             quantity: self.quantity.clone(),
+            price: self.price.clone(),
+            trigger_price: self.triggered_price.clone(),
+            trigger_type: self.trigger_type,
             time_in_force: self.time_in_force,
+            expire_time: self.expire_time,
             post_only: self.is_post_only,
             reduce_only: self.is_reduce_only,
+            display_qty: self.display_qty.clone(),
+            limit_offset: self.limit_offset.clone(),
+            trailing_offset: self.trailing_offset.clone(),
+            trailing_offset_type: self.trailing_offset_type,
             emulation_trigger: self.emulation_trigger,
             contingency_type: self.contingency_type,
             order_list_id: self.order_list_id.clone(),
@@ -309,27 +352,194 @@ impl Order {
         self.order_type == OrderType::Market
     }
 
-    pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
-        match self.fsm.consume(&event) {
-            Ok(status) => {
-                if let Some(status) = status {
-                    self.status = status;
-                } else {
-                    return Err(OrderError::InvalidStateTransition);
-                }
-            }
-            Err(_) => {
-                return Err(OrderError::InvalidStateTransition);
-            }
+    pub fn is_emulated(&self) -> bool {
+        self.emulation_trigger.is_some()
+    }
+
+    pub fn is_contingency(&self) -> bool {
+        self.contingency_type.is_some()
+    }
+
+    pub fn is_parent_order(&self) -> bool {
+        match self.contingency_type {
+            Some(c) => c == ContingencyType::Oto,
+            None => false,
+        }
+    }
+
+    pub fn is_child_order(&self) -> bool {
+        self.parent_order_id.is_some()
+    }
+
+    pub fn is_open(&self) -> bool {
+        if self.emulation_trigger.is_some() {
+            return false;
+        }
+        self.status == OrderStatus::Accepted
+            || self.status == OrderStatus::Triggered
+            || self.status == OrderStatus::PendingCancel
+            || self.status == OrderStatus::PendingUpdate
+            || self.status == OrderStatus::PartiallyFilled
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.status == OrderStatus::Denied
+            || self.status == OrderStatus::Rejected
+            || self.status == OrderStatus::Canceled
+            || self.status == OrderStatus::Expired
+            || self.status == OrderStatus::Filled
+    }
+
+    pub fn is_inflight(&self) -> bool {
+        if self.emulation_trigger.is_some() {
+            return false;
+        }
+        self.status == OrderStatus::Submitted
+            || self.status == OrderStatus::PendingCancel
+            || self.status == OrderStatus::PendingUpdate
+    }
+
+    pub fn is_pending_update(&self) -> bool {
+        self.status == OrderStatus::PendingUpdate
+    }
+
+    pub fn is_pending_cancel(&self) -> bool {
+        self.status == OrderStatus::PendingCancel
+    }
+
+    pub fn opposite_side(side: OrderSide) -> OrderSide {
+        match side {
+            OrderSide::Buy => OrderSide::Sell,
+            OrderSide::Sell => OrderSide::Buy,
+            OrderSide::NoOrderSide => OrderSide::NoOrderSide,
+        }
+    }
+
+    pub fn closing_side(side: PositionSide) -> OrderSide {
+        match side {
+            PositionSide::Long => OrderSide::Sell,
+            PositionSide::Short => OrderSide::Buy,
+            PositionSide::Flat => OrderSide::NoOrderSide,
+            PositionSide::NoPositionSide => OrderSide::NoOrderSide,
+        }
+    }
+
+    pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        if side == PositionSide::Flat {
+            return false;
         }
 
-        match event {
-            OrderEvent::OrderDenied(_) => {} // Do nothing
+        match (self.side, side) {
+            (OrderSide::Buy, PositionSide::Long) => false,
+            (OrderSide::Buy, PositionSide::Short) => self.leaves_qty <= position_qty,
+            (OrderSide::Sell, PositionSide::Short) => false,
+            (OrderSide::Sell, PositionSide::Long) => self.leaves_qty <= position_qty,
+            _ => true,
+        }
+    }
+
+    pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        let status = self
+            .fsm
+            .consume(&event)?
+            .map(|status| {
+                self.previous_status.replace(self.status);
+                status
+            })
+            .ok_or(OrderError::InvalidStateTransition)?;
+        self.status = status;
+
+        match &event {
+            OrderEvent::OrderDenied(event) => self.denied(event),
+            OrderEvent::OrderSubmitted(event) => self.submitted(event),
+            OrderEvent::OrderRejected(event) => self.rejected(event),
+            OrderEvent::OrderAccepted(event) => self.accepted(event),
+            OrderEvent::OrderPendingUpdate(event) => self.pending_update(event),
+            OrderEvent::OrderUpdated(event) => self.updated(event),
             _ => return Err(OrderError::UnrecognizedEvent),
         }
 
         self.events.push(event);
         Ok(())
+    }
+
+    fn denied(&self, _event: &OrderDenied) {
+        // Do nothing else
+    }
+
+    fn submitted(&mut self, event: &OrderSubmitted) {
+        self.account_id = Some(event.account_id.clone())
+    }
+
+    fn accepted(&mut self, event: &OrderAccepted) {
+        self.venue_order_id = Some(event.venue_order_id.clone());
+    }
+
+    fn rejected(&self, _event: &OrderRejected) {
+        // Do nothing else
+    }
+
+    fn pending_update(&self, _event: &OrderPendingUpdate) {
+        // Do nothing else
+    }
+
+    fn pending_cancel(&self, _event: &OrderPendingCancel) {
+        // Do nothing else
+    }
+
+    fn modify_rejected(&mut self, _event: &OrderModifyRejected) {
+        self.status = self.previous_status.unwrap();
+    }
+
+    fn cancel_rejected(&mut self, _event: &OrderCancelRejected) {
+        self.status = self.previous_status.unwrap();
+    }
+
+    fn updated(&mut self, event: &OrderUpdated) {
+        match &event.venue_order_id {
+            Some(venue_order_id) => {
+                if self.venue_order_id.is_some()
+                    && venue_order_id != self.venue_order_id.as_ref().unwrap()
+                {
+                    self.venue_order_id = Some(venue_order_id.clone());
+                    self.venue_order_ids.push(venue_order_id.clone()); // TODO(cs): Temporary clone
+                }
+            }
+            None => {}
+        }
+        if let Some(price) = &event.price {
+            if self.price.is_some() {
+                self.price.replace(price.clone());
+            } else {
+                panic!("invalid update of `price` when None")
+            }
+        }
+
+        if let Some(trigger_price) = &event.trigger_price {
+            if self.trigger_price.is_some() {
+                self.trigger_price.replace(trigger_price.clone());
+            } else {
+                panic!("invalid update of `trigger_price` when None")
+            }
+        }
+
+        self.quantity.raw = event.quantity.raw;
+        self.leaves_qty =
+            Quantity::from_raw(self.quantity.raw - self.filled_qty.raw, self.quantity.precision);
+    }
+
+    fn set_slippage(&mut self) {
+        self.slippage = self.avg_px.and_then(|avg_px| {
+            self.price
+                .as_ref()
+                .map(|price| fixed_i64_to_f64(price.raw))
+                .map(|price| match self.side {
+                    OrderSide::Buy if avg_px > price => Some(avg_px - price),
+                    OrderSide::Sell if avg_px < price => Some(price - avg_px),
+                    _ => None,
+                })
+                .unwrap_or(None)
+        })
     }
 }
 
@@ -338,56 +548,106 @@ impl Order {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::enums::{OrderSide, OrderType, TimeInForce};
+    use rstest::*;
 
-    use crate::events::order::OrderDenied;
-    use crate::identifiers::client_order_id::ClientOrderId;
-    use crate::identifiers::instrument_id::InstrumentId;
-    use crate::identifiers::strategy_id::StrategyId;
-    use crate::identifiers::trader_id::TraderId;
-    use crate::types::quantity::Quantity;
+    use super::*;
+    use crate::enums::*;
+    use crate::events::order::*;
 
     #[test]
-    fn test_order_state_transition() {
-        let init = OrderInitialized {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            client_order_id: ClientOrderId::new("O-123456789"),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            quantity: Quantity::new(1.0, 8),
-            time_in_force: TimeInForce::Day,
-            post_only: false,
-            reduce_only: false,
-            emulation_trigger: None,
-            contingency_type: None,
-            order_list_id: None,
-            linked_order_ids: None,
-            parent_order_id: None,
-            tags: None,
-            event_id: Default::default(),
-            ts_event: 0,
-            ts_init: 0,
-            reconciliation: false,
-        };
+    fn test_order_initialized() {
+        let init = OrderInitializedBuilder::new().build();
+        let order = Order::new(init.clone());
 
+        assert_eq!(order.status, OrderStatus::Initialized);
+        assert_eq!(order.init_event(), init);
+        assert_eq!(order.last_event(), None);
+        assert_eq!(order.event_count(), 0);
+        assert!(order.venue_order_ids.is_empty());
+        assert!(order.trade_ids.is_empty());
+        assert!(order.is_buy());
+        assert!(!order.is_sell());
+        assert!(!order.is_passive());
+        assert!(order.is_aggressive());
+        assert!(!order.is_emulated());
+        assert!(!order.is_contingency());
+        assert!(!order.is_parent_order());
+        assert!(!order.is_child_order());
+        assert!(!order.is_open());
+        assert!(!order.is_closed());
+        assert!(!order.is_inflight());
+        assert!(!order.is_pending_update());
+        assert!(!order.is_pending_cancel());
+    }
+
+    #[rstest(
+        order_side,
+        expected_side,
+        case(OrderSide::Buy, OrderSide::Sell),
+        case(OrderSide::Sell, OrderSide::Buy),
+        case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)
+    )]
+    fn test_order_opposite_side(order_side: OrderSide, expected_side: OrderSide) {
+        let result = Order::opposite_side(order_side);
+        assert_eq!(result, expected_side)
+    }
+
+    #[rstest(
+        position_side,
+        expected_side,
+        case(PositionSide::Long, OrderSide::Sell),
+        case(PositionSide::Short, OrderSide::Buy),
+        case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)
+    )]
+    fn test_closing_side(position_side: PositionSide, expected_side: OrderSide) {
+        let result = Order::closing_side(position_side);
+        assert_eq!(result, expected_side)
+    }
+
+    #[rustfmt::skip]
+    #[rstest(
+        order_side, order_qty, position_side, position_qty, expected,
+        case(OrderSide::Buy, Quantity::from(100), PositionSide::Long, Quantity::from(50), false),
+        case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(50), true),
+        case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(100), true),
+        case(OrderSide::Buy, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false),
+        case(OrderSide::Sell, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false),
+        case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(50), true),
+        case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(100), true),
+        case(OrderSide::Sell, Quantity::from(100), PositionSide::Short, Quantity::from(50), false),
+    )]
+    fn test_would_reduce_only(
+        order_side: OrderSide,
+        order_qty: Quantity,
+        position_side: PositionSide,
+        position_qty: Quantity,
+        expected: bool,
+    ) {
+        let init = OrderInitializedBuilder::new()
+            .order_side(order_side)
+            .quantity(order_qty)
+            .build();
+        let order = Order::new(init);
+
+        assert_eq!(
+            order.would_reduce_only(position_side, position_qty),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_order_state_transition_denied() {
+        let init = OrderInitializedBuilder::new().build();
+        let denied = OrderDeniedBuilder::new(&init).build();
         let mut order = Order::new(init);
-        let denied = OrderDenied {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            client_order_id: ClientOrderId::new("O-123456789"),
-            reason: "".to_string(),
-            event_id: Default::default(),
-            ts_event: 0,
-            ts_init: 0,
-        };
-
         let event = OrderEvent::OrderDenied(denied);
 
-        let _ = order.apply(event);
+        let _ = order.apply(event.clone());
+
         assert_eq!(order.status, OrderStatus::Denied);
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+        assert_eq!(order.event_count(), 1);
+        assert_eq!(order.last_event(), Some(&event));
     }
 }

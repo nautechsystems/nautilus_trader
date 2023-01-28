@@ -190,9 +190,10 @@ class _TestPersistenceCore:
         write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
-        files = self.fs.ls(
-            f"{self.catalog.path}/data/quote_tick.parquet",
-        )
+        files = [
+            f["name"]
+            for f in self.fs.ls(f"{self.catalog.path}/data/quote_tick.parquet", detail=True)
+        ]
 
         expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
 
