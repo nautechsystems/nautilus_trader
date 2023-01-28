@@ -16,7 +16,7 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
 
 use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
@@ -109,6 +109,14 @@ impl PartialOrd for Quantity {
 impl Ord for Quantity {
     fn cmp(&self, other: &Self) -> Ordering {
         self.raw.cmp(&other.raw)
+    }
+}
+
+impl Deref for Quantity {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.raw
     }
 }
 
