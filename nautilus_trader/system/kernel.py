@@ -236,17 +236,20 @@ class NautilusKernel:
         nautilus_header(self._log)
         self.log.info("Building system kernel...")
 
-        # Setup loop
-        self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
-        if loop is not None:
-            self._executor = concurrent.futures.ThreadPoolExecutor()
-            self._loop.set_default_executor(self.executor)
-            self._loop.set_debug(loop_debug)
-            self._loop_sig_callback = loop_sig_callback
-            if platform.system() != "Windows":
-                # Windows does not support signal handling
-                # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
-                self._setup_loop()
+        # Setup loop (if live)
+        if environment == Environment.LIVE:
+            self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+            if loop is not None:
+                self._executor = concurrent.futures.ThreadPoolExecutor()
+                self._loop.set_default_executor(self.executor)
+                self._loop.set_debug(loop_debug)
+                self._loop_sig_callback = loop_sig_callback
+                if platform.system() != "Windows":
+                    # Windows does not support signal handling
+                    # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
+                    self._setup_loop()
+        else:
+            self._loop = None
 
         if cache_database_config is None or cache_database_config.type == "in-memory":
             cache_db = None
@@ -260,7 +263,7 @@ class NautilusKernel:
         else:
             raise ValueError(
                 "The `cache_db_config.type` is unrecognized. "
-                "Please use one of {{'in-memory', 'redis'}}.",
+                "Use one of {{'in-memory', 'redis'}}.",
             )
 
         ########################################################################
@@ -694,8 +697,7 @@ class NautilusKernel:
         called after disposal.
 
         """
-        self.trader.dispose()
-
+        # Stop all engines
         if self.data_engine.is_running:
             self.data_engine.stop()
         if self.risk_engine.is_running:
@@ -703,9 +705,16 @@ class NautilusKernel:
         if self.exec_engine.is_running:
             self.exec_engine.stop()
 
-        self.data_engine.dispose()
-        self.risk_engine.dispose()
-        self.exec_engine.dispose()
+        # Dispose all engines
+        if not self.data_engine.is_disposed:
+            self.data_engine.dispose()
+        if not self.risk_engine.is_disposed:
+            self.risk_engine.dispose()
+        if not self.exec_engine.is_disposed:
+            self.exec_engine.dispose()
+
+        if not self.trader.is_disposed:
+            self.trader.dispose()
 
         if self._writer:
             self._writer.close()

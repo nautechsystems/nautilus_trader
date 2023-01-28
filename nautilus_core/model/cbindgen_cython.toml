@@ -27,8 +27,8 @@ exclude = [
 [export.rename]
 "BarAggregation" = "uint8_t"
 
-"Timestamp" = "uint64_t"
-"Timedelta" = "int64_t"
+"UnixNanos" = "uint64_t"
+"TimedeltaNanos" = "int64_t"
 "TimeEvent" = "TimeEvent_t"
 "Currency" = "Currency_t"
 "Money" = "Money_t"

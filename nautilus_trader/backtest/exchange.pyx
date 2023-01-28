@@ -295,7 +295,7 @@ cdef class SimulatedExchange:
             if self.account_type == AccountType.CASH:
                 raise InvalidConfiguration(
                     f"Cannot add a `{type(instrument).__name__}` type instrument "
-                    f"to a venue with a `CASH` account type. Please add to a "
+                    f"to a venue with a `CASH` account type. Add to a "
                     f"venue with a `MARGIN` account type.",
                 )
 

@@ -65,7 +65,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport StatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BarAggregation
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -610,6 +610,11 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("bar_type"),
             )
+        elif command.data_type.type == VenueStatusUpdate:
+            self._handle_subscribe_venue_status_updates(
+                client,
+                command.data_type.metadata.get("instrument_id"),
+            )
         elif command.data_type.type == InstrumentStatusUpdate:
             self._handle_subscribe_instrument_status_updates(
                 client,
@@ -713,10 +718,16 @@ cdef class DataEngine(Component):
             kwargs=metadata.get("kwargs"),
         )
 
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+
+        if self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._maintain_order_book,
+        ):
+            return  # Already subscribed
+
         self._msgbus.subscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+            topic=topic,
             handler=self._maintain_order_book,
             priority=10,
         )
@@ -781,6 +792,14 @@ cdef class DataEngine(Component):
                     depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
+
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+
+        if self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._maintain_order_book,
+        ):
+            return  # Already subscribed
 
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
@@ -856,6 +875,17 @@ cdef class DataEngine(Component):
                 f"has not implemented {data_type} subscriptions.",
             )
             return
+
+    cdef void _handle_subscribe_venue_status_updates(
+        self,
+        MarketDataClient client,
+        Venue venue,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(venue, "venue")
+
+        if venue not in client.subscribed_venue_status_updates():
+            client.subscribe_venue_status_updates(venue)
 
     cdef void _handle_subscribe_instrument_status_updates(
         self,
@@ -1087,8 +1117,10 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, StatusUpdate):
-            self._handle_status_update(data)
+        elif isinstance(data, VenueStatusUpdate):
+            self._handle_venue_status_update(data)
+        elif isinstance(data, InstrumentStatusUpdate):
+            self._handle_instrument_status_update(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
         elif isinstance(data, GenericData):
@@ -1151,9 +1183,14 @@ cdef class DataEngine(Component):
         if self._validate_data_sequence:
             last_bar = self._cache.bar(bar_type)
             if last_bar is not None:
-                if bar.ts_event < last_bar.ts_event or bar.ts_init <= last_bar.ts_init:
+                if bar.ts_event < last_bar.ts_event:
                     self._log.warning(
                         f"Bar {bar} was prior to last bar `ts_event` {last_bar.ts_event}.",
+                    )
+                    return  # `bar` is out of sequence
+                if bar.ts_init < last_bar.ts_init:
+                    self._log.warning(
+                        f"Bar {bar} was prior to last bar `ts_init` {last_bar.ts_init}.",
                     )
                     return  # `bar` is out of sequence
                 if bar.is_revision:
@@ -1171,8 +1208,11 @@ cdef class DataEngine(Component):
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
-    cdef void _handle_status_update(self, StatusUpdate data) except *:
-        self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
+    cdef void _handle_venue_status_update(self, VenueStatusUpdate data) except *:
+        self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
+
+    cdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data) except *:
+        self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
 
     cdef void _handle_close_price(self, InstrumentClose data) except *:
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)

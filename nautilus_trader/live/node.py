@@ -273,7 +273,7 @@ class TradingNode:
         if not self._is_built:
             raise RuntimeError(
                 "The trading nodes clients have not been built. "
-                "Please run `node.build()` prior to start.",
+                "Run `node.build()` prior to start.",
             )
 
         try:
@@ -326,9 +326,14 @@ class TradingNode:
 
             self.kernel.log.info("DISPOSING...")
 
-            self.kernel.log.debug(f"{self.kernel.data_engine.get_run_queue_task()}")
-            self.kernel.log.debug(f"{self.kernel.exec_engine.get_run_queue_task()}")
-            self.kernel.log.debug(f"{self.kernel.risk_engine.get_run_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.data_engine.get_cmd_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.data_engine.get_req_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.data_engine.get_res_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.data_engine.get_data_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.exec_engine.get_cmd_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.exec_engine.get_evt_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.risk_engine.get_cmd_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.risk_engine.get_evt_queue_task()}")
 
             if self.kernel.trader.is_running:
                 self.kernel.trader.stop()
@@ -462,9 +467,17 @@ class TradingNode:
                 self.kernel.log.warning("Event loop is not running.")
 
             # Continue to run while engines are running...
-            await self.kernel.data_engine.get_run_queue_task()
-            await self.kernel.risk_engine.get_run_queue_task()
-            await self.kernel.exec_engine.get_run_queue_task()
+            tasks: list[asyncio.Task] = [
+                self.kernel.data_engine.get_cmd_queue_task(),
+                self.kernel.data_engine.get_req_queue_task(),
+                self.kernel.data_engine.get_res_queue_task(),
+                self.kernel.data_engine.get_data_queue_task(),
+                self.kernel.risk_engine.get_cmd_queue_task(),
+                self.kernel.risk_engine.get_evt_queue_task(),
+                self.kernel.exec_engine.get_cmd_queue_task(),
+                self.kernel.exec_engine.get_evt_queue_task(),
+            ]
+            await asyncio.gather(*tasks)
         except asyncio.CancelledError as e:
             self.kernel.log.error(str(e))
 

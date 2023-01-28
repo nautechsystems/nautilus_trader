@@ -1,3 +1,24 @@
+# NautilusTrader 1.167.0 Beta
+
+Released on 28th January 2023 (UTC).
+
+### Breaking Changes
+- Rename `OrderBookData.update_id` to `sequence`
+- Rename `BookOrder.id` to `order_id`
+
+### Enhancements
+- Introduce Rust pyo3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
+- Added `msgbus.is_subscribed` (to check if topic and handler already subscribed)
+- Simplified message type model and introduce CQRS-ish live messaging architecture
+
+### Fixes
+- Fixed Binance data clients order book startup buffer handling
+- Fixed `NautilusKernel` redundant initialization of event loop for backtesting, thanks @limx0
+- Fixed `BacktestNode` disposal sequence
+- Fixed quick start docs and notebook
+
+---
+
 # NautilusTrader 1.166.0 Beta
 
 Released on 17th January 2023 (UTC).
@@ -210,7 +231,7 @@ Released on 3rd November 2022 (UTC).
 ### Breaking Changes
 - Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
 - Removed `LiveExecEngineConfig.reconciliation_auto` (unclear naming and concept)
-- All Redis keys have changed to a lowercase convention (please either migrate or flush your Redis)
+- All Redis keys have changed to a lowercase convention (either migrate or flush your Redis)
 - Removed `BidAskMinMax` indicator (to reduce total package size)
 - Removed `HilbertPeriod` indicator (to reduce total package size)
 - Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
@@ -1199,7 +1220,7 @@ Released on 18th July 2021.
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
 Pub/Sub messaging pattern. The next release will see all data being handled by 
-the message bus, please see the related issue for further details on this enhancement.
+the message bus, see the related issue for further details on this enhancement.
 
 Another notable feature is the introduction of the order 'in-flight' concept, 
 which is a submitted order which has not yet been acknowledged by the 
@@ -1381,7 +1402,7 @@ https://cython.readthedocs.io/en/latest/src/userguide/pyrex_differences.html?hig
 
 It has been found that adding `inline` to method signatures makes no difference
 to the performance of the system - and so they have been removed to reduce 
-'noise' and simplify the codebase. Please note that the use of `inline` for 
+'noise' and simplify the codebase. Note that the use of `inline` for 
 module level functions will be passed to the C compiler with the expected 
 result of inlining the function.
 

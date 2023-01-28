@@ -460,35 +460,35 @@ class LiveExecutionClient(ExecutionClient):
     ############################################################################
     async def _connect(self) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_connect` coroutine",  # pragma: no cover
+            "implement the `_connect` coroutine",  # pragma: no cover
         )
 
     async def _disconnect(self) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_disconnect` coroutine",  # pragma: no cover
+            "implement the `_disconnect` coroutine",  # pragma: no cover
         )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_submit_order` coroutine",  # pragma: no cover
+            "implement the `_submit_order` coroutine",  # pragma: no cover
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_submit_order_list` coroutine",  # pragma: no cover
+            "implement the `_submit_order_list` coroutine",  # pragma: no cover
         )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_modify_order` coroutine",  # pragma: no cover
+            "implement the `_modify_order` coroutine",  # pragma: no cover
         )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_cancel_order` coroutine",  # pragma: no cover
+            "implement the `_cancel_order` coroutine",  # pragma: no cover
         )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "please implement the `_cancel_all_orders` coroutine",  # pragma: no cover
+            "implement the `_cancel_all_orders` coroutine",  # pragma: no cover
         )

@@ -157,10 +157,10 @@ cdef class OrderMatchingEngine:
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cpdef list _determine_limit_price_and_volume(self, Order order)
-    cpdef list _determine_market_price_and_volume(self, Order order)
-    cpdef void _fill_market_order(self, Order order) except *
-    cpdef void _fill_limit_order(self, Order order) except *
+    cpdef list determine_limit_price_and_volume(self, Order order)
+    cpdef list determine_market_price_and_volume(self, Order order)
+    cpdef void fill_market_order(self, Order order) except *
+    cpdef void fill_limit_order(self, Order order) except *
 
     cpdef void _apply_fills(
         self,
@@ -188,13 +188,13 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
-    cpdef void _accept_order(self, Order order) except *
-    cpdef void _expire_order(self, Order order) except *
-    cpdef void _cancel_order(self, Order order, bint cancel_contingencies=*) except *
-    cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*) except *
-    cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _cancel_contingent_orders(self, Order order) except *
-    cpdef void _update_contingent_orders(self, Order order) except *
+    cpdef void accept_order(self, Order order) except *
+    cpdef void expire_order(self, Order order) except *
+    cpdef void cancel_order(self, Order order, bint cancel_contingencies=*) except *
+    cpdef void update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*) except *
+    cpdef void trigger_stop_order(self, Order order) except *
+    cdef void _cancel_contingent_orders(self, Order order) except *
+    cdef void _update_contingent_orders(self, Order order) except *
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

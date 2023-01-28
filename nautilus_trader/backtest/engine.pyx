@@ -510,7 +510,7 @@ cdef class BacktestEngine:
         if instrument.id.venue not in self._venues:
             raise InvalidConfiguration(
                 "Cannot add an `Instrument` object without first adding its associated venue. "
-                f"Please add the {instrument.id.venue} venue using the `add_venue` method."
+                f"Add the {instrument.id.venue} venue using the `add_venue` method."
             )
 
         # TODO(cs): validate the instrument is correct for the venue
@@ -563,7 +563,7 @@ cdef class BacktestEngine:
             Condition.true(
                 first.instrument_id in self.kernel.cache.instrument_ids(),
                 f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
-                "Please add the instrument through `add_instrument()` prior to adding related data.",
+                "Add the instrument through `add_instrument()` prior to adding related data.",
             )
             # Check client has been registered
             self._add_market_data_client_if_not_exists(first.instrument_id.venue)
@@ -572,7 +572,7 @@ cdef class BacktestEngine:
             Condition.true(
                 first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
                 f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
-                "Please add the instrument through `add_instrument()` prior to adding related data.",
+                "Add the instrument through `add_instrument()` prior to adding related data.",
             )
             Condition.equal(
                 first.bar_type.aggregation_source,

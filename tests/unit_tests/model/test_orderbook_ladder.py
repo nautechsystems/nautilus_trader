@@ -66,8 +66,8 @@ def test_insert():
 
 def test_delete_individual_order(asks):
     orders = [
-        BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, id="1"),
-        BookOrder(price=100.0, size=5.0, side=OrderSide.BUY, id="2"),
+        BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, order_id="1"),
+        BookOrder(price=100.0, size=5.0, side=OrderSide.BUY, order_id="2"),
     ]
     ladder = TestDataStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
@@ -82,7 +82,7 @@ def test_delete_level():
 
 
 def test_update_level():
-    order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, id="1")
+    order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, order_id="1")
     ladder = TestDataStubs.ladder(reverse=True, orders=[order])
     order.update_size(size=20.0)
     ladder.update(order)
@@ -124,21 +124,21 @@ def test_repr(asks):
 
 def test_simulate_order_fills_no_trade(asks):
     fills = asks.simulate_order_fills(
-        order=BookOrder(price=10, size=10, side=OrderSide.BUY, id="1"),
+        order=BookOrder(price=10, size=10, side=OrderSide.BUY, order_id="1"),
     )
     assert fills == []
 
 
 def test_simulate_order_fills_single(asks):
     fills = asks.simulate_order_fills(
-        order=BookOrder(price=15, size=10, side=OrderSide.BUY, id="1"),
+        order=BookOrder(price=15, size=10, side=OrderSide.BUY, order_id="1"),
     )
     assert fills == [(Price.from_str("15.0000"), Quantity.from_str("10.0000"))]
 
 
 def test_simulate_order_fills_multiple_levels(asks):
     fills = asks.simulate_order_fills(
-        order=BookOrder(price=20, size=20, side=OrderSide.BUY, id="1"),
+        order=BookOrder(price=20, size=20, side=OrderSide.BUY, order_id="1"),
     )
     expected = [
         (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
@@ -149,7 +149,7 @@ def test_simulate_order_fills_multiple_levels(asks):
 
 def test_simulate_order_fills_whole_ladder(asks):
     fills = asks.simulate_order_fills(
-        order=BookOrder(price=100, size=1000, side=OrderSide.BUY, id="1"),
+        order=BookOrder(price=100, size=1000, side=OrderSide.BUY, order_id="1"),
     )
     expected = [
         (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
@@ -162,16 +162,16 @@ def test_simulate_order_fills_whole_ladder(asks):
 def test_simulate_order_fills_l3():
     ladder = Ladder(False, 4, 4)
     orders = [
-        BookOrder(price=15, size=1, side=OrderSide.SELL, id="1"),
-        BookOrder(price=16, size=2, side=OrderSide.SELL, id="2"),
-        BookOrder(price=16, size=3, side=OrderSide.SELL, id="3"),
-        BookOrder(price=20, size=10, side=OrderSide.SELL, id="4"),
+        BookOrder(price=15, size=1, side=OrderSide.SELL, order_id="1"),
+        BookOrder(price=16, size=2, side=OrderSide.SELL, order_id="2"),
+        BookOrder(price=16, size=3, side=OrderSide.SELL, order_id="3"),
+        BookOrder(price=20, size=10, side=OrderSide.SELL, order_id="4"),
     ]
     for order in orders:
         ladder.add(order)
 
     fills = ladder.simulate_order_fills(
-        order=BookOrder(price=16.5, size=4, side=OrderSide.BUY, id="1"),
+        order=BookOrder(price=16.5, size=4, side=OrderSide.BUY, order_id="1"),
     )
     expected = [
         (Price.from_str("15.0000"), Quantity.from_str("1.0000")),

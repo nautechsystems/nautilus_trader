@@ -354,6 +354,17 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_bar))
 
+    cpdef list subscribed_venue_status_updates(self):
+        """
+        Return the status update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscriptions_venue_status_update))
+
     cpdef list subscribed_instrument_status_updates(self):
         """
         Return the status update instruments subscribed to.

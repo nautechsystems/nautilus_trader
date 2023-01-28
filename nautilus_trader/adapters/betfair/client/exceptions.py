@@ -62,8 +62,8 @@ ERROR_CODES = {
     },
     "DSC-0034": {
         "kind": "UnknownCaller",
-        "reason": "A valid and active App Key hasn't been provided in the request. Please check that your App Key "
-        "is active. Please see Application Keys for further information regarding App Keys.",
+        "reason": "A valid and active App Key hasn't been provided in the request. Check that your App Key "
+        "is active. See Application Keys for further information regarding App Keys.",
     },
     "DSC-0035": {"kind": "UnrecognisedCredentials", "reason": " "},
     "DSC-0036": {"kind": "InvalidCredentials", "reason": " "},

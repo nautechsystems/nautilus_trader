@@ -1,10 +1,10 @@
 # Pull Request
 
-Please include a summary of the changes.
+Include a summary of the changes.
 
 ## Type of change
 
-Please delete options that are not relevant.
+Delete options that are not relevant.
 
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
@@ -13,4 +13,4 @@ Please delete options that are not relevant.
 
 ## How has this change been tested?
 
-Please describe how this code was/is tested.
+Describe how this code was/is tested.

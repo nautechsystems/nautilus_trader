@@ -21,6 +21,7 @@ use std::{ffi::c_void, ptr::null};
 /// NOTE: Changing the values here may lead to undefined behaviour when the
 /// memory is dropped.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct CVec {
     /// Opaque pointer to block of memory storing elements to access the
     /// elements cast it to the underlying type.
@@ -31,6 +32,10 @@ pub struct CVec {
     /// Used when deallocating the memory
     pub cap: usize,
 }
+
+/// Empty derivation for Send to satisfy `pyclass` requirements
+/// however this is only designed for single threaded use for now
+unsafe impl Send for CVec {}
 
 impl CVec {
     pub fn empty() -> Self {

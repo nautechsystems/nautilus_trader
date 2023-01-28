@@ -24,3 +24,6 @@ rustflags = [
 
 [target.x86_64-unknown-linux-musl]
 linker = "rust-lld"
+rustflags = [
+    "-C", "target-feature=-crt-static",
+]

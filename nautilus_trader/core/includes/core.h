@@ -5,14 +5,6 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef enum MessageCategory {
-    COMMAND = 1,
-    DOCUMENT = 2,
-    EVENT = 3,
-    REQUEST = 4,
-    RESPONSE = 5,
-} MessageCategory;
-
 typedef struct Rc_String Rc_String;
 
 /**
@@ -81,16 +73,6 @@ uint64_t nanos_to_millis(uint64_t nanos);
  * Converts nanoseconds (ns) to microseconds (μs).
  */
 uint64_t nanos_to_micros(uint64_t nanos);
-
-const char *message_category_to_cstr(enum MessageCategory value);
-
-/**
- * Returns an enum from a C string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum MessageCategory message_category_from_cstr(const char *ptr);
 
 /**
  * Return the decimal precision inferred from the given C string.
