@@ -303,15 +303,21 @@ cdef class QuoteTick(Data):
 
     @staticmethod
     cdef inline quote_tick_list_to_capsule(list items):
-        cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
+
+        # create a C struct buffer
+        cdef uint64_t len_ = len(items)
+        cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len_ * sizeof(QuoteTick_t))
+        cdef uint64_t i
+        for i in range(len_):
+            data[i] = (<QuoteTick> items[i])._mem
         if not data:
             raise MemoryError()
 
-        cdef int i
-        for i in range(len(items)):
-            data[i] = (<QuoteTick> items[i])._mem
+        # create CVec
+        cdef CVec cvec = CVec(data, len_, len_)
 
-        return PyCapsule_New(data, NULL, NULL)
+        # create PyCapsule
+        return PyCapsule_New(&cvec, NULL, NULL)
 
     @staticmethod
     def list_from_capsule(capsule) -> list[QuoteTick]:
