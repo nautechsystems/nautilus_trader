@@ -197,7 +197,7 @@ cdef class Strategy(Actor):
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef void on_start(self) except*:
+    cpdef void on_start(self) except *:
         # Should override in subclass
         self.log.warning(
             "The `Strategy.on_start` handler was called when not overridden. "
@@ -205,7 +205,7 @@ cdef class Strategy(Actor):
             "occur here, such as subscribing/requesting data.",
         )
 
-    cpdef void on_stop(self) except*:
+    cpdef void on_stop(self) except *:
         # Should override in subclass
         self.log.warning(
             "The `Strategy.on_stop` handler was called when not overridden. "
@@ -213,7 +213,7 @@ cdef class Strategy(Actor):
             "occur here, such as unsubscribing from data.",
         )
 
-    cpdef void on_resume(self) except*:
+    cpdef void on_resume(self) except *:
         # Should override in subclass
         self.log.warning(
             "The `Strategy.on_resume` handler was called when not overridden. "
@@ -221,7 +221,7 @@ cdef class Strategy(Actor):
             "following a stop occur here."
         )
 
-    cpdef void on_reset(self) except*:
+    cpdef void on_reset(self) except *:
         # Should override in subclass
         self.log.warning(
             "The `Strategy.on_reset` handler was called when not overridden. "
