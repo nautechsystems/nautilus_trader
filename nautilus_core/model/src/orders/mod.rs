@@ -518,8 +518,10 @@ impl Order {
         }
 
         self.quantity.raw = event.quantity.raw;
-        self.leaves_qty =
-            Quantity::from_raw(self.quantity.raw - self.filled_qty.raw, self.quantity.precision);
+        self.leaves_qty = Quantity::from_raw(
+            self.quantity.raw - self.filled_qty.raw,
+            self.quantity.precision,
+        );
     }
 
     fn set_slippage(&mut self) {
