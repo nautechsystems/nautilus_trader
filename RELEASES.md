@@ -3,9 +3,12 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Removed `Cache.clear_cache()` (redundant with the `.reset()` method)
 
 ### Enhancements
+- Added `Cache` `.add(...)` and `.get(...)` for general 'user/custom' objects (as bytes)
+- Added `CacheDatabase` `.add(...)` and `.load()` for general cache objects (as bytes)
+- Added `RedisCacheDatabase` `.add(...) `and `.load()` for general Redis persisted bytes objects (as bytes)
 - Added `Cache.actor_ids()`
 - Added `Actor` cached state saving and loading functionality
 - Improved logging for called action handlers when not overridden

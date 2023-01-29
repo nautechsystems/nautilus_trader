@@ -41,7 +41,12 @@ from nautilus_trader.model.position cimport Position
 
 cdef class CacheFacade:
 
-# -- DATA QUERIES ---------------------------------------------------------------------------------  # noqa
+# -- GENERAL --------------------------------------------------------------------------------------  # noqa
+
+    cpdef bytes get(self, str key)
+    cpdef void add(self, str key, bytes value) except *
+
+# -- DATA QUERIES ---------------------------------------------------------------------------------
 
     cpdef list tickers(self, InstrumentId instrument_id)
     cpdef list quote_ticks(self, InstrumentId instrument_id)

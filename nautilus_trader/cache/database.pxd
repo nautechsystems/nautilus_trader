@@ -36,6 +36,7 @@ cdef class CacheDatabase:
     cdef LoggerAdapter _log
 
     cpdef void flush(self) except *
+    cpdef dict load(self)
     cpdef dict load_currencies(self)
     cpdef dict load_instruments(self)
     cpdef dict load_accounts(self)
@@ -55,6 +56,7 @@ cdef class CacheDatabase:
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
     cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
+    cpdef void add(self, str key, bytes value) except *
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *

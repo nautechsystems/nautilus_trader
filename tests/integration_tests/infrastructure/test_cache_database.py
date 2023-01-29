@@ -147,6 +147,24 @@ class TestRedisCacheDatabase:
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
 
+    def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
+        # Arrange, Act
+        result = self.database.load()
+
+        # Assert
+        assert result == {}
+
+    def test_add_general_object_adds_to_cache(self):
+        # Arrange
+        bar = TestDataStubs.bar_5decimal()
+        key = str(bar.bar_type) + "-" + str(bar.ts_event)
+
+        # Act
+        self.database.add(key, str(bar).encode())
+
+        # Assert
+        assert self.database.load() == {key: str(bar).encode()}
+
     def test_add_currency(self):
         # Arrange
         currency = Currency(
