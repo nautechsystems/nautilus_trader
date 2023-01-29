@@ -56,6 +56,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
@@ -252,6 +253,13 @@ class TestCache:
         # Assert
         assert result == []
 
+    def test_get_actor_ids_with_no_ids_returns_empty_set(self):
+        # Arrange, Act
+        result = self.cache.actor_ids()
+
+        # Assert
+        assert result == set()
+
     def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
         # Arrange, Act
         result = self.cache.strategy_ids()
@@ -265,6 +273,17 @@ class TestCache:
 
         # Assert
         assert result == set()
+
+    def test_get_actor_ids_with_id_returns_correct_set(self):
+        # Arrange
+        actor = MockActor()
+        self.cache.update_actor(actor)
+
+        # Act
+        result = self.cache.actor_ids()
+
+        # Assert
+        assert result == {actor.id}
 
     def test_get_strategy_ids_with_id_returns_correct_set(self):
         # Arrange
@@ -1270,6 +1289,17 @@ class TestCache:
         # Assert
         assert True  # No exceptions raised
 
+    def test_delete_actor(self):
+        # Arrange
+        actor = MockActor()
+        self.cache.update_actor(actor)
+
+        # Act
+        self.cache.delete_actor(actor)
+
+        # Assert
+        assert actor.id not in self.cache.actor_ids()
+
     def test_delete_strategy(self):
         # Arrange
         self.cache.update_strategy(self.strategy)
@@ -1379,6 +1409,7 @@ class TestCache:
         self.cache.reset()
 
         # Assert
+        assert len(self.cache.actor_ids()) == 0
         assert len(self.cache.strategy_ids()) == 0
         assert self.cache.orders_total_count() == 0
         assert self.cache.positions_total_count() == 0

@@ -6,7 +6,9 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-None
+- Added `Cache.actor_ids()`
+- Added `Actor` cached state saving and loading functionality
+- Improved logging for called action handlers when not overridden
 
 ### Fixes
 None

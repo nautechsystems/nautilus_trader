@@ -46,6 +46,7 @@ from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -138,6 +139,7 @@ cdef class Cache(CacheFacade):
         self._index_positions = set()          # type: set[PositionId]
         self._index_positions_open = set()     # type: set[PositionId]
         self._index_positions_closed = set()   # type: set[PositionId]
+        self._index_actors = set()             # type: set[ComponentId]
         self._index_strategies = set()         # type: set[StrategyId]
 
         self._log.info("READY.")
@@ -664,6 +666,7 @@ cdef class Cache(CacheFacade):
         self._index_positions.clear()
         self._index_positions_open.clear()
         self._index_positions_closed.clear()
+        self._index_actors.clear()
         self._index_strategies.clear()
 
         self._log.debug(f"Cleared index.")
@@ -809,9 +812,33 @@ cdef class Cache(CacheFacade):
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
+    cpdef void load_actor(self, Actor actor) except *:
+        """
+        Load the state dictionary into the given actor.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to load.
+
+        """
+        Condition.not_none(actor, "actor")
+
+        cdef dict state = None
+
+        if self._database is not None:
+            state = self._database.load_actor(actor.id)
+
+        if state:
+            for key, value in state.items():
+                self._log.debug(f"Loading {actor.id}) state {{ {key}: {value} }}")
+            actor.load(state)
+        else:
+            self._log.info(f"No previous state found for {repr(actor.id)}")
+
     cpdef void load_strategy(self, Strategy strategy) except *:
         """
-        Load the state dictionary for the given strategy.
+        Load the state dictionary into the given strategy.
 
         Parameters
         ----------
@@ -1607,6 +1634,48 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_position(position)
 
+    cpdef void update_actor(self, Actor actor) except *:
+        """
+        Update the given actor state in the cache.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to update.
+        """
+        Condition.not_none(actor, "actor")
+
+        self._index_actors.add(actor.id)
+
+        # Update database
+        if self._database is not None:
+            self._database.update_actor(actor)
+
+    cpdef void delete_actor(self, Actor actor) except *:
+        """
+        Delete the given actor from the cache.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to deregister.
+
+        Raises
+        ------
+        ValueError
+            If `actor` is not contained in the actors index.
+
+        """
+        Condition.not_none(actor, "actor")
+        Condition.is_in(actor.id, self._index_actors, "actor.id", "actors")
+
+        self._index_actors.discard(actor.id)
+
+        # Update database
+        if self._database is not None:
+            self._database.delete_actor(actor.id)
+            self._log.debug(f"Deleted Actor(id={actor.id.value}).")
+
     cpdef void update_strategy(self, Strategy strategy) except *:
         """
         Update the given strategy state in the cache.
@@ -1636,7 +1705,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If `strategy` is not contained in the strategies.
+            If `strategy` is not contained in the strategies index.
 
         """
         Condition.not_none(strategy, "strategy")
@@ -2639,6 +2708,17 @@ cdef class Cache(CacheFacade):
             return self._index_positions_closed
         else:
             return self._index_positions_closed.intersection(query)
+
+    cpdef set actor_ids(self):
+        """
+        Return all actor IDs.
+
+        Returns
+        -------
+        set[ComponentId]
+
+        """
+        return self._index_actors.copy()
 
     cpdef set strategy_ids(self):
         """

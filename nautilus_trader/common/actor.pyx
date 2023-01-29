@@ -24,7 +24,6 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
-import warnings
 from typing import Optional
 
 import cython
@@ -41,6 +40,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.enums_c cimport ComponentState
+from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
@@ -139,12 +139,43 @@ cdef class Actor(Component):
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
+    cpdef dict on_save(self):
+        """
+        Actions to be performed when the actor state is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Returns
+        -------
+        dict[str, bytes]
+            The strategy state dictionary.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        return {}  # Optionally override in subclass
+
+    cpdef void on_load(self, dict state) except *:
+        """
+        Actions to be performed when the actor state is loaded.
+
+        Saved state values will be contained in the give state dictionary.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
     cpdef void on_start(self) except *:
         """
         Actions to be performed on start.
 
-        The intent is that this method is called once per trading session,
-        when initially starting.
+        The intent is that this method is called once per trading 'run', when
+        initially starting.
 
         It is recommended to subscribe/request for data here.
 
@@ -152,11 +183,15 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the actor implementation.
+        Should be overridden in a user implementation.
 
         """
         # Should override in subclass
-        warnings.warn("on_start was called when not overridden")
+        self.log.warning(
+            "The `Actor.on_start` handler was called when not overridden. "
+            "It's expected that any actions required when starting the actor "
+            "occur here, such as subscribing/requesting data.",
+        )
 
     cpdef void on_stop(self) except *:
         """
@@ -168,11 +203,15 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the actor implementation.
+        Should be overridden in a user implementation.
 
         """
         # Should override in subclass
-        warnings.warn("on_stop was called when not overridden")
+        self.log.warning(
+            "The `Actor.on_stop` handler was called when not overridden. "
+            "It's expected that any actions required when stopping the actor "
+            "occur here, such as unsubscribing from data.",
+        )
 
     cpdef void on_resume(self) except *:
         """
@@ -183,7 +222,12 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Should override in subclass
+        self.log.warning(
+            "The `Actor.on_resume` handler was called when not overridden. "
+            "It's expected that any actions required when resuming the actor "
+            "following a stop occur here."
+        )
 
     cpdef void on_reset(self) except *:
         """
@@ -193,27 +237,28 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the actor implementation.
+        Should be overridden in a user implementation.
 
         """
         # Should override in subclass
-        warnings.warn("on_reset was called when not overridden")
+        self.log.warning(
+            "The `Actor.on_reset` handler was called when not overridden. "
+            "It's expected that any actions required when resetting the actor "
+            "occur here, such as resetting indicators and other state."
+        )
 
     cpdef void on_dispose(self) except *:
         """
         Actions to be performed on dispose.
 
-        Cleanup any resources used here.
+        Cleanup/release any resources used here.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the actor implementation.
-
         """
-        # Should override in subclass
-        warnings.warn("on_dispose was called when not overridden")
+        pass  # Optionally override in subclass
 
     cpdef void on_degrade(self) except *:
         """
@@ -226,8 +271,7 @@ cdef class Actor(Component):
         Should be overridden in the actor implementation.
 
         """
-        # Should override in subclass
-        warnings.warn("on_degrade was called when not overridden")
+        pass  # Optionally override in subclass
 
     cpdef void on_fault(self) except *:
         """
@@ -242,8 +286,7 @@ cdef class Actor(Component):
         Should be overridden in the actor implementation.
 
         """
-        # Should override in subclass
-        warnings.warn("on_fault was called when not overridden")
+        pass  # Optionally override in subclass
 
     cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *:
         """
@@ -534,6 +577,76 @@ cdef class Actor(Component):
         self._warning_events.discard(event)
 
         self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
+
+# -- ACTOR COMMANDS -------------------------------------------------------------------------------
+
+    cpdef dict save(self):
+        """
+        Return the actor/strategy state dictionary to be saved.
+
+        Calls `on_save`.
+
+        Raises
+        ------
+        RuntimeError
+            If `actor/strategy` is not registered with a trader.
+
+        Warnings
+        --------
+        Exceptions raised will be caught, logged, and reraised.
+
+        """
+        if not self.is_initialized:
+            self.log.error(
+                "Cannot save: actor/strategy has not been registered with a trader.",
+            )
+            return
+        try:
+            self.log.debug("Saving state...")
+            user_state = self.on_save()
+            if len(user_state) > 0:
+                self.log.info(f"Saved state: {list(user_state.keys())}.", color=LogColor.BLUE)
+            else:
+                self.log.info("No user state to save.", color=LogColor.BLUE)
+            return user_state
+        except Exception as e:
+            self.log.exception("Error on save", e)
+            raise  # Otherwise invalid state information could be saved
+
+    cpdef void load(self, dict state) except *:
+        """
+        Load the actor/strategy state from the give state dictionary.
+
+        Calls `on_load` and passes the state.
+
+        Parameters
+        ----------
+        state : dict[str, object]
+            The state dictionary.
+
+        Raises
+        ------
+        RuntimeError
+            If `actor/strategy` is not registered with a trader.
+
+        Warnings
+        --------
+        Exceptions raised will be caught, logged, and reraised.
+
+        """
+        Condition.not_none(state, "state")
+
+        if not state:
+            self.log.info("No user state to load.", color=LogColor.BLUE)
+            return
+
+        try:
+            self.log.debug(f"Loading state...")
+            self.on_load(state)
+            self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
+        except Exception as e:
+            self.log.exception(f"Error on load {repr(state)}", e)
+            raise
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 

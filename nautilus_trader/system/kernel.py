@@ -193,6 +193,8 @@ class NautilusKernel:
         PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self._environment = environment
+        self._load_state = load_state
+        self._save_state = save_state
 
         # Identifiers
         self._name = name
@@ -381,7 +383,7 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if load_state:
+        if self._load_state:
             self._trader.load()
 
         # Setup writer

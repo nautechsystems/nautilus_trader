@@ -17,6 +17,7 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -86,6 +87,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed
+    cdef set _index_actors
     cdef set _index_strategies
 
     cdef readonly int tick_capacity
@@ -122,6 +124,7 @@ cdef class Cache(CacheFacade):
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
+    cpdef void load_actor(self, Actor actor) except *
     cpdef void load_strategy(self, Strategy strategy) except *
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
     cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
@@ -148,5 +151,7 @@ cdef class Cache(CacheFacade):
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
+    cpdef void update_actor(self, Actor actor) except *
+    cpdef void delete_actor(self, Actor actor) except *
     cpdef void update_strategy(self, Strategy strategy) except *
     cpdef void delete_strategy(self, Strategy strategy) except *
