@@ -1,4 +1,6 @@
 #!/bin/bash
+# Fail fast
+set -e
 
 # Backtest examples
 example_scripts=(
@@ -15,8 +17,10 @@ total_runtime=0
 for script in "${example_scripts[@]}"
 do
     start_time=$(date +%s)
+
     # Run the backtest script
-    (cd examples/backtest && yes | python $script)
+    chmod +x examples/backtest/$script
+    yes | poetry run examples/backtest/$script
 
     # Get the exit status of the last example run
     exit_status=$?
