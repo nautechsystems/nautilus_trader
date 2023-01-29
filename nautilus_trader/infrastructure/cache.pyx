@@ -21,6 +21,7 @@ from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
@@ -35,6 +36,7 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -63,6 +65,7 @@ cdef str _ACCOUNTS = "accounts"
 cdef str _TRADER = "trader"
 cdef str _ORDERS = "orders"
 cdef str _POSITIONS = "positions"
+cdef str _ACTORS = "actors"
 cdef str _STRATEGIES = "strategies"
 cdef str _COMMANDS = "commands"
 
@@ -120,6 +123,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
         self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
         self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
+        self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
         self._key_commands    = f"{self._key_trader}:{_COMMANDS}:"    # noqa
 
@@ -570,6 +574,43 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return position
 
+    cpdef dict load_actor(self, ComponentId component_id):
+        """
+        Load the state for the given actor.
+
+        Parameters
+        ----------
+        component_id : ComponentId
+            The ID of the actor state dictionary to load.
+
+        Returns
+        -------
+        dict[str, bytes]
+
+        """
+        Condition.not_none(component_id, "component_id")
+
+        cdef dict user_state = self._redis.hgetall(
+            name=self._key_actors + component_id.to_str() + ":state",
+        )
+        return {k.decode('utf-8'): v for k, v in user_state.items()}
+
+    cpdef void delete_actor(self, ComponentId component_id) except *:
+        """
+        Delete the given actor from the database.
+
+        Parameters
+        ----------
+        component_id : ComponentId
+            The ID of the actor state dictionary to delete.
+
+        """
+        Condition.not_none(component_id, "component_id")
+
+        self._redis.delete(self._key_actors + component_id.to_str() + ":state")
+
+        self._log.info(f"Deleted {repr(component_id)}.")
+
     cpdef dict load_strategy(self, StrategyId strategy_id):
         """
         Load the state for the given strategy.
@@ -587,7 +628,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(strategy_id, "strategy_id")
 
         cdef dict user_state = self._redis.hgetall(
-            name=self._key_strategies + strategy_id.to_str() + ":State",
+            name=self._key_strategies + strategy_id.to_str() + ":state",
         )
         return {k.decode('utf-8'): v for k, v in user_state.items()}
 
@@ -603,7 +644,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        self._redis.delete(self._key_strategies + strategy_id.to_str())
+        self._redis.delete(self._key_strategies + strategy_id.to_str() + ":state")
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
 
@@ -770,6 +811,33 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {command}.")
 
+    cpdef void update_actor(self, Actor actor) except *:
+        """
+        Update the given actor state in the database.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to update.
+
+        """
+        Condition.not_none(actor, "actor")
+
+        cdef dict state = actor.save()  # Extract state dictionary from strategy
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        for key, value in state.items():
+            pipe.hset(
+                name=self._key_actors + actor.id.value + ":state",
+                key=key,
+                value=value,
+            )
+            self._log.debug(f"Saving {actor.id} state {{ {key}: {value} }}")
+        pipe.execute()
+
+        self._log.debug(f"Saved actor state for {actor.id.value}.")
+
     cpdef void update_strategy(self, Strategy strategy) except *:
         """
         Update the given strategy state in the database.
@@ -788,7 +856,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         pipe = self._redis.pipeline()
         for key, value in state.items():
             pipe.hset(
-                name=self._key_strategies + strategy.id.value + ":State",
+                name=self._key_strategies + strategy.id.value + ":state",
                 key=key,
                 value=value,
             )

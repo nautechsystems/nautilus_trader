@@ -14,12 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -46,6 +48,8 @@ cdef class CacheDatabase:
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
+    cpdef dict load_actor(self, ComponentId component_id)
+    cpdef void delete_actor(self, ComponentId component_id) except *
     cpdef dict load_strategy(self, StrategyId strategy_id)
     cpdef void delete_strategy(self, StrategyId strategy_id) except *
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
@@ -62,4 +66,5 @@ cdef class CacheDatabase:
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
+    cpdef void update_actor(self, Actor actor) except *
     cpdef void update_strategy(self, Strategy strategy) except *

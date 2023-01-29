@@ -61,11 +61,6 @@ cdef class Strategy(Actor):
 
     cpdef bint indicators_initialized(self) except *
 
-# -- ABSTRACT METHODS -----------------------------------------------------------------------------
-
-    cpdef dict on_save(self)
-    cpdef void on_load(self, dict state) except *
-
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register(
@@ -80,11 +75,6 @@ cdef class Strategy(Actor):
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
-
-# -- STRATEGY COMMANDS ----------------------------------------------------------------------------
-
-    cpdef dict save(self)
-    cpdef void load(self, dict state) except *
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
