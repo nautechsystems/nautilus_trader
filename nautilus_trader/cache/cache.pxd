@@ -49,6 +49,7 @@ cdef class Cache(CacheFacade):
     cdef CacheDatabase _database
     cdef ExchangeRateCalculator _xrate_calculator
 
+    cdef dict _general
     cdef dict _xrate_symbols
     cdef dict _tickers
     cdef dict _quote_ticks
@@ -95,6 +96,7 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
+    cpdef void cache_general(self) except *
     cpdef void cache_currencies(self) except *
     cpdef void cache_instruments(self) except *
     cpdef void cache_accounts(self) except *
@@ -105,7 +107,6 @@ cdef class Cache(CacheFacade):
     cpdef void build_index(self) except *
     cpdef bint check_integrity(self) except *
     cpdef bint check_residuals(self) except *
-    cpdef void clear_cache(self) except *
     cpdef void clear_index(self) except *
     cpdef void reset(self) except *
     cpdef void flush_db(self) except *

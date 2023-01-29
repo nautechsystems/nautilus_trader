@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 import warnings
 from typing import Optional
 
@@ -59,6 +60,7 @@ except ImportError:  # pragma: no cover
 
 
 cdef str _UTF8 = "utf-8"
+cdef str _GENERAL = "general"
 cdef str _CURRENCIES = "currencies"
 cdef str _INSTRUMENTS = "instruments"
 cdef str _ACCOUNTS = "accounts"
@@ -118,6 +120,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
+        self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
         self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
         self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
@@ -150,6 +153,32 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._log.debug("Flushing database....")
         self._redis.flushdb()
         self._log.info("Flushed database.")
+
+    cpdef dict load(self):
+        """
+        Load all general objects from the database.
+
+        Returns
+        -------
+        dict[str, bytes]
+
+        """
+        cdef dict general = {}
+
+        cdef list general_keys = self._redis.keys(f"{self._key_general}*")
+        if not general_keys:
+            return general
+
+        cdef bytes key_bytes
+        cdef bytes value_bytes
+        cdef str key
+        for key_bytes in general_keys:
+            value_bytes = self._redis.get(name=key_bytes)
+            if value_bytes is not None:
+                key = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+                general[key] = value_bytes
+
+        return general
 
     cpdef dict load_currencies(self):
         """
@@ -647,6 +676,24 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._redis.delete(self._key_strategies + strategy_id.to_str() + ":state")
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
+
+    cpdef void add(self, str key, bytes value) except *:
+        """
+        Add the given general object value to the database.
+
+        Parameters
+        ----------
+        key : str
+            The key to write to.
+        value : bytes
+            The object value.
+
+        """
+        Condition.not_none(key, "key")
+        Condition.not_none(value, "value")
+
+        self._redis.set(name=self._key_general + key, value=value)
+        self._log.debug(f"Added general object {key}.")
 
     cpdef void add_currency(self, Currency currency) except *:
         """

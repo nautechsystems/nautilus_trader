@@ -19,6 +19,7 @@ from nautilus_trader.serialization.base cimport Serializer
 
 cdef class RedisCacheDatabase(CacheDatabase):
     cdef str _key_trader
+    cdef str _key_general
     cdef str _key_currencies
     cdef str _key_instruments
     cdef str _key_accounts
