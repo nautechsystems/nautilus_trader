@@ -116,6 +116,40 @@ repos:
     hooks:
       - id: nbstripout
 
+  ##############################################################################
+  #  Rust formatting and linting
+  ##############################################################################
+
+  - repo: local
+    hooks:
+      - id: fmt
+        name: fmt
+        description: Format files with cargo fmt.
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all"]
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--", "-D", "warnings"]
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-check
+        name: cargo check
+        description: Check the package for errors.
+        entry: cargo check
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
+        files: \.rs$
+        pass_filenames: false
+
 # pydocstyle ignore reasons
 # -------------------------
 # D100: Missing docstring in public module  **fix**
