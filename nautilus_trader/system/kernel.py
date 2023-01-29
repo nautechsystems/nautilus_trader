@@ -133,7 +133,6 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
-
     """
 
     def __init__(  # noqa (too complex)
@@ -546,6 +545,30 @@ class NautilusKernel:
 
         """
         return self._ts_created
+
+    @property
+    def load_state(self) -> bool:
+        """
+        If the kernel has been configured to load actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._load_state
+
+    @property
+    def save_state(self) -> bool:
+        """
+        If the kernel has been configured to save actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._save_state
 
     @property
     def clock(self) -> Clock:
