@@ -21,6 +21,7 @@ import pytz
 
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
+from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AssetClass
@@ -68,6 +69,13 @@ cdef class SimulationModule(Actor):
         Condition.not_none(exchange, "exchange")
 
         self.exchange = exchange
+        self.msgbus = exchange.msgbus
+        self.cache = exchange.cache
+        self.clock = exchange._clock
+        self.log = exchange._log
+
+    cpdef void register_client(self, BacktestExecClient client) except *:
+        self.exec_client = client
 
     cpdef void process(self, uint64_t now_ns) except *:
         """Abstract method (implement in subclass)."""

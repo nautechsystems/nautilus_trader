@@ -222,6 +222,9 @@ cdef class SimulatedExchange:
 
         self._log.info(f"Registered ExecutionClient-{client}.")
 
+        for module in self.modules:
+            module.register_client(client)
+
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
         Set the fill model for all matching engines.
