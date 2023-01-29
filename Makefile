@@ -71,3 +71,6 @@ pytest:
 
 pytest-coverage:
 	bash scripts/test-coverage.sh
+
+test-examples:
+	bash scripts/test-examples.sh
