@@ -420,8 +420,10 @@ cdef class ExecutionEngine(Component):
         """
         cdef uint64_t ts = unix_timestamp_ms()
 
-        # Cache commands first so that `SubmitOrder` commands don't revert orders
-        # back to their initialized state.
+        # ***** WARNING *****
+        # Cache commands early so that `SubmitOrder` commands don't revert
+        # orders back to their initialized state.
+        self._cache.cache_general()
         self._cache.cache_commands()
         self._cache.cache_currencies()
         self._cache.cache_instruments()

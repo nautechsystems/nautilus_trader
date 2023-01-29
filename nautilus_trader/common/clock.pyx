@@ -485,7 +485,7 @@ cdef class TestClock(Clock):
             stop_time_ns,
         )
 
-    cpdef uint64_t next_time_ns(self, str name) except*:
+    cpdef uint64_t next_time_ns(self, str name) except *:
         return test_clock_next_time_ns(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name) except *:

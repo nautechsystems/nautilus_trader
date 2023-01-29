@@ -143,7 +143,7 @@ cdef class MarketOrder(Order):
         )
         super().__init__(init=init)
 
-    cdef void _updated(self, OrderUpdated event) except*:
+    cdef void _updated(self, OrderUpdated event) except *:
         if event.quantity is not None:
             self.quantity = event.quantity
             self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
