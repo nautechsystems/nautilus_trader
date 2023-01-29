@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.167.0"
+version = "1.168.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -81,7 +81,7 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "^22.12.0"
 flake8 = "^6.0.0"
-isort = "^5.11.4"
+isort = "^5.12.0"
 mypy = "^0.991"
 pre-commit = "^3.0.0"
 pyproject-flake8 = "^6.0.0"

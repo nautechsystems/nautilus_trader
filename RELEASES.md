@@ -1,13 +1,33 @@
+# NautilusTrader 1.168.0 Beta
+
+Released on 29th January 2023 (UTC).
+
+### Breaking Changes
+- Removed `Cache.clear_cache()` (redundant with the `.reset()` method)
+
+### Enhancements
+- Added `Cache` `.add(...)` and `.get(...)` for general 'user/custom' objects (as bytes)
+- Added `CacheDatabase` `.add(...)` and `.load()` for general cache objects (as bytes)
+- Added `RedisCacheDatabase` `.add(...) `and `.load()` for general Redis persisted bytes objects (as bytes)
+- Added `Cache.actor_ids()`
+- Added `Actor` cached state saving and loading functionality
+- Improved logging for called action handlers when not overridden
+
+### Fixes
+- Fixed configuration of loading and saving actor and strategy state
+
+---
+
 # NautilusTrader 1.167.0 Beta
 
 Released on 28th January 2023 (UTC).
 
 ### Breaking Changes
-- Rename `OrderBookData.update_id` to `sequence`
-- Rename `BookOrder.id` to `order_id`
+- Renamed `OrderBookData.update_id` to `sequence`
+- Renamed `BookOrder.id` to `order_id`
 
 ### Enhancements
-- Introduce Rust pyo3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
+- Introduced Rust pyo3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
 - Added `msgbus.is_subscribed` (to check if topic and handler already subscribed)
 - Simplified message type model and introduce CQRS-ish live messaging architecture
 

@@ -30,6 +30,16 @@ cdef class CacheFacade:
     Provides a read-only facade for the common `Cache`.
     """
 
+# -- GENERAL --------------------------------------------------------------------------------------
+
+    cpdef bytes get(self, str key):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void add(self, str key, bytes value) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
 # -- DATA QUERIES ---------------------------------------------------------------------------------
 
     cpdef list tickers(self, InstrumentId instrument_id):
@@ -189,6 +199,10 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set position_closed_ids(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef set actor_ids(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

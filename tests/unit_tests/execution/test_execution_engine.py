@@ -741,7 +741,7 @@ class TestExecutionEngine:
 
         # Act
         self.risk_engine.execute(submit_order)
-        self.cache.clear_cache()
+        self.cache.reset()
         self.exec_engine.process(TestEventStubs.order_accepted(order))
 
         # Assert

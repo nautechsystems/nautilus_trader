@@ -168,7 +168,7 @@ cdef class OrderListIdGenerator(IdentifierGenerator):
         self._id_tag_strategy = strategy_id.get_tag()
         self.count = initial_count
 
-    cpdef void set_count(self, int count) except*:
+    cpdef void set_count(self, int count) except *:
         """
         Set the internal counter to the given count.
 

@@ -159,7 +159,7 @@ cdef class MessageBus:
         """
         return len(self.subscriptions(pattern)) > 0
 
-    cpdef bint is_subscribed(self, str topic, handler: Callable[[Any], None]) except*:
+    cpdef bint is_subscribed(self, str topic, handler: Callable[[Any], None]) except *:
         """
         Return if topic and handler is subscribed to the message bus.
 
