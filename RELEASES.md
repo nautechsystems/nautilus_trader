@@ -1,6 +1,6 @@
 # NautilusTrader 1.168.0 Beta
 
-Released on TBD (UTC).
+Released on 29th January 2023 (UTC).
 
 ### Breaking Changes
 - Removed `Cache.clear_cache()` (redundant with the `.reset()` method)
@@ -14,7 +14,7 @@ Released on TBD (UTC).
 - Improved logging for called action handlers when not overridden
 
 ### Fixes
-None
+- Fixed configuration of loading and saving actor and strategy state
 
 ---
 
