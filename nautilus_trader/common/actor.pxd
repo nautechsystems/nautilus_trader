@@ -82,13 +82,13 @@ cdef class Actor(Component):
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, Data data) except *
-    cpdef void on_historical_data(self, Data data) except*
+    cpdef void on_historical_data(self, Data data) except *
     cpdef void on_event(self, Event event) except *
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
     cpdef dict save(self)
-    cpdef void load(self, dict state) except*
+    cpdef void load(self, dict state) except *
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
