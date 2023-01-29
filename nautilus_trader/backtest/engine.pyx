@@ -134,6 +134,8 @@ cdef class BacktestEngine:
             streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
+            load_state=config.load_state,
+            save_state=config.save_state,
             log_level=log_level_from_str(config.log_level.upper()),
             bypass_logging=config.bypass_logging,
         )
