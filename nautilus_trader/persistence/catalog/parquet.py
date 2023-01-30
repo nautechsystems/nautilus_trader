@@ -152,9 +152,9 @@ class ParquetDataCatalog(BaseDataCatalog):
                 instrument_ids = list(set(map(clean_key, instrument_ids)))
             filters.append(ds.field(instrument_id_column).cast("string").isin(instrument_ids))
         if start is not None:
-            filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
+            filters.append(ds.field(ts_column) >= pd.Timestamp(start).value)
         if end is not None:
-            filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
+            filters.append(ds.field(ts_column) <= pd.Timestamp(end).value)
 
         full_path = self._make_path(cls=cls)
 
@@ -191,7 +191,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             elif cls == TradeTick:
                 parquet_type = ParquetType.TradeTick
             else:
-                RuntimeError()
+                raise RuntimeError()
 
             ticks = []
             for file in dataset.files:
@@ -210,7 +210,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     elif cls == TradeTick:
                         data = map(TradeTick.list_from_capsule, reader)
                     else:
-                        RuntimeError()
+                        raise RuntimeError()
                     ticks.extend(list(itertools.chain.from_iterable(data)))
 
             return ticks

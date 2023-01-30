@@ -367,20 +367,26 @@ class _TestPersistenceCatalog:
         assert len(filtered_deltas) == 351
 
     def test_data_catalog_generic_data(self):
-
+        # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
             reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
+
+        # Act
         df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
-        assert len(df) == 22925
         data = self.catalog.generic_data(
             cls=NewsEventData,
             filter_expr=ds.field("currency") == "CHF",
             as_nautilus=True,
         )
+
+        # Assert
+        assert df
+        assert data
+        assert len(df) == 22925
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 
     def test_data_catalog_bars(self):
