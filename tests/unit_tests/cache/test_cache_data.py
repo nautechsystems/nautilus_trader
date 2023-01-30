@@ -477,6 +477,24 @@ class TestCache:
         assert self.cache.bar_count(bar_type) == 2
         assert result == bar2
 
+    def test_get_general_object_when_nothing_in_cache_returns_none(self):
+        # Arrange, Act
+        result = self.cache.get("something")
+
+        # Assert
+        assert result is None
+
+    def test_add_general_object_adds_to_cache(self):
+        # Arrange
+        key = "value_a"
+        obj = b"some string value"
+
+        # Act
+        self.cache.add(key, obj)
+
+        # Assert
+        assert self.cache.get(key) == obj
+
     def test_get_xrate_returns_correct_rate(self):
         # Arrange
         self.cache.add_instrument(USDJPY_SIM)

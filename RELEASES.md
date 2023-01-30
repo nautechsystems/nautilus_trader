@@ -1,15 +1,20 @@
 # NautilusTrader 1.168.0 Beta
 
-Released on TBD (UTC).
+Released on 29th January 2023 (UTC).
 
 ### Breaking Changes
-None
+- Removed `Cache.clear_cache()` (redundant with the `.reset()` method)
 
 ### Enhancements
-None
+- Added `Cache` `.add(...)` and `.get(...)` for general 'user/custom' objects (as bytes)
+- Added `CacheDatabase` `.add(...)` and `.load()` for general cache objects (as bytes)
+- Added `RedisCacheDatabase` `.add(...) `and `.load()` for general Redis persisted bytes objects (as bytes)
+- Added `Cache.actor_ids()`
+- Added `Actor` cached state saving and loading functionality
+- Improved logging for called action handlers when not overridden
 
 ### Fixes
-None
+- Fixed configuration of loading and saving actor and strategy state
 
 ---
 

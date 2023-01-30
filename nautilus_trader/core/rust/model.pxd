@@ -309,8 +309,6 @@ cdef extern from "../includes/model.h":
     # Returns a [`BarSpecification`] as a C string pointer.
     const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
 
-    void bar_specification_free(BarSpecification_t bar_spec);
-
     uint64_t bar_specification_hash(const BarSpecification_t *bar_spec);
 
     BarSpecification_t bar_specification_new(uint64_t step,
@@ -913,8 +911,6 @@ cdef extern from "../includes/model.h":
 
     Price_t price_from_raw(int64_t raw, uint8_t precision);
 
-    void price_free(Price_t price);
-
     double price_as_f64(const Price_t *price);
 
     void price_add_assign(Price_t a, Price_t b);
@@ -924,8 +920,6 @@ cdef extern from "../includes/model.h":
     Quantity_t quantity_new(double value, uint8_t precision);
 
     Quantity_t quantity_from_raw(uint64_t raw, uint8_t precision);
-
-    void quantity_free(Quantity_t qty);
 
     double quantity_as_f64(const Quantity_t *qty);
 

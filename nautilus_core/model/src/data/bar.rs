@@ -70,11 +70,6 @@ pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *con
 }
 
 #[no_mangle]
-pub extern "C" fn bar_specification_free(bar_spec: BarSpecification) {
-    drop(bar_spec); // Memory freed here
-}
-
-#[no_mangle]
 pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
     let mut h = DefaultHasher::new();
     bar_spec.hash(&mut h);

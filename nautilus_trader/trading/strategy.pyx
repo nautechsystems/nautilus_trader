@@ -195,38 +195,39 @@ cdef class Strategy(Actor):
                 return False
         return True
 
-# -- ABSTRACT METHODS -----------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef dict on_save(self):
-        """
-        Actions to be performed when the strategy is saved.
+    cpdef void on_start(self) except *:
+        # Should override in subclass
+        self.log.warning(
+            "The `Strategy.on_start` handler was called when not overridden. "
+            "It's expected that any actions required when starting the strategy "
+            "occur here, such as subscribing/requesting data.",
+        )
 
-        Create and return a state dictionary of values to be saved.
+    cpdef void on_stop(self) except *:
+        # Should override in subclass
+        self.log.warning(
+            "The `Strategy.on_stop` handler was called when not overridden. "
+            "It's expected that any actions required when stopping the strategy "
+            "occur here, such as unsubscribing from data.",
+        )
 
-        Returns
-        -------
-        dict[str, bytes]
-            The strategy state dictionary.
+    cpdef void on_resume(self) except *:
+        # Should override in subclass
+        self.log.warning(
+            "The `Strategy.on_resume` handler was called when not overridden. "
+            "It's expected that any actions required when resuming the strategy "
+            "following a stop occur here."
+        )
 
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        return {}  # Optionally override in subclass
-
-    cpdef void on_load(self, dict state) except *:
-        """
-        Actions to be performed when the strategy is loaded.
-
-        Saved state values will be contained in the give state dictionary.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        pass  # Optionally override in subclass
+    cpdef void on_reset(self) except *:
+        # Should override in subclass
+        self.log.warning(
+            "The `Strategy.on_reset` handler was called when not overridden. "
+            "It's expected that any actions required when resetting the strategy "
+            "occur here, such as resetting indicators and other state."
+        )
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -404,76 +405,6 @@ cdef class Strategy(Actor):
         self._indicators_for_bars.clear()
 
         self.on_reset()
-
-# -- STRATEGY COMMANDS ----------------------------------------------------------------------------
-
-    cpdef dict save(self):
-        """
-        Return the strategy state dictionary to be saved.
-
-        Calls `on_save`.
-
-        Raises
-        ------
-        RuntimeError
-            If `strategy` is not registered with a trader.
-
-        Warnings
-        --------
-        Exceptions raised will be caught, logged, and reraised.
-
-        """
-        if not self.is_initialized:
-            self.log.error(
-                "Cannot save: strategy has not been registered with a trader.",
-            )
-            return
-        try:
-            self.log.debug("Saving state...")
-            user_state = self.on_save()
-            if len(user_state) > 0:
-                self.log.info(f"Saved state: {list(user_state.keys())}.", color=LogColor.BLUE)
-            else:
-                self.log.info("No user state to save.", color=LogColor.BLUE)
-            return user_state
-        except Exception as e:
-            self.log.exception("Error on save", e)
-            raise  # Otherwise invalid state information could be saved
-
-    cpdef void load(self, dict state) except *:
-        """
-        Load the strategy state from the give state dictionary.
-
-        Calls `on_load` and passes the state.
-
-        Parameters
-        ----------
-        state : dict[str, object]
-            The state dictionary.
-
-        Raises
-        ------
-        RuntimeError
-            If `strategy` is not registered with a trader.
-
-        Warnings
-        --------
-        Exceptions raised will be caught, logged, and reraised.
-
-        """
-        Condition.not_none(state, "state")
-
-        if not state:
-            self.log.info("No user state to load.", color=LogColor.BLUE)
-            return
-
-        try:
-            self.log.debug(f"Loading state...")
-            self.on_load(state)
-            self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
-        except Exception as e:
-            self.log.exception(f"Error on load {repr(state)}", e)
-            raise
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 

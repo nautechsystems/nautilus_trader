@@ -1316,7 +1316,7 @@ cdef class OrderMatchingEngine:
         list fills,
         PositionId venue_position_id,  # Can be None
         Position position,  # Can be None
-    ) except*:
+    ) except *:
         if not fills:
             return  # No fills
 

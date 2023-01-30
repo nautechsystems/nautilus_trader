@@ -133,7 +133,6 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
-
     """
 
     def __init__(  # noqa (too complex)
@@ -193,6 +192,8 @@ class NautilusKernel:
         PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self._environment = environment
+        self._load_state = load_state
+        self._save_state = save_state
 
         # Identifiers
         self._name = name
@@ -381,7 +382,7 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if load_state:
+        if self._load_state:
             self._trader.load()
 
         # Setup writer
@@ -544,6 +545,30 @@ class NautilusKernel:
 
         """
         return self._ts_created
+
+    @property
+    def load_state(self) -> bool:
+        """
+        If the kernel has been configured to load actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._load_state
+
+    @property
+    def save_state(self) -> bool:
+        """
+        If the kernel has been configured to save actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._save_state
 
     @property
     def clock(self) -> Clock:
