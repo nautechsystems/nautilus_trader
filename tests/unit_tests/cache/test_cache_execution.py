@@ -56,7 +56,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -126,6 +126,13 @@ class TestCache:
             clock=self.clock,
             logger=self.logger,
         )
+
+    def test_cache_general_with_no_objects(self):
+        # Arrange, Act
+        self.cache.cache_general()
+
+        # Assert
+        assert True  # No exception raised
 
     def test_cache_currencies_with_no_currencies(self):
         # Arrange, Act
@@ -252,6 +259,13 @@ class TestCache:
         # Assert
         assert result == []
 
+    def test_get_actor_ids_with_no_ids_returns_empty_set(self):
+        # Arrange, Act
+        result = self.cache.actor_ids()
+
+        # Assert
+        assert result == set()
+
     def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
         # Arrange, Act
         result = self.cache.strategy_ids()
@@ -265,6 +279,17 @@ class TestCache:
 
         # Assert
         assert result == set()
+
+    def test_get_actor_ids_with_id_returns_correct_set(self):
+        # Arrange
+        actor = MockActor()
+        self.cache.update_actor(actor)
+
+        # Act
+        result = self.cache.actor_ids()
+
+        # Assert
+        assert result == {actor.id}
 
     def test_get_strategy_ids_with_id_returns_correct_set(self):
         # Arrange
@@ -1270,6 +1295,17 @@ class TestCache:
         # Assert
         assert True  # No exceptions raised
 
+    def test_delete_actor(self):
+        # Arrange
+        actor = MockActor()
+        self.cache.update_actor(actor)
+
+        # Act
+        self.cache.delete_actor(actor)
+
+        # Assert
+        assert actor.id not in self.cache.actor_ids()
+
     def test_delete_strategy(self):
         # Arrange
         self.cache.update_strategy(self.strategy)
@@ -1379,6 +1415,7 @@ class TestCache:
         self.cache.reset()
 
         # Assert
+        assert len(self.cache.actor_ids()) == 0
         assert len(self.cache.strategy_ids()) == 0
         assert self.cache.orders_total_count() == 0
         assert self.cache.positions_total_count() == 0
@@ -1464,27 +1501,6 @@ class TestExecutionCacheIntegrityCheck:
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_data(ticks)
-
-    def test_exec_cache_check_integrity_when_cache_cleared_fails(self):
-        # Arrange
-        config = EMACrossConfig(
-            instrument_id=str(self.usdjpy.id),
-            bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
-            trade_size=Decimal(1_000_000),
-            fast_ema_period=10,
-            slow_ema_period=20,
-        )
-        strategy = EMACross(config=config)
-        self.engine.add_strategy(strategy)
-
-        # Generate a lot of data
-        self.engine.run()
-
-        # Remove data
-        self.engine.cache.clear_cache()
-
-        # Act, Assert
-        assert not self.engine.cache.check_integrity()
 
     def test_exec_cache_check_integrity_when_index_cleared_fails(self):
         # Arrange

@@ -152,9 +152,9 @@ class ParquetDataCatalog(BaseDataCatalog):
                 instrument_ids = list(set(map(clean_key, instrument_ids)))
             filters.append(ds.field(instrument_id_column).cast("string").isin(instrument_ids))
         if start is not None:
-            filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
+            filters.append(ds.field(ts_column) >= pd.Timestamp(start).value)
         if end is not None:
-            filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
+            filters.append(ds.field(ts_column) <= pd.Timestamp(end).value)
 
         full_path = self._make_path(cls=cls)
 
@@ -221,7 +221,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         except Exception as e:
             print(e)
             raise e
-        mappings = self.load_inverse_mappings(path=full_path)
 
         if use_rust:
             df = int_to_float_dataframe(table.to_pandas())
@@ -233,6 +232,9 @@ class ParquetDataCatalog(BaseDataCatalog):
                 end_nanos = sys.maxsize
             df = df[(df["ts_init"] >= start_nanos) & (df["ts_init"] <= end_nanos)]
             return df
+
+        mappings = self.load_inverse_mappings(path=full_path)
+
 
         if "as_nautilus" in kwargs:
             as_dataframe = not kwargs.pop("as_nautilus")

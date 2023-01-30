@@ -206,11 +206,6 @@ pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
 }
 
 #[no_mangle]
-pub extern "C" fn quantity_free(qty: Quantity) {
-    drop(qty); // Memory freed here
-}
-
-#[no_mangle]
 pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
     qty.as_f64()
 }

@@ -60,6 +60,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -145,6 +146,24 @@ class TestRedisCacheDatabase:
     def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
+
+    def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
+        # Arrange, Act
+        result = self.database.load()
+
+        # Assert
+        assert result == {}
+
+    def test_add_general_object_adds_to_cache(self):
+        # Arrange
+        bar = TestDataStubs.bar_5decimal()
+        key = str(bar.bar_type) + "-" + str(bar.ts_event)
+
+        # Act
+        self.database.add(key, str(bar).encode())
+
+        # Assert
+        assert self.database.load() == {key: str(bar).encode()}
 
     def test_add_currency(self):
         # Arrange
@@ -414,6 +433,24 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert True  # No exception raised
+
+    def test_update_actor(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        self.database.update_actor(actor)
+        result = self.database.load_actor(actor.id)
+
+        # Assert
+        assert result == {"A": b"1"}
 
     def test_update_strategy(self):
         # Arrange
@@ -784,8 +821,41 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == {position.id: position}
 
+    def test_delete_actor(self):
+        # Arrange, Act
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.database.update_actor(actor)
+
+        # Act
+        self.database.delete_actor(actor.id)
+        result = self.database.load_actor(actor.id)
+
+        # Assert
+        assert result == {}
+
     def test_delete_strategy(self):
         # Arrange, Act
+        strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.database.update_strategy(strategy)
+
+        # Act
         self.database.delete_strategy(self.strategy.id)
         result = self.database.load_strategy(self.strategy.id)
 

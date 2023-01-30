@@ -33,6 +33,39 @@ repos:
         args: ["-L", "ot,zar,warmup"]
 
   ##############################################################################
+  #  Rust formatting and linting
+  ##############################################################################
+  - repo: local
+    hooks:
+      - id: fmt
+        name: cargo fmt
+        description: Format files with cargo fmt.
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all"]
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--", "-D", "warnings"]
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-check
+        name: cargo check
+        description: Check the package for errors.
+        entry: cargo check
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
+        files: \.rs$
+        pass_filenames: false
+
+  ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/pyupgrade
@@ -56,7 +89,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.11.4
+    rev: 5.12.0
     hooks:
       - id: isort
         types_or: [python, cython]

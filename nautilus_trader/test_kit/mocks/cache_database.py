@@ -46,6 +46,7 @@ class MockCacheDatabase(CacheDatabase):
     def __init__(self, logger: Logger):
         super().__init__(logger)
 
+        self.general: dict[str, bytes] = {}
         self.currencies: dict[str, Currency] = {}
         self.instruments: dict[InstrumentId, Instrument] = {}
         self.accounts: dict[AccountId, Account] = {}
@@ -55,11 +56,17 @@ class MockCacheDatabase(CacheDatabase):
         self.submit_order_list_commands: dict[OrderListId, SubmitOrderList] = {}
 
     def flush(self) -> None:
+        self.general.clear()
+        self.currencies.clear()
+        self.instruments.clear()
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
         self.submit_order_commands.clear()
         self.submit_order_list_commands.clear()
+
+    def load(self) -> dict:
+        return self.general.copy()
 
     def load_currencies(self) -> dict:
         return self.currencies.copy()

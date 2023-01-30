@@ -76,6 +76,8 @@ class TradingNode:
             strategy_configs=config.strategies,
             loop=loop,
             loop_debug=config.loop_debug,
+            load_state=config.load_state,
+            save_state=config.save_state,
             loop_sig_callback=self._loop_sig_handler,
             log_level=log_level_from_str(config.log_level.upper()),
         )
@@ -531,7 +533,7 @@ class TradingNode:
             await asyncio.sleep(self._config.timeout_post_stop)
             self.kernel.trader.check_residuals()
 
-        if self._config.save_state:
+        if self.kernel.save_state:
             self.kernel.trader.save()
 
         # Disconnect all clients
