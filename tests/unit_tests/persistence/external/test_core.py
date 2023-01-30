@@ -142,7 +142,6 @@ class _TestPersistenceCore:
     def test_scan_paths(self, glob, num_files):
         self._load_data_into_catalog()
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/{glob}")
-        print(files)
         assert len(files) == num_files
 
     def test_scan_file_filter(self):
