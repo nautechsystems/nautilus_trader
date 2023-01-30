@@ -384,8 +384,8 @@ class _TestPersistenceCatalog:
         )
 
         # Assert
-        assert df
-        assert data
+        assert df is not None
+        assert data is not None
         assert len(df) == 22925
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 
