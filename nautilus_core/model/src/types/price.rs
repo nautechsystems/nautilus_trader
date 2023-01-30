@@ -220,11 +220,6 @@ pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
 }
 
 #[no_mangle]
-pub extern "C" fn price_free(price: Price) {
-    drop(price); // Memory freed here
-}
-
-#[no_mangle]
 pub extern "C" fn price_as_f64(price: &Price) -> f64 {
     price.as_f64()
 }
