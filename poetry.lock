@@ -1720,14 +1720,14 @@ testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
 name = "pre-commit"
-version = "3.0.1"
+version = "3.0.2"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
 category = "dev"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "pre_commit-3.0.1-py2.py3-none-any.whl", hash = "sha256:61ecb75e0e99939cc30c79181c0394545657855e9172c42ff98ebecb0e02fcb7"},
-    {file = "pre_commit-3.0.1.tar.gz", hash = "sha256:3a3f9229e8c19a626a7f91be25b3c8c135e52de1a678da98eb015c0d0baea7a5"},
+    {file = "pre_commit-3.0.2-py2.py3-none-any.whl", hash = "sha256:f448d5224c70e196a6c6f87961d2333dfdc49988ebbf660477f9efe991c03597"},
+    {file = "pre_commit-3.0.2.tar.gz", hash = "sha256:aa97fa71e7ab48225538e1e91a6b26e483029e6de64824f04760c32557bc91d7"},
 ]
 
 [package.dependencies]
@@ -2942,4 +2942,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "2aefd8f46e5047c677f66f4e7ab191f44bb5b882ea261d468ba84153237d494f"
+content-hash = "c1f3e24ee56f7f86b4b3375bf61152800f3def784300e96a185f24237829014f"
