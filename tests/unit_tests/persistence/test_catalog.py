@@ -317,6 +317,7 @@ class TestPersistenceCatalogRust:
         assert quote_ticks[-1].ts_init == end_timestamp
 
     pytest.mark.skip(reason="WIP ParquetWriter.write from Python")
+
     def test_data_catalog_use_rust_quote_ticks_round_trip(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")

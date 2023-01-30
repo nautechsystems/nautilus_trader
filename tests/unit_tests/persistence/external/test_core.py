@@ -502,6 +502,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         )
 
     pytest.mark.skip(reason="WIP ParquetWriter.write from Python")
+
     def test_process_files_use_rust_writes_expected(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -524,6 +525,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         assert self.fs.exists(path)
 
     pytest.mark.skip(reason="WIP ParquetWriter.write from Python")
+
     def test_write_parquet_rust_writes_expected(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")

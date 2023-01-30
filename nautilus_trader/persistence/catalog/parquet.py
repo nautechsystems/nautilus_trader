@@ -235,7 +235,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         mappings = self.load_inverse_mappings(path=full_path)
 
-
         if "as_nautilus" in kwargs:
             as_dataframe = not kwargs.pop("as_nautilus")
 
