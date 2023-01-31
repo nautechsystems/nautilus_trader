@@ -314,10 +314,13 @@ cdef class QuoteTick(Data):
             raise MemoryError()
 
         # create CVec
-        cdef CVec cvec = CVec(data, len_, len_)
+        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
 
         # create PyCapsule
-        return PyCapsule_New(&cvec, NULL, NULL)
+        return PyCapsule_New(cvec, NULL, NULL)
 
     @staticmethod
     def list_from_capsule(capsule) -> list[QuoteTick]:
