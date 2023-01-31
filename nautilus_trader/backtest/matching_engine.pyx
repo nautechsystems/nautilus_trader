@@ -1275,7 +1275,7 @@ cdef class OrderMatchingEngine:
 
         order.liquidity_side = LiquiditySide.TAKER
 
-        self._apply_fills(
+        self.apply_fills(
             order=order,
             fills=self.determine_market_price_and_volume(order),
             venue_position_id=venue_position_id,
@@ -1303,14 +1303,14 @@ cdef class OrderMatchingEngine:
             self.cancel_order(order)
             return  # Order canceled
 
-        self._apply_fills(
+        self.apply_fills(
             order=order,
             fills=self.determine_limit_price_and_volume(order),
             venue_position_id=venue_position_id,
             position=position,
         )
 
-    cpdef void _apply_fills(
+    cpdef void apply_fills(
         self,
         Order order,
         list fills,
@@ -1386,7 +1386,7 @@ cdef class OrderMatchingEngine:
                     )
             if not fill_qty._mem.raw > 0:
                 return  # Done
-            self._fill_order(
+            self.fill_order(
                 order=order,
                 venue_position_id=venue_position_id,
                 position=position,
@@ -1421,7 +1421,7 @@ cdef class OrderMatchingEngine:
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                 )
 
-            self._fill_order(
+            self.fill_order(
                 order=order,
                 venue_position_id=venue_position_id,
                 position=position,
@@ -1429,7 +1429,7 @@ cdef class OrderMatchingEngine:
                 last_px=fill_px,
             )
 
-    cpdef void _fill_order(
+    cpdef void fill_order(
         self,
         Order order,
         PositionId venue_position_id,  # Can be None
