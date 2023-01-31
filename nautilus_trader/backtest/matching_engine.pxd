@@ -162,14 +162,14 @@ cdef class OrderMatchingEngine:
     cpdef void fill_market_order(self, Order order) except *
     cpdef void fill_limit_order(self, Order order) except *
 
-    cpdef void _apply_fills(
+    cpdef void apply_fills(
         self,
         Order order,
         list fills,
         PositionId venue_position_id,
         Position position,
     ) except *
-    cpdef void _fill_order(
+    cpdef void fill_order(
         self,
         Order order,
         PositionId venue_position_id,
