@@ -28,6 +28,9 @@ from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.external.core import RawFile
@@ -524,7 +527,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=USD-JPY.SIM/1357077600295000064-1357079713493999872-0.parquet"
         assert self.fs.exists(path)
 
-    def test_write_parquet_rust_writes_expected(self):
+    def test_write_parquet_rust_quote_ticks_writes_expected(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
 
@@ -552,5 +555,36 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         write_parquet_rust(self.catalog, objs, instrument)
 
         path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/0000000000000000001-0000000000000000010-0.parquet"
+
+        assert self.fs.exists(path)
+
+    def test_write_parquet_rust_trade_ticks_writes_expected(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+
+        objs = [
+            TradeTick(
+                instrument_id=instrument.id,
+                price=Price.from_str("2.0"),
+                size=Quantity.from_int(10),
+                aggressor_side=AggressorSide.NO_AGGRESSOR,
+                trade_id=TradeId("1"),
+                ts_event=1,
+                ts_init=1,
+            ),
+            TradeTick(
+                instrument_id=instrument.id,
+                price=Price.from_str("2.0"),
+                size=Quantity.from_int(10),
+                aggressor_side=AggressorSide.NO_AGGRESSOR,
+                trade_id=TradeId("1"),
+                ts_event=10,
+                ts_init=10,
+            ),
+        ]
+        # Act
+        write_parquet_rust(self.catalog, objs, instrument)
+
+        path = f"{self.catalog.path}/data/trade_tick.parquet/instrument_id=EUR-USD.SIM/0000000000000000001-0000000000000000010-0.parquet"
 
         assert self.fs.exists(path)

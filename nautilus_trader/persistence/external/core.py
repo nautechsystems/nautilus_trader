@@ -306,7 +306,7 @@ def write_parquet_rust(catalog: ParquetDataCatalog, objs: list, instrument: Inst
     }
     writer = ParquetWriter(py_type_to_parquet_type(cls), metadata)
 
-    capsule = QuoteTick.capsule_from_list(objs)
+    capsule = cls.capsule_from_list(objs)
 
     writer.write(capsule)
 
