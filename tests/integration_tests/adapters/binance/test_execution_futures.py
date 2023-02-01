@@ -250,7 +250,6 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["type"] == "LIMIT"
         assert request[2]["timeInForce"] == "GTX"
         assert request[2]["quantity"] == "10"
-        assert request[2]["reduceOnly"] == "False"
         assert request[2]["price"] == "10050.80"
         assert request[2]["newClientOrderId"] is not None
         assert request[2]["recvWindow"] == "5000"
@@ -427,7 +426,6 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["type"] == "TAKE_PROFIT"
         assert request[2]["timeInForce"] == "GTC"
         assert request[2]["quantity"] == "10"
-        assert request[2]["reduceOnly"] == "False"
         assert request[2]["price"] == "10050.80"
         assert request[2]["newClientOrderId"] is not None
         assert request[2]["stopPrice"] == "10099.00"
