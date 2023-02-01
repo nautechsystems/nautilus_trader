@@ -66,7 +66,7 @@ class TestBinanceUserHttpAPI:
 
         # Act
         await self.spot_api.keepalive_listen_key(
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
+            listen_key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
         # Assert
@@ -86,7 +86,7 @@ class TestBinanceUserHttpAPI:
 
         # Act
         await self.spot_api.delete_listen_key(
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
+            listen_key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
         # Assert
@@ -122,7 +122,7 @@ class TestBinanceUserHttpAPI:
         # Act
         await self.isolated_margin_api.keepalive_listen_key(
             symbol=self.test_symbol,
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
+            listen_key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
         # Assert
@@ -143,7 +143,7 @@ class TestBinanceUserHttpAPI:
         # Act
         await self.isolated_margin_api.delete_listen_key(
             symbol=self.test_symbol,
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
+            listen_key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
         # Assert

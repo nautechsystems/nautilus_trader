@@ -326,10 +326,12 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
-        methods: Optional[dict[BinanceMethodType, BinanceSecurityType]] = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
-        },
+        methods: Optional[dict[BinanceMethodType, BinanceSecurityType]] = None,
     ):
+        if methods is None:
+            methods = {
+                BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+            }
         url_path = base_endpoint + "openOrders"
         super().__init__(
             client,
@@ -544,7 +546,7 @@ class BinanceAccountHttpAPI:
         self,
         symbol: str,
         side: BinanceOrderSide,
-        type: BinanceOrderType,
+        order_type: BinanceOrderType,
         time_in_force: Optional[BinanceTimeInForce] = None,
         quantity: Optional[str] = None,
         quote_order_qty: Optional[str] = None,
@@ -570,7 +572,7 @@ class BinanceAccountHttpAPI:
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
                 side=side,
-                type=type,
+                type=order_type,
                 timeInForce=time_in_force,
                 quantity=quantity,
                 quoteOrderQty=quote_order_qty,

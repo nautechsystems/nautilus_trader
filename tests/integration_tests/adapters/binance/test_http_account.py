@@ -86,7 +86,7 @@ class TestBinanceSpotAccountHttpAPI:
         await self.api.new_order(
             symbol="ETHUSDT",
             side="SELL",
-            type="LIMIT",
+            order_type="LIMIT",
             time_in_force="GTC",
             quantity="0.01",
             price="5000",

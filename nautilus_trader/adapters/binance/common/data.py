@@ -602,7 +602,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return  # Not closed yet
         instrument_id = self._get_cached_instrument_id(msg.data.s)
         bar: BinanceBar = msg.data.k.parse_to_binance_bar(
-            intrument_id=instrument_id,
+            instrument_id=instrument_id,
             enum_parser=self._enum_parser,
             ts_init=self._clock.timestamp_ns(),
         )

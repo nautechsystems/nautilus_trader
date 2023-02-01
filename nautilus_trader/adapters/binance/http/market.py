@@ -809,7 +809,7 @@ class BinanceMarketHttpAPI:
         self,
         symbol: Optional[str] = None,
         symbols: Optional[list[str]] = None,
-        type: Optional[str] = None,
+        response_type: Optional[str] = None,
     ) -> list[BinanceTicker24hr]:
         """Query 24hr ticker for symbol or symbols."""
         if symbol is not None and symbols is not None:
@@ -820,7 +820,7 @@ class BinanceMarketHttpAPI:
             parameters=self._endpoint_ticker_24hr.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 symbols=BinanceSymbols(symbols),
-                type=type,
+                type=response_type,
             ),
         )
 

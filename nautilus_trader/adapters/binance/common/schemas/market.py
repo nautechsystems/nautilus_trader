@@ -594,12 +594,12 @@ class BinanceCandlestick(msgspec.Struct, frozen=True):
 
     def parse_to_binance_bar(
         self,
-        intrument_id: InstrumentId,
+        instrument_id: InstrumentId,
         enum_parser: BinanceEnumParser,
         ts_init: int,
     ) -> BinanceBar:
         bar_type = BarType(
-            instrument_id=intrument_id,
+            instrument_id=instrument_id,
             bar_spec=enum_parser.parse_binance_kline_interval_to_bar_spec(self.i),
             aggregation_source=AggregationSource.EXTERNAL,
         )

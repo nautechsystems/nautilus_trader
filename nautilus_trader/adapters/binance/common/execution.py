@@ -511,7 +511,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
         try:
             await self._submit_order_method[order.order_type](order)
-        except BinanceError or KeyError as e:
+        except BinanceError as e:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -519,6 +519,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 reason=e.message,
                 ts_event=self._clock.timestamp_ns(),
             )
+        except KeyError:
+            raise RuntimeError(f"unsupported order type, was {order.order_type}")
 
     def _check_order_validity(self, order: Order):
         # Implement in child class
@@ -528,7 +530,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
-            type=self._enum_parser.parse_internal_order_type(order),
+            order_type=self._enum_parser.parse_internal_order_type(order),
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
@@ -547,7 +549,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
-            type=self._enum_parser.parse_internal_order_type(order),
+            order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
@@ -576,7 +578,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
-            type=self._enum_parser.parse_internal_order_type(order),
+            order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
@@ -621,7 +623,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
-            type=self._enum_parser.parse_internal_order_type(order),
+            order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
@@ -674,7 +676,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
-            type=self._enum_parser.parse_internal_order_type(order),
+            order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             activation_price=str(activation_price),
