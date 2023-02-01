@@ -328,7 +328,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
         self._handle_data(snapshot)
 
-        book_buffer = self._book_buffer.pop(instrument_id)
+        book_buffer = self._book_buffer.pop(instrument_id, [])
         for deltas in book_buffer:
             if deltas.sequence <= snapshot.sequence:
                 continue
