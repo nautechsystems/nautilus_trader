@@ -112,7 +112,7 @@ eliminating many classes of bugs at compile-time.
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
 Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
-[PyO3](https://pyo3.rs/v0.15.1/) will be leveraged for easier Python bindings.
+[PyO3](https://pyo3.rs/latest/) will be leveraged for easier Python bindings.
 
 ## Architecture (data flow)
 
@@ -362,7 +362,7 @@ class EMACross(Strategy):
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
-Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
+Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
 
 ## Contributing
 
@@ -371,11 +371,11 @@ the project. If you have an idea for an enhancement or a bug fix, the first step
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be 
 well-aligned with the goals of the project and avoids duplication of effort.
 
-Once you're ready to start working on your contribution, please make sure to follow the guidelines 
+Once you're ready to start working on your contribution, make sure to follow the guidelines 
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA) 
 to ensure that your contributions can be included in the project.
 
-Please note that all pull requests should be made to the `develop` branch. This is where new features 
+Note that all pull requests should be made to the `develop` branch. This is where new features 
 and improvements are integrated before being released to the public.
 
 Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.

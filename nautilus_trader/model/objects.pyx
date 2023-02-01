@@ -46,10 +46,8 @@ from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
 from nautilus_trader.core.rust.model cimport money_new
-from nautilus_trader.core.rust.model cimport price_free
 from nautilus_trader.core.rust.model cimport price_from_raw
 from nautilus_trader.core.rust.model cimport price_new
-from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -120,10 +118,6 @@ cdef class Quantity:
             )
 
         self._mem = quantity_new(value, precision)
-
-    def __del__(self) -> None:
-        # Never allocating heap memory
-        quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
@@ -510,10 +504,6 @@ cdef class Price:
             )
 
         self._mem = price_new(value, precision)
-
-    def __del__(self) -> None:
-        # Never allocating heap memory
-        price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self._mem.precision

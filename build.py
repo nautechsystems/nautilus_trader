@@ -28,6 +28,8 @@ ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
 COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
+# If PyO3 only then don't build C extensions to reduce compilation time
+PYO3_ONLY = False if os.getenv("PYO3_ONLY", "") == "" else True
 
 if PROFILE_MODE:
     # For subsequent debugging, the C source needs to be in the same tree as
@@ -265,26 +267,27 @@ def _get_rustc_version() -> str:
         raise
 
 
-def build() -> None:
+def build(pyo3_only=False) -> None:
     """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
+    _copy_rust_dylibs_to_project()
 
-    # Create C Extensions to feed into cythonize()
-    extensions = _build_extensions()
-    distribution = _build_distribution(extensions)
+    if not PYO3_ONLY:
+        # Create C Extensions to feed into cythonize()
+        extensions = _build_extensions()
+        distribution = _build_distribution(extensions)
 
-    # Build and run the command
-    print("Compiling C extension modules...")
-    cmd: build_ext = build_ext(distribution)
-    if PARALLEL_BUILD:
-        cmd.parallel = os.cpu_count()
-    cmd.ensure_finalized()
-    cmd.run()
+        # Build and run the command
+        print("Compiling C extension modules...")
+        cmd: build_ext = build_ext(distribution)
+        if PARALLEL_BUILD:
+            cmd.parallel = os.cpu_count()
+        cmd.ensure_finalized()
+        cmd.run()
 
-    if COPY_TO_SOURCE:
-        # Copy the build back into the source tree for development and wheel packaging
-        _copy_build_dir_to_project(cmd)
-        _copy_rust_dylibs_to_project()
+        if COPY_TO_SOURCE:
+            # Copy the build back into the source tree for development and wheel packaging
+            _copy_build_dir_to_project(cmd)
 
 
 if __name__ == "__main__":
@@ -304,7 +307,8 @@ if __name__ == "__main__":
     print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
-    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}\n")
+    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
+    print(f"PYO3_ONLY={PYO3_ONLY}\n")
 
     print("Starting build...")
     ts_start = datetime.utcnow()

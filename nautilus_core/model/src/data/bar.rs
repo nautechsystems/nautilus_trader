@@ -20,7 +20,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::string::string_to_cstr;
-use nautilus_core::time::Timestamp;
+use nautilus_core::time::UnixNanos;
 
 use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
@@ -67,11 +67,6 @@ impl PartialOrd for BarSpecification {
 #[no_mangle]
 pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
     string_to_cstr(&bar_spec.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_free(bar_spec: BarSpecification) {
-    drop(bar_spec); // Memory freed here
 }
 
 #[no_mangle]
@@ -249,8 +244,8 @@ pub struct Bar {
     pub low: Price,
     pub close: Price,
     pub volume: Quantity,
-    pub ts_event: Timestamp,
-    pub ts_init: Timestamp,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl Display for Bar {
@@ -271,8 +266,8 @@ pub extern "C" fn bar_new(
     low: Price,
     close: Price,
     volume: Quantity,
-    ts_event: Timestamp,
-    ts_init: Timestamp,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Bar {
     Bar {
         bar_type,
@@ -296,8 +291,8 @@ pub extern "C" fn bar_new_from_raw(
     price_prec: u8,
     volume: u64,
     size_prec: u8,
-    ts_event: Timestamp,
-    ts_init: Timestamp,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> Bar {
     Bar {
         bar_type,

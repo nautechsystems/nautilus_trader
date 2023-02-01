@@ -18,7 +18,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use nautilus_core::correctness;
 use nautilus_core::string::string_to_cstr;
-use nautilus_core::time::Timestamp;
+use nautilus_core::time::UnixNanos;
 
 use crate::enums::AggressorSide;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -35,8 +35,8 @@ pub struct QuoteTick {
     pub ask: Price,
     pub bid_size: Quantity,
     pub ask_size: Quantity,
-    pub ts_event: Timestamp,
-    pub ts_init: Timestamp,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl QuoteTick {
@@ -46,8 +46,8 @@ impl QuoteTick {
         ask: Price,
         bid_size: Quantity,
         ask_size: Quantity,
-        ts_event: Timestamp,
-        ts_init: Timestamp,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> QuoteTick {
         correctness::u8_equal(
             bid.precision,
@@ -92,8 +92,8 @@ pub struct TradeTick {
     pub size: Quantity,
     pub aggressor_side: AggressorSide,
     pub trade_id: TradeId,
-    pub ts_event: Timestamp,
-    pub ts_init: Timestamp,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl TradeTick {
@@ -103,8 +103,8 @@ impl TradeTick {
         size: Quantity,
         aggressor_side: AggressorSide,
         trade_id: TradeId,
-        ts_event: Timestamp,
-        ts_init: Timestamp,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> TradeTick {
         TradeTick {
             instrument_id,
@@ -153,8 +153,8 @@ pub extern "C" fn quote_tick_new(
     ask: Price,
     bid_size: Quantity,
     ask_size: Quantity,
-    ts_event: Timestamp,
-    ts_init: Timestamp,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
@@ -178,8 +178,8 @@ pub extern "C" fn quote_tick_from_raw(
     ask_size: u64,
     bid_size_prec: u8,
     ask_size_prec: u8,
-    ts_event: Timestamp,
-    ts_init: Timestamp,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,

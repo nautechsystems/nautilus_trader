@@ -180,7 +180,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
-    sp: Optional[str] = None  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
+    sp: Optional[str] = None  # Stop Price. Ignore with TRAILING_STOP_MARKET order
     x: BinanceExecutionType
     X: BinanceOrderStatus
     i: int  # Order ID

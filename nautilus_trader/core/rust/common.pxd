@@ -2,7 +2,7 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.core cimport UUID4_t, MessageCategory
+from nautilus_trader.core.rust.core cimport UUID4_t
 
 cdef extern from "../includes/common.h":
 
@@ -72,8 +72,6 @@ cdef extern from "../includes/common.h":
         # The event name.
         Rc_String *name;
         # The event ID.
-        MessageCategory category;
-        # The UNIX timestamp (nanoseconds) when the time event occurred.
         UUID4_t event_id;
         # The message category
         uint64_t ts_event;

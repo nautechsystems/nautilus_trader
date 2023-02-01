@@ -295,7 +295,7 @@ cdef class SimulatedExchange:
             if self.account_type == AccountType.CASH:
                 raise InvalidConfiguration(
                     f"Cannot add a `{type(instrument).__name__}` type instrument "
-                    f"to a venue with a `CASH` account type. Please add to a "
+                    f"to a venue with a `CASH` account type. Add to a "
                     f"venue with a `MARGIN` account type.",
                 )
 
@@ -387,7 +387,31 @@ cdef class SimulatedExchange:
 
         return matching_engine.get_book()
 
+    cpdef OrderMatchingEngine get_matching_engine(self, InstrumentId instrument_id):
+        """
+        Return the matching engine for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the matching engine.
+
+        Returns
+        -------
+        OrderMatchingEngine or ``None``
+
+        """
+        return self._matching_engines.get(instrument_id)
+
     cpdef dict get_matching_engines(self):
+        """
+        Return all matching engines for the exchange (for every instrument).
+
+        Returns
+        -------
+        dict[InstrumentId, OrderMatchingEngine]
+
+        """
         return self._matching_engines.copy()
 
     cpdef dict get_books(self):

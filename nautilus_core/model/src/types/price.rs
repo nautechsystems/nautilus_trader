@@ -16,7 +16,7 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
@@ -104,6 +104,14 @@ impl PartialOrd for Price {
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
         self.raw.cmp(&other.raw)
+    }
+}
+
+impl Deref for Price {
+    type Target = i64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.raw
     }
 }
 
@@ -209,11 +217,6 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
     Price::from_raw(raw, precision)
-}
-
-#[no_mangle]
-pub extern "C" fn price_free(price: Price) {
-    drop(price); // Memory freed here
 }
 
 #[no_mangle]

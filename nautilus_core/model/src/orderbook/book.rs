@@ -16,7 +16,7 @@
 use crate::enums::{BookType, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::orderbook::ladder::Ladder;
-use crate::orderbook::order::Order;
+use crate::orderbook::order::BookOrder;
 
 #[repr(C)]
 pub struct OrderBook {
@@ -40,7 +40,7 @@ impl OrderBook {
         }
     }
 
-    pub fn add(&mut self, order: Order, ts_event: u64) {
+    pub fn add(&mut self, order: BookOrder, ts_event: u64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
         match order.side {
@@ -50,7 +50,7 @@ impl OrderBook {
         }
     }
 
-    pub fn update(&mut self, order: Order, ts_event: u64) {
+    pub fn update(&mut self, order: BookOrder, ts_event: u64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
         if order.size.raw == 0 {
@@ -64,7 +64,7 @@ impl OrderBook {
         }
     }
 
-    pub fn delete(&mut self, order: Order, ts_event: u64) {
+    pub fn delete(&mut self, order: BookOrder, ts_event: u64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
         match order.side {

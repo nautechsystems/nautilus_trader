@@ -8,7 +8,7 @@ Using the basic building blocks of data ingest and order management (which we wi
 below), it's possible to implement any type of trading strategy including directional, momentum, re-balancing,
 pairs, market making etc.
 
-Please refer to the `Strategy` in the [API Reference](../api_reference/trading.md) for a complete description
+Refer to the `Strategy` in the [API Reference](../api_reference/trading.md) for a complete description
 of all the possible functionality.
 
 There are two main parts of a Nautilus trading strategy:

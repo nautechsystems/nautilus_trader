@@ -17,6 +17,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
+from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.cache.cache cimport Cache
@@ -103,6 +104,7 @@ cdef class SimulatedExchange:
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
+    cpdef OrderMatchingEngine get_matching_engine(self, InstrumentId instrument_id)
     cpdef dict get_matching_engines(self)
     cpdef dict get_books(self)
     cpdef list get_open_orders(self, InstrumentId instrument_id=*)

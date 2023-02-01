@@ -1,7 +1,7 @@
 # Contributing to NautilusTrader
 
 Involvement from the trading community is a goal for this project, and all help is welcome!
-To contribute, please follow these steps:
+To contribute, follow these steps:
 
 1. Open an issue on GitHub to discuss your proposed changes or enhancements.
 
@@ -13,11 +13,11 @@ To contribute, please follow these steps:
 
 5. Open a pull request (PR) on the `develop` branch with a summary comment.
 
-6. The CI system will run the full test-suite over your code including all unit and integration tests, so please include appropriate tests
+6. The CI system will run the full test-suite over your code including all unit and integration tests, so include appropriate tests
   with the PR.
 
-7. [Codacy](https://www.codacy.com/) will perform an automated code review. Please
-  fix any issues which cause a failed check, and add the commit to your PR.
+7. [Codacy](https://www.codacy.com/) will perform an automated code review.
+  Fix any issues which cause a failed check, and add the commit to your PR.
 
 8. You will also be required to sign a standard Contributor License Agreement (CLA), which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
 

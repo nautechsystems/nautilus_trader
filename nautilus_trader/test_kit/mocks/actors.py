@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+from typing import Any
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
@@ -39,6 +40,11 @@ class MockActor(Actor):
         self.object_storer = ObjectStorer()
 
         self.calls: list[str] = []
+        self._user_state: dict[str, Any] = {}
+
+    def on_save(self) -> dict:
+        self._user_state["A"] = 1
+        return self._user_state
 
     def on_start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)

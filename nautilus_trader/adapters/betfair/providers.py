@@ -226,7 +226,7 @@ def market_definition_to_instruments(
             market_id=market_definition.marketId,
             market_name=market_definition.marketName,
             market_start_time=pd.Timestamp(market_definition.marketTime)
-            if market_definition.marketStartTime
+            if market_definition.marketTime
             else pd.Timestamp(0, tz="UTC"),
             market_type=market_definition.marketType,
             selection_id=str(runner.selectionId or runner.id),

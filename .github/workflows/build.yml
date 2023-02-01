@@ -110,12 +110,16 @@ jobs:
       # Run tests (Linux)
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
-        run: make pytest
+        run: |
+          make pytest
+          make test-examples
 
       # Run tests (macOS)
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
-        run: make pytest
+        run: |
+          make pytest
+          make test-examples
 
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)

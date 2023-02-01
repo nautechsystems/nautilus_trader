@@ -133,7 +133,6 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
-
     """
 
     def __init__(  # noqa (too complex)
@@ -193,6 +192,8 @@ class NautilusKernel:
         PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self._environment = environment
+        self._load_state = load_state
+        self._save_state = save_state
 
         # Identifiers
         self._name = name
@@ -236,17 +237,20 @@ class NautilusKernel:
         nautilus_header(self._log)
         self.log.info("Building system kernel...")
 
-        # Setup loop
-        self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
-        if loop is not None:
-            self._executor = concurrent.futures.ThreadPoolExecutor()
-            self._loop.set_default_executor(self.executor)
-            self._loop.set_debug(loop_debug)
-            self._loop_sig_callback = loop_sig_callback
-            if platform.system() != "Windows":
-                # Windows does not support signal handling
-                # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
-                self._setup_loop()
+        # Setup loop (if live)
+        if environment == Environment.LIVE:
+            self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+            if loop is not None:
+                self._executor = concurrent.futures.ThreadPoolExecutor()
+                self._loop.set_default_executor(self.executor)
+                self._loop.set_debug(loop_debug)
+                self._loop_sig_callback = loop_sig_callback
+                if platform.system() != "Windows":
+                    # Windows does not support signal handling
+                    # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
+                    self._setup_loop()
+        else:
+            self._loop = None
 
         if cache_database_config is None or cache_database_config.type == "in-memory":
             cache_db = None
@@ -260,7 +264,7 @@ class NautilusKernel:
         else:
             raise ValueError(
                 "The `cache_db_config.type` is unrecognized. "
-                "Please use one of {{'in-memory', 'redis'}}.",
+                "Use one of {{'in-memory', 'redis'}}.",
             )
 
         ########################################################################
@@ -378,7 +382,7 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if load_state:
+        if self._load_state:
             self._trader.load()
 
         # Setup writer
@@ -541,6 +545,30 @@ class NautilusKernel:
 
         """
         return self._ts_created
+
+    @property
+    def load_state(self) -> bool:
+        """
+        If the kernel has been configured to load actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._load_state
+
+    @property
+    def save_state(self) -> bool:
+        """
+        If the kernel has been configured to save actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._save_state
 
     @property
     def clock(self) -> Clock:
