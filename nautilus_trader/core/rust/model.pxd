@@ -148,6 +148,8 @@ cdef extern from "../includes/model.h":
         ASK # = 2,
         MID # = 3,
         LAST # = 4,
+        HISTORICAL_VOLATILITY # = 11,
+        IMPLIED_VOLATILITY # = 12,
 
     cpdef enum TimeInForce:
         GTC # = 1,

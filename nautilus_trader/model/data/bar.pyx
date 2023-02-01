@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
+from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -917,3 +919,105 @@ cdef class Bar(Data):
 
         """
         return self._mem.open.raw == self._mem.high.raw == self._mem.low.raw == self._mem.close.raw
+
+cdef class GenericBar(Bar):
+    """
+    Represents an aggregated bar for Generic Data.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for this bar.
+    open : Decimal
+        The bars open value.
+    high : Decimal
+        The bars high value.
+    low : Decimal
+        The bars low value.
+    close : Decimal
+        The bars close value.
+    volume : Quantity
+        The bars volume.
+    ts_event : uint64_t
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    is_revision : bool, default False
+        If this bar is a revision of a previous bar with the same `ts_event`.
+    precision : uint8_t, default 5
+        The precision for the OHLC values.
+
+    """
+
+    def __init__(
+        self,
+        BarType bar_type not None,
+        double open,
+        double high,
+        double low,
+        double close,
+        Quantity volume not None,
+        uint64_t ts_event,
+        uint64_t ts_init,
+        bint is_revision = False,
+        uint8_t precision = 5,
+    ):
+        super().__init__(
+            bar_type,
+            Price(open, precision),
+            Price(high, precision),
+            Price(low, precision),
+            Price(close, precision),
+            volume,
+            ts_event,
+            ts_init,
+            is_revision,
+        )
+
+    @property
+    def open(self) -> Decimal:
+        """
+        Return the open value of the bar.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Price.from_raw_c(self._mem.open.raw, self._mem.open.precision).as_decimal()
+
+    @property
+    def high(self) -> Decimal:
+        """
+        Return the high value of the bar.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Price.from_raw_c(self._mem.high.raw, self._mem.high.precision).as_decimal()
+
+    @property
+    def low(self) -> Decimal:
+        """
+        Return the low value of the bar.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Price.from_raw_c(self._mem.low.raw, self._mem.low.precision).as_decimal()
+
+    @property
+    def close(self) -> Decimal:
+        """
+        Return the close value of the bar.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Price.from_raw_c(self._mem.close.raw, self._mem.close.precision).as_decimal()
