@@ -166,16 +166,18 @@ cdef class OrderMatchingEngine:
         self,
         Order order,
         list fills,
-        PositionId venue_position_id,
-        Position position,
+        LiquiditySide liquidity_side,
+        PositionId venue_position_id=*,
+        Position position=*,
     ) except *
     cpdef void fill_order(
         self,
         Order order,
-        PositionId venue_position_id,
-        Position position,
-        Quantity last_qty,
         Price last_px,
+        Quantity last_qty,
+        LiquiditySide liquidity_side,
+        PositionId venue_position_id=*,
+        Position position=*,
     ) except *
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
