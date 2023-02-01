@@ -669,11 +669,10 @@ class BinanceMarketHttpAPI:
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-        symbol: str,
         limit: Optional[int] = None,
     ) -> OrderBookSnapshot:
         """Request snapshot of order book depth."""
-        depth = await self.query_depth(symbol, limit)
+        depth = await self.query_depth(instrument_id.symbol.value, limit)
         return depth._parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=ts_init,
@@ -696,11 +695,10 @@ class BinanceMarketHttpAPI:
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-        symbol: str,
         limit: Optional[int] = None,
     ) -> list[TradeTick]:
         """Request TradeTicks from Binance"""
-        trades = await self.query_trades(symbol, limit)
+        trades = await self.query_trades(instrument_id.symbol.value, limit)
         return [
             trade.parse_to_trade_tick(
                 instrument_id=instrument_id,
@@ -747,13 +745,12 @@ class BinanceMarketHttpAPI:
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-        symbol: str,
         limit: Optional[int] = None,
         from_id: Optional[str] = None,
     ) -> list[TradeTick]:
         """Request historical TradeTicks from Binance"""
         historical_trades = await self.query_historical_trades(
-            symbol=symbol,
+            symbol=instrument_id.symbol.value,
             limit=limit,
             from_id=from_id,
         )
@@ -788,7 +785,6 @@ class BinanceMarketHttpAPI:
         self,
         bar_type: BarType,
         ts_init: int,
-        symbol: str,
         interval: BinanceKlineInterval,
         limit: Optional[int] = None,
         start_time: Optional[str] = None,
@@ -796,7 +792,7 @@ class BinanceMarketHttpAPI:
     ) -> list[BinanceBar]:
         """Request Binance Bars from Klines"""
         klines = await self.query_klines(
-            symbol=BinanceSymbol(symbol),
+            symbol=bar_type.instrument_id.symbol.value,
             interval=interval,
             limit=limit,
             start_time=start_time,

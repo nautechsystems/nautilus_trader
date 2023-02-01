@@ -323,7 +323,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         snapshot: OrderBookSnapshot = await self._http_market.request_order_book_snapshot(
             instrument_id=instrument_id,
-            symbol=instrument_id.symbol.value,
             limit=depth,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -455,7 +454,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         ticks = await self._http_market.request_trade_ticks(
             instrument_id=instrument_id,
-            symbol=instrument_id.symbol.value,
             limit=limit,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -516,7 +514,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         bars = await self._http_market.request_binance_bars(
             bar_type=bar_type,
-            symbol=bar_type.instrument_id.symbol.value,
             interval=interval,
             start_time=start_time_ms,
             end_time=end_time_ms,
