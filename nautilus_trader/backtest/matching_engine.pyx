@@ -1077,6 +1077,16 @@ cdef class OrderMatchingEngine:
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *:
+        """
+        Iterate the matching engine by processing the bid and ask order sides
+        and advancing time up to the given UNIX `timestamp_ns`.
+
+        Parameters
+        ----------
+        timestamp_ns : uint64_t
+            The UNIX timestamp to advance the matching engine time to.
+
+        """
         self._clock.set_time(timestamp_ns)
 
         # TODO: Convert order book to use ints rather than doubles
@@ -1120,6 +1130,29 @@ cdef class OrderMatchingEngine:
                 self._has_targets = False
 
     cpdef list determine_limit_price_and_volume(self, Order order):
+        """
+        Return the projected fills for the given *limit* order filling passively
+        from its limit price.
+
+        The list may be empty if no fills.
+
+        Parameters
+        ----------
+        order : Order
+            The order to determine fills for.
+
+        Returns
+        -------
+        list[tuple[Price, Quantity]]
+
+        Raises
+        ------
+        ValueError
+            If the `order` does not have a LIMIT `price`.
+
+        """
+        Condition.true(order.has_price_c(), "order has no limit `price`")
+
         cdef list fills
         cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
@@ -1203,6 +1236,22 @@ cdef class OrderMatchingEngine:
         return fills
 
     cpdef list determine_market_price_and_volume(self, Order order):
+        """
+        Return the projected fills for the given *marketable* order filling
+        aggressively into its order side.
+
+        The list may be empty if no fills.
+
+        Parameters
+        ----------
+        order : Order
+            The order to determine fills for.
+
+        Returns
+        -------
+        list[tuple[Price, Quantity]]
+
+        """
         cdef list fills
         cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
@@ -1261,6 +1310,15 @@ cdef class OrderMatchingEngine:
         return fills
 
     cpdef void fill_market_order(self, Order order) except *:
+        """
+        Fill the given *marketable* order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to fill.
+
+        """
         cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
         if venue_position_id is not None:
@@ -1278,12 +1336,28 @@ cdef class OrderMatchingEngine:
         self.apply_fills(
             order=order,
             fills=self.determine_market_price_and_volume(order),
+            liquidity_side=order.liquidity_side,
             venue_position_id=venue_position_id,
             position=position,
         )
 
     cpdef void fill_limit_order(self, Order order) except *:
-        assert order.has_price_c(), f"{order.type_string_c()} has no LIMIT price"
+        """
+        Fill the given limit order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to fill.
+
+        Raises
+        ------
+        ValueError
+            If the `order` does not have a LIMIT `price`.
+
+        """
+        Condition.true(order.has_price_c(), "order has no limit `price`")
+
         cdef Price price = order.price
         if order.liquidity_side == LiquiditySide.MAKER and self._fill_model:
             if order.side == OrderSide.BUY and self._core.bid_raw == price._mem.raw and not self._fill_model.is_limit_filled():
@@ -1306,6 +1380,7 @@ cdef class OrderMatchingEngine:
         self.apply_fills(
             order=order,
             fills=self.determine_limit_price_and_volume(order),
+            liquidity_side=order.liquidity_side,
             venue_position_id=venue_position_id,
             position=position,
         )
@@ -1314,9 +1389,43 @@ cdef class OrderMatchingEngine:
         self,
         Order order,
         list fills,
-        PositionId venue_position_id,  # Can be None
-        Position position,  # Can be None
+        LiquiditySide liquidity_side,
+        PositionId venue_position_id: Optional[PositionId] = None,
+        Position position: Optional[Position] = None,
     ) except *:
+        """
+        Apply the given list of fills to the given order. Optionally provide
+        existing position details.
+
+        Parameters
+        ----------
+        order : Order
+            The order to fill.
+        fills : list[tuple[Price, Quantity]]
+            The fills to apply to the order.
+        liquidity_side : LiquiditySide
+            The liquidity side for the fill(s).
+        venue_position_id :  PositionId, optional
+            The current venue position ID related to the order (if assigned).
+        position : Position, optional
+            The current position related to the order (if any).
+
+        Raises
+        ------
+        ValueError
+            If `liquidity_side` is ``NO_LIQUIDITY_SIDE``.
+
+        Warnings
+        --------
+        The `liquidity_side` will override anything previously set on the order.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_none(fills, "fills")
+        Condition.not_equal(liquidity_side, LiquiditySide.NO_LIQUIDITY_SIDE, "liquidity_side", "NO_LIQUIDITY_SIDE")
+
+        order.liquidity_side = liquidity_side
+
         if not fills:
             return  # No fills
 
@@ -1388,10 +1497,11 @@ cdef class OrderMatchingEngine:
                 return  # Done
             self.fill_order(
                 order=order,
+                last_px=fill_px,
+                last_qty=fill_qty,
+                liquidity_side=order.liquidity_side,
                 venue_position_id=venue_position_id,
                 position=position,
-                last_qty=fill_qty,
-                last_px=fill_px,
             )
             if order.order_type == OrderType.MARKET_TO_LIMIT and initial_market_to_limit_fill:
                 return  # Filled initial level
@@ -1423,20 +1533,58 @@ cdef class OrderMatchingEngine:
 
             self.fill_order(
                 order=order,
+                last_px=fill_px,
+                last_qty=order.leaves_qty,
+                liquidity_side=order.liquidity_side,
                 venue_position_id=venue_position_id,
                 position=position,
-                last_qty=order.leaves_qty,
-                last_px=fill_px,
             )
 
     cpdef void fill_order(
         self,
         Order order,
-        PositionId venue_position_id,  # Can be None
-        Position position: Optional[Position],
-        Quantity last_qty,
         Price last_px,
+        Quantity last_qty,
+        LiquiditySide liquidity_side,
+        PositionId venue_position_id: Optional[PositionId] = None,
+        Position position: Optional[Position] = None,
     ) except *:
+        """
+        Apply the given list of fills to the given order. Optionally provide
+        existing position details.
+
+        Parameters
+        ----------
+        order : Order
+            The order to fill.
+        last_px : Price
+            The fill price for the order.
+        last_qty : Price
+            The fill quantity for the order.
+        liquidity_side : LiquiditySide
+            The liquidity side for the fill.
+        venue_position_id :  PositionId, optional
+            The current venue position ID related to the order (if assigned).
+        position : Position, optional
+            The current position related to the order (if any).
+
+        Raises
+        ------
+        ValueError
+            If `liquidity_side` is ``NO_LIQUIDITY_SIDE``.
+
+        Warnings
+        --------
+        The `liquidity_side` will override anything previously set on the order.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_none(last_px, "last_px")
+        Condition.not_none(last_qty, "last_qty")
+        Condition.not_equal(liquidity_side, LiquiditySide.NO_LIQUIDITY_SIDE, "liquidity_side", "NO_LIQUIDITY_SIDE")
+
+        order.liquidity_side = liquidity_side
+
         # Calculate commission
         cdef double notional = self.instrument.notional_value(
             quantity=last_qty,
