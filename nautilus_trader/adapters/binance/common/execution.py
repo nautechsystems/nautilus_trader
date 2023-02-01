@@ -552,9 +552,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             price=str(order.price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-            reduce_only=str(
-                order.is_reduce_only,
-            ),  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
@@ -585,9 +583,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             stop_price=str(order.trigger_price),
             working_type=working_type,
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-            reduce_only=str(
-                order.is_reduce_only,
-            ),  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
@@ -630,9 +626,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
             working_type=working_type,
-            reduce_only=str(
-                order.is_reduce_only,
-            ),  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
@@ -686,9 +680,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),
             working_type=working_type,
-            reduce_only=str(
-                order.is_reduce_only,
-            ),  # Cannot be sent with Hedge-Mode or closePosition
+            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
             recv_window=str(5000),
         )
