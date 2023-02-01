@@ -17,9 +17,7 @@ import pkgutil
 
 import msgspec
 
-from nautilus_trader.adapters.binance.spot.schemas.market import (
-    BinanceSpotOrderBookPartialDepthData,
-)
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -35,7 +33,7 @@ class TestBinanceHttpParsing:
         )
 
         # Act
-        decoder = msgspec.json.Decoder(BinanceSpotOrderBookPartialDepthData)
+        decoder = msgspec.json.Decoder(BinanceDepth)
         data = decoder.decode(raw)
         result = data.parse_to_order_book_snapshot(
             instrument_id=ETHUSDT.id,

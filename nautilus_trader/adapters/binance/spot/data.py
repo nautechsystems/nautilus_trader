@@ -99,10 +99,6 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             base_url_ws=base_url_ws,
         )
 
-        # Register additional spot/margin websocket handlers
-        self._ws_handlers["@depth"] = self._handle_book_partial_update
-        self._ws_handlers["@trade"] = self._handle_trade
-
         # Websocket msgspec decoders
         self._decoder_spot_trade = msgspec.json.Decoder(BinanceSpotTradeMsg)
         self._decoder_spot_order_book_partial_depth = msgspec.json.Decoder(

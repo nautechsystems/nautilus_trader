@@ -154,10 +154,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # Register common websocket message handlers
         self._ws_handlers = {
-            "@depth@": self._handle_book_diff_update,
             "@bookTicker": self._handle_book_ticker,
             "@ticker": self._handle_ticker,
             "@kline": self._handle_kline,
+            "@trade": self._handle_trade,
+            "@depth@": self._handle_book_diff_update,
+            "@depth5": self._handle_book_partial_update,
+            "@depth10": self._handle_book_partial_update,
+            "@depth20": self._handle_book_partial_update,
         }
 
         # Websocket msgspec decoders

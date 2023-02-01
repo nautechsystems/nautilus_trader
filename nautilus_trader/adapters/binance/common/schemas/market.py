@@ -135,7 +135,7 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     E: Optional[int] = None  # FUTURES only, Message output time
     T: Optional[int] = None  # FUTURES only, Transaction time
 
-    def _parse_to_order_book_snapshot(
+    def parse_to_order_book_snapshot(
         self,
         instrument_id: InstrumentId,
         ts_init: int,

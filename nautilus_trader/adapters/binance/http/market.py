@@ -673,7 +673,7 @@ class BinanceMarketHttpAPI:
     ) -> OrderBookSnapshot:
         """Request snapshot of order book depth."""
         depth = await self.query_depth(instrument_id.symbol.value, limit)
-        return depth._parse_to_order_book_snapshot(
+        return depth.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=ts_init,
         )

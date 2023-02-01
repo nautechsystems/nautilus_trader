@@ -104,8 +104,6 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         )
 
         # Register additional futures websocket handlers
-        self._ws_handlers["@depth"] = self._handle_book_partial_update
-        self._ws_handlers["@trade"] = self._handle_trade
         self._ws_handlers["@markPrice"] = self._handle_mark_price
 
         # Websocket msgspec decoders
