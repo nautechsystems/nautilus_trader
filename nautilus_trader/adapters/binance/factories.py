@@ -108,6 +108,7 @@ def get_cached_binance_http_client(
 def get_cached_binance_spot_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
+    clock: LiveClock,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
 ) -> BinanceSpotInstrumentProvider:
@@ -122,6 +123,8 @@ def get_cached_binance_spot_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
     config : InstrumentProviderConfig
@@ -135,6 +138,7 @@ def get_cached_binance_spot_instrument_provider(
     return BinanceSpotInstrumentProvider(
         client=client,
         logger=logger,
+        clock=clock,
         account_type=account_type,
         config=config,
     )
@@ -144,6 +148,7 @@ def get_cached_binance_spot_instrument_provider(
 def get_cached_binance_futures_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
+    clock: LiveClock,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
 ) -> BinanceFuturesInstrumentProvider:
@@ -158,6 +163,8 @@ def get_cached_binance_futures_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
     config : InstrumentProviderConfig
@@ -171,6 +178,7 @@ def get_cached_binance_futures_instrument_provider(
     return BinanceFuturesInstrumentProvider(
         client=client,
         logger=logger,
+        clock=clock,
         account_type=account_type,
         config=config,
     )
@@ -241,11 +249,12 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         )
 
         provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
-        if config.account_type.is_spot or config.account_type.is_margin:
+        if config.account_type.is_spot_or_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
@@ -267,6 +276,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             provider = get_cached_binance_futures_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
@@ -355,6 +365,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             provider = get_cached_binance_spot_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
@@ -378,6 +389,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             provider = get_cached_binance_futures_instrument_provider(
                 client=client,
                 logger=logger,
+                clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
@@ -400,12 +412,12 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 
 def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
     if is_testnet:
-        if account_type.is_spot or account_type.is_margin:
+        if account_type.is_spot_or_margin:
             return os.environ["BINANCE_TESTNET_API_KEY"]
         else:
             return os.environ["BINANCE_FUTURES_TESTNET_API_KEY"]
 
-    if account_type.is_spot or account_type.is_margin:
+    if account_type.is_spot_or_margin:
         return os.environ["BINANCE_API_KEY"]
     else:
         return os.environ["BINANCE_FUTURES_API_KEY"]
@@ -413,12 +425,12 @@ def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
 
 def _get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
     if is_testnet:
-        if account_type.is_spot or account_type.is_margin:
+        if account_type.is_spot_or_margin:
             return os.environ["BINANCE_TESTNET_API_SECRET"]
         else:
             return os.environ["BINANCE_FUTURES_TESTNET_API_SECRET"]
 
-    if account_type.is_spot or account_type.is_margin:
+    if account_type.is_spot_or_margin:
         return os.environ["BINANCE_API_SECRET"]
     else:
         return os.environ["BINANCE_FUTURES_API_SECRET"]
@@ -427,7 +439,7 @@ def _get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
 def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
     # Testnet base URLs
     if is_testnet:
-        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if account_type.is_spot_or_margin:
             return "https://testnet.binance.vision"
         elif account_type == BinanceAccountType.FUTURES_USDT:
             return "https://testnet.binancefuture.com"
@@ -440,9 +452,9 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
 
     # Live base URLs
     top_level_domain: str = "us" if is_us else "com"
-    if account_type == BinanceAccountType.SPOT:
+    if account_type.is_spot:
         return f"https://api.binance.{top_level_domain}"
-    elif account_type == BinanceAccountType.MARGIN:
+    elif account_type.is_margin:
         return f"https://sapi.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.FUTURES_USDT:
         return f"https://fapi.binance.{top_level_domain}"
@@ -457,7 +469,7 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
 def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
     # Testnet base URLs
     if is_testnet:
-        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if account_type.is_spot_or_margin:
             return "wss://testnet.binance.vision"
         elif account_type == BinanceAccountType.FUTURES_USDT:
             return "wss://stream.binancefuture.com"
@@ -470,7 +482,7 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
 
     # Live base URLs
     top_level_domain: str = "us" if is_us else "com"
-    if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+    if account_type.is_spot_or_margin:
         return f"wss://stream.binance.{top_level_domain}:9443"
     elif account_type == BinanceAccountType.FUTURES_USDT:
         return f"wss://fstream.binance.{top_level_domain}"

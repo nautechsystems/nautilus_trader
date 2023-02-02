@@ -13,15 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
-from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 
 
 ################################################################################
@@ -29,7 +36,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorking
 ################################################################################
 
 
-class BinanceFuturesAssetInfo(msgspec.Struct):
+class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     """
     HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -50,8 +57,26 @@ class BinanceFuturesAssetInfo(msgspec.Struct):
     marginAvailable: Optional[bool] = None
     updateTime: Optional[int] = None  # last update time
 
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.asset)
+        total = Decimal(self.walletBalance)
+        locked = Decimal(self.initialMargin) + Decimal(self.maintMargin)
+        free = total - locked
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
 
-class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
+    def parse_to_margin_balance(self) -> MarginBalance:
+        currency: Currency = Currency.from_str(self.asset)
+        return MarginBalance(
+            initial=Money(Decimal(self.initialMargin), currency),
+            maintenance=Money(Decimal(self.maintMargin), currency),
+        )
+
+
+class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
     """
     HTTP response from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -77,61 +102,16 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
     totalCrossUnPnl: Optional[str] = None
     availableBalance: Optional[str] = None  # available balance, only for USDT asset
     maxWithdrawAmount: Optional[str] = None  # maximum amount for transfer out, only for USDT asset
-    assets: list[BinanceFuturesAssetInfo]
+    assets: list[BinanceFuturesBalanceInfo]
+
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [asset.parse_to_account_balance() for asset in self.assets]
+
+    def parse_to_margin_balances(self) -> list[MarginBalance]:
+        return [asset.parse_to_margin_balance() for asset in self.assets]
 
 
-class BinanceFuturesOrder(msgspec.Struct, kw_only=True):
-    """
-    HTTP response from `Binance Futures` GET /fapi/v1/order (HMAC SHA256).
-    """
-
-    avgPrice: str
-    clientOrderId: str
-    cumQuote: str
-    executedQty: str
-    orderId: int
-    origQty: str
-    origType: str
-    price: str
-    reduceOnly: bool
-    side: str
-    positionSide: str
-    status: BinanceOrderStatus
-    stopPrice: str
-    closePosition: bool
-    symbol: str
-    time: int
-    timeInForce: str
-    type: BinanceFuturesOrderType
-    activatePrice: Optional[str] = None
-    priceRate: Optional[str] = None
-    updateTime: int
-    workingType: BinanceFuturesWorkingType
-    priceProtect: bool
-
-
-class BinanceFuturesAccountTrade(msgspec.Struct):
-    """
-    HTTP response from ` Binance Futures` GET /fapi/v1/userTrades (HMAC SHA256).
-    """
-
-    buyer: bool
-    commission: str
-    commissionAsset: str
-    id: int
-    maker: bool
-    orderId: int
-    price: str
-    qty: str
-    quoteQty: str
-    realizedPnl: str
-    side: BinanceOrderSide
-    positionSide: BinanceFuturesPositionSide
-    symbol: str
-    time: int
-
-
-class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
+class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     """
     HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC SHA256).
     """
@@ -149,3 +129,33 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     unRealizedProfit: str
     positionSide: BinanceFuturesPositionSide
     updateTime: int
+
+    def parse_to_position_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        enum_parser: BinanceFuturesEnumParser,
+        report_id: UUID4,
+        ts_init: int,
+    ) -> PositionStatusReport:
+        position_side = enum_parser.parse_futures_position_side(
+            self.positionSide,
+        )
+        net_size = Decimal(self.positionAmt)
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            position_side=position_side,
+            quantity=Quantity.from_str(str(abs(net_size))),
+            report_id=report_id,
+            ts_last=ts_init,
+            ts_init=ts_init,
+        )
+
+
+class BinanceFuturesDualSidePosition(msgspec.Struct, frozen=True):
+    """
+    HTTP response from `Binance Futures` GET /fapi/v1/positionSide/dual (HMAC SHA256)
+    """
+
+    dualSidePosition: bool

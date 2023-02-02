@@ -77,7 +77,13 @@ class TestBinanceFactories:
                 "https://api.binance.com",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                False,
+                "https://sapi.binance.com",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 False,
                 "https://sapi.binance.com",
@@ -101,7 +107,13 @@ class TestBinanceFactories:
                 "https://api.binance.us",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                True,
+                "https://sapi.binance.us",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 True,
                 "https://sapi.binance.us",
@@ -125,7 +137,13 @@ class TestBinanceFactories:
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                True,
+                False,
+                "https://testnet.binance.vision",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 True,
                 False,
                 "https://testnet.binance.vision",
@@ -155,7 +173,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                False,
+                "wss://stream.binance.com:9443",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 False,
                 "wss://stream.binance.com:9443",
@@ -179,7 +203,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                True,
+                "wss://stream.binance.us:9443",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 True,
                 "wss://stream.binance.us:9443",
@@ -203,7 +233,13 @@ class TestBinanceFactories:
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                True,
+                False,
+                "wss://testnet.binance.vision",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 True,
                 False,
                 "wss://testnet.binance.vision",
