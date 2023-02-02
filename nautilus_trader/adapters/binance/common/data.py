@@ -39,7 +39,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.core.asynchronous import sleep0
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
