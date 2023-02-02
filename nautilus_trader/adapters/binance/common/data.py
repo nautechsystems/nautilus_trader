@@ -198,8 +198,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     f"{self._connect_websockets_interval}s.",
                 )
                 await asyncio.sleep(self._connect_websockets_interval)
-        if self._ws_client.has_subscriptions:
-            await self._ws_client.connect()
+                if self._ws_client.has_subscriptions:
+                    await self._ws_client.connect()
                 else:
                     self._log.info("Awaiting subscriptions...")
         except asyncio.CancelledError:
@@ -314,8 +314,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if depth is None or depth == 0:
-            depth = 20
+        if depth is None:
+            depth = 0
 
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
