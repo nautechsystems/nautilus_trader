@@ -12,7 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from cpython.mem cimport PyMem_Free
 from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
@@ -44,6 +46,12 @@ from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+cdef void capsule_destructor(object capsule):
+    cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+    PyMem_Free(cvec[0].ptr) # de-allocate buffer
+    PyMem_Free(cvec) # de-allocate cvec
 
 
 cdef class QuoteTick(Data):
@@ -320,7 +328,7 @@ cdef class QuoteTick(Data):
         cvec.cap = len_
 
         # create PyCapsule
-        return PyCapsule_New(cvec, NULL, NULL)
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
 
     @staticmethod
     def list_from_capsule(capsule) -> list[QuoteTick]:
@@ -712,7 +720,7 @@ cdef class TradeTick(Data):
         cvec.cap = len_
 
         # create PyCapsule
-        return PyCapsule_New(cvec, NULL, NULL)
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
 
     @staticmethod
     def list_from_capsule(capsule) -> list[TradeTick]:
