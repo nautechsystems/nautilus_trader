@@ -13,452 +13,175 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
-from nautilus_trader.adapters.binance.common.functions import format_symbol
-from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
+from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
+from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotAvgPrice
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 
 
-class BinanceSpotMarketHttpAPI:
+class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
     """
-    Provides access to the `Binance Futures` Market HTTP REST API.
+    Endpoint of SPOT/MARGIN exchange trading rules and symbol information
+
+    `GET /api/v3/exchangeInfo`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#exchange-information
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "exchangeInfo"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceSpotExchangeInfo)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET exchangeInfo parameters
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+            Optional, specify trading pair to get exchange info for
+        symbols : BinanceSymbols
+            Optional, specify list of trading pairs to get exchange info for
+        permissions : BinanceSpotPermissions
+            Optional, filter symbols list by supported permissions
+
+        """
+
+        symbol: Optional[BinanceSymbol] = None
+        symbols: Optional[BinanceSymbols] = None
+        permissions: Optional[BinanceSpotPermissions] = None
+
+    async def _get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotExchangeInfo:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self._get_resp_decoder.decode(raw)
+
+
+class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of current average price of a symbol
+
+    `GET /api/v3/avgPrice`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#current-average-price
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "avgPrice"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceSpotAvgPrice)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET avgPrice parameters
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+            Specify trading pair to get average price for
+
+        """
+
+        symbol: BinanceSymbol = None
+
+    async def _get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self._get_resp_decoder.decode(raw)
+
+
+class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
+    """
+    Provides access to the `Binance Spot` Market HTTP REST API.
 
     Parameters
     ----------
     client : BinanceHttpClient
         The Binance REST API client.
+    account_type : BinanceAccountType
+        The Binance account type, used to select the endpoint
+
     """
 
-    BASE_ENDPOINT = "/api/v3/"
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+    ):
+        super().__init__(
+            client=client,
+            account_type=account_type,
+        )
 
-    def __init__(self, client: BinanceHttpClient):
-        self.client = client
+        if not account_type.is_spot_or_margin:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
+            )
 
-        self._decoder_exchange_info = msgspec.json.Decoder(BinanceSpotExchangeInfo)
-        self._decoder_trades = msgspec.json.Decoder(list[BinanceTrade])
+        self._endpoint_spot_exchange_info = BinanceSpotExchangeInfoHttp(client, self.base_endpoint)
+        self._endpoint_spot_average_price = BinanceSpotAvgPriceHttp(client, self.base_endpoint)
 
-    async def ping(self) -> dict[str, Any]:
-        """
-        Test the connectivity to the REST API.
-
-        `GET /api/v3/ping`
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
-
-        """
-        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
-        return msgspec.json.decode(raw)
-
-    async def time(self) -> dict[str, Any]:
-        """
-        Test connectivity to the Rest API and get the current server time.
-
-        Check Server Time.
-        `GET /api/v3/time`
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#check-server-time
-
-        """
-        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "time")
-        return msgspec.json.decode(raw)
-
-    async def exchange_info(
+    async def query_spot_exchange_info(
         self,
         symbol: Optional[str] = None,
         symbols: Optional[list[str]] = None,
+        permissions: Optional[BinanceSpotPermissions] = None,
     ) -> BinanceSpotExchangeInfo:
-        """
-        Get current exchange trading rules and symbol information.
-        Only either `symbol` or `symbols` should be passed.
-
-        Exchange Information.
-        `GET /api/v3/exchangeinfo`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-        symbols : list[str], optional
-            The list of trading pairs.
-
-        Returns
-        -------
-        BinanceSpotExchangeInfo
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#exchange-information
-
-        """
+        """Check Binance Spot exchange information."""
         if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
-
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
-        if symbols is not None:
-            payload["symbols"] = convert_symbols_list_to_json_array(symbols)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "exchangeInfo",
-            payload=payload,
+        return await self._endpoint_spot_exchange_info._get(
+            parameters=self._endpoint_spot_exchange_info.GetParameters(
+                symbol=BinanceSymbol(symbol),
+                symbols=BinanceSymbols(symbols),
+                permissions=permissions,
+            ),
         )
 
-        return self._decoder_exchange_info.decode(raw)
-
-    async def depth(self, symbol: str, limit: Optional[int] = None) -> dict[str, Any]:
-        """
-        Get orderbook.
-
-        `GET /api/v3/depth`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        limit : int, optional, default 100
-            The limit for the response. Default 100; max 5000.
-            Valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000].
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#order-book
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "depth",
-            payload=payload,
+    async def query_spot_average_price(self, symbol: str) -> BinanceSpotAvgPrice:
+        """Check average price for a provided symbol on the Spot exchange."""
+        return await self._endpoint_spot_average_price._get(
+            parameters=self._endpoint_spot_average_price.GetParameters(
+                symbol=BinanceSymbol(symbol),
+            ),
         )
-
-        return msgspec.json.decode(raw)
-
-    async def trades(self, symbol: str, limit: Optional[int] = None) -> list[BinanceTrade]:
-        """
-        Get recent market trades.
-
-        Recent Trades List.
-        `GET /api/v3/trades`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        list[BinanceTrade]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "trades",
-            payload=payload,
-        )
-
-        return self._decoder_trades.decode(raw)
-
-    async def historical_trades(
-        self,
-        symbol: str,
-        from_id: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> dict[str, Any]:
-        """
-        Get older market trades.
-
-        Old Trade Lookup.
-        `GET /api/v3/historicalTrades`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        from_id : int, optional
-            The trade ID to fetch from. Default gets most recent trades.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if limit is not None:
-            payload["limit"] = str(limit)
-        if from_id is not None:
-            payload["fromId"] = str(from_id)
-
-        raw: bytes = await self.client.limit_request(
-            http_method="GET",
-            url_path=self.BASE_ENDPOINT + "historicalTrades",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def agg_trades(
-        self,
-        symbol: str,
-        from_id: Optional[int] = None,
-        start_time_ms: Optional[int] = None,
-        end_time_ms: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> dict[str, Any]:
-        """
-        Get recent aggregated market trades.
-
-        Compressed/Aggregate Trades List.
-        `GET /api/v3/aggTrades`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        from_id : int, optional
-            The trade ID to fetch from. Default gets most recent trades.
-        start_time_ms : int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
-        end_time_ms: int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if from_id is not None:
-            payload["fromId"] = str(from_id)
-        if start_time_ms is not None:
-            payload["startTime"] = str(start_time_ms)
-        if end_time_ms is not None:
-            payload["endTime"] = str(end_time_ms)
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "aggTrades",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def klines(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: Optional[int] = None,
-        end_time_ms: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> list[list[Any]]:
-        """
-        Kline/Candlestick Data.
-
-        `GET /api/v3/klines`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        interval : str
-            The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
-        start_time_ms : int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
-        end_time_ms: int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        list[list[Any]]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
-
-        """
-        payload: dict[str, str] = {
-            "symbol": format_symbol(symbol),
-            "interval": interval,
-        }
-        if start_time_ms is not None:
-            payload["startTime"] = str(start_time_ms)
-        if end_time_ms is not None:
-            payload["endTime"] = str(end_time_ms)
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "klines",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def avg_price(self, symbol: str) -> dict[str, Any]:
-        """
-        Get the current average price for the given symbol.
-
-        `GET /api/v3/avgPrice`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#current-average-price
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "avgPrice",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def ticker_24hr(self, symbol: Optional[str] = None) -> dict[str, Any]:
-        """
-        24hr Ticker Price Change Statistics.
-
-        `GET /api/v3/ticker/24hr`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
-
-        """
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "ticker/24hr",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def ticker_price(self, symbol: Optional[str] = None) -> dict[str, Any]:
-        """
-        Symbol Price Ticker.
-
-        `GET /api/v3/ticker/price`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
-
-        """
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "ticker/price",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def book_ticker(self, symbol: Optional[str] = None) -> dict[str, Any]:
-        """
-        Symbol Order Book Ticker.
-
-        `GET /api/v3/ticker/bookTicker`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
-
-        """
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol).upper()
-
-        raw: bytes = await self.client.query(
-            url_path=self.BASE_ENDPOINT + "ticker/bookTicker",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)

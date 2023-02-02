@@ -13,17 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
-from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
-from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
-from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 ################################################################################
@@ -31,50 +41,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInF
 ################################################################################
 
 
-class BinanceExchangeFilter(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
-
-    filterType: BinanceExchangeFilterType
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
-
-
-class BinanceSymbolFilter(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
-
-    filterType: BinanceSymbolFilterType
-    minPrice: Optional[str] = None
-    maxPrice: Optional[str] = None
-    tickSize: Optional[str] = None
-    multiplierUp: Optional[str] = None
-    multiplierDown: Optional[str] = None
-    avgPriceMins: Optional[int] = None
-    bidMultiplierUp: Optional[str] = None
-    bidMultiplierDown: Optional[str] = None
-    askMultiplierUp: Optional[str] = None
-    askMultiplierDown: Optional[str] = None
-    minQty: Optional[str] = None
-    maxQty: Optional[str] = None
-    stepSize: Optional[str] = None
-    minNotional: Optional[str] = None
-    applyToMarket: Optional[bool] = None
-    limit: Optional[int] = None
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
-    maxNumIcebergOrders: Optional[int] = None
-    maxPosition: Optional[str] = None
-
-
-class BinanceRateLimit(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
-
-    rateLimitType: BinanceRateLimitType
-    interval: BinanceRateLimitInterval
-    intervalNum: int
-    limit: int
-
-
-class BinanceFuturesAsset(msgspec.Struct):
+class BinanceFuturesAsset(msgspec.Struct, frozen=True):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     asset: str
@@ -82,7 +49,7 @@ class BinanceFuturesAsset(msgspec.Struct):
     autoAssetExchange: str
 
 
-class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
+class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     symbol: str
@@ -107,11 +74,29 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
     liquidationFee: str
     marketTakeBound: str
     filters: list[BinanceSymbolFilter]
-    orderTypes: list[BinanceFuturesOrderType]
-    timeInForce: list[BinanceFuturesTimeInForce]
+    orderTypes: list[BinanceOrderType]
+    timeInForce: list[BinanceTimeInForce]
+
+    def parse_to_base_currency(self):
+        return Currency(
+            code=self.baseAsset,
+            precision=self.baseAssetPrecision,
+            iso4217=0,  # Currently undetermined for crypto assets
+            name=self.baseAsset,
+            currency_type=CurrencyType.CRYPTO,
+        )
+
+    def parse_to_quote_currency(self):
+        return Currency(
+            code=self.quoteAsset,
+            precision=self.quotePrecision,
+            iso4217=0,  # Currently undetermined for crypto assets
+            name=self.quoteAsset,
+            currency_type=CurrencyType.CRYPTO,
+        )
 
 
-class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
+class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True, frozen=True):
     """HTTP response from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     timezone: str
@@ -122,7 +107,7 @@ class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
     symbols: list[BinanceFuturesSymbolInfo]
 
 
-class BinanceFuturesMarkFunding(msgspec.Struct):
+class BinanceFuturesMarkFunding(msgspec.Struct, frozen=True):
     """HTTP response from `Binance Future` GET /fapi/v1/premiumIndex."""
 
     symbol: str
@@ -135,7 +120,7 @@ class BinanceFuturesMarkFunding(msgspec.Struct):
     time: int
 
 
-class BinanceFuturesFundRate(msgspec.Struct):
+class BinanceFuturesFundRate(msgspec.Struct, frozen=True):
     """HTTP response from `Binance Future` GET /fapi/v1/fundingRate."""
 
     symbol: str
@@ -148,7 +133,7 @@ class BinanceFuturesFundRate(msgspec.Struct):
 ################################################################################
 
 
-class BinanceFuturesTradeData(msgspec.Struct):
+class BinanceFuturesTradeData(msgspec.Struct, frozen=True):
     """
     WebSocket message 'inner struct' for `Binance Futures` Trade Streams.
 
@@ -173,18 +158,33 @@ class BinanceFuturesTradeData(msgspec.Struct):
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity
-    X: BinanceFuturesOrderType  # Buyer order type
+    X: BinanceOrderType  # Buyer order type
     m: bool  # Is the buyer the market maker?
 
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.q),
+            aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.t)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
 
-class BinanceFuturesTradeMsg(msgspec.Struct):
+
+class BinanceFuturesTradeMsg(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance Futures` Trade Streams."""
 
     stream: str
     data: BinanceFuturesTradeData
 
 
-class BinanceFuturesMarkPriceData(msgspec.Struct):
+class BinanceFuturesMarkPriceData(msgspec.Struct, frozen=True):
     """WebSocket message 'inner struct' for `Binance Futures` Mark Price Update events."""
 
     e: str  # Event type
@@ -196,8 +196,24 @@ class BinanceFuturesMarkPriceData(msgspec.Struct):
     r: str  # Funding rate
     T: int  # Next funding time
 
+    def parse_to_binance_futures_mark_price_update(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> BinanceFuturesMarkPriceUpdate:
+        return BinanceFuturesMarkPriceUpdate(
+            instrument_id=instrument_id,
+            mark=Price.from_str(self.p),
+            index=Price.from_str(self.i),
+            estimated_settle=Price.from_str(self.P),
+            funding_rate=Decimal(self.r),
+            ts_next_funding=millis_to_nanos(self.T),
+            ts_event=millis_to_nanos(self.E),
+            ts_init=ts_init,
+        )
 
-class BinanceFuturesMarkPriceMsg(msgspec.Struct):
+
+class BinanceFuturesMarkPriceMsg(msgspec.Struct, frozen=True):
     """WebSocket message from `Binance Futures` Mark Price Update events."""
 
     stream: str

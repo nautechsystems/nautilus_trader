@@ -13,23 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForce
+import msgspec
 
 
-BINANCE_FUTURES_VALID_TIF = (
-    TimeInForce.GTC,
-    TimeInForce.GTD,  # Will be transformed to GTC with warning
-    TimeInForce.FOK,
-    TimeInForce.IOC,
-)
+################################################################################
+# HTTP responses
+################################################################################
 
-BINANCE_FUTURES_VALID_ORDER_TYPES = (
-    OrderType.MARKET,
-    OrderType.LIMIT,
-    OrderType.STOP_MARKET,
-    OrderType.STOP_LIMIT,
-    OrderType.MARKET_IF_TOUCHED,
-    OrderType.LIMIT_IF_TOUCHED,
-    OrderType.TRAILING_STOP_MARKET,
-)
+
+class BinanceFuturesCommissionRate(msgspec.Struct, frozen=True):
+    """Schema of a single `Binance Futures` commissionRate"""
+
+    symbol: str
+    makerCommissionRate: str
+    takerCommissionRate: str

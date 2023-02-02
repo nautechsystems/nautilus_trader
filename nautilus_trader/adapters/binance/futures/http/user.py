@@ -13,17 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
-
-import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 
 
-class BinanceFuturesUserDataHttpAPI:
+class BinanceFuturesUserDataHttpAPI(BinanceUserDataHttpAPI):
     """
     Provides access to the `Binance Futures` User Data HTTP REST API.
 
@@ -31,6 +27,8 @@ class BinanceFuturesUserDataHttpAPI:
     ----------
     client : BinanceHttpClient
         The Binance REST API client.
+    account_type : BinanceAccountType
+        The Binance account type, used to select the endpoint
     """
 
     def __init__(
@@ -38,101 +36,12 @@ class BinanceFuturesUserDataHttpAPI:
         client: BinanceHttpClient,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
     ):
-        PyCondition.not_none(client, "client")
+        super().__init__(
+            client=client,
+            account_type=account_type,
+        )
 
-        self.client = client
-        self.account_type = account_type
-
-        if account_type == BinanceAccountType.FUTURES_USDT:
-            self.BASE_ENDPOINT = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
-            self.BASE_ENDPOINT = "/dapi/v1/"
-        else:
+        if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover (design-time error)  # noqa
             )
-
-    async def create_listen_key(self) -> BinanceListenKey:
-        """
-        Create a new listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
-
-        Start a new user data stream. The stream will close after 60 minutes
-        unless a keepalive is sent. If the account has an active listenKey,
-        that listenKey will be returned and its validity will be extended for 60
-        minutes.
-
-        Create a ListenKey (USER_STREAM).
-
-        Returns
-        -------
-        BinanceListenKey
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
-
-        """
-        raw: bytes = await self.client.send_request(
-            http_method="POST",
-            url_path=self.BASE_ENDPOINT + "listenKey",
-        )
-
-        return msgspec.json.decode(raw, type=BinanceListenKey)
-
-    async def ping_listen_key(self, key: str) -> dict[str, Any]:
-        """
-        Ping/Keep-alive a listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
-
-        Keep-alive a user data stream to prevent a time-out. User data streams
-        will close after 60 minutes. It's recommended to send a ping about every
-        30 minutes.
-
-        Ping/Keep-alive a ListenKey (USER_STREAM).
-
-        Parameters
-        ----------
-        key : str
-            The listen key for the request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/futures/en/#keepalive-user-data-stream-user_stream
-
-        """
-        raw: bytes = await self.client.send_request(
-            http_method="PUT",
-            url_path=self.BASE_ENDPOINT + "listenKey",
-            payload={"listenKey": key},
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def close_listen_key(self, key: str) -> dict[str, Any]:
-        """
-        Close a user data stream for the Binance FUTURES_USDT or FUTURES_COIN API.
-
-        Parameters
-        ----------
-        key : str
-            The listen key for the request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/futures/en/#close-user-data-stream-user_stream
-
-        """
-        raw: bytes = await self.client.send_request(
-            http_method="DELETE",
-            url_path=self.BASE_ENDPOINT + "listenKey",
-            payload={"listenKey": key},
-        )
-
-        return msgspec.json.decode(raw)
