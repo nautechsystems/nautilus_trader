@@ -129,6 +129,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
+        self._connect_websockets_interval: int = 4  # Retry websocket connection every 4 seconds
+        self._connect_websockets_task: Optional[asyncio.Task] = None
+
         # HTTP API
         self._http_client = client
         self._http_market = market
@@ -185,13 +188,22 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._update_instruments_task = self.create_task(self._update_instruments())
 
         # Connect WebSocket clients
-        self.create_task(self._connect_websockets())
+        self._connect_websockets_task = self.create_task(self._connect_websockets())
 
     async def _connect_websockets(self) -> None:
-        self._log.info("Awaiting subscriptions...")
-        await asyncio.sleep(4)
+        try:
+            while not self._ws_client.is_connected:
+                self._log.debug(
+                    f"Scheduled `connect_websockets` to run in "
+                    f"{self._connect_websockets_interval}s.",
+                )
+                await asyncio.sleep(self._connect_websockets_interval)
         if self._ws_client.has_subscriptions:
             await self._ws_client.connect()
+                else:
+                    self._log.info("Awaiting subscriptions...")
+        except asyncio.CancelledError:
+            self._log.debug("`connect_websockets` task was canceled.")
 
     async def _update_instruments(self) -> None:
         try:
@@ -207,12 +219,17 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.debug("`update_instruments` task was canceled.")
 
     async def _disconnect(self) -> None:
-        # Cancel tasks
+        # Cancel update instruments task
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
             self._update_instruments_task.done()
 
+        # Cancel WebSocket connect task
+        if self._connect_websockets_task:
+            self._log.debug("Canceling `connect_websockets` task...")
+            self._connect_websockets_task.cancel()
+            self._connect_websockets_task.done()
         # Disconnect WebSocket client
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
@@ -323,7 +340,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
         while not self._ws_client.is_connected:
-            await sleep0()
+            await asyncio.sleep(self._connect_websockets_interval)
 
         snapshot: OrderBookSnapshot = await self._http_market.request_order_book_snapshot(
             instrument_id=instrument_id,
