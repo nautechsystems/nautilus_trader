@@ -55,6 +55,9 @@ cdef class QuoteTick(Data):
     cdef list capsule_to_quote_tick_list(object capsule)
 
     @staticmethod
+    cdef object quote_tick_list_to_capsule(list items)
+
+    @staticmethod
     cdef QuoteTick from_dict_c(dict values)
 
     @staticmethod
@@ -89,7 +92,16 @@ cdef class TradeTick(Data):
     cdef list capsule_to_trade_tick_list(object capsule)
 
     @staticmethod
+    cdef object trade_tick_list_to_capsule(list items)
+
+    @staticmethod
     cdef TradeTick from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(TradeTick obj)
+
+    @staticmethod
+    cdef TradeTick from_mem_c(TradeTick_t mem)
+
+    @staticmethod
+    cdef list capsule_to_trade_tick_list(object capsule)

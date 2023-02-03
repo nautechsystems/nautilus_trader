@@ -15,6 +15,7 @@
 
 import itertools
 import os
+import tempfile
 
 import pandas as pd
 
@@ -22,7 +23,9 @@ from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from tests import TEST_DATA_DIR
 
 
@@ -35,8 +38,8 @@ def test_file_parquet_reader_quote_ticks():
         ParquetReaderType.File,
     )
 
-    data = map(QuoteTick.list_from_capsule, reader)
-    ticks = list(itertools.chain(*data))
+    mapped_chunk = map(QuoteTick.list_from_capsule, reader)
+    ticks = list(itertools.chain(*mapped_chunk))
 
     csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
     df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
@@ -86,6 +89,100 @@ def test_buffer_parquet_reader_quote_ticks():
     # assert df.dates.equals(
     #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
     # )
+
+
+def test_file_parquet_writer_quote_ticks():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+
+    # Write quotes
+    reader = ParquetReader(
+        parquet_data_path,
+        1000,
+        ParquetType.QuoteTick,
+        ParquetReaderType.File,
+    )
+
+    metadata = {
+        "instrument_id": "EUR/USD.SIM",
+        "price_precision": "5",
+        "size_precision": "0",
+    }
+    writer = ParquetWriter(
+        ParquetType.QuoteTick,
+        metadata,
+    )
+
+    file_path = tempfile.mktemp()
+
+    for chunk in reader:
+        writer.write(chunk)
+
+    with open(file_path, "wb") as f:
+        data: bytes = writer.flush_bytes()
+        f.write(data)
+
+    # Read quotes again
+    reader = ParquetReader(
+        file_path,
+        1000,
+        ParquetType.QuoteTick,
+        ParquetReaderType.File,
+    )
+
+    # Cleanup
+    os.remove(file_path)
+
+    mapped_chunk = map(QuoteTick.list_from_capsule, reader)
+    quotes = list(itertools.chain(*mapped_chunk))
+
+    assert len(quotes) == 9500
+
+
+def test_file_parquet_writer_trade_ticks():
+    # Read quotes
+    parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
+    assert os.path.exists(parquet_data_path)
+
+    reader = ParquetReader(
+        parquet_data_path,
+        100,
+        ParquetType.TradeTick,
+        ParquetReaderType.File,
+    )
+
+    # Write trades
+    metadata = {
+        "instrument_id": "EUR/USD.SIM",
+        "price_precision": "5",
+        "size_precision": "0",
+    }
+    writer = ParquetWriter(
+        ParquetType.QuoteTick,
+        metadata,
+    )
+
+    file_path = tempfile.mktemp()
+    with open(file_path, "wb") as f:
+        for chunk in reader:
+            writer.write(chunk)
+        data: bytes = writer.flush_bytes()
+        f.write(data)
+
+    # Read quotes again
+    reader = ParquetReader(
+        parquet_data_path,
+        100,
+        ParquetType.TradeTick,
+        ParquetReaderType.File,
+    )
+
+    # Cleanup
+    os.remove(file_path)
+
+    mapped_chunk = map(TradeTick.list_from_capsule, reader)
+    trades = list(itertools.chain(*mapped_chunk))
+
+    assert len(trades) == 100
 
 
 def get_peak_memory_usage_gb():

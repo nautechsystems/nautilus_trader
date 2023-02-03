@@ -27,7 +27,7 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.persistence.base import Singleton
+from nautilus_trader.persistence.external.util import Singleton
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 
 
