@@ -21,7 +21,7 @@ class MyDataPoint(Data):
         z: int,
         ts_event: int,
         ts_init: int,
-    ):
+    ) -> None:
         super().__init__(ts_event, ts_init)
 
         self.label = label

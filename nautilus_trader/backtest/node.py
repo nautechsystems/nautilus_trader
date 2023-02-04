@@ -167,6 +167,12 @@ class BacktestNode:
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
+            if config.leverages:
+                leverages = {
+                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
+                }
+            else:
+                leverages = {}
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],
@@ -174,11 +180,7 @@ class BacktestNode:
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 default_leverage=Decimal(config.default_leverage),
-                leverages={
-                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
-                }
-                if config.leverages
-                else {},
+                leverages=leverages,
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
                 modules=[ActorFactory.create(module) for module in (config.modules or [])],
@@ -271,9 +273,9 @@ class BacktestNode:
                         GenericData(data_type=DataType(data["type"]), data=d) for d in data["data"]
                     ]
                 self._load_engine_data(engine=engine, data=data)
-            engine.run_streaming(run_config_id=run_config_id)
+            engine.run(run_config_id=run_config_id, streaming=True)
 
-        engine.end_streaming()
+        engine.end()
         engine.dispose()
 
     def _run_oneshot(

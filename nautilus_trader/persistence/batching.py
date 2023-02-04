@@ -49,11 +49,9 @@ def _generate_batches(
     use_rust: bool = False,
     n_rows: int = 10_000,
 ):
-
     use_rust = use_rust and cls in (QuoteTick, TradeTick)
     files = sorted(files, key=lambda x: Path(x).stem)
     for file in files:
-
         if use_rust:
             reader = ParquetReader(
                 file,
@@ -63,7 +61,6 @@ def _generate_batches(
             )
 
             for capsule in reader:
-
                 # PyCapsule > List
                 if cls == QuoteTick:
                     objs = QuoteTick.list_from_capsule(capsule)
@@ -71,7 +68,6 @@ def _generate_batches(
                     objs = TradeTick.list_from_capsule(capsule)
 
                 yield objs
-
         else:
             for batch in pq.ParquetFile(fs.open(file)).iter_batches(batch_size=n_rows):
                 if batch.num_rows == 0:
@@ -101,7 +97,6 @@ def generate_batches(
     end = end_time
     started = False
     for batch in batches:
-
         min = batch[0].ts_init
         max = batch[-1].ts_init
         if min < start and max < start:
@@ -180,7 +175,7 @@ def frame_to_nautilus(df: pd.DataFrame, cls: type):
 def batch_files(  # noqa: C901
     catalog: ParquetDataCatalog,
     data_configs: list[BacktestDataConfig],
-    read_num_rows: int = 10000,
+    read_num_rows: int = 10_000,
     target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
 ):
     files = build_filenames(catalog=catalog, data_configs=data_configs)
