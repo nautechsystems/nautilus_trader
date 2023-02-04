@@ -85,7 +85,7 @@ class TestBacktestNode:
         # Assert
         assert len(results) == 1
 
-    def test_backtest_run_streaming_sync(self):
+    def test_backtest_run_batch_sync(self):
         # Arrange
         config = BacktestRunConfig(
             engine=BacktestEngineConfig(strategies=self.strategies),
