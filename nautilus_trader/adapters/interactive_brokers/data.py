@@ -425,7 +425,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         has_new_bar: bool,
         bar_type: BarType,
     ):
-
         if not has_new_bar:
             return
 
@@ -454,7 +453,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         has_new_bar: bool,
         process_all: bool = False,
     ) -> None:
-
         if not process_all:
             if self._handle_revised_bars:
                 bars = [bar_data_list[-1]]

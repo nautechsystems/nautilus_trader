@@ -109,7 +109,6 @@ class TestPersistenceStreaming:
         assert result == expected
 
     def test_feather_writer_generic_data(self):
-
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
 
@@ -157,7 +156,6 @@ class TestPersistenceStreaming:
 
     @pytest.mark.skip(reason="fix after merge")
     def test_feather_writer_signal_data(self):
-
         # Arrange
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         data_config = BacktestDataConfig(

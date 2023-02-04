@@ -340,7 +340,6 @@ def runner_change_all_depth_to_order_book_snapshot(
     ts_event: int,
     ts_init: int,
 ) -> Optional[OrderBookSnapshot]:
-
     # Bids are available to lay (atl)
     if rc.atl:
         bids = [

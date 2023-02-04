@@ -73,7 +73,7 @@ optional additional C-inspired syntax.
 
 The project heavily utilizes Cython to provide static type safety and increased performance
 for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
-written in Cython, however the libraries can be accessed from both pure Python and Cython.
+written in Cython, however the libraries can be accessed from both Python and Cython.
 
 ## What is Rust?
 

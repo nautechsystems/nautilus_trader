@@ -109,7 +109,6 @@ class ParquetDataCatalog(BaseDataCatalog):
     # -- QUERIES -----------------------------------------------------------------------------------
 
     def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
-
         if not is_nautilus_class(cls):
             # Special handling for generic data
             return self.generic_data(
@@ -177,7 +176,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Load rust objects
         use_rust = kwargs.get("use_rust") and cls in (QuoteTick, TradeTick)
         if use_rust and kwargs.get("as_nautilus"):
-
             # start_nanos = int(pd.Timestamp(end).to_datetime64()) if start else None
             # end_nanos = int(pd.Timestamp(end).to_datetime64()) if end else None
             from nautilus_trader.persistence.batching import (
@@ -261,7 +259,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         start_nanos: Optional[int] = None,
         end_nanos: Optional[int] = None,
     ) -> list[str]:
-
         if instrument_id is None:
             folder = self.path
         else:

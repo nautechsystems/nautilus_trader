@@ -23,7 +23,7 @@ from nautilus_trader.model.enums import PriceType
 
 # It's generally recommended to code indicators in Cython as per the built-in
 # indicators found in the `indicators` subpackage. However this is an example
-# demonstrating an equivalent EMA indicator written in pure Python.
+# demonstrating an equivalent EMA indicator written in Python.
 
 # Note: The `MovingAverage` base class has not being used in this example to
 # provide more clarity on how to implement custom indicators. Basically you need
