@@ -13,15 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import platform
 import socket
 import sys
 import traceback
-from asyncio import Task
-from collections import defaultdict
 from platform import python_version
-from typing import Optional
 
 import aiohttp
 import msgspec
@@ -33,14 +29,11 @@ import pytz
 
 from nautilus_trader import __version__
 
-from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.enums_c cimport log_level_to_str
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
@@ -83,6 +76,8 @@ cdef class Logger:
         The instance ID.
     level_stdout : LogLevel
         The minimum log level for logging messages to stdout.
+    rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
         If the logger should be bypassed.
     """
@@ -94,6 +89,7 @@ cdef class Logger:
         str machine_id = None,
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
+        int rate_limit = 100_000,
         bint bypass = False,
     ):
         if trader_id is None:
@@ -112,6 +108,7 @@ cdef class Logger:
             pystr_to_cstr(machine_id),
             pystr_to_cstr(instance_id_str),
             level_stdout,
+            rate_limit,
             bypass,
         )
         self._sinks = []

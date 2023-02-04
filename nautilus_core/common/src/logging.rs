@@ -275,6 +275,7 @@ pub unsafe extern "C" fn logger_new(
     machine_id_ptr: *const c_char,
     instance_id_ptr: *const c_char,
     level_stdout: LogLevel,
+    rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
@@ -282,7 +283,7 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
-        100_000, // TODO(cs): Hardcoded for the moment
+        rate_limit,
         is_bypassed != 0,
     )))
 }
