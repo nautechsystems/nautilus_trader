@@ -40,11 +40,23 @@ pub struct Logger {
     pub instance_id: UUID4,
     /// The maximum log level to write to stdout.
     pub level_stdout: LogLevel,
+    /// If logging is bypassed.
+    pub is_bypassed: bool,
+    tx: Sender<LogMessage>,
+}
+
+pub struct LoggerReceiver {
+    /// The trader ID for the logger.
+    pub trader_id: String,
+    /// The maximum log level to write to stdout.
+    pub level_stdout: LogLevel,
     /// The maximum messages per second which can be flushed to stdout or stderr.
     pub rate_limit: usize,
     /// If logging is bypassed.
     pub is_bypassed: bool,
-    tx: Sender<LogMessage>,
+    rx: Receiver<LogMessage>,
+    out: BufWriter<Stdout>,
+    err: BufWriter<Stderr>,
 }
 
 #[derive(Clone, Debug)]
@@ -56,118 +68,29 @@ pub struct LogMessage {
     msg: String,
 }
 
-/// Provides a high-performance logger utilizing a MPSC channel under the hood.
-///
-/// A separate thead is spawned at initialization which receives `LogMessage` structs over the
-/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
-/// per second).
 impl Logger {
     fn new(
-        trader_id: TraderId,
+        trader_id: String,
         machine_id: String,
         instance_id: UUID4,
         level_stdout: LogLevel,
         rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
-        let trader_id_clone = trader_id.value.to_string();
         let (tx, rx) = channel::<LogMessage>();
 
-        thread::spawn(move || {
-            Self::handle_messages(&trader_id_clone, level_stdout, rate_limit, rx)
-        });
+        let mut logger =
+            LoggerReceiver::new(trader_id.clone(), level_stdout, rate_limit, is_bypassed, rx);
 
-        Logger {
-            trader_id,
+        thread::spawn(move || logger.handle_messages());
+
+        Self {
+            trader_id: TraderId::new(&trader_id),
             machine_id,
             instance_id,
             level_stdout,
-            rate_limit,
             is_bypassed,
             tx,
-        }
-    }
-
-    fn handle_messages(
-        trader_id: &str,
-        level_stdout: LogLevel,
-        rate_limit: usize,
-        rx: Receiver<LogMessage>,
-    ) {
-        let mut out = BufWriter::new(io::stdout());
-        let mut err = BufWriter::new(io::stderr());
-
-        let log_template = String::from(
-            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
-        );
-
-        let mut msg_count = 0;
-        let mut bucket_time = Instant::now();
-
-        // Continue to receive and handle log messages until channel is hung up
-        while let Ok(log_msg) = rx.recv() {
-            if log_msg.level < level_stdout {
-                continue;
-            }
-
-            while msg_count >= rate_limit {
-                if bucket_time.elapsed().as_secs() >= 1 {
-                    msg_count = 0;
-                    bucket_time = Instant::now();
-                } else {
-                    thread::sleep(Duration::from_millis(10));
-                }
-            }
-
-            let fmt_line = log_template
-                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-                .replace("{color}", &log_msg.color.to_string())
-                .replace("{level}", &log_msg.level.to_string())
-                .replace("{trader_id}", trader_id)
-                .replace("{component}", &log_msg.component)
-                .replace("{msg}", &log_msg.msg);
-
-            if log_msg.level >= LogLevel::Error {
-                Self::write_stderr(&mut err, fmt_line);
-                Self::flush_stderr(&mut err);
-            } else {
-                Self::write_stdout(&mut out, fmt_line);
-                Self::flush_stdout(&mut out);
-            }
-
-            msg_count += 1;
-        }
-
-        // Finally ensure remaining buffers are flushed
-        Self::flush_stderr(&mut err);
-        Self::flush_stdout(&mut out);
-    }
-
-    fn write_stdout(out: &mut BufWriter<Stdout>, line: String) {
-        match out.write_all(line.as_bytes()) {
-            Ok(_) => {}
-            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
-        }
-    }
-
-    fn flush_stdout(out: &mut BufWriter<Stdout>) {
-        match out.flush() {
-            Ok(_) => {}
-            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
-        }
-    }
-
-    fn write_stderr(err: &mut BufWriter<Stderr>, line: String) {
-        match err.write_all(line.as_bytes()) {
-            Ok(_) => {}
-            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
-        }
-    }
-
-    fn flush_stderr(err: &mut BufWriter<Stderr>) {
-        match err.flush() {
-            Ok(_) => {}
-            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
     }
 
@@ -188,7 +111,109 @@ impl Logger {
         };
         self.tx.send(log_message)
     }
+}
 
+/// Provides a high-performance logger utilizing a MPSC channel under the hood.
+///
+/// A separate thead is spawned at initialization which receives `LogMessage` structs over the
+/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
+/// per second).
+impl LoggerReceiver {
+    fn new(
+        trader_id: String,
+        level_stdout: LogLevel,
+        rate_limit: usize,
+        is_bypassed: bool,
+        rx: Receiver<LogMessage>,
+    ) -> Self {
+        LoggerReceiver {
+            trader_id,
+            level_stdout,
+            rate_limit,
+            is_bypassed,
+            rx,
+            out: BufWriter::new(io::stdout()),
+            err: BufWriter::new(io::stderr()),
+        }
+    }
+
+    fn handle_messages(&mut self) {
+        let log_template = String::from(
+            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
+        );
+
+        let mut msg_count = 0;
+        let mut bucket_time = Instant::now();
+
+        // Continue to receive and handle log messages until channel is hung up
+        while let Ok(log_msg) = self.rx.recv() {
+            if log_msg.level < self.level_stdout {
+                continue;
+            }
+
+            while msg_count >= self.rate_limit {
+                if bucket_time.elapsed().as_secs() >= 1 {
+                    msg_count = 0;
+                    bucket_time = Instant::now();
+                } else {
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+
+            let fmt_line = log_template
+                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
+                .replace("{color}", &log_msg.color.to_string())
+                .replace("{level}", &log_msg.level.to_string())
+                .replace("{trader_id}", &self.trader_id)
+                .replace("{component}", &log_msg.component)
+                .replace("{msg}", &log_msg.msg);
+
+            if log_msg.level >= LogLevel::Error {
+                self.write_stderr(fmt_line);
+                self.flush_stderr();
+            } else {
+                self.write_stdout(fmt_line);
+                self.flush_stdout();
+            }
+
+            msg_count += 1;
+        }
+
+        // Finally ensure remaining buffers are flushed
+        self.flush_stderr();
+        self.flush_stdout();
+    }
+
+    fn write_stdout(&mut self, line: String) {
+        match self.out.write_all(line.as_bytes()) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
+        }
+    }
+
+    fn flush_stdout(&mut self) {
+        match self.out.flush() {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
+        }
+    }
+
+    fn write_stderr(&mut self, line: String) {
+        match self.err.write_all(line.as_bytes()) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
+        }
+    }
+
+    fn flush_stderr(&mut self) {
+        match self.err.flush() {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+        }
+    }
+}
+
+impl Logger {
     pub fn debug(
         &mut self,
         timestamp_ns: u64,
@@ -279,7 +304,7 @@ pub unsafe extern "C" fn logger_new(
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
-        TraderId::new(&cstr_to_string(trader_id_ptr)),
+        cstr_to_string(trader_id_ptr),
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
@@ -344,7 +369,7 @@ mod tests {
     #[test]
     fn test_new_logger() {
         let logger = Logger::new(
-            TraderId::new("TRADER-000"),
+            "TRADER-000".to_string(),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Debug,
@@ -358,7 +383,7 @@ mod tests {
     #[test]
     fn test_logger_debug() {
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            "TRADER-001".to_string(),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
