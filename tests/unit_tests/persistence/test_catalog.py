@@ -96,7 +96,6 @@ class TestPersistenceCatalogRust:
 
         # Write EUR/USD and USD/JPY rust quotes
         for instrument_id in ("EUR/USD.SIM", "USD/JPY.SIM"):
-
             # Reset reader
             reader = ParquetReader(
                 parquet_data_path,

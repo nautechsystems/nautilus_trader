@@ -60,7 +60,6 @@ class _TestPersistenceCore:
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def teardown(self):
-
         # Cleanup
         path = self.catalog.path
         fs = self.catalog.fs
@@ -202,7 +201,6 @@ class _TestPersistenceCore:
         assert expected in files
 
     def test_data_catalog_instruments_no_partition(self):
-
         # Arrange, Act
         self._load_data_into_catalog()
         path = f"{self.catalog.path}/data/betting_instrument.parquet"

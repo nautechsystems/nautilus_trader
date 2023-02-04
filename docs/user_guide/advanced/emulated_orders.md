@@ -5,10 +5,9 @@ of whether the type is supported on a trading venue. The logic and code paths fo
 order emulation are exactly the same for all environment contexts (backtest, sandbox, live), 
 and utilize a common `OrderEmulator` component.
 
-## Limitations
+```{note}
 There is no limitation on the number of emulated orders you can have per running instance.
-Currently only individual orders can be emulated, so it is not possible to submit contingency order lists
-for emulation (this may be supported in a future version).
+```
 
 ## Submitting for emulation
 The only requirement to emulate an order is to pass a `TriggerType` to the `emulation_trigger`
@@ -29,18 +28,18 @@ An emulated order will retain its original client order ID throughout its entire
 ## Life cycle
 An emulated order will progress through the following stages:
 - Submitted by a `Strategy` through the `submit_order` method
-- Then sent to the `RiskEngine` for pre-trade risk checks (if may be denied at this point)
+- Then sent to the `RiskEngine` for pre-trade risk checks (it may be denied at this point)
 - Then sent to the `OrderEmulator` where it is _held_ / emulated
 
 ### Held emulated orders
-The following will occur for an emulated order now inside the `OrderEmulator` component:
+The following will occur for an emulated order now _held_ by the `OrderEmulator` component:
 - The original `SubmitOrder` command will be cached
-- The emulated order will be held inside a local `MatchingCore` component
+- The emulated order will be processed inside a local `MatchingCore` component
 - The `OrderEmulator` will subscribe to any needed market data (if not already) to update the matching core
-- The emulated order will be modified (by the trader) and updated (by the market) until _released_ or canceled
+- The emulated order can be modified (by the trader) and updated (by the market) until _released_ or canceled
 
 ### Released emulated orders
-Once an emulated order is triggered / matched locally based on a data feed, the following
+Once an emulated order is triggered / matched locally based on the arrival of data, the following
 _release_ actions will occur:
 - The order will be transformed to either a `MARKET` or `LIMIT` order (see below table) through an additional `OrderInitialized` event
 - The orders `emulation_trigger` will be set to `NONE` (it will no longer be treated as an emulated order by any component)
@@ -73,7 +72,7 @@ It's possible to query for emulated orders through the following `Cache` methods
 
 See the full [API reference](../../api_reference/cache) for additional details.
 
-You can also query order objects directly in pure Python:
+You can also query order objects directly in Python:
 - `order.is_emulated`
 
 Or through the C API if in Cython:

@@ -137,7 +137,6 @@ class TestPersistenceBatching:
 
 
 class TestBatchingData:
-
     test_parquet_files = [
         os.path.join(TEST_DATA_DIR, "quote_tick_eurusd_2019_sim_rust.parquet"),
         os.path.join(TEST_DATA_DIR, "quote_tick_usdjpy_2019_sim_rust.parquet"),
@@ -154,7 +153,6 @@ class TestBatchingData:
 
 class TestGenerateBatches(TestBatchingData):
     def test_generate_batches_returns_empty_list_before_start_timestamp_with_end_timestamp(self):
-
         start_timestamp = 1546389021944999936
         batch_gen = generate_batches(
             files=[self.test_parquet_files[1]],
@@ -195,7 +193,6 @@ class TestGenerateBatches(TestBatchingData):
         assert all([len(x) == 1000 for x in batches])
 
     def test_generate_batches_returns_empty_list_before_start_timestamp(self):
-
         # Arrange
         parquet_data_path = self.test_parquet_files[0]
         start_timestamp = 1546383601403000064  # index 10 (1st item in batch)

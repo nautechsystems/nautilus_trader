@@ -65,6 +65,7 @@ registering indicators to receive certain data types, however in this example we
 
 ```python
 from typing import Optional
+from nautilus_trader.core.message import Event
 from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 from nautilus_trader.model.data.tick import QuoteTick
@@ -85,7 +86,7 @@ class MACDConfig(StrategyConfig):
 
 
 class MACDStrategy(Strategy):
-    def __init__(self, config: MACDConfig):
+    def __init__(self, config: MACDConfig) -> None:
         super().__init__(config=config)
         # Our "trading signal"
         self.macd = MovingAverageConvergenceDivergence(
@@ -99,13 +100,13 @@ class MACDStrategy(Strategy):
         # Convenience
         self.position: Optional[Position] = None
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         self.unsubscribe_quote_ticks(instrument_id=self.instrument_id)
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         # Update our MACD
         self.macd.handle_quote_tick(tick)
         if self.macd.value:
@@ -115,11 +116,11 @@ class MACDStrategy(Strategy):
         if self.position:
             assert self.position.quantity <= 1000
 
-    def on_event(self, event):
+    def on_event(self, event: Event) -> None:
         if isinstance(event, PositionEvent):
             self.position = self.cache.position(event.position_id)
 
-    def check_for_entry(self):
+    def check_for_entry(self) -> None:
         if self.cache.positions():
             # If we have a position, do not enter again
             return
@@ -136,7 +137,7 @@ class MACDStrategy(Strategy):
             )
             self.submit_order(order)
 
-    def check_for_exit(self):
+    def check_for_exit(self) -> None:
         if not self.cache.positions():
             # If we don't have a position, return early
             return
@@ -154,7 +155,7 @@ class MACDStrategy(Strategy):
             )
             self.submit_order(order)
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         pass  # Do nothing else
 ```
 

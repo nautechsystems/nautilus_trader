@@ -283,7 +283,6 @@ def write_tables(
 
 
 def write_parquet_rust(catalog: ParquetDataCatalog, objs: list, instrument: Instrument):
-
     cls = type(objs[0])
 
     assert cls in (QuoteTick, TradeTick)
