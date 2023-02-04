@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 from datetime import datetime
 from decimal import Decimal
 
@@ -97,6 +98,7 @@ if __name__ == "__main__":
     strategy = VolatilityMarketMaker(config=config)
     engine.add_strategy(strategy=strategy)
 
+    time.sleep(0.1)
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)

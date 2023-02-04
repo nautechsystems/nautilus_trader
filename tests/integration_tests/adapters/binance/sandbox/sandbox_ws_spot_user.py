@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.factories import get_cached_binance_http_c
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 
 
@@ -49,7 +48,7 @@ async def test_binance_websocket_client():
     ws = BinanceWebSocketClient(
         loop=loop,
         clock=clock,
-        logger=LiveLogger(loop=loop, clock=clock),
+        logger=Logger(clock=clock),
         handler=print,
     )
 

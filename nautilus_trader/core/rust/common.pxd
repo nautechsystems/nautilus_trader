@@ -176,8 +176,6 @@ cdef extern from "../includes/common.h":
 
     void logger_free(CLogger logger);
 
-    void flush(CLogger *logger);
-
     const char *logger_get_trader_id_cstr(const CLogger *logger);
 
     const char *logger_get_machine_id_cstr(const CLogger *logger);

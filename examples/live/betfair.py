@@ -24,7 +24,7 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -39,7 +39,7 @@ from nautilus_trader.live.node import TradingNode
 async def main(market_id: str):
     # Connect to Betfair client early to load instruments and account currency
     loop = asyncio.get_event_loop()
-    logger = LiveLogger(loop=loop, clock=LiveClock())
+    logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var

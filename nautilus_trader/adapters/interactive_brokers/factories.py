@@ -31,7 +31,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import (
 )
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -163,7 +162,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> InteractiveBrokersDataClient:
         """
         Create a new InteractiveBrokers data client.
@@ -182,7 +181,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -235,7 +234,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> InteractiveBrokersExecutionClient:
         """
         Create a new InteractiveBrokers execution client.
@@ -254,7 +253,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns

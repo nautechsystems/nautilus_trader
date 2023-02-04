@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
+
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -84,6 +86,7 @@ if __name__ == "__main__":
     ]
     engine.add_strategies(strategies)
 
+    time.sleep(0.1)
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)

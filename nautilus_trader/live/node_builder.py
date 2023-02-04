@@ -17,7 +17,7 @@ import asyncio
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ImportableConfig
 from nautilus_trader.config import LiveDataClientConfig
@@ -49,7 +49,7 @@ class TradingNodeBuilder:
         The cache for building clients.
     clock : LiveClock
         The clock for building clients.
-    logger : LiveLogger
+    logger : Logger
         The logger for building clients.
     log : LoggerAdapter
         The trading nodes logger.
@@ -63,7 +63,7 @@ class TradingNodeBuilder:
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
         log: LoggerAdapter,
     ):
         self._msgbus = msgbus

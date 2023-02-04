@@ -214,8 +214,6 @@ struct CLogger logger_new(const char *trader_id_ptr,
 
 void logger_free(struct CLogger logger);
 
-void flush(struct CLogger *logger);
-
 const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 
 const char *logger_get_machine_id_cstr(const struct CLogger *logger);

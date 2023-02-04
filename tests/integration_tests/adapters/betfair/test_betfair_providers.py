@@ -28,7 +28,7 @@ from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
@@ -42,7 +42,7 @@ class TestBetfairInstrumentProvider:
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
+        self.logger = Logger(clock=self.clock)
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairInstrumentProvider(
             client=self.client,

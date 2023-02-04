@@ -81,16 +81,3 @@ cdef class LoggerAdapter:
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
 cpdef void log_memory(LoggerAdapter logger) except *
-
-
-cdef class LiveLogger(Logger):
-    cdef object _loop
-    cdef object _run_task
-    cdef timedelta _blocked_log_interval
-    cdef Queue _queue
-    cdef bint _is_running
-    cdef datetime _last_blocked
-
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cdef void _enqueue_sentinel(self) except *
