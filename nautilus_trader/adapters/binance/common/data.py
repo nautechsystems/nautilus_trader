@@ -182,7 +182,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._log.info("Initialising instruments...")
         await self._instrument_provider.initialize()
 
-        self._log.info("Connected!")
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
 
