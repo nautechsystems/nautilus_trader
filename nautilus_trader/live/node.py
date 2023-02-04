@@ -22,7 +22,7 @@ from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common import Environment
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import log_level_from_str
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LiveDataEngineConfig
@@ -204,13 +204,13 @@ class TradingNode:
         """
         return self.kernel.loop
 
-    def get_logger(self) -> LiveLogger:
+    def get_logger(self) -> Logger:
         """
         Return the logger for the trading node.
 
         Returns
         -------
-        LiveLogger
+        Logger
 
         """
         return self.kernel.logger
@@ -398,7 +398,6 @@ class TradingNode:
             self._is_running = True
 
             # Start system
-            self.kernel.logger.start()
             self.kernel.data_engine.start()
             self.kernel.risk_engine.start()
             self.kernel.exec_engine.start()
@@ -575,7 +574,6 @@ class TradingNode:
             self.kernel.writer.flush()
 
         self.kernel.log.info("STOPPED.")
-        self.kernel.logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:

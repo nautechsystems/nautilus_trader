@@ -13,18 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import socket
 
 import pytest
 
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.enums import log_level_to_str
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 
@@ -193,79 +190,3 @@ class TestLoggerTests:
             "timestamp": 0,
             "trader_id": "TRADER-000",
         }
-
-
-class TestLiveLogger:
-    def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
-        self.logger = LiveLogger(
-            loop=self.loop,
-            clock=LiveClock(),
-            level_stdout=LogLevel.DEBUG,
-        )
-
-        self.logger_adapter = LoggerAdapter(component_name="LIVER_LOGGER", logger=self.logger)
-
-    def test_log_when_not_running_on_event_loop_successfully_logs(self):
-        # Arrange, Act
-        self.logger_adapter.info("test message")
-
-        # Assert
-        assert True  # No exceptions raised
-
-    @pytest.mark.asyncio
-    async def test_start_runs_on_event_loop(self):
-        # Arrange
-        self.logger.start()
-
-        self.logger_adapter.info("A log message.")
-        await asyncio.sleep(0)
-
-        # Act, Assert
-        assert self.logger.is_running
-        self.logger.stop()
-
-    @pytest.mark.asyncio
-    async def test_stop_when_running_stops_logger(self):
-        # Arrange
-        self.logger.start()
-
-        self.logger_adapter.info("A log message.")
-        await asyncio.sleep(0)
-
-        # Act
-        self.logger.stop()
-        self.logger_adapter.info("A log message.")
-
-        # Assert
-        assert not self.logger.is_running
-
-    @pytest.mark.asyncio
-    async def test_log_when_queue_over_maxsize_blocks(self):
-        # Arrange
-        logger = LiveLogger(
-            loop=self.loop,
-            clock=LiveClock(),
-            maxsize=5,
-        )
-
-        logger_adapter = LoggerAdapter(component_name="LIVE_LOGGER", logger=logger)
-        logger.start()
-
-        # Act
-        logger_adapter.info("A log message.")
-        logger_adapter.info("A log message.")  # <-- blocks
-        logger_adapter.info("A different log message.")  # <-- blocks
-        logger_adapter.info("A log message.")  # <-- blocks
-        logger_adapter.info("A different log message.")  # <-- blocks
-        logger_adapter.info("A log message.")  # <-- blocks
-
-        await asyncio.sleep(0.3)  # <-- processes all log messages
-        logger.stop()
-        await asyncio.sleep(0.3)
-
-        # Assert
-        assert not logger.is_running

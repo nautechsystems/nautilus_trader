@@ -19,7 +19,7 @@ from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -37,7 +37,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> SandboxExecutionClient:
         """
         Create a new Sandbox execution client.
@@ -56,7 +56,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns

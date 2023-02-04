@@ -32,7 +32,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
@@ -55,7 +55,7 @@ class TestBetfairClient:
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
+        self.logger = Logger(clock=self.clock)
         self.client = BetfairClient(  # noqa: S106 (no hardcoded password)
             username="username",
             password="password",

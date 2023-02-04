@@ -32,7 +32,7 @@ from nautilus_trader.adapters.interactive_brokers.providers import (
 )
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
@@ -49,11 +49,7 @@ class TestIBInstrumentProvider:
         self.ib = MagicMock()
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = LiveLogger(
-            loop=self.loop,
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-        )
+        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
         self.provider = InteractiveBrokersInstrumentProvider(
             client=self.ib,
             logger=self.logger,

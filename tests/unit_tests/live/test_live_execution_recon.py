@@ -22,7 +22,7 @@ import pytest
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -68,7 +68,7 @@ class TestLiveExecutionReconciliation:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = LiveLogger(self.loop, self.clock)
+        self.logger = Logger(self.clock)
 
         self.account_id = TestIdStubs.account_id()
         self.trader_id = TestIdStubs.trader_id()

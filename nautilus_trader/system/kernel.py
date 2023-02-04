@@ -31,7 +31,6 @@ from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
@@ -205,28 +204,22 @@ class NautilusKernel:
         # Components
         if self._environment == Environment.BACKTEST:
             self._clock = TestClock()
-            self._logger = Logger(
-                clock=LiveClock(loop=loop),
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level,
-                bypass=bypass_logging,
-            )
         elif self.environment in (Environment.SANDBOX, Environment.LIVE):
             self._clock = LiveClock(loop=loop)
-            self._logger = LiveLogger(
-                loop=loop,
-                clock=self._clock,
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level,
-            )
+            bypass_logging = False  # Safety measure so live logging is visible
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        self._logger = Logger(
+            clock=self._clock,
+            trader_id=self._trader_id,
+            machine_id=self._machine_id,
+            instance_id=self._instance_id,
+            level_stdout=log_level,
+            bypass=bypass_logging,
+        )
 
         # Setup logging
         self._log = LoggerAdapter(

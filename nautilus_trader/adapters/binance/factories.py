@@ -30,7 +30,6 @@ from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecution
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -197,7 +196,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> Union[BinanceSpotDataClient, BinanceFuturesDataClient]:
         """
         Create a new Binance data client.
@@ -216,7 +215,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -308,7 +307,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> Union[BinanceSpotExecutionClient, BinanceFuturesExecutionClient]:
         """
         Create a new Binance execution client.
@@ -327,7 +326,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns

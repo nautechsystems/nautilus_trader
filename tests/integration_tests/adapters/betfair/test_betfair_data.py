@@ -35,7 +35,7 @@ from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -79,9 +79,8 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     global INSTRUMENTS
 
     # Setup
-    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.ERROR)
+    logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
-    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, filters={})
 
     # Load instruments
@@ -111,7 +110,7 @@ class TestBetfairDataClient:
         self.venue = BETFAIR_VENUE
 
         # Setup logging
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.ERROR)
+        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.ERROR)
         self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
 
         self.msgbus = MessageBus(

@@ -26,7 +26,6 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -153,7 +152,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ):
         """
         Create a new Betfair data client.
@@ -172,7 +171,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -223,7 +222,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ):
         """
         Create a new Betfair execution client.
@@ -242,7 +241,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
