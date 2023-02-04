@@ -121,6 +121,8 @@ class NautilusKernel:
         If strategy state should be saved on stop.
     log_level : LogLevel, default LogLevel.INFO
         The log level for the kernels logger.
+    log_rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
         If logging to stdout should be bypassed.
 
@@ -155,6 +157,7 @@ class NautilusKernel:
         load_state: bool = False,
         save_state: bool = False,
         log_level: LogLevel = LogLevel.INFO,
+        log_rate_limit: int = 100_000,
         bypass_logging: bool = False,
     ):
         PyCondition.not_none(environment, "environment")
@@ -218,6 +221,7 @@ class NautilusKernel:
             machine_id=self._machine_id,
             instance_id=self._instance_id,
             level_stdout=log_level,
+            rate_limit=log_rate_limit,
             bypass=bypass_logging,
         )
 

@@ -80,6 +80,7 @@ class TradingNode:
             save_state=config.save_state,
             loop_sig_callback=self._loop_sig_handler,
             log_level=log_level_from_str(config.log_level.upper()),
+            log_rate_limit=config.log_rate_limit,
         )
 
         self._builder = TradingNodeBuilder(

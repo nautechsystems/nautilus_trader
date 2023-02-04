@@ -470,6 +470,8 @@ class NautilusKernelConfig(NautilusConfig):
         If the asyncio event loop should be in debug mode.
     log_level : str, default "INFO"
         The stdout log level for the node.
+    log_rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
         If logging to stdout should be bypassed.
     """
@@ -489,6 +491,7 @@ class NautilusKernelConfig(NautilusConfig):
     save_state: bool = False
     loop_debug: bool = False
     log_level: str = "INFO"
+    log_rate_limit: int = 100_000
     bypass_logging: bool = False
 
 

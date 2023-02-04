@@ -137,6 +137,7 @@ cdef class BacktestEngine:
             load_state=config.load_state,
             save_state=config.save_state,
             log_level=log_level_from_str(config.log_level.upper()),
+            log_rate_limit=config.log_rate_limit,
             bypass_logging=config.bypass_logging,
         )
 
