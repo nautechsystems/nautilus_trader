@@ -107,7 +107,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
-    clock_sync_interval_secs : int, default 900
+    clock_sync_interval_secs : int, default 0
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     warn_gtd_to_gtc : bool, default True
@@ -133,7 +133,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
-        clock_sync_interval_secs: int = 900,
+        clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ):
         super().__init__(
@@ -389,7 +389,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
                 binance_orders.extend(response)
         except BinanceError as e:
-            self._log.exception(f"Cannot generate order status report: {e.message}", e)
+            self._log.exception(f"Cannot generate OrderStatusReport: {e.message}", e)
             return []
 
         reports: list[OrderStatusReport] = []
@@ -441,7 +441,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
                 binance_trades.extend(response)
         except BinanceError as e:
-            self._log.exception(f"Cannot generate trade report: {e.message}", e)
+            self._log.exception(f"Cannot generate TradeReport: {e.message}", e)
             return []
 
         # Parse all Binance trades
@@ -484,7 +484,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             symbol = instrument_id.symbol.value if instrument_id is not None else None
             reports = await self._get_binance_position_status_reports(symbol)
         except BinanceError as e:
-            self._log.exception(f"Cannot generate position status report: {e.message}", e)
+            self._log.exception(f"Cannot generate PositionStatusReport: {e.message}", e)
             return []
 
         len_reports = len(reports)

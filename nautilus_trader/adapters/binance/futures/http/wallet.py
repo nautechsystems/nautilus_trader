@@ -29,7 +29,7 @@ from nautilus_trader.common.clock import LiveClock
 
 class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
     """
-    Endpoint of maker/taker commission rate information
+    Endpoint of maker/taker commission rate information.
 
     `GET /fapi/v1/commissionRate`
     `GET /dapi/v1/commissionRate`
@@ -38,7 +38,6 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#user-commission-rate-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#user-commission-rate-user_data
-
     """
 
     def __init__(
@@ -63,12 +62,11 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
         Parameters
         ----------
         symbol : BinanceSymbol
-            Receive commission rate of the provided symbol
-        recvWindow : str
-            Optional number of milliseconds after timestamp the request is valid
+            Receive commission rate of the provided symbol.
         timestamp : str
-            Millisecond timestamp of the request
-
+            Millisecond timestamp of the request.
+        recvWindow : str, optional
+            The number of milliseconds after timestamp the request is valid.
         """
 
         timestamp: str
@@ -116,7 +114,7 @@ class BinanceFuturesWalletHttpAPI:
         )
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock"""
+        """Create Binance timestamp from internal clock."""
         return str(self._clock.timestamp_ms())
 
     async def query_futures_commission_rate(

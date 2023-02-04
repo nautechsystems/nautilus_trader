@@ -29,14 +29,13 @@ from nautilus_trader.common.clock import LiveClock
 
 class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     """
-    Endpoint of maker/taker trade fee information
+    Endpoint of maker/taker trade fee information.
 
     `GET /sapi/v1/asset/tradeFee`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
-
     """
 
     def __init__(
@@ -57,7 +56,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET parameters for fetching trade fees
+        GET parameters for fetching trade fees.
 
         Parameters
         ----------
@@ -67,7 +66,6 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
             Optional number of milliseconds after timestamp the request is valid
         timestamp : str
             Millisecond timestamp of the request
-
         """
 
         timestamp: str
@@ -111,7 +109,7 @@ class BinanceSpotWalletHttpAPI:
         self._endpoint_spot_trade_fee = BinanceSpotTradeFeeHttp(client, self.base_endpoint)
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock"""
+        """Create Binance timestamp from internal clock."""
         return str(self._clock.timestamp_ms())
 
     async def query_spot_trade_fees(

@@ -29,7 +29,7 @@ from nautilus_trader.core.correctness import PyCondition
 
 class BinanceListenKeyHttp(BinanceHttpEndpoint):
     """
-    Endpoint for managing user data streams (listenKey)
+    Endpoint for managing user data streams (listenKey).
 
     `POST /api/v3/userDataStream`
     `POST /sapi/v3/userDataStream`
@@ -79,7 +79,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
     class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        POST parameters for creating listenkeys
+        POST parameters for creating listen keys.
 
         Parameters
         ----------
@@ -91,14 +91,14 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
     class PutDeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        PUT & DELETE parameters for managing listenkeys
+        PUT & DELETE parameters for managing listen keys.
 
         Parameters
         ----------
         symbol : BinanceSymbol
             The trading pair. Only required for ISOLATED MARGIN accounts!
         listenKey : str
-            The listenkey to manage. Only required for SPOT/MARGIN accounts!
+            The listen key to manage. Only required for SPOT/MARGIN accounts!
         """
 
         symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
@@ -129,7 +129,7 @@ class BinanceUserDataHttpAPI:
     client : BinanceHttpClient
         The Binance REST API client.
     account_type : BinanceAccountType
-        The Binance account type, used to select the endpoint
+        The Binance account type, used to select the endpoint.
 
     Warnings
     --------

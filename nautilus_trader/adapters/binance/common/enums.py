@@ -292,7 +292,7 @@ class BinanceEnumParser:
             return self.ext_to_int_order_side[order_side]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized binance order side, was {order_side}",  # pragma: no cover
+                f"unrecognized Binance order side, was {order_side}",  # pragma: no cover
             )
 
     def parse_internal_order_side(self, order_side: OrderSide) -> BinanceOrderSide:
@@ -300,7 +300,7 @@ class BinanceEnumParser:
             return self.int_to_ext_order_side[order_side]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized internal order side, was {order_side}",  # pragma: no cover
+                f"unrecognized Nautilus order side, was {order_side}",  # pragma: no cover
             )
 
     def parse_binance_time_in_force(self, time_in_force: BinanceTimeInForce) -> TimeInForce:
@@ -308,7 +308,7 @@ class BinanceEnumParser:
             return self.ext_to_int_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized binance time in force, was {time_in_force}",  # pragma: no cover
+                f"unrecognized Binance time in force, was {time_in_force}",  # pragma: no cover
             )
 
     def parse_internal_time_in_force(self, time_in_force: TimeInForce) -> BinanceTimeInForce:
@@ -316,7 +316,7 @@ class BinanceEnumParser:
             return self.int_to_ext_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized internal time in force, was {time_in_force}",  # pragma: no cover
+                f"unrecognized Nautilus time in force, was {time_in_force}",  # pragma: no cover
             )
 
     def parse_binance_order_status(self, order_status: BinanceOrderStatus) -> OrderStatus:
@@ -340,7 +340,7 @@ class BinanceEnumParser:
             return self.ext_to_int_bar_agg[bar_agg]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized binance kline resolution, was {bar_agg}",
+                f"unrecognized Binance kline resolution, was {bar_agg}",
             )
 
     def parse_internal_bar_agg(self, bar_agg: BarAggregation) -> str:
@@ -348,7 +348,7 @@ class BinanceEnumParser:
             return self.int_to_ext_bar_agg[bar_agg]
         except KeyError:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                "unrecognized or non-supported BarAggregation,",
+                "unrecognized or non-supported Nautilus BarAggregation,",
                 f"was {bar_aggregation_to_str(bar_agg)}",  # pragma: no cover
             )
 

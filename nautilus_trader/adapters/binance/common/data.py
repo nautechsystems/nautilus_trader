@@ -361,11 +361,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        if self._binance_account_type.is_futures:
-            self._log.warning(
-                "Trade ticks have been requested from a `Binance Futures` exchange. "
-                "This functionality is not officially documented or supported.",
-            )
         self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
@@ -378,9 +373,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return
 
         resolution = self._enum_parser.parse_internal_bar_agg(bar_type.spec.aggregation)
-        if not self._binance_account_type.is_spot_or_margin and resolution == "s":
+        if self._binance_account_type.is_futures and resolution == "s":
             self._log.error(
-                f"Cannot request {bar_type}.",
+                f"Cannot subscribe to {bar_type}. ",
                 "Second interval bars are not aggregated by Binance Futures.",
             )
         try:

@@ -24,11 +24,11 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
 
 class BinanceSymbol(str):
-    """Binance compatible symbol"""
+    """Binance compatible symbol."""
 
     def __new__(cls, symbol: str):
         if symbol is not None:
-            # Format the string on construction to be binance compatible
+            # Format the string on construction to be Binance compatible
             return super().__new__(
                 cls,
                 symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
@@ -48,7 +48,7 @@ class BinanceSymbol(str):
 
 
 class BinanceSymbols(str):
-    """Binance compatible list of symbols"""
+    """Binance compatible list of symbols."""
 
     def __new__(cls, symbols: list[str]):
         if symbols is not None:
