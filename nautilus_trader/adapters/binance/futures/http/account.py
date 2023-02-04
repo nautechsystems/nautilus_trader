@@ -33,7 +33,7 @@ from nautilus_trader.common.clock import LiveClock
 
 class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
     """
-    Endpoint of user's position mode for every FUTURES symbol
+    Endpoint of user's position mode for every FUTURES symbol.
 
     `GET /fapi/v1/positionSide/dual`
     `GET /dapi/v1/positionSide/dual`
@@ -45,7 +45,6 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#change-position-mode-trade
     https://binance-docs.github.io/apidocs/delivery/en/#change-position-mode-trade
-
     """
 
     def __init__(
@@ -68,15 +67,14 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of positionSide/dual GET request
+        Parameters of positionSide/dual GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -84,18 +82,17 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
 
     class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of positionSide/dual POST request
+        Parameters of positionSide/dual POST request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         dualSidePosition : str ('true', 'false')
             The dual side position mode to set...
-            `true`: Hedge Mode, `false`: One-way mode
+            `true`: Hedge Mode, `false`: One-way mode.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -124,7 +121,6 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#cancel-all-open-orders-trade
     https://binance-docs.github.io/apidocs/delivery/en/#cancel-all-open-orders-trade
-
     """
 
     def __init__(
@@ -145,17 +141,16 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
 
     class DeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of allOpenOrders DELETE request
+        Parameters of allOpenOrders DELETE request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         symbol : BinanceSymbol
             The symbol of the request
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -170,7 +165,7 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
 
 class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
     """
-    Endpoint of current FUTURES account information
+    Endpoint of current FUTURES account information.
 
     `GET /fapi/v2/account`
     `GET /dapi/v1/account`
@@ -179,7 +174,6 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#account-information-v2-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#account-information-user_data
-
     """
 
     def __init__(
@@ -200,15 +194,14 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of account GET request
+        Parameters of account GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -231,7 +224,6 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#position-information-v2-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#position-information-user_data
-
     """
 
     def __init__(
@@ -252,17 +244,16 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of positionRisk GET request
+        Parameters of positionRisk GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
-        symbol : BinanceSymbol
-            The symbol of the request
+            The millisecond timestamp of the request.
+        symbol : BinanceSymbol, optional
+            The symbol of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -325,7 +316,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         self,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesDualSidePosition:
-        """Check Binance Futures hedge mode (dualSidePosition)"""
+        """Check Binance Futures hedge mode (dualSidePosition)."""
         return await self._endpoint_futures_position_mode._get(
             parameters=self._endpoint_futures_position_mode.GetParameters(
                 timestamp=self._timestamp(),
@@ -338,7 +329,7 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         dual_side_position: bool,
         recv_window: Optional[str] = None,
     ) -> BinanceStatusCode:
-        """Set Binance Futures hedge mode (dualSidePosition)"""
+        """Set Binance Futures hedge mode (dualSidePosition)."""
         return await self._endpoint_futures_position_mode._post(
             parameters=self._endpoint_futures_position_mode.PostParameters(
                 timestamp=self._timestamp(),

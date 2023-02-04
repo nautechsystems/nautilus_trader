@@ -32,14 +32,13 @@ from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExch
 
 class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
     """
-    Endpoint of SPOT/MARGIN exchange trading rules and symbol information
+    Endpoint of SPOT/MARGIN exchange trading rules and symbol information.
 
     `GET /api/v3/exchangeInfo`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#exchange-information
-
     """
 
     def __init__(
@@ -60,17 +59,16 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET exchangeInfo parameters
+        GET exchangeInfo parameters.
 
         Parameters
         ----------
-        symbol : BinanceSymbol
-            Optional, specify trading pair to get exchange info for
-        symbols : BinanceSymbols
-            Optional, specify list of trading pairs to get exchange info for
-        permissions : BinanceSpotPermissions
-            Optional, filter symbols list by supported permissions
-
+        symbol : BinanceSymbol, optional
+            The specify trading pair to get exchange info for.
+        symbols : BinanceSymbols, optional
+            The specify list of trading pairs to get exchange info for.
+        permissions : BinanceSpotPermissions, optional
+            The filter symbols list by supported permissions.
         """
 
         symbol: Optional[BinanceSymbol] = None
@@ -85,14 +83,13 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
 
 class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
     """
-    Endpoint of current average price of a symbol
+    Endpoint of current average price of a symbol.
 
     `GET /api/v3/avgPrice`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#current-average-price
-
     """
 
     def __init__(
@@ -113,13 +110,12 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET avgPrice parameters
+        GET avgPrice parameters.
 
         Parameters
         ----------
         symbol : BinanceSymbol
-            Specify trading pair to get average price for
-
+            Specify trading pair to get average price for.
         """
 
         symbol: BinanceSymbol = None
@@ -139,8 +135,7 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
     client : BinanceHttpClient
         The Binance REST API client.
     account_type : BinanceAccountType
-        The Binance account type, used to select the endpoint
-
+        The Binance account type, used to select the endpoint.
     """
 
     def __init__(

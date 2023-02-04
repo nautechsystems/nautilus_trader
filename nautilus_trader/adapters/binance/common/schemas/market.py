@@ -61,7 +61,7 @@ class BinanceTime(msgspec.Struct, frozen=True):
 
 class BinanceExchangeFilter(msgspec.Struct):
     """
-    Schema of an exchange filter, within response of GET `exchangeInfo`
+    Schema of an exchange filter, within response of GET `exchangeInfo.`
     """
 
     filterType: BinanceExchangeFilterType
@@ -71,7 +71,7 @@ class BinanceExchangeFilter(msgspec.Struct):
 
 class BinanceRateLimit(msgspec.Struct):
     """
-    Schema of rate limit info, within response of GET `exchangeInfo`
+    Schema of rate limit info, within response of GET `exchangeInfo.`
     """
 
     rateLimitType: BinanceRateLimitType
@@ -83,7 +83,7 @@ class BinanceRateLimit(msgspec.Struct):
 
 class BinanceSymbolFilter(msgspec.Struct):
     """
-    Schema of a symbol filter, within response of GET `exchangeInfo`
+    Schema of a symbol filter, within response of GET `exchangeInfo.`
     """
 
     filterType: BinanceSymbolFilterType
@@ -116,13 +116,14 @@ class BinanceSymbolFilter(msgspec.Struct):
     minTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
     maxTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
     minTrailingBelowDelta: Optional[int] = None  # SPOT/MARGIN only
-    maxTrailingBelowDetla: Optional[int] = None  # SPOT/MARGIN only
+    maxTrailingBelowDelta: Optional[int] = None  # SPOT/MARGIN only
 
 
 class BinanceDepth(msgspec.Struct, frozen=True):
     """
     Schema of a binance orderbook depth.
-    GET response of `depth`
+
+    GET response of `depth`.
     """
 
     lastUpdateId: int
@@ -167,7 +168,7 @@ class BinanceTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> TradeTick:
-        """Parse Binance trade to internal TradeTick"""
+        """Parse Binance trade to internal TradeTick."""
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.price),
@@ -180,7 +181,7 @@ class BinanceTrade(msgspec.Struct, frozen=True):
 
 
 class BinanceAggTrade(msgspec.Struct, frozen=True):
-    """Schema of a single compressed aggregate trade"""
+    """Schema of a single compressed aggregate trade."""
 
     a: int  # Aggregate tradeId
     p: str  # Price
@@ -193,7 +194,7 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
 
 
 class BinanceKline(msgspec.Struct, array_like=True):
-    """Array-like schema of single Binance kline"""
+    """Array-like schema of single Binance kline."""
 
     open_time: int
     open: str
@@ -213,7 +214,7 @@ class BinanceKline(msgspec.Struct, array_like=True):
         bar_type: BarType,
         ts_init: int,
     ) -> BinanceBar:
-        """Parse kline to BinanceBar"""
+        """Parse kline to BinanceBar."""
         return BinanceBar(
             bar_type=bar_type,
             open=Price.from_str(self.open),
@@ -231,7 +232,7 @@ class BinanceKline(msgspec.Struct, array_like=True):
 
 
 class BinanceTicker24hr(msgspec.Struct, frozen=True):
-    """Schema of single Binance 24hr ticker (FULL/MINI)"""
+    """Schema of single Binance 24hr ticker (FULL/MINI)."""
 
     symbol: Optional[str]
     lastPrice: Optional[str]
@@ -263,7 +264,7 @@ class BinanceTicker24hr(msgspec.Struct, frozen=True):
 
 
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
-    """Schema of single Binance Price Ticker"""
+    """Schema of single Binance Price Ticker."""
 
     symbol: Optional[str]
     price: Optional[str]
@@ -272,7 +273,7 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
 
 
 class BinanceTickerBook(msgspec.Struct, frozen=True):
-    """Schema of a single Binance Order Book Ticker"""
+    """Schema of a single Binance Order Book Ticker."""
 
     symbol: Optional[str]
     bidPrice: Optional[str]
@@ -297,7 +298,7 @@ class BinanceDataMsgWrapper(msgspec.Struct):
 
 
 class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
-    """Schema of single ask/bid delta"""
+    """Schema of single ask/bid delta."""
 
     price: str
     size: str

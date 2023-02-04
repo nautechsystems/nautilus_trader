@@ -38,7 +38,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
+BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
 
 
 def get_cached_binance_http_client(
@@ -84,14 +84,14 @@ def get_cached_binance_http_client(
     BinanceHttpClient
 
     """
-    global HTTP_CLIENTS
+    global BINANCE_HTTP_CLIENTS
 
     key = key or _get_api_key(account_type, is_testnet)
     secret = secret or _get_api_secret(account_type, is_testnet)
     default_http_base_url = _get_http_base_url(account_type, is_testnet, is_us)
 
     client_key: str = "|".join((key, secret))
-    if client_key not in HTTP_CLIENTS:
+    if client_key not in BINANCE_HTTP_CLIENTS:
         client = BinanceHttpClient(
             loop=loop,
             clock=clock,
@@ -100,8 +100,8 @@ def get_cached_binance_http_client(
             secret=secret,
             base_url=base_url or default_http_base_url,
         )
-        HTTP_CLIENTS[client_key] = client
-    return HTTP_CLIENTS[client_key]
+        BINANCE_HTTP_CLIENTS[client_key] = client
+    return BINANCE_HTTP_CLIENTS[client_key]
 
 
 @lru_cache(1)

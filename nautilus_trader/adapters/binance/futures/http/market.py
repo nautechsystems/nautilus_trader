@@ -26,7 +26,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 
 class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
     """
-    Endpoint of FUTURES exchange trading rules and symbol information
+    Endpoint of FUTURES exchange trading rules and symbol information.
 
     `GET /fapi/v1/exchangeInfo`
     `GET /dapi/v1/exchangeInfo`
@@ -35,7 +35,6 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#exchange-information
     https://binance-docs.github.io/apidocs/delivery/en/#exchange-information
-
     """
 
     def __init__(
@@ -69,8 +68,7 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
     client : BinanceHttpClient
         The Binance REST API client.
     account_type : BinanceAccountType
-        The Binance account type, used to select the endpoint
-
+        The Binance account type, used to select the endpoint.
     """
 
     def __init__(

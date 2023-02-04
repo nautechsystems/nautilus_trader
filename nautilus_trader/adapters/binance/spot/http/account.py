@@ -51,7 +51,6 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#current-open-orders-user_data
     https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
-
     """
 
     def __init__(
@@ -83,7 +82,6 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
             The symbol of the orders
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -98,14 +96,13 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
 
 class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
     """
-    Endpoint for creating SPOT/MARGIN OCO orders
+    Endpoint for creating SPOT/MARGIN OCO orders.
 
     `POST /api/v3/order/oco`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#new-oco-trade
-
     """
 
     def __init__(
@@ -126,18 +123,18 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
 
     class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        OCO order creation POST endpoint parameters
+        OCO order creation POST endpoint parameters.
 
         Parameters
         ----------
         symbol : BinanceSymbol
-            The symbol of the order
+            The symbol of the order.
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         side : BinanceOrderSide
-            The market side of the order (BUY, SELL)
+            The market side of the order (BUY, SELL).
         quantity : str
-            The order quantity in base asset units for the request
+            The order quantity in base asset units for the request.
         price : str
             The order price for the request.
         stopPrice : str
@@ -154,7 +151,7 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
         limitIcebergQty : str, optional
             Create a limit iceberg order.
         trailingDelta : str, optional
-            Can be used in addition to stopPrice
+            Can be used in addition to stopPrice.
             The order trailing delta of the request.
         stopClientOrderId : str, optional
             The client order ID for the stop request. A unique ID among open orders.
@@ -162,7 +159,7 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
         stopStrategyId : int,  optional
             The client strategy ID for the stop request.
         stopStrategyType : int, optional
-            The client strategy type for the stop request. Cannot be less than 1000000
+            The client strategy type for the stop request. Cannot be less than 1000000.
         stopLimitPrice : str, optional
             Limit price for the stop order request.
             If provided, stopLimitTimeInForce is required.
@@ -170,13 +167,12 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
             Create a stop iceberg order.
         stopLimitTimeInForce : BinanceTimeInForce, optional
             The time in force of the stop limit order.
-            Valid values: (GTC, FOK, IOC)
+            Valid values: (GTC, FOK, IOC).
         newOrderRespType : BinanceNewOrderRespType, optional
             The response type for the order request.
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
-
         """
 
         symbol: BinanceSymbol
@@ -208,7 +204,7 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
 
 class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
     """
-    Endpoint for querying and deleting SPOT/MARGIN OCO orders
+    Endpoint for querying and deleting SPOT/MARGIN OCO orders.
 
     `GET /api/v3/orderList`
     `DELETE /api/v3/orderList`
@@ -217,7 +213,6 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-oco-user_data
     https://binance-docs.github.io/apidocs/spot/en/#cancel-oco-trade
-
     """
 
     def __init__(
@@ -244,17 +239,16 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         orderListId : str, optional
-            The unique identifier of the order list to retrieve
+            The unique identifier of the order list to retrieve.
         origClientOrderId : str, optional
-            The client specified identifier of the order list to retrieve
+            The client specified identifier of the order list to retrieve.
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
 
-        NOTE: Either orderListId or origClientOrderId must be provided
-
+        NOTE: Either orderListId or origClientOrderId must be provided.
         """
 
         timestamp: str
@@ -269,13 +263,13 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         symbol : BinanceSymbol
-            The symbol of the order
+            The symbol of the order.
         orderListId : str, optional
-            The unique identifier of the order list to retrieve
+            The unique identifier of the order list to retrieve.
         listClientOrderId : str, optional
-            The client specified identifier of the order list to retrieve
+            The client specified identifier of the order list to retrieve.
         newClientOrderId : str, optional
             Used to uniquely identify this cancel. Automatically generated
             by default.
@@ -283,8 +277,7 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
 
-        NOTE: Either orderListId or listClientOrderId must be provided
-
+        NOTE: Either orderListId or listClientOrderId must be provided.
         """
 
         timestamp: str
@@ -307,14 +300,13 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
 
 class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
     """
-    Endpoint for querying all SPOT/MARGIN OCO orders
+    Endpoint for querying all SPOT/MARGIN OCO orders.
 
     `GET /api/v3/allOrderList`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-all-oco-user_data
-
     """
 
     def __init__(
@@ -335,15 +327,15 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of allOrderList GET request
+        Parameters of allOrderList GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         fromId : str, optional
             The order ID for the request.
-            If included, request will return orders from this orderId INCLUSIVE
+            If included, request will return orders from this orderId INCLUSIVE.
         startTime : str, optional
             The start time (UNIX milliseconds) filter for the request.
         endTime : str, optional
@@ -355,7 +347,6 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
             The response receive window for the request (cannot be greater than 60000).
 
         NOTE: If fromId is specified, neither startTime endTime can be provided.
-
         """
 
         timestamp: str
@@ -373,14 +364,13 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
 
 class BinanceSpotOpenOrderListHttp(BinanceHttpEndpoint):
     """
-    Endpoint for querying all SPOT/MARGIN OPEN OCO orders
+    Endpoint for querying all SPOT/MARGIN OPEN OCO orders.
 
     `GET /api/v3/openOrderList`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-open-oco-user_data
-
     """
 
     def __init__(
@@ -401,15 +391,14 @@ class BinanceSpotOpenOrderListHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of allOrderList GET request
+        Parameters of allOrderList GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -423,14 +412,13 @@ class BinanceSpotOpenOrderListHttp(BinanceHttpEndpoint):
 
 class BinanceSpotAccountHttp(BinanceHttpEndpoint):
     """
-    Endpoint of current SPOT/MARGIN account information
+    Endpoint of current SPOT/MARGIN account information.
 
     `GET /api/v3/account`
 
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#account-information-user_data
-
     """
 
     def __init__(
@@ -451,15 +439,14 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of account GET request
+        Parameters of account GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -480,7 +467,6 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-current-order-count-usage-trade
-
     """
 
     def __init__(
@@ -501,12 +487,12 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of rateLimit/order GET request
+        Parameters of rateLimit/order GET request.
 
         Parameters
         ----------
         timestamp : str
-            The millisecond timestamp of the request
+            The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
 
@@ -533,7 +519,6 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         The clock for the API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint prefix
-
     """
 
     def __init__(
@@ -590,7 +575,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceSpotOrderOco:
-        """Send in a new spot OCO order to Binance"""
+        """Send in a new spot OCO order to Binance."""
         if stop_limit_price is not None and stop_limit_time_in_force is None:
             raise RuntimeError(
                 "stopLimitPrice cannot be provided without stopLimitTimeInForce.",

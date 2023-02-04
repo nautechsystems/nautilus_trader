@@ -73,7 +73,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
-    clock_sync_interval_secs : int, default 900
+    clock_sync_interval_secs : int, default 0
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     warn_gtd_to_gtc : bool, default True
@@ -91,7 +91,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         instrument_provider: BinanceFuturesInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
-        clock_sync_interval_secs: int = 900,
+        clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ):
         if not account_type.is_futures:

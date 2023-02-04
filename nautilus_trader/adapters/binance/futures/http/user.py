@@ -28,7 +28,7 @@ class BinanceFuturesUserDataHttpAPI(BinanceUserDataHttpAPI):
     client : BinanceHttpClient
         The Binance REST API client.
     account_type : BinanceAccountType
-        The Binance account type, used to select the endpoint
+        The Binance account type, used to select the endpoint.
     """
 
     def __init__(
