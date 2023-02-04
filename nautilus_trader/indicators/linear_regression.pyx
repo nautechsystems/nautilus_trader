@@ -28,23 +28,19 @@ from nautilus_trader.model.data.bar cimport Bar
 cdef class LinearRegression(Indicator):
     """
     An indicator that calculates a simple linear regression.
+
+    Parameters
+    ----------
+    period : int
+        The period for the indicator.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not greater than zero.
     """
 
     def __init__(self, int period=0):
-        """
-        Initialize a new instance of the ``LinearRegression`` class.
-
-        Parameters
-        ----------
-        period : int
-            The period for the indicator.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not greater than zero.
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(params=[period])
 

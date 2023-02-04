@@ -57,7 +57,16 @@ from nautilus_trader.serialization.arrow.util import maybe_list
 
 class RawFile:
     """
-    Provides a wrapper of fsspec.OpenFile that processes a raw file and writes to parquet.
+    Provides a wrapper of `fsspec.OpenFile` that processes a raw file and writes to parquet.
+
+    Parameters
+    ----------
+    open_file : fsspec.core.OpenFile
+        The fsspec.OpenFile source of this data.
+    block_size: int
+        The max block (chunk) size in bytes to read from the file.
+    progress: bool, default False
+        If a progress bar should be shown when processing this individual file.
     """
 
     def __init__(
@@ -66,19 +75,6 @@ class RawFile:
         block_size: Optional[int] = None,
         progress: bool = False,
     ):
-        """
-        Initialize a new instance of the ``RawFile`` class.
-
-        Parameters
-        ----------
-        open_file : fsspec.core.OpenFile
-            The fsspec.OpenFile source of this data.
-        block_size: int
-            The max block (chunk) size in bytes to read from the file.
-        progress: bool, default False
-            If a progress bar should be shown when processing this individual file.
-
-        """
         self.open_file = open_file
         self.block_size = block_size
         # TODO - waiting for tqdm support in fsspec https://github.com/intake/filesystem_spec/pulls?q=callback

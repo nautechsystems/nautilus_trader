@@ -37,7 +37,7 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, uint64_t ts_event, uint64_t ts_init):
+    def __init__(self, uint64_t ts_event, uint64_t ts_init) -> None:
         # Design-time invariant: correct ordering of timestamps.
         # This was originally an `assert` to aid initial development of the core
         # system. It can be used to assist development by uncommenting below.

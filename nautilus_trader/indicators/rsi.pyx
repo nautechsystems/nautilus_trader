@@ -24,6 +24,18 @@ from nautilus_trader.model.data.bar cimport Bar
 cdef class RelativeStrengthIndex(Indicator):
     """
     An indicator which calculates a relative strength index (RSI) across a rolling window.
+
+    Parameters
+    ----------
+    ma_type : int
+        The moving average type for average gain/loss.
+    period : MovingAverageType
+        The rolling window period for the indicator.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
     """
 
     def __init__(
@@ -31,22 +43,6 @@ cdef class RelativeStrengthIndex(Indicator):
         int period,
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
     ):
-        """
-        Initialize a new instance of the ``RelativeStrengthIndex`` class.
-
-        Parameters
-        ----------
-        ma_type : int
-            The moving average type for average gain/loss.
-        period : MovingAverageType
-            The rolling window period for the indicator.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(params=[period, ma_type.name])
 

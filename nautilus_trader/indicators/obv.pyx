@@ -24,23 +24,19 @@ cdef class OnBalanceVolume(Indicator):
     """
     An indicator which calculates the momentum of relative positive or negative
     volume.
+
+    Parameters
+    ----------
+    period : int
+        The period for the indicator, zero indicates no window (>= 0).
+
+    Raises
+    ------
+    ValueError
+        If `period` is negative (< 0).
     """
 
     def __init__(self, int period=0):
-        """
-        Initialize a new instance of the ``OnBalanceVolume`` class.
-
-        Parameters
-        ----------
-        period : int
-            The period for the indicator, zero indicates no window (>= 0).
-
-        Raises
-        ------
-        ValueError
-            If `period` is negative (< 0).
-
-        """
         Condition.not_negative(period, "period")
         super().__init__(params=[period])
 

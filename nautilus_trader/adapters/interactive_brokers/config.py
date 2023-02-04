@@ -35,7 +35,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
         The Interactive Brokers account id.
         If ``None`` then will source the `TWS_ACCOUNT`.
     trading_mode: str
-        paper or live
+        paper or live.
     account_id : str, optional
         The account_id to use for Nautilus.
     gateway_host : str, optional
