@@ -241,7 +241,7 @@ class BinanceEnumParser:
     """
     Provides common parsing methods for enums used by the 'Binance' exchange.
 
-    Warnings:
+    Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """

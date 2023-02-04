@@ -37,7 +37,7 @@ class BinanceHttpEndpoint:
     """
     Base functionality of endpoints connecting to the Binance REST API.
 
-    Warnings:
+    Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """

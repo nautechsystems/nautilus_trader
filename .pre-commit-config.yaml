@@ -140,7 +140,7 @@ repos:
         files: ^nautilus_trader/
         exclude: "nautilus_trader/test_kit"
         args:
-        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415"
+        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415,D416"
         additional_dependencies:
           - toml
 
@@ -162,3 +162,4 @@ repos:
 # D400: First line should end with a period (not always a first line)
 # D413: Missing blank line after last section ('Parameters')
 # D415: First line should end with a period, question mark, or exclamation point (not always a first line)
+# D416: Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)

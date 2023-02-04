@@ -25,30 +25,26 @@ cdef class Stochastics(Indicator):
     An oscillator which can indicate when an asset may be over bought or over
     sold.
 
+    Parameters
+    ----------
+    period_k : int
+        The period for the K line.
+    period_d : int
+        The period for the D line.
+
+    Raises
+    ------
+    ValueError
+        If `period_k` is not positive (> 0).
+    ValueError
+        If `period_d` is not positive (> 0).
+
     References
     ----------
     https://www.forextraders.com/forex-education/forex-indicators/stochastics-indicator-explained/
     """
 
     def __init__(self, int period_k, int period_d):
-        """
-        Initialize a new instance of the ``Stochastics`` class.
-
-        Parameters
-        ----------
-        period_k : int
-            The period for the K line.
-        period_d : int
-            The period for the D line.
-
-        Raises
-        ------
-        ValueError
-            If `period_k` is not positive (> 0).
-        ValueError
-            If `period_d` is not positive (> 0).
-
-        """
         Condition.positive_int(period_k, "period_k")
         Condition.positive_int(period_d, "period_d")
         super().__init__(params=[period_k, period_d])
