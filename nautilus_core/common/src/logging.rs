@@ -111,6 +111,56 @@ impl Logger {
         };
         self.tx.send(log_message)
     }
+
+    pub fn debug(
+        &mut self,
+        timestamp_ns: u64,
+        color: LogColor,
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
+    }
+
+    pub fn info(
+        &mut self,
+        timestamp_ns: u64,
+        color: LogColor,
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Info, color, component, msg)
+    }
+
+    pub fn warn(
+        &mut self,
+        timestamp_ns: u64,
+        color: LogColor,
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
+    }
+
+    pub fn error(
+        &mut self,
+        timestamp_ns: u64,
+        color: LogColor,
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Error, color, component, msg)
+    }
+
+    pub fn critical(
+        &mut self,
+        timestamp_ns: u64,
+        color: LogColor,
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
+    }
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -210,58 +260,6 @@ impl LoggerReceiver {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
-    }
-}
-
-impl Logger {
-    pub fn debug(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
-        self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
-    }
-
-    pub fn info(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
-        self.send(timestamp_ns, LogLevel::Info, color, component, msg)
-    }
-
-    pub fn warn(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
-        self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
-    }
-
-    pub fn error(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
-        self.send(timestamp_ns, LogLevel::Error, color, component, msg)
-    }
-
-    pub fn critical(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
-        self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
     }
 }
 
