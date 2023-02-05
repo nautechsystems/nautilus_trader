@@ -187,9 +187,9 @@ class TestPersistenceCatalogRust:
         self._load_quote_ticks_into_catalog_rust()
 
         # Act
-        files1 = self.catalog._get_files(cls=QuoteTick, instrument_id="USD/JPY.SIM")
-        files2 = self.catalog._get_files(cls=QuoteTick, instrument_id="EUR/USD.SIM")
-        files3 = self.catalog._get_files(cls=QuoteTick, instrument_id="USD/CHF.SIM")
+        files1 = self.catalog.get_files(cls=QuoteTick, instrument_id="USD/JPY.SIM")
+        files2 = self.catalog.get_files(cls=QuoteTick, instrument_id="EUR/USD.SIM")
+        files3 = self.catalog.get_files(cls=QuoteTick, instrument_id="USD/CHF.SIM")
 
         # Assert
         assert files1 == [
@@ -205,7 +205,7 @@ class TestPersistenceCatalogRust:
         self._load_quote_ticks_into_catalog_rust()
 
         # Act
-        files = self.catalog._get_files(cls=QuoteTick)
+        files = self.catalog.get_files(cls=QuoteTick)
 
         # Assert
         assert files == [
@@ -220,21 +220,21 @@ class TestPersistenceCatalogRust:
         end = 1577919652000000125
 
         # Act
-        files1 = self.catalog._get_files(
+        files1 = self.catalog.get_files(
             cls=QuoteTick,
             instrument_id="EUR/USD.SIM",
             start_nanos=start,
             end_nanos=start,
         )
 
-        files2 = self.catalog._get_files(
+        files2 = self.catalog.get_files(
             cls=QuoteTick,
             instrument_id="EUR/USD.SIM",
             start_nanos=0,
             end_nanos=start - 1,
         )
 
-        files3 = self.catalog._get_files(
+        files3 = self.catalog.get_files(
             cls=QuoteTick,
             instrument_id="EUR/USD.SIM",
             start_nanos=end + 1,
