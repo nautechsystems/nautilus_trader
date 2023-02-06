@@ -213,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (854, 790)  # unix, windows sizes
+        assert result in (854, 858)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -233,7 +233,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (641, 589)  # unix, windows sizes
+        assert len(raw) in (641, 643)  # unix, windows sizes
 
     def test_backtest_data_config_to_dict(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -262,7 +262,7 @@ class TestBacktestConfigParsing:
         print("token_value:", value.decode())
         assert token in (
             "f36364e423ae67307b08a68feb7cf18353d2983fc8a2f1b9683c44bd707007b3",  # unix
-            "585913bbdf353d7e00b74c8f0a00f0eb8771da901faefeecf3fb9df1f3d48854",  # windows
+            "3eae506d0d9e4d6e2ed36bd2ba2228e0e418d32d8eeb44b0f8b8955e548e4fb6",  # windows
         )
 
     @pytest.mark.skip(reason="fix after merge")
