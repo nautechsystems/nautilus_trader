@@ -710,7 +710,7 @@ class BinanceMarketHttpAPI:
         end_time: Optional[str] = None,
         from_id: Optional[str] = None,
     ) -> list[BinanceAggTrade]:
-        """Query trades for symbol."""
+        """Query aggregated trades for symbol."""
         return await self._endpoint_agg_trades._get(
             parameters=self._endpoint_agg_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -720,6 +720,82 @@ class BinanceMarketHttpAPI:
                 fromId=from_id,
             ),
         )
+
+    async def request_agg_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+        limit: int = 1000,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        from_id: Optional[str] = None,
+    ) -> list[TradeTick]:
+        """
+        Request TradeTicks from Binance aggregated trades.
+        If start_time and end_time are both specified, will fetch *all* TradeTicks
+        in the interval, making multiple requests if necessary.
+        """
+        ticks: list[TradeTick] = []
+        next_start_time = start_time
+
+        if from_id is not None and (start_time or end_time) is not None:
+            raise RuntimeError(
+                "Cannot specify both fromId and startTime or endTime.",
+            )
+
+        # Only split into separate requests if both start_time and end_time are specified
+        should_loop = (start_time is not None and end_time is not None) is True
+        max_interval = (1000 * 60 * 60) - 1  # 1ms under an hour, as specified in Futures docs.
+        last_id = 0
+        interval_limited = False
+
+        def _calculate_next_end_time(start_time: str, end_time: str):
+            next_interval = int(start_time) + max_interval
+            interval_limited = next_interval < int(end_time)
+            next_end_time = str(next_interval) if interval_limited is True else end_time
+            return next_end_time, interval_limited
+
+        if should_loop:
+            next_end_time, interval_limited = _calculate_next_end_time(start_time, end_time)
+        else:
+            next_end_time = end_time
+
+        while True:
+            response = await self.query_agg_trades(
+                instrument_id.symbol.value,
+                limit,
+                start_time=next_start_time,
+                end_time=next_end_time,
+                from_id=from_id,
+            )
+
+            for trade in response:
+                if not trade.a > last_id:
+                    # Skip duplicate trades
+                    continue
+                ticks.append(
+                    trade.parse_to_trade_tick(
+                        instrument_id=instrument_id,
+                        ts_init=ts_init,
+                    ),
+                )
+
+            if len(response) < limit and interval_limited is False:
+                # end loop regardless when limit is not hit
+                break
+            if not should_loop:
+                break
+            else:
+                last = response[-1]
+                last_id = last.a
+                next_start_time = str(last.T)
+                next_end_time, interval_limited = _calculate_next_end_time(
+                    next_start_time,
+                    end_time,
+                )
+                continue
+
+        return ticks
 
     async def query_historical_trades(
         self,
