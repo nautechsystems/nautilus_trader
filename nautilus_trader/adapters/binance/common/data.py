@@ -23,6 +23,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggregatedTradeMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestickMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDataMsgWrapper
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookMsg
@@ -46,6 +47,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
@@ -86,6 +88,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
+    use_agg_trade_ticks : bool, default False
+        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
+        TradeId of ticks will be the Aggregate tradeId returned by Binance.
 
     Warnings
     --------
@@ -105,6 +110,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: Optional[str] = None,
+        use_agg_trade_ticks: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -123,6 +129,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
         self._binance_account_type = account_type
+        self._use_agg_trade_ticks = use_agg_trade_ticks
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -160,6 +167,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             "@ticker": self._handle_ticker,
             "@kline": self._handle_kline,
             "@trade": self._handle_trade,
+            "@aggTrade": self._handle_agg_trade,
             "@depth@": self._handle_book_diff_update,
             "@depth5": self._handle_book_partial_update,
             "@depth10": self._handle_book_partial_update,
@@ -172,6 +180,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_quote_msg = msgspec.json.Decoder(BinanceQuoteMsg)
         self._decoder_ticker_msg = msgspec.json.Decoder(BinanceTickerMsg)
         self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
+        self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
     async def _connect(self) -> None:
         # Connect HTTP client
@@ -360,7 +369,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._ws_client.subscribe_trades(instrument_id.symbol.value)
+        if self._use_agg_trade_ticks:
+            self._ws_client.subscribe_agg_trades(instrument_id.symbol.value)
+        else:
+            self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
@@ -460,17 +472,33 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        if from_datetime is not None or to_datetime is not None:
-            self._log.warning(
-                "Trade ticks have been requested with a from/to time range, "
-                f"however the request will be for the most recent {limit}.",
+        if not self._use_agg_trade_ticks:
+            if from_datetime is not None or to_datetime is not None:
+                self._log.warning(
+                    "Trade ticks have been requested with a from/to time range, "
+                    f"however the request will be for the most recent {limit}.",
+                )
+            ticks = await self._http_market.request_trade_ticks(
+                instrument_id=instrument_id,
+                limit=limit,
+                ts_init=self._clock.timestamp_ns(),
+            )
+        else:
+            # Convert from timestamps to milliseconds
+            start_time_ms = None
+            end_time_ms = None
+            if from_datetime:
+                start_time_ms = str(int(from_datetime.timestamp() * 1000))
+            if to_datetime:
+                end_time_ms = str(int(to_datetime.timestamp() * 1000))
+            ticks = await self._http_market.request_agg_trade_ticks(
+                instrument_id=instrument_id,
+                limit=limit,
+                start_time=start_time_ms,
+                end_time=end_time_ms,
+                ts_init=self._clock.timestamp_ns(),
             )
 
-        ticks = await self._http_market.request_trade_ticks(
-            instrument_id=instrument_id,
-            limit=limit,
-            ts_init=self._clock.timestamp_ns(),
-        )
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
 
     async def _request_bars(  # noqa (too complex)
@@ -624,3 +652,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     def _handle_trade(self, raw: bytes) -> None:
         raise NotImplementedError("Please implement trade handling in child class.")
+
+    def _handle_agg_trade(self, raw: bytes) -> None:
+        msg = self._decoder_agg_trade_msg.decode(raw)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
+        trade_tick: TradeTick = msg.data.parse_to_trade_tick(
+            instrument_id=instrument_id,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(trade_tick)
