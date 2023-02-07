@@ -192,6 +192,22 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
     m: bool  # Was the buyer the maker?
     M: Optional[bool] = None  # SPOT/MARGIN only, was the trade the best price match?
 
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        """Parse Binance trade to internal TradeTick"""
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.q),
+            aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.a)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
+
 
 class BinanceKline(msgspec.Struct, array_like=True):
     """Array-like schema of single Binance kline."""
@@ -447,6 +463,21 @@ class BinanceAggregatedTradeData(msgspec.Struct, frozen=True):
     l: int  # Last trade ID
     T: int  # Trade time
     m: bool  # Is the buyer the market maker?
+
+    def parse_to_trade_tick(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(self.p),
+            size=Quantity.from_str(self.q),
+            aggressor_side=AggressorSide.SELLER if self.m else AggressorSide.BUYER,
+            trade_id=TradeId(str(self.a)),
+            ts_event=millis_to_nanos(self.T),
+            ts_init=ts_init,
+        )
 
 
 class BinanceAggregatedTradeMsg(msgspec.Struct, frozen=True):
