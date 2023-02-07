@@ -331,21 +331,21 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 depth=depth,
                 speed=update_speed,
             )
+
+            while not self._ws_client.is_connected:
+                await asyncio.sleep(self._connect_websockets_interval)
+
+            snapshot: OrderBookSnapshot = await self._http_market.request_order_book_snapshot(
+                instrument_id=instrument_id,
+                limit=depth,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._handle_data(snapshot)
         else:
             self._ws_client.subscribe_diff_book_depth(
                 symbol=instrument_id.symbol.value,
                 speed=update_speed,
             )
-
-        while not self._ws_client.is_connected:
-            await asyncio.sleep(self._connect_websockets_interval)
-
-        snapshot: OrderBookSnapshot = await self._http_market.request_order_book_snapshot(
-            instrument_id=instrument_id,
-            limit=depth,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._handle_data(snapshot)
 
         book_buffer = self._book_buffer.pop(instrument_id, [])
         for deltas in book_buffer:
