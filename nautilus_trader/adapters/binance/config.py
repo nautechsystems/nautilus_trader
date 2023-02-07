@@ -44,6 +44,9 @@ class BinanceDataClientConfig(LiveDataClientConfig):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
+    use_agg_trade_ticks : bool, default False
+        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
+        TradeId of ticks will be the Aggregate tradeId returned by Binance.
     """
 
     api_key: Optional[str] = None
@@ -53,6 +56,7 @@ class BinanceDataClientConfig(LiveDataClientConfig):
     base_url_ws: Optional[str] = None
     us: bool = False
     testnet: bool = False
+    use_agg_trade_ticks: bool = False
 
 
 class BinanceExecClientConfig(LiveExecClientConfig):
