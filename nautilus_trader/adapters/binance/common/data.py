@@ -476,7 +476,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if from_datetime is not None or to_datetime is not None:
                 self._log.warning(
                     "Trade ticks have been requested with a from/to time range, "
-                    f"however the request will be for the most recent {limit}.",
+                    f"however the request will be for the most recent {limit}."
+                    "Consider using aggregated trade ticks (`use_agg_trade_ticks`).",
                 )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=instrument_id,
