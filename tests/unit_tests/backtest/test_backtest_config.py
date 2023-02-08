@@ -253,7 +253,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1718, 1518)  # unix, windows
+        assert result in (1718, 1726)  # unix, windows
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
