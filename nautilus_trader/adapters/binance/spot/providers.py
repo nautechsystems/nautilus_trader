@@ -221,8 +221,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
             PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
-            price_precision = abs(Decimal(tick_size).as_tuple().exponent)
-            size_precision = abs(Decimal(step_size).as_tuple().exponent)
+            price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
+            size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
             price_increment = Price.from_str(tick_size)
             size_increment = Quantity.from_str(step_size)
             lot_size = Quantity.from_str(step_size)
