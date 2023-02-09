@@ -34,7 +34,6 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 
@@ -181,9 +180,8 @@ class TestTradingNodeConfiguration:
         config = TradingNodeConfig.parse(RAW_CONFIG)
 
         # Act
-        config.instance_id = UUID4().value
         node = TradingNode(config)
-        assert node.kernel.instance_id.value == config.instance_id
+        assert len(node.kernel.instance_id.value) == 36
 
 
 class TestTradingNodeOperation:

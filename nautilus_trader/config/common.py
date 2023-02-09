@@ -33,7 +33,7 @@ def resolve_path(path: str):
     return cls
 
 
-class NautilusConfig(msgspec.Struct, kw_only=True):
+class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     """
     The base class for all Nautilus configuration objects.
     """

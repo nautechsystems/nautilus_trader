@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
 - Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
 - Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
 
