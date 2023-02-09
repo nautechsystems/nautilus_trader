@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.generators cimport OrderListIdGenerator
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.enums_c cimport ContingencyType
