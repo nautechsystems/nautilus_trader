@@ -228,14 +228,13 @@ class BetfairTestStubs:
         persist=True,
         add_strategy=True,
         bypass_risk=False,
+        streaming_config: StreamingConfig = None,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             log_level="INFO",
             bypass_logging=True,
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
-            streaming=BetfairTestStubs.streaming_config(catalog_path=catalog_path)
-            if persist
-            else None,
+            streaming=streaming_config if persist else None,
             strategies=[
                 ImportableStrategyConfig(
                     strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
