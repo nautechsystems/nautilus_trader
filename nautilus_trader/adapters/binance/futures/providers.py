@@ -241,8 +241,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
             PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
-            price_precision = abs(Decimal(tick_size).as_tuple().exponent)
-            size_precision = abs(Decimal(step_size).as_tuple().exponent)
+            price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
+            size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
             price_increment = Price.from_str(tick_size)
             size_increment = Quantity.from_str(step_size)
             max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
@@ -254,7 +254,6 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
             # Futures commissions
-
             maker_fee = Decimal(0)
             taker_fee = Decimal(0)
             if fee:
