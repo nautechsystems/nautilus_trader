@@ -67,17 +67,20 @@ class TestPersistenceStreaming:
         )
         assert len(data) == 2535
 
-    @pytest.mark.skip(reason="Configs now immutable, ghill2 to fix")
     @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
+
+        catalog_path = "/.nautilus/catalog"
+
         run_config = BetfairTestStubs.betfair_backtest_run_config(
-            catalog_path="/.nautilus/catalog",
+            catalog_path=catalog_path,
             catalog_fs_protocol="memory",
             instrument_id=instrument.id.value,
+            flush_interval_ms=5000,
         )
-        run_config.engine.streaming.flush_interval_ms = 5000
+
         node = BacktestNode(configs=[run_config])
 
         # Act
