@@ -27,7 +27,6 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
