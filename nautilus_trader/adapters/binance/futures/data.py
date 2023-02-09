@@ -63,6 +63,9 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
+    use_agg_trade_ticks : bool, default False
+        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
+        TradeId of ticks will be the Aggregate tradeId returned by Binance.
     """
 
     def __init__(
@@ -76,6 +79,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
+        use_agg_trade_ticks: bool = False,
     ):
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -101,6 +105,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
+            use_agg_trade_ticks=use_agg_trade_ticks,
         )
 
         # Register additional futures websocket handlers

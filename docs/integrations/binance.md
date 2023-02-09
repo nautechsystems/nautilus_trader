@@ -183,6 +183,14 @@ config = TradingNodeConfig(
 )
 ```
 
+### Aggregated Trades
+Binance provide aggregated trade data endpoints as an alternative source of trade ticks.
+In comparison to the default trade endpoints, aggregated trade data endpoints can return all
+ticks between a `start_time` and `end_time`.
+
+To use aggregated trades and the endpoint features, set the `use_agg_trade_ticks` option
+to `True` (this is `False` by default.)
+
 ### Parser warnings
 Some Binance instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
