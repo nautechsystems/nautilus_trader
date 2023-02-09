@@ -16,124 +16,16 @@
 import itertools
 import os
 
-import fsspec
 import pandas as pd
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.persistence.batching import batch_files
-from nautilus_trader.persistence.batching import generate_batches
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.persistence.funcs import parse_bytes
-from nautilus_trader.test_kit.mocks.data import NewsEventData
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
-from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from tests import TEST_DATA_DIR
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-
-
-class TestPersistenceBatching:
-    def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory")
-        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._load_data_into_catalog()
-
-    def teardown(self):
-        # Cleanup
-        path = self.catalog.path
-        fs = self.catalog.fs
-        if fs.exists(path):
-            fs.rm(path, recursive=True)
-
-    def _load_data_into_catalog(self):
-        self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
-            reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
-            instrument_provider=self.instrument_provider,
-            catalog=self.catalog,
-        )
-
-    def test_batch_files_single(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].unique().tolist()
-        shared_kw = dict(
-            catalog_path=str(self.catalog.path),
-            catalog_fs_protocol=self.catalog.fs.protocol,
-            data_cls=OrderBookData,
-        )
-        iter_batches = batch_files(
-            catalog=self.catalog,
-            data_configs=[
-                BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[0]),
-                BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[1]),
-            ],
-            target_batch_size_bytes=parse_bytes("10kib"),
-            read_num_rows=300,
-        )
-
-        # Act
-        timestamp_chunks = []
-        for batch in iter_batches:
-            timestamp_chunks.append([b.ts_init for b in batch])
-
-        # Assert
-        latest_timestamp = 0
-        for timestamps in timestamp_chunks:
-            assert max(timestamps) > latest_timestamp
-            latest_timestamp = max(timestamps)
-            assert timestamps == sorted(timestamps)
-
-    def test_batch_generic_data(self):
-        # Arrange
-        TestPersistenceStubs.setup_news_event_persistence()
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
-        data_config = BacktestDataConfig(
-            catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
-            data_cls=NewsEventData,
-            client_id="NewsClient",
-        )
-        # Add some arbitrary instrument data to appease BacktestEngine
-        instrument_data_config = BacktestDataConfig(
-            catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
-            instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
-            data_cls=InstrumentStatusUpdate,
-        )
-        streaming = BetfairTestStubs.streaming_config(
-            catalog_path=self.catalog.path,
-        )
-        engine = BacktestEngineConfig(streaming=streaming)
-        run_config = BacktestRunConfig(
-            engine=engine,
-            data=[data_config, instrument_data_config],
-            venues=[BetfairTestStubs.betfair_venue_config()],
-            batch_size_bytes=parse_bytes("1mib"),
-        )
-
-        # Act
-        node = BacktestNode(configs=[run_config])
-        node.run()
-
-        # Assert
-        assert node
 
 
 class TestBatchingData:
@@ -154,40 +46,34 @@ class TestBatchingData:
 class TestGenerateBatches(TestBatchingData):
     def test_generate_batches_returns_empty_list_before_start_timestamp_with_end_timestamp(self):
         start_timestamp = 1546389021944999936
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[self.test_parquet_files[1]],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            n_rows=1000,
-            use_rust=True,
-            start_time=start_timestamp,
-            end_time=1546394394948999936,
+            batch_size=1000,
+            start_nanos=start_timestamp,
+            end_nanos=1546394394948999936,
         )
         batches = list(batch_gen)
         assert [len(x) for x in batches] == [0, 0, 0, 0, 172, 1000, 1000, 1000, 1000, 887]
         assert batches[4][0].ts_init == start_timestamp
 
         #################################
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[self.test_parquet_files[1]],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            n_rows=1000,
-            use_rust=True,
-            start_time=start_timestamp - 1,
-            end_time=1546394394948999936,
+            batch_size=1000,
+            start_nanos=start_timestamp - 1,
+            end_nanos=1546394394948999936,
         )
         batches = list(batch_gen)
         assert [len(x) for x in batches] == [0, 0, 0, 0, 172, 1000, 1000, 1000, 1000, 887]
         assert batches[4][0].ts_init == start_timestamp
 
     def test_generate_batches_returns_batches_of_expected_size(self):
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[self.test_parquet_files[1]],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            n_rows=1000,
-            use_rust=True,
+            batch_size=1000,
         )
         batches = list(batch_gen)
         assert all([len(x) == 1000 for x in batches])
@@ -196,13 +82,11 @@ class TestGenerateBatches(TestBatchingData):
         # Arrange
         parquet_data_path = self.test_parquet_files[0]
         start_timestamp = 1546383601403000064  # index 10 (1st item in batch)
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[parquet_data_path],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            use_rust=True,
-            n_rows=10,
-            start_time=start_timestamp,
+            batch_size=10,
+            start_nanos=start_timestamp,
         )
 
         # Act
@@ -215,13 +99,11 @@ class TestGenerateBatches(TestBatchingData):
         # Arrange
         parquet_data_path = self.test_parquet_files[0]
         start_timestamp = 1546383601862999808  # index 18 (last item in batch)
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[parquet_data_path],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            use_rust=True,
-            n_rows=10,
-            start_time=start_timestamp,
+            batch_size=10,
+            start_nanos=start_timestamp,
         )
         # Act
         batch = next(batch_gen, None)
@@ -233,13 +115,11 @@ class TestGenerateBatches(TestBatchingData):
         # Arrange
         parquet_data_path = self.test_parquet_files[0]
         start_timestamp = 1546383601352000000  # index 9
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[parquet_data_path],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            use_rust=True,
-            n_rows=10,
-            start_time=start_timestamp,
+            batch_size=10,
+            start_nanos=start_timestamp,
         )
 
         # Act
@@ -251,24 +131,20 @@ class TestGenerateBatches(TestBatchingData):
     def test_generate_batches_trims_first_batch_by_start_timestamp(self):
         def create_test_batch_gen(start_timestamp):
             parquet_data_path = self.test_parquet_files[0]
-            return generate_batches(
+            return generate_batches_rust(
                 files=[parquet_data_path],
                 cls=QuoteTick,
-                fs=fsspec.filesystem("file"),
-                use_rust=True,
-                n_rows=10,
-                start_time=start_timestamp,
+                batch_size=10,
+                start_nanos=start_timestamp,
             )
 
         start_timestamp = 1546383605776999936
         batches = list(
-            generate_batches(
+            generate_batches_rust(
                 files=[self.test_parquet_files[0]],
                 cls=QuoteTick,
-                fs=fsspec.filesystem("file"),
-                use_rust=True,
-                n_rows=300,
-                start_time=start_timestamp,
+                batch_size=300,
+                start_nanos=start_timestamp,
             ),
         )
 
@@ -358,13 +234,11 @@ class TestGenerateBatches(TestBatchingData):
         # Timestamp, index -1, NOT exists
         # Arrange
         end_timestamp = 1546383601914000128  # index 19
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[parquet_data_path],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            use_rust=True,
-            n_rows=10,
-            end_time=end_timestamp,
+            batch_size=10,
+            end_nanos=end_timestamp,
         )
 
         # Act
@@ -377,13 +251,11 @@ class TestGenerateBatches(TestBatchingData):
     def test_generate_batches_trims_end_batch_by_end_timestamp(self):
         def create_test_batch_gen(end_timestamp):
             parquet_data_path = self.test_parquet_files[0]
-            return generate_batches(
+            return generate_batches_rust(
                 files=[parquet_data_path],
                 cls=QuoteTick,
-                fs=fsspec.filesystem("file"),
-                use_rust=True,
-                n_rows=10,
-                end_time=end_timestamp,
+                batch_size=10,
+                end_nanos=end_timestamp,
             )
 
         ###############################################################
@@ -421,12 +293,10 @@ class TestGenerateBatches(TestBatchingData):
     def test_generate_batches_returns_valid_data(self):
         # Arrange
         parquet_data_path = self.test_parquet_files[0]
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[parquet_data_path],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            use_rust=True,
-            n_rows=300,
+            batch_size=300,
         )
         reader = ParquetReader(
             parquet_data_path,
@@ -461,14 +331,12 @@ class TestGenerateBatches(TestBatchingData):
         mapped_chunk = map(QuoteTick.list_from_capsule, reader)
         expected = list(itertools.chain(*mapped_chunk))
 
-        batch_gen = generate_batches(
+        batch_gen = generate_batches_rust(
             files=[parquet_data_path],
             cls=QuoteTick,
-            fs=fsspec.filesystem("file"),
-            use_rust=True,
-            n_rows=500,
-            start_time=expected[0].ts_init,
-            end_time=expected[-1].ts_init,
+            batch_size=500,
+            start_nanos=expected[0].ts_init,
+            end_nanos=expected[-1].ts_init,
         )
 
         # Act

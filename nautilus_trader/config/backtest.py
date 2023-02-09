@@ -30,6 +30,7 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.identifiers import ClientId
 
 
@@ -68,6 +69,9 @@ class BacktestDataConfig(NautilusConfig):
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
     metadata: Optional[dict] = None
+    bar_spec: Optional[str] = None
+    use_rust: Optional[bool] = False
+    batch_size: Optional[int] = 10_000
 
     @property
     def data_type(self):
@@ -80,13 +84,21 @@ class BacktestDataConfig(NautilusConfig):
 
     @property
     def query(self):
+        if self.data_cls is Bar and self.bar_spec:
+            bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
+            filter_expr = f'field("bar_type") == "{bar_type}"'
+        else:
+            filter_expr = self.filter_expr
+
         return dict(
             cls=self.data_type,
             instrument_ids=[self.instrument_id] if self.instrument_id else None,
             start=self.start_time,
             end=self.end_time,
-            filter_expr=self.filter_expr,
+            filter_expr=parse_filters_expr(filter_expr),
             as_nautilus=True,
+            metadata=self.metadata,
+            use_rust=self.use_rust,
         )
 
     @property
@@ -114,14 +126,14 @@ class BacktestDataConfig(NautilusConfig):
         self,
         start_time: Optional[pd.Timestamp] = None,
         end_time: Optional[pd.Timestamp] = None,
+        as_nautilus: bool = True,
     ):
         query = self.query
         query.update(
             {
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
-                "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
-                "metadata": self.metadata,
+                "as_nautilus": as_nautilus,
             },
         )
 
