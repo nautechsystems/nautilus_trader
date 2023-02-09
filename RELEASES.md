@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
+- Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
 
 ### Enhancements
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
@@ -14,6 +15,7 @@ None
 None
 
 ---
+
 # NautilusTrader 1.168.0 Beta
 
 Released on 29th January 2023 (UTC).

@@ -1307,8 +1307,11 @@ class TestOrders:
             entry_price=Price.from_str("1.00000"),
             sl_trigger_price=Price.from_str("0.99990"),
             tp_price=Price.from_str("1.00010"),
+            tp_trigger_price=Price.from_str("1.00010"),
             time_in_force=TimeInForce.GTC,
             entry_order_type=OrderType.LIMIT,
+            tp_order_type=OrderType.LIMIT_IF_TOUCHED,
+            tp_post_only=False,
         )
 
         # Assert
@@ -1317,7 +1320,7 @@ class TestOrders:
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.LIMIT
         assert bracket.orders[1].order_type == OrderType.STOP_MARKET
-        assert bracket.orders[2].order_type == OrderType.LIMIT
+        assert bracket.orders[2].order_type == OrderType.LIMIT_IF_TOUCHED
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -1336,6 +1339,9 @@ class TestOrders:
         assert bracket.orders[2].time_in_force == TimeInForce.GTC
         assert bracket.orders[1].expire_time is None
         assert bracket.orders[2].expire_time is None
+        assert bracket.orders[0].is_post_only is False
+        assert bracket.orders[1].is_post_only is False
+        assert bracket.orders[2].is_post_only is False
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
         assert bracket.orders[1].contingency_type == ContingencyType.OUO
         assert bracket.orders[2].contingency_type == ContingencyType.OUO
