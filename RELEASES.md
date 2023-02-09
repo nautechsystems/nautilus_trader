@@ -1,3 +1,19 @@
+# NautilusTrader 1.169.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
+- Implemented optimized logger using Rust MPSC channel and separate thread
+- Expose and improve `MatchingEngine` public API for custom functionality
+
+### Fixes
+None
+
+---
 # NautilusTrader 1.168.0 Beta
 
 Released on 29th January 2023 (UTC).
