@@ -79,11 +79,7 @@ class TestPersistenceStreaming:
             catalog_path=catalog_path,
             catalog_fs_protocol="memory",
             instrument_id=instrument.id.value,
-            streaming_config=StreamingConfig(
-                catalog_path=catalog_path,
-                fs_protocol="memory",
-                flush_interval_ms=5000,
-            ),
+            flush_interval_ms=5000,
         )
 
         node = BacktestNode(configs=[run_config])
