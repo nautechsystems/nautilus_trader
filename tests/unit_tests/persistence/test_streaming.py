@@ -32,7 +32,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.persistence.streaming import generate_signal_class
+from nautilus_trader.persistence.streaming.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs

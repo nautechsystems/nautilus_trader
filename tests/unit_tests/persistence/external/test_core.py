@@ -555,6 +555,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/0000000000000000001-0000000000000000010-0.parquet"
 
         assert self.fs.exists(path)
+        assert len(pd.read_parquet(path)) == 2
 
     def test_write_parquet_rust_trade_ticks_writes_expected(self):
         # Arrange
