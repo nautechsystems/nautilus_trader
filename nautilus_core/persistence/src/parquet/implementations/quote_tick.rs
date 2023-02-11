@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use arrow2::{
     array::{Array, Int64Array, UInt64Array},
@@ -21,13 +21,14 @@ use arrow2::{
     datatypes::{DataType, Field, Schema},
     io::parquet::write::{transverse, Encoding},
 };
+use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use nautilus_model::data::tick::QuoteTick;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{DecodeFromChunk, EncodeToChunk};
+use crate::parquet::{DecodeFromChunk, DecodeFromRecordBatch, EncodeToChunk};
 
 impl EncodeToChunk for QuoteTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
@@ -165,5 +166,69 @@ impl DecodeFromChunk for QuoteTick {
             );
 
         values.collect()
+    }
+}
+
+impl DecodeFromRecordBatch for QuoteTick {
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+        let instrument_id = InstrumentId::from(metadata.get("instrument_id").unwrap().as_str());
+        let price_precision = metadata
+            .get("price_precision")
+            .unwrap()
+            .parse::<u8>()
+            .unwrap();
+        let size_precision = metadata
+            .get("size_precision")
+            .unwrap()
+            .parse::<u8>()
+            .unwrap();
+
+        use datafusion::arrow::array::*;
+        // extract field value arrays from record batch
+        let cols = record_batch.columns();
+        let bid_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_size_values = cols[2].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_values = cols[3].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        // construct iterator of values from field value arrays
+        let values = bid_values
+            .into_iter()
+            .zip(ask_values.iter())
+            .zip(ask_size_values.iter())
+            .zip(bid_size_values.iter())
+            .zip(ts_event_values.iter())
+            .zip(ts_init_values.iter())
+            .map(
+                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| QuoteTick {
+                    instrument_id: instrument_id.clone(),
+                    bid: Price::from_raw(bid.unwrap(), price_precision),
+                    ask: Price::from_raw(ask.unwrap(), price_precision),
+                    bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
+                    ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
+                    ts_event: ts_event.unwrap(),
+                    ts_init: ts_init.unwrap(),
+                },
+            );
+
+        values.collect()
+    }
+
+    fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
+        // TODO: remoev temporary import
+        // imported here so types don't conflict with arrow2 types
+        use datafusion::arrow::datatypes::*;
+        let fields = vec![
+            Field::new("bid", DataType::Int64, false),
+            Field::new("ask", DataType::Int64, false),
+            Field::new("bid_size", DataType::UInt64, false),
+            Field::new("ask_size", DataType::UInt64, false),
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("ts_init", DataType::UInt64, false),
+        ];
+
+        Schema::new_with_metadata(fields, metadata).into()
     }
 }

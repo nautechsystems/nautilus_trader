@@ -18,11 +18,10 @@ pyo3.workspace = true
 rand.workspace = true
 once_cell = "1.17.0"
 arrow2 = { version = "0.15.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
+datafusion = "17.0.0"
+tokio = "1.25.0"
+futures = "0.3.26"
 
 [features]
-extension-module = [
-    "pyo3/extension-module",
-    "nautilus_core/extension-module",
-    "nautilus_model/extension-module",
-]
+extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]
 default = []

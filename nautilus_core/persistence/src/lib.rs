@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod datafusion;
 pub mod parquet;
 
 use std::{collections::BTreeMap, ffi::c_void, fs::File, io::Cursor, ptr::null_mut, slice};
