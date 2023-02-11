@@ -76,6 +76,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
+        self._last_ts_event = 0
         self.volume = Quantity.zero_c(precision=self.size_precision)
 
     def __repr__(self) -> str:
@@ -203,6 +204,7 @@ cdef class BarBuilder:
             self._high = self._last_close
             self._low = self._last_close
             self._close = self._last_close
+            self._last_close = ts_event
 
         cdef Bar bar = Bar(
             bar_type=self._bar_type,
@@ -211,10 +213,11 @@ cdef class BarBuilder:
             low=self._low,
             close=self._close,
             volume=Quantity(self.volume, self.size_precision),
-            ts_event=ts_event,
+            ts_event=self._last_ts_event,
             ts_init=ts_event,
         )
 
+        self._last_ts_event = ts_event
         self._last_close = self._close
         self.reset()
         return bar

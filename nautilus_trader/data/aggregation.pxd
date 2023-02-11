@@ -44,6 +44,7 @@ cdef class BarBuilder:
     """The builders current update count.\n\n:returns: `int`"""
 
     cdef bint _partial_set
+    cdef uint64_t _last_ts_event
     cdef Price _last_close
     cdef Price _open
     cdef Price _high
