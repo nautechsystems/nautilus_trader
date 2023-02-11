@@ -204,7 +204,7 @@ cdef class BarBuilder:
             self._high = self._last_close
             self._low = self._last_close
             self._close = self._last_close
-            self._last_close = ts_event
+            self._last_ts_event = ts_event
 
         cdef Bar bar = Bar(
             bar_type=self._bar_type,
