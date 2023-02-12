@@ -806,9 +806,7 @@ cdef class Order:
             Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
-        if isinstance(event, OrderInitialized):
-            Condition.true(not self._events, "`OrderInitialized` should be the first order event")
-        elif isinstance(event, OrderDenied):
+        if isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)
         elif isinstance(event, OrderSubmitted):
