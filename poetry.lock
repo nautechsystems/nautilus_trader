@@ -1332,41 +1332,41 @@ files = [
 
 [[package]]
 name = "msgspec"
-version = "0.13.0"
+version = "0.13.1"
 description = "A fast serialization and validation library, with builtin support for JSON, MessagePack, YAML, and TOML."
 category = "main"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "msgspec-0.13.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:8bbf33b1c2a25793af463c463c30ec6dbe4305130ea7bcb12d85bd92feb252af"},
-    {file = "msgspec-0.13.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f54aaad28cd0f6983187d5280d289536a668910a6c431162324bc2576f5b4831"},
-    {file = "msgspec-0.13.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6a66cf73a4392196720193d35f0e0fd1613872371c928017c4363f5a7c150e96"},
-    {file = "msgspec-0.13.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:52e74cf0a0907553acd9946e3c1416b47e1d568eb004049820d9055644ad0478"},
-    {file = "msgspec-0.13.0-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:b0cf6084a4eb9d906f9292d1863e3d12c0d624551fb79c1f12f910fbb1e818e7"},
-    {file = "msgspec-0.13.0-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:46b89036786e5907855602645b71b87269e43e0094541946ba983a36d62f1b4e"},
-    {file = "msgspec-0.13.0-cp310-cp310-win_amd64.whl", hash = "sha256:c53799555c5ac056473cc35557d8b9ef045e24507f73b5256ce8abe00136142f"},
-    {file = "msgspec-0.13.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:084c3aedaf3467c11b7afc4fbe1ac709030519706454c24b2e11e55212adba24"},
-    {file = "msgspec-0.13.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:3b3fb5a25999761cc55d3f3c1ae598a449898bf9251702ba2e27bca2f5b56ad5"},
-    {file = "msgspec-0.13.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5e48a3b9a290dd8197bd6cd6331eb2d2b9e136ec725dd77881728c334435f537"},
-    {file = "msgspec-0.13.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:837584e46611cc56509e23d688b5d263bee6a3e42d83c31857b9f5cbd0c44b91"},
-    {file = "msgspec-0.13.0-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:dbaaf643c0c4d5372eaec722392defca336c9fef1f221d7c46b7e76d48482f1d"},
-    {file = "msgspec-0.13.0-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:94fc2c21c1eaf5b92964b40bfabd51b65e29f6756376d328474d6b2e703f8e51"},
-    {file = "msgspec-0.13.0-cp311-cp311-win_amd64.whl", hash = "sha256:70051d3efa22ab8770b3cb0180447e684efdc5d22f1e8ceca38bc0127d4d8052"},
-    {file = "msgspec-0.13.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:698659567159fe87fa3b513307c9a095a05add3cbcff3d5c8669f4a386f1b08d"},
-    {file = "msgspec-0.13.0-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:7e3ef9b42215642f53f9e07caf037432568025bf2924a907a69b6afe0a70caf2"},
-    {file = "msgspec-0.13.0-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:fbcd283629a5c5b3e03591381adfc623104ada08bfa50733c43f756c1229ab8c"},
-    {file = "msgspec-0.13.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:610ba7e84ad84147e996252b8b736b5bda214d6117f6158cdb3bae1135bd5e90"},
-    {file = "msgspec-0.13.0-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:5d8ec7b202c24f013ff71ba451e879b47d0ebb2ad6fa195d662bf9b58651a60d"},
-    {file = "msgspec-0.13.0-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:9a408bb35bcbe46c02e76eda300fb55e7f8d6b31ce52cf143248b6d241cf82cd"},
-    {file = "msgspec-0.13.0-cp38-cp38-win_amd64.whl", hash = "sha256:f5d51fe5eef8c6b4545cb9a06a83034c02e6158077fd134d372cff1db2b812ac"},
-    {file = "msgspec-0.13.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:6957112ca69d6b7cecf6e02aaac5da7702e92e9b261fac692264124f3b5cba65"},
-    {file = "msgspec-0.13.0-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:7657bbc8e1f60076cdf1ab48df828894b7222cad410838880f5e302221e1d874"},
-    {file = "msgspec-0.13.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8f70197352ec5cdb7bbd9955fa890962b56908770ba62c70ac24cb36a4e178b4"},
-    {file = "msgspec-0.13.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c4257d3f1ed2b3e7dd35e9229f0ef59f4c8a6adf881f62b918dce65c730e5b32"},
-    {file = "msgspec-0.13.0-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:0605914d4afc009aeafb18777414cb91edfd138ac8445dfc29c62e63eb703a00"},
-    {file = "msgspec-0.13.0-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:c5fc20dc8d1c1d8f6ea7e064b8f638b04dd98e5f590471c5dfe3aa8fd7d88129"},
-    {file = "msgspec-0.13.0-cp39-cp39-win_amd64.whl", hash = "sha256:68c5bf57a5cdd5791f360585a9b850e2758a27c2e6530ed64715b7cbcee9993e"},
-    {file = "msgspec-0.13.0.tar.gz", hash = "sha256:c89bbc5b82f1370165593ed28c8ce9dfa71869666ed8ba3af900b3465d379545"},
+    {file = "msgspec-0.13.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:a07a50afb119728e4969ab58602985549b8b9af6cf565873fad28365eb7dbf7b"},
+    {file = "msgspec-0.13.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:014e6e0b01946528f609102c5624749501f63ebdeba386855948185288bc299d"},
+    {file = "msgspec-0.13.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ea1d6de944dd2d369186ce9f3d98119980427fd8fba0788d819d775fe0440442"},
+    {file = "msgspec-0.13.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:037ff80d956bb13fc8c221a386f7ba97f6e55d0dc84f4bfe92226df570140802"},
+    {file = "msgspec-0.13.1-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:8f0679fbafb889e4165bf49c2afd342716dcee2fe13de3777f1613c09740f304"},
+    {file = "msgspec-0.13.1-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:99d239343d2b78ad139277067e727ad573445eec6b7ba113e4b987e15728d9d4"},
+    {file = "msgspec-0.13.1-cp310-cp310-win_amd64.whl", hash = "sha256:88466f804b817151cbff9e53d698f86a9280b0d00896302abb528be01c46701a"},
+    {file = "msgspec-0.13.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:494de96dc6ad90c2f3ba96130591ade518dfd019be767e6030c73ea3e9eb6df9"},
+    {file = "msgspec-0.13.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:b8853fdf1c44cb874c786133ce1062b6d9a484e0fa48f7174035eb506f462042"},
+    {file = "msgspec-0.13.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ac902ccdfa4574498342d06f4c49bfa60317724737985b2fc954e8c8eb009910"},
+    {file = "msgspec-0.13.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7b0e594996a042fb6dcd9839094b6ef8768e7707bf1567e4d61cbf07c1d12f24"},
+    {file = "msgspec-0.13.1-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:2d32dedfeb5646ac339eb4602886861756f050c6307e2177b7c68f5084519069"},
+    {file = "msgspec-0.13.1-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:de920ff863aceef8304a1c5c3855f089782429f6fdbfea1321061f37e4ba418a"},
+    {file = "msgspec-0.13.1-cp311-cp311-win_amd64.whl", hash = "sha256:36b919dad8cbf98d1e2b3d829bf26fbe64205a08ee1caa6988581e5850bcb6b1"},
+    {file = "msgspec-0.13.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:30c80380bfe3a03b2e968f08bdbec8a9fc1619cd2555cc8334774c475296faaa"},
+    {file = "msgspec-0.13.1-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:0e12db829b670159780d4483248c5099b99cc487f3c134f2d3e6ce59fa18ce67"},
+    {file = "msgspec-0.13.1-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:aa7febe37689642a1a2ccdeecf3a8b820ea043cd142438bd0a88714c982555a0"},
+    {file = "msgspec-0.13.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:317ec8e80cf919c42b6defb375e12ad49af649238327d0abaed980c4d72a7bea"},
+    {file = "msgspec-0.13.1-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:d51cdd579b632e3686c14eee9948aeba056ea969b85b60e09aa9811cea3524cd"},
+    {file = "msgspec-0.13.1-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:348415004e907c856e22884485c9f91dc8f39317ce365b0881a08ac35f234afe"},
+    {file = "msgspec-0.13.1-cp38-cp38-win_amd64.whl", hash = "sha256:b80b58d8fa70f881701a3bff50661327b4f5a50441d33386fac95a94eb3cad1d"},
+    {file = "msgspec-0.13.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:96f7898b4433a2570636cf0659ac7cedd1b753f0a108fa0ff82a813a830c5a98"},
+    {file = "msgspec-0.13.1-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:fae7c7e6f7715cebc34ce616b078dc2c021651115915d0c2ea507d9c9074e34d"},
+    {file = "msgspec-0.13.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:050af5e263eece6a16c07ba651ab83208acccfccc5ab8b47fa6cf99c135f01a9"},
+    {file = "msgspec-0.13.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e143da1561b6a766c2fccdb9c487dfcf1d56c8c1b9c8c8c5c3e322f02fbb8c11"},
+    {file = "msgspec-0.13.1-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:59e572b78da8264b2ce3dbb65bec6a4a65cb355046b0d5fc16df24626e889947"},
+    {file = "msgspec-0.13.1-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:bf92cbef573127966cccce71eb9368a6ce36c847ee128e048c7c04724daae855"},
+    {file = "msgspec-0.13.1-cp39-cp39-win_amd64.whl", hash = "sha256:358da53e870d8bdb890b27c2cd9a670bc17c1d4330908d3fb6e00dcdc8d9c54c"},
+    {file = "msgspec-0.13.1.tar.gz", hash = "sha256:b252174d33c7d7885e5efe8009147f09da4bf6655b86dba9128a2a4d4c1fb6ee"},
 ]
 
 [package.extras]
@@ -2639,14 +2639,14 @@ files = [
 
 [[package]]
 name = "types-redis"
-version = "4.4.0.6"
+version = "4.5.1.0"
 description = "Typing stubs for redis"
 category = "dev"
 optional = false
 python-versions = "*"
 files = [
-    {file = "types-redis-4.4.0.6.tar.gz", hash = "sha256:57f8b3706afe47ef36496d70a97a3783560e6cb19e157be12985dbb31de1d853"},
-    {file = "types_redis-4.4.0.6-py3-none-any.whl", hash = "sha256:8b40d6bf3a54352d4cb2aa7d01294c572a39d40a9d289b96bdf490b51d3a42d2"},
+    {file = "types-redis-4.5.1.0.tar.gz", hash = "sha256:6f6fb1cfeee3708112dec3609a042774f96f2cfcb4709d267c11f51a6976da0a"},
+    {file = "types_redis-4.5.1.0-py3-none-any.whl", hash = "sha256:dac6ea398c57a53213b70727be7c8e3a788ded3c3880e94bf74e85c22aa63c7e"},
 ]
 
 [package.dependencies]
@@ -2936,14 +2936,14 @@ multidict = ">=4.0"
 
 [[package]]
 name = "zipp"
-version = "3.12.1"
+version = "3.13.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "zipp-3.12.1-py3-none-any.whl", hash = "sha256:6c4fe274b8f85ec73c37a8e4e3fa00df9fb9335da96fb789e3b96b318e5097b3"},
-    {file = "zipp-3.12.1.tar.gz", hash = "sha256:a3cac813d40993596b39ea9e93a18e8a2076d5c378b8bc88ec32ab264e04ad02"},
+    {file = "zipp-3.13.0-py3-none-any.whl", hash = "sha256:e8b2a36ea17df80ffe9e2c4fda3f693c3dad6df1697d3cd3af232db680950b0b"},
+    {file = "zipp-3.13.0.tar.gz", hash = "sha256:23f70e964bc11a34cef175bc90ba2914e1e4545ea1e3e2f67c079671883f9cb6"},
 ]
 
 [package.extras]
@@ -2959,4 +2959,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "d6539ff50eefb5ee7c2ccde23462fa4dcc0feb48c8716f643ff6e4f331ca06a7"
+content-hash = "6f506b82f59ea2dd1ad9a9ea8ae7a6919b8cda450802b026dc15dc28ae5e44f5"
