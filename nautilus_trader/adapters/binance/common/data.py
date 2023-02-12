@@ -161,7 +161,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-        # Register common websocket message handlers
+        # Register common WebSocket message handlers
         self._ws_handlers = {
             "@bookTicker": self._handle_book_ticker,
             "@ticker": self._handle_ticker,
@@ -174,7 +174,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             "@depth20": self._handle_book_partial_update,
         }
 
-        # Websocket msgspec decoders
+        # WebSocket msgspec decoders
         self._decoder_data_msg_wrapper = msgspec.json.Decoder(BinanceDataMsgWrapper)
         self._decoder_order_book_msg = msgspec.json.Decoder(BinanceOrderBookMsg)
         self._decoder_quote_msg = msgspec.json.Decoder(BinanceQuoteMsg)
@@ -476,7 +476,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if from_datetime is not None or to_datetime is not None:
                 self._log.warning(
                     "Trade ticks have been requested with a from/to time range, "
-                    f"however the request will be for the most recent {limit}."
+                    f"however the request will be for the most recent {limit}. "
                     "Consider using aggregated trade ticks (`use_agg_trade_ticks`).",
                 )
             ticks = await self._http_market.request_trade_ticks(
@@ -529,8 +529,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         resolution = self._enum_parser.parse_internal_bar_agg(bar_type.spec.aggregation)
         if not self._binance_account_type.is_spot_or_margin and resolution == "s":
             self._log.error(
-                f"Cannot request {bar_type}.",
-                "Second interval bars are not aggregated by Binance Futures.",
+                f"Cannot request {bar_type}: ",
+                "second interval bars are not aggregated by Binance Futures.",
             )
         try:
             interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")

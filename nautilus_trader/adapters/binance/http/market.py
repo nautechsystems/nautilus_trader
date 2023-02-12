@@ -176,13 +176,6 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
     `GET /fapi/v1/trades`
     `GET /dapi/v1/trades`
 
-    Parameters
-    ----------
-    symbol : str
-        The trading pair.
-    limit : int, optional
-        The limit for the response. Default 500; max 1000.
-
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
@@ -359,7 +352,6 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
     https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
     https://binance-docs.github.io/apidocs/delivery/en/#kline-candlestick-data
-
     """
 
     def __init__(
@@ -410,7 +402,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
 
 class BinanceTicker24hrHttp(BinanceHttpEndpoint):
     """
-    Endpoint of 24 hour rolling window price change statistics.
+    Endpoint of 24-hour rolling window price change statistics.
 
     `GET /api/v3/ticker/24hr`
     `GET /fapi/v1/ticker/24hr`
@@ -447,7 +439,7 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET parameters for 24hr ticker
+        GET parameters for 24hr ticker.
 
         Parameters
         ----------
@@ -514,11 +506,11 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         Parameters
         ----------
         symbol : BinanceSymbol
-            The trading pair. When given, endpoint will return a single BinanceTickerPrice
+            The trading pair. When given, endpoint will return a single BinanceTickerPrice.
             When omitted, endpoint will return a list of BinanceTickerPrice for all trading pairs.
         symbols : str
             SPOT/MARGIN only!
-            List of trading pairs. When given, endpoint will return a list of BinanceTickerPrice
+            List of trading pairs. When given, endpoint will return a list of BinanceTickerPrice.
         """
 
         symbol: Optional[BinanceSymbol] = None

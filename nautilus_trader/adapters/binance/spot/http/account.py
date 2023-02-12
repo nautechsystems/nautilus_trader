@@ -346,7 +346,9 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
 
-        NOTE: If fromId is specified, neither startTime endTime can be provided.
+        Warnings
+        --------
+        If fromId is specified, neither startTime endTime can be provided.
         """
 
         timestamp: str
@@ -495,7 +497,6 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
             The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -518,7 +519,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     clock : LiveClock,
         The clock for the API client.
     account_type : BinanceAccountType
-        The Binance account type, used to select the endpoint prefix
+        The Binance account type, used to select the endpoint prefix.
     """
 
     def __init__(

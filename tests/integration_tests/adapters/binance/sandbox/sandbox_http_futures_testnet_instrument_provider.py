@@ -20,28 +20,29 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_spot_instrument_provider():
+async def test_binance_futures_testnet_instrument_provider():
+    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=asyncio.get_event_loop(),
+        loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        account_type=BinanceAccountType.SPOT,
-        key=os.getenv("BINANCE_API_KEY"),
-        secret=os.getenv("BINANCE_API_SECRET"),
-        is_testnet=True,  # <-- add this argument to use the testnet
+        account_type=BinanceAccountType.FUTURES_USDT,
+        key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
+        secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
     )
     await client.connect()
 
-    provider = BinanceSpotInstrumentProvider(
+    provider = BinanceFuturesInstrumentProvider(
         client=client,
+        clock=clock,
         logger=Logger(clock=clock),
     )
 
