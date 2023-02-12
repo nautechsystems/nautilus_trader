@@ -99,7 +99,7 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
         return [balance.parse_to_account_balance() for balance in self.B]
 
     def handle_account_update(self, exec_client: BinanceCommonExecutionClient):
-        """Handle BinanceSpotAccountUpdateMsg as payload of outboundAccountPosition"""
+        """Handle BinanceSpotAccountUpdateMsg as payload of outboundAccountPosition."""
         exec_client.generate_account_state(
             balances=self.parse_to_account_balances(),
             margins=[],

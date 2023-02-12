@@ -55,7 +55,6 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
     https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
     https://binance-docs.github.io/apidocs/delivery/en/#start-user-data-stream-user_stream
-
     """
 
     def __init__(

@@ -35,7 +35,7 @@ from nautilus_trader.core.correctness import PyCondition
 
 class BinanceOrderHttp(BinanceHttpEndpoint):
     """
-    Endpoint for managing orders
+    Endpoint for managing orders.
 
     `GET /api/v3/order`
     `GET /api/v3/order/test`
@@ -55,7 +55,6 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
     https://binance-docs.github.io/apidocs/futures/en/#new-order-trade
     https://binance-docs.github.io/apidocs/delivery/en/#new-order-trade
-
     """
 
     def __init__(
@@ -96,8 +95,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         recvWindow : str, optional
             the millisecond timeout window.
 
-        NOTE: Either orderId or origClientOrderId must be sent.
-
+        Warnings
+        --------
+        Either orderId or origClientOrderId must be sent.
         """
 
         symbol: BinanceSymbol
@@ -108,7 +108,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
 
     class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Order creation POST endpoint parameters
+        Order creation POST endpoint parameters.
 
         Parameters
         ----------
@@ -188,7 +188,6 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
-
         """
 
         symbol: BinanceSymbol
@@ -243,7 +242,6 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#all-orders-user_data
     https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#all-orders-user_data
-
     """
 
     def __init__(
@@ -264,7 +262,7 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of allOrders GET request
+        Parameters of allOrders GET request.
 
         Parameters
         ----------
@@ -284,7 +282,6 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
             Default 500, max 1000
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         symbol: BinanceSymbol
@@ -319,7 +316,6 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#current-open-orders-user_data
     https://binance-docs.github.io/apidocs/futures/en/#current-all-open-orders-user_data
     https://binance-docs.github.io/apidocs/futures/en/#current-all-open-orders-user_data
-
     """
 
     def __init__(
@@ -342,7 +338,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of openOrders GET request
+        Parameters of openOrders GET request.
 
         Parameters
         ----------
@@ -352,7 +348,6 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
             The symbol of the orders
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         timestamp: str
@@ -367,7 +362,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
 
 class BinanceUserTradesHttp(BinanceHttpEndpoint):
     """
-    Endpoint of trades for a specific account and symbol
+    Endpoint of trades for a specific account and symbol.
 
     `GET /api/v3/myTrades`
     `GET /fapi/v1/userTrades`
@@ -378,7 +373,6 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
     https://binance-docs.github.io/apidocs/futures/en/#account-trade-list-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#account-trade-list-user_data
-
     """
 
     def __init__(
@@ -398,7 +392,7 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of allOrders GET request
+        Parameters of allOrders GET request.
 
         Parameters
         ----------
@@ -420,7 +414,6 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
             Default 500, max 1000
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
-
         """
 
         symbol: BinanceSymbol
@@ -485,7 +478,7 @@ class BinanceAccountHttpAPI:
         self._endpoint_user_trades = BinanceUserTradesHttp(client, user_trades_url)
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock"""
+        """Create Binance timestamp from internal clock."""
         return str(self._clock.timestamp_ms())
 
     async def query_order(
@@ -495,7 +488,7 @@ class BinanceAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
-        """Check an order status"""
+        """Check an order status."""
         if order_id is None and orig_client_order_id is None:
             raise RuntimeError(
                 "Either orderId or origClientOrderId must be sent.",
@@ -526,7 +519,7 @@ class BinanceAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
-        """Cancel an active order"""
+        """Cancel an active order."""
         if order_id is None and orig_client_order_id is None:
             raise RuntimeError(
                 "Either orderId or origClientOrderId must be sent.",
@@ -566,7 +559,7 @@ class BinanceAccountHttpAPI:
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
-        """Send in a new order to Binance"""
+        """Send in a new order to Binance."""
         binance_order = await self._endpoint_order._post(
             parameters=self._endpoint_order.PostParameters(
                 symbol=BinanceSymbol(symbol),

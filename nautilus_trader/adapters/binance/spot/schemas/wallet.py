@@ -22,7 +22,7 @@ import msgspec
 
 
 class BinanceSpotTradeFee(msgspec.Struct, frozen=True):
-    """Schema of a single `Binance Spot/Margin` tradeFee"""
+    """Schema of a single `Binance Spot/Margin` tradeFee."""
 
     symbol: str
     makerCommission: str

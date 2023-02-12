@@ -57,7 +57,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET parameters for fetching commission rate
+        GET parameters for fetching commission rate.
 
         Parameters
         ----------

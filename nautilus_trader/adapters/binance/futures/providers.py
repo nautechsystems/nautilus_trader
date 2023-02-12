@@ -148,9 +148,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         }
 
         for symbol in symbols:
-            if self._client.base_url.__contains__("testnet.binancefuture.com"):
-                fee = None
-            else:
+            fee: Optional[BinanceFuturesCommissionRate] = None
+            if not self._client.base_url.__contains__("testnet.binancefuture.com"):
                 try:
                     # Get current commission rates for the symbol
                     fee = await self._http_wallet.query_futures_commission_rate(symbol)
@@ -181,9 +180,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             info.symbol: info for info in exchange_info.symbols
         }
 
-        if self._client.base_url.__contains__("testnet.binancefuture.com"):
-            fee = None
-        else:
+        fee: Optional[BinanceFuturesCommissionRate] = None
+        if not self._client.base_url.__contains__("testnet.binancefuture.com"):
             try:
                 # Get current commission rates for the symbol
                 fee = await self._http_wallet.query_futures_commission_rate(symbol)
