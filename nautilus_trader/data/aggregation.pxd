@@ -55,7 +55,7 @@ cdef class BarBuilder:
     cpdef void update(self, Price price, Quantity size, uint64_t ts_event) except *
     cpdef void reset(self) except *
     cpdef Bar build_now(self)
-    cpdef Bar build(self, uint64_t ts_event)
+    cpdef Bar build(self, uint64_t ts_event, uint64_t ts_init)
 
 
 cdef class BarAggregator:
@@ -70,7 +70,7 @@ cdef class BarAggregator:
     cpdef void handle_trade_tick(self, TradeTick tick) except *
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *
     cdef void _build_now_and_send(self) except *
-    cdef void _build_and_send(self, uint64_t ts_event) except *
+    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -90,10 +90,12 @@ cdef class ValueBarAggregator(BarAggregator):
 cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
     cdef bint _build_on_next_tick
+    cdef uint64_t _stored_open_ns
     cdef uint64_t _stored_close_ns
     cdef tuple _cached_update
     cdef str _timer_name
-    cdef bint _build_bars_with_no_updates
+    cdef bint _build_with_no_updates
+    cdef bint _timestamp_on_close
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""
