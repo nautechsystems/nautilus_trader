@@ -90,7 +90,6 @@ cdef class OrderEmulator(Actor):
         super().__init__()
 
         self.register_base(
-            trader_id=trader_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

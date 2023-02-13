@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
-
 import pandas as pd
 import pytz
+
+from nautilus_trader.config import ActorConfig
+
+from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -31,8 +33,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.position cimport Position
-
-from nautilus_trader.config import ActorConfig
 
 
 class SimulationModuleConfig(ActorConfig):

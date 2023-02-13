@@ -271,7 +271,6 @@ cdef class Strategy(Actor):
         Condition.not_none(logger, "logger")
 
         self.register_base(
-            trader_id=trader_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

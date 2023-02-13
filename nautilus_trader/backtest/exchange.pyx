@@ -181,6 +181,13 @@ cdef class SimulatedExchange:
         for module in modules:
             Condition.not_in(module, self.modules, "module", "modules")
             module.register_venue(self)
+            module.register_base(
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                logger=logger,
+
+            )
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
