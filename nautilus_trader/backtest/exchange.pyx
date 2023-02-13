@@ -186,7 +186,6 @@ cdef class SimulatedExchange:
                 cache=cache,
                 clock=clock,
                 logger=logger,
-
             )
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
