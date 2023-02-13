@@ -335,8 +335,8 @@ class TradingNode:
             self.kernel.log.debug(f"{self.kernel.data_engine.get_data_queue_task()}")
             self.kernel.log.debug(f"{self.kernel.exec_engine.get_cmd_queue_task()}")
             self.kernel.log.debug(f"{self.kernel.exec_engine.get_evt_queue_task()}")
-            # self.kernel.log.debug(f"{self.kernel.risk_engine.get_cmd_queue_task()}")
-            # self.kernel.log.debug(f"{self.kernel.risk_engine.get_evt_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.risk_engine.get_cmd_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.risk_engine.get_evt_queue_task()}")
 
             if self.kernel.trader.is_running:
                 self.kernel.trader.stop()
@@ -474,8 +474,8 @@ class TradingNode:
                 self.kernel.data_engine.get_req_queue_task(),
                 self.kernel.data_engine.get_res_queue_task(),
                 self.kernel.data_engine.get_data_queue_task(),
-                # self.kernel.risk_engine.get_cmd_queue_task(),
-                # self.kernel.risk_engine.get_evt_queue_task(),
+                self.kernel.risk_engine.get_cmd_queue_task(),
+                self.kernel.risk_engine.get_evt_queue_task(),
                 self.kernel.exec_engine.get_cmd_queue_task(),
                 self.kernel.exec_engine.get_evt_queue_task(),
             ]
