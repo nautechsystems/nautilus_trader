@@ -41,6 +41,7 @@ where
     A: EncodeToChunk + 'a + Sized,
     W: Write,
 {
+    #[must_use]
     pub fn new(w: W, schema: Schema) -> ParquetWriter<A, W> {
         let options = WriteOptions {
             write_statistics: true,
@@ -59,6 +60,7 @@ where
         }
     }
 
+    #[must_use]
     pub fn new_buffer_writer(schema: Schema) -> ParquetWriter<A, Vec<u8>> {
         ParquetWriter::new(Vec::new(), schema)
     }

@@ -37,6 +37,7 @@ impl Display for AccountId {
 }
 
 impl AccountId {
+    #[must_use]
     pub fn new(s: &str) -> AccountId {
         correctness::valid_string(s, "`AccountId` value");
         correctness::string_contains(s, "-", "`TraderId` value");

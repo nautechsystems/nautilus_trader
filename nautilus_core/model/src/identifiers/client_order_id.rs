@@ -37,6 +37,7 @@ impl Display for ClientOrderId {
 }
 
 impl ClientOrderId {
+    #[must_use]
     pub fn new(s: &str) -> ClientOrderId {
         correctness::valid_string(s, "`ClientOrderId` value");
 
