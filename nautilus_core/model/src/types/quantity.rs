@@ -34,6 +34,7 @@ pub struct Quantity {
 }
 
 impl Quantity {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 

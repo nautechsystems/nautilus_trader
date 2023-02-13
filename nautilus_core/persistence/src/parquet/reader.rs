@@ -153,6 +153,7 @@ impl<A, R> ParquetReader<A, R>
 where
     R: Read + Seek,
 {
+    #[must_use]
     pub fn new(mut reader: R, chunk_size: usize, filter_arg: GroupFilterArg) -> Self {
         let metadata = read::read_metadata(&mut reader).expect("Unable to read metadata");
         let schema = read::infer_schema(&metadata).expect("Unable to infer schema");

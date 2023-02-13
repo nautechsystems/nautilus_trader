@@ -37,6 +37,7 @@ impl Display for Symbol {
 }
 
 impl Symbol {
+    #[must_use]
     pub fn new(s: &str) -> Symbol {
         correctness::valid_string(s, "`Symbol` value");
 

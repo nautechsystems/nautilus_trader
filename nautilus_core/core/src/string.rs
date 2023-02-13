@@ -24,6 +24,7 @@ use pyo3::{ffi, FromPyPointer, Python};
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 /// # Panics
 /// - If `ptr` is null.
+#[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
@@ -35,6 +36,7 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 /// - Assumes `ptr` is a valid C string pointer.
 /// # Panics
 /// - If `ptr` is null.
+#[must_use]
 pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     CStr::from_ptr(ptr)
@@ -44,6 +46,7 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 }
 
 /// Create a C string pointer to newly allocated memory from a [&str].
+#[must_use]
 pub fn string_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
 }

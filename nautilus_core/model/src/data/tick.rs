@@ -40,6 +40,7 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         bid: Price,
@@ -97,6 +98,7 @@ pub struct TradeTick {
 }
 
 impl TradeTick {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         price: Price,
