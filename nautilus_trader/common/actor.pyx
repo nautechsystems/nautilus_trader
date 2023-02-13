@@ -502,7 +502,6 @@ cdef class Actor(Component):
 
     cpdef void register_base(
         self,
-        TraderId trader_id,
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
@@ -513,8 +512,6 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader ID for the actor.
         msgbus : MessageBus
             The message bus for the actor.
         cache : CacheFacade
@@ -529,7 +526,6 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(trader_id, "trader_id")
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
@@ -538,13 +534,14 @@ cdef class Actor(Component):
         clock.register_default_handler(self.handle_event)
         self._change_clock(clock)
         self._change_logger(logger)
-        self._change_msgbus(msgbus)  # The trader ID is also assigned here
+        self._change_msgbus(msgbus)  # The trader ID is assigned here
 
-        self.trader_id = trader_id
         self.msgbus = msgbus
         self.cache = cache
         self.clock = self._clock
         self.log = self._log
+
+        self.log.info(f"Registered {self.id}.")
 
     cpdef void register_warning_event(self, type event) except *:
         """

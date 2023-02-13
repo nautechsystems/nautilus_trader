@@ -15,7 +15,8 @@ Released on TBD (UTC).
 - Expose and improve `MatchingEngine` public API for custom functionality
 
 ### Fixes
-None
+- Fixed registration of `SimulationModule` (and refine `Actor` base registration)
+- Fixed loading of previously emulated and transformed orders (handles second `OrderInitialized`)
 
 ---
 

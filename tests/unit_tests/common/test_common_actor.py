@@ -150,7 +150,6 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -165,7 +164,6 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -182,7 +180,6 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -488,7 +485,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -504,7 +500,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -523,7 +518,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -544,7 +538,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -560,7 +553,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -576,7 +568,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -595,7 +586,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -614,7 +604,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -634,7 +623,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -654,7 +642,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -674,7 +661,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -700,7 +686,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -720,7 +705,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -738,7 +722,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -757,7 +740,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -778,7 +760,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -796,7 +777,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -816,7 +796,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -836,7 +815,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -856,7 +834,6 @@ class TestActor:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -874,7 +851,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -892,7 +868,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -912,7 +887,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -932,7 +906,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -950,7 +923,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -970,7 +942,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -992,7 +963,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1012,7 +982,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1034,7 +1003,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1054,7 +1022,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1076,7 +1043,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1096,7 +1062,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1118,7 +1083,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1144,7 +1108,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1172,7 +1135,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1195,7 +1157,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1218,7 +1179,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1239,7 +1199,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1260,7 +1219,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1277,7 +1235,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1296,7 +1253,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1313,7 +1269,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1332,7 +1287,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1354,7 +1308,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1372,7 +1325,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1391,7 +1343,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1411,7 +1362,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1430,7 +1380,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1450,7 +1399,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1469,7 +1417,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1489,7 +1436,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1508,7 +1454,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1528,7 +1473,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1555,7 +1499,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1570,7 +1513,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1599,7 +1541,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1628,7 +1569,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1648,7 +1588,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1670,7 +1609,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1686,7 +1624,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1705,7 +1642,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1722,7 +1658,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1739,7 +1674,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1765,7 +1699,6 @@ class TestActor:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
