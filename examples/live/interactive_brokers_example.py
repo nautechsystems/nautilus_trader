@@ -57,15 +57,17 @@ config_node = TradingNodeConfig(
     log_level="DEBUG",
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
                 filters=msgspec.json.encode(instrument_filters),
             ),
+            start_gateway=False,
         ),
     },
     exec_clients={
-        "IB": InteractiveBrokersExecClientConfig(),
+        "IB": InteractiveBrokersExecClientConfig(
+            start_gateway=False,
+        ),
     },
     timeout_connection=90.0,
     timeout_reconciliation=5.0,

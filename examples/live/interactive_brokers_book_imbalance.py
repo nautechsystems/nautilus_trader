@@ -60,6 +60,7 @@ config_node = TradingNodeConfig(
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=provider_config,
             read_only_api=False,
+            start_gateway=False,
         ),
     },
     exec_clients={
@@ -67,6 +68,7 @@ config_node = TradingNodeConfig(
             routing=RoutingConfig(default=True, venues={"IDEALPRO"}),
             instrument_provider=provider_config,
             read_only_api=False,
+            start_gateway=False,
         ),
     },
     timeout_connection=90.0,
