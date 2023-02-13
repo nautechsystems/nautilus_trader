@@ -65,6 +65,7 @@ class OrderBookImbalanceConfig(StrategyConfig):
     trigger_imbalance_ratio: float = 0.20
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = False
+    subscribe_ticker: bool = False
 
 
 class OrderBookImbalance(Strategy):
@@ -105,10 +106,12 @@ class OrderBookImbalance(Strategy):
 
         if self.config.use_quote_ticks:
             book_type = BookType.L1_TBBO
-            self.subscribe_quote_ticks(instrument_id=self.instrument.id)
+            self.subscribe_quote_ticks(self.instrument.id)
         else:
             book_type = book_type_from_str(self.config.book_type)
-            self.subscribe_order_book_deltas(instrument_id=self.instrument.id, book_type=book_type)
+            self.subscribe_order_book_deltas(self.instrument.id, book_type)
+        if self.config.subscribe_ticker:
+            self.subscribe_ticker(self.instrument.id)
         self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
 
     def on_order_book_delta(self, data: OrderBookData):
