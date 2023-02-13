@@ -154,6 +154,6 @@ mod tests {
     fn empty_vec_should_give_null_ptr() {
         let data: Vec<u64> = vec![];
         let cvec: CVec = data.into();
-        assert_eq!(cvec.ptr.cast::<u64>(), null().cast::<u64>() as *mut u64);
+        assert_eq!(cvec.ptr as *mut u64, null() as *const u64 as *mut u64);
     }
 }
