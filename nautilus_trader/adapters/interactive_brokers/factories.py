@@ -103,7 +103,7 @@ def get_cached_ib_client(
             port = port or GATEWAY.port
     port = port or InteractiveBrokersGateway.PORTS[trading_mode]
 
-    client_key: tuple = (host, port)
+    client_key: tuple = (host, port, client_id)
 
     if client_key not in IB_INSYNC_CLIENTS:
         client = ib_insync.IB()
@@ -112,7 +112,7 @@ def get_cached_ib_client(
                 try:
                     client.connect(host=host, port=port, timeout=6, clientId=client_id)
                     break
-                except (TimeoutError, AttributeError, asyncio.TimeoutError):
+                except (TimeoutError, AttributeError, asyncio.TimeoutError, ConnectionRefusedError):
                     continue
             else:
                 raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
@@ -190,8 +190,8 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.username,
-            password=config.password,
+            username=config.username or os.environ["TWS_USERNAME"],
+            password=config.password or os.environ["TWS_PASSWORD"],
             host=config.gateway_host,
             port=config.gateway_port,
             trading_mode=config.trading_mode,
@@ -262,8 +262,8 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.username,
-            password=config.password,
+            username=config.username or os.environ["TWS_USERNAME"],
+            password=config.password or os.environ["TWS_PASSWORD"],
             host=config.gateway_host,
             port=config.gateway_port,
             client_id=config.client_id,
