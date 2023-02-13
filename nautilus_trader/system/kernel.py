@@ -176,21 +176,14 @@ class NautilusKernel:
         PyCondition.valid_string(name, "name")
         PyCondition.type(cache_config, CacheConfig, "cache_config")
         PyCondition.type(cache_database_config, CacheDatabaseConfig, "cache_database_config")
-        PyCondition.true(
-            isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)),
-            "data_config was unrecognized type",
-            ex_type=TypeError,
-        )
-        PyCondition.true(
-            isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)),
-            "risk_config was unrecognized type",
-            ex_type=TypeError,
-        )
-        PyCondition.true(
-            isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)),
-            "exec_config was unrecognized type",
-            ex_type=TypeError,
-        )
+        if environment == Environment.BACKTEST:
+            PyCondition.type(data_config, DataEngineConfig, "data_config")
+            PyCondition.type(risk_config, RiskEngineConfig, "risk_config")
+            PyCondition.type(exec_config, ExecEngineConfig, "exec_config")
+        else:
+            PyCondition.type(data_config, LiveDataEngineConfig, "data_config")
+            PyCondition.type(risk_config, LiveRiskEngineConfig, "risk_config")
+            PyCondition.type(exec_config, LiveExecEngineConfig, "exec_config")
         PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self._environment = environment
