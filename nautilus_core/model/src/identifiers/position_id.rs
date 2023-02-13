@@ -37,6 +37,7 @@ impl Display for PositionId {
 }
 
 impl PositionId {
+    #[must_use]
     pub fn new(s: &str) -> PositionId {
         correctness::valid_string(s, "`PositionId` value");
 

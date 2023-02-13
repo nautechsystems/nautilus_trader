@@ -29,6 +29,7 @@ pub struct BookPrice {
 }
 
 impl BookPrice {
+    #[must_use]
     pub fn new(value: Price, side: OrderSide) -> Self {
         BookPrice { value, side }
     }
@@ -69,6 +70,7 @@ pub struct Ladder {
 }
 
 impl Ladder {
+    #[must_use]
     pub fn new(side: OrderSide) -> Self {
         Ladder {
             side,

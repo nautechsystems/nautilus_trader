@@ -35,6 +35,7 @@ pub struct Currency {
 }
 
 impl Currency {
+    #[must_use]
     pub fn new(
         code: &str,
         precision: u8,

@@ -27,6 +27,7 @@ pub struct Level {
 }
 
 impl Level {
+    #[must_use]
     pub fn new(price: BookPrice) -> Self {
         Level {
             price,

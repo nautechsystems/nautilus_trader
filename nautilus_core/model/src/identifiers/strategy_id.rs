@@ -35,6 +35,7 @@ impl Display for StrategyId {
 }
 
 impl StrategyId {
+    #[must_use]
     pub fn new(s: &str) -> StrategyId {
         correctness::valid_string(s, "`StrategyId` value");
         if s != "EXTERNAL" {

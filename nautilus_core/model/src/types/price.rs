@@ -34,6 +34,7 @@ pub struct Price {
 }
 
 impl Price {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
 
