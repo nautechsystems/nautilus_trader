@@ -6,9 +6,11 @@ Released on TBD (UTC).
 - `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
 - Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
 - Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
+- Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
 
 ### Enhancements
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
+- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
 - Implemented optimized logger using Rust MPSC channel and separate thread
 - Expose and improve `MatchingEngine` public API for custom functionality
 
