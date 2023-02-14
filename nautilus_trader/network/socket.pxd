@@ -26,10 +26,6 @@ cdef class SocketClient:
     cdef bytes _crlf
     cdef str _encoding
     cdef int _incomplete_read_count
-    cdef readonly bint is_running
-    cdef readonly bint is_stopped
-    cdef readonly int reconnection_count
-    cdef readonly bint is_stopping
 
     cdef readonly object host  # TODO(cs): Temporary `object` typing
     """The host for the socket client.\n\n:returns: `str`"""
@@ -37,5 +33,9 @@ cdef class SocketClient:
     """The port for the socket client.\n\n:returns: `int`"""
     cdef readonly bint ssl
     """If the socket client is using SSL.\n\n:returns: `bool`"""
+    cdef readonly bint is_stopping
+    """If the client is stopping.\n\n:returns: `bool`"""
+    cdef readonly bint is_running
+    """If the client is running.\n\n:returns: `bool`"""
     cdef readonly bint is_connected
-    """If the socket is connected.\n\n:returns: `bool`"""
+    """If the client is connected.\n\n:returns: `bool`"""
