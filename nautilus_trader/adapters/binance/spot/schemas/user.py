@@ -166,7 +166,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     ) -> OrderStatusReport:
         price = Price.from_str(self.p) if self.p is not None else None
         trigger_price = Price.from_str(self.P) if self.P is not None else None
-        order_side = (OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL,)
+        order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
         post_only = self.f == BinanceTimeInForce.GTX
         display_qty = (
             Quantity.from_str(
