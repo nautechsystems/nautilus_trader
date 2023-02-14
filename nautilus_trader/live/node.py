@@ -269,21 +269,15 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> None:
+    def run(self) -> None:
         """
-        Start the trading node.
+        Start and run the trading node.
         """
-        if not self._is_built:
-            raise RuntimeError(
-                "The trading nodes clients have not been built. "
-                "Run `node.build()` prior to start.",
-            )
-
         try:
             if self.kernel.loop.is_running():
-                self.kernel.loop.create_task(self._run())
+                self.kernel.loop.create_task(self.run_async())
             else:
-                self.kernel.loop.run_until_complete(self._run())
+                self.kernel.loop.run_until_complete(self.run_async())
         except RuntimeError as e:
             self.kernel.log.exception("Error on run", e)
 
@@ -291,16 +285,15 @@ class TradingNode:
         """
         Stop the trading node gracefully.
 
-        After a specified delay the internal `Trader` residuals will be checked.
+        After a specified delay the internal `Trader` residual state will be checked.
 
-        If save strategy is specified then strategy states will then be saved.
-
+        If save strategy is configured, then strategy states will be saved.
         """
         try:
             if self.kernel.loop.is_running():
-                self.kernel.loop.create_task(self._stop())
+                self.kernel.loop.create_task(self.stop_async())
             else:
-                self.kernel.loop.run_until_complete(self._stop())
+                self.kernel.loop.run_until_complete(self.stop_async())
         except RuntimeError as e:
             self.kernel.log.exception("Error on stop", e)
 
@@ -309,7 +302,6 @@ class TradingNode:
         Dispose of the trading node.
 
         Gracefully shuts down the executor and event loop.
-
         """
         try:
             timeout = self.kernel.clock.utc_now() + timedelta(
@@ -393,8 +385,17 @@ class TradingNode:
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
-    async def _run(self) -> None:
+    async def run_async(self) -> None:
+        """
+        Start and run the trading node asynchronously.
+        """
         try:
+            if not self._is_built:
+                raise RuntimeError(
+                    "The trading nodes clients have not been built. "
+                    "Run `node.build()` prior to start.",
+                )
+
             self.kernel.log.info("STARTING...")
             self._is_running = True
 
@@ -520,8 +521,14 @@ class TradingNode:
 
         return True  # Portfolio initialized
 
-    async def _stop(self) -> None:
-        self._is_stopping = True
+    async def stop_async(self) -> None:
+        """
+        Stop the trading node gracefully, asynchronously.
+
+        After a specified delay the internal `Trader` residual state will be checked.
+
+        If save strategy is configured, then strategy states will be saved.
+        """
         self.kernel.log.info("STOPPING...")
 
         if self.kernel.trader.is_running:

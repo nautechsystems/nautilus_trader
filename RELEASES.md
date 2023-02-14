@@ -7,7 +7,8 @@ Released on TBD (UTC).
 - Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
 - Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
 - Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
-- Renamed `OrderFactory.set_order_count` -> `set_client_order_id_count` (clarity)
+- Renamed `OrderFactory.set_order_count()` -> `set_client_order_id_count()` (clarity)
+- Renamed `TradingNode.start()` to `TradingNode.run()`
 
 ### Enhancements
 - Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
@@ -16,14 +17,16 @@ Released on TBD (UTC).
 - Added `OrderFactory.generate_client_order_id()` (calls internal generator)
 - Added `OrderFactory.generate_order_list_id()` (calls internal generator)
 - Added `OrderFactory.create_list(...)` as easier method for creating order lists
+- Added `__len__` implementation for `OrderList` (returns length of orders)
 - Implemented optimized logger using Rust MPSC channel and separate thread
 - Expose and improve `MatchingEngine` public API for custom functionality
-- Added `__len__` implementation for `OrderList` (returns length of orders)
+- Exposed `TradingNode.run_async()` for easier running from async context
+- Exposed `TradingNode.stop_async()` for easier stopping from async context
 
 ### Fixes
 - Fixed registration of `SimulationModule` (and refine `Actor` base registration)
 - Fixed loading of previously emulated and transformed orders (handles transforming `OrderInitialized` event)
-- Fixed handling of `MARKET_TO_LIMIT` orders in matching and risk engines, thanks @martinsaip
+- Fixed handling of `MARKET_TO_LIMIT` orders in matching and risk engines, thanks for reporting @martinsaip
 
 ---
 

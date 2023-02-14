@@ -111,7 +111,7 @@ async def main(market_id: str):
     node.build()
 
     try:
-        node.start()
+        node.run()
         await asyncio.gather(*asyncio.all_tasks())
     except Exception as e:
         print(e)
