@@ -82,11 +82,10 @@ cdef class SocketClient:
 
         self._crlf = crlf or b"\r\n"
         self._encoding = encoding
-        self.is_running = False
         self._incomplete_read_count = 0
-        self.is_running = False
-        self.is_stopped = False
         self.reconnection_count = 0
+        self.is_stopping = False
+        self.is_running = False
         self.is_connected = False
 
     async def connect(self):
@@ -105,18 +104,24 @@ cdef class SocketClient:
         await self.post_connection()
         self._log.debug("Starting main loop")
         self._loop.create_task(self.start())
-        self.is_running = True
         self.is_connected = True
         self._log.info("Connected.")
 
+    async def post_connection(self):
+        """
+        The actions to perform post-connection. i.e. sending further connection messages.
+        """
+        await sleep0()
+
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
-        self.stop()
-        self._log.debug("Main loop stop triggered.")
-        while not self.is_stopped:
-            self._log.debug("Waiting for stop")
-            await asyncio.sleep(0.25)
-        self._log.debug("Stopped, closing connections")
+        self.is_stopping = True
+        self._log.debug("main loop stop triggered.")
+        while not self.is_running:
+            await sleep0()
+        await self.post_disconnection()
+
+        self._log.debug("main loop stopped, closing connections")
         self._writer.close()
         await self._writer.wait_closed()
         self._log.debug("Connections closed")
@@ -125,19 +130,28 @@ cdef class SocketClient:
         self.is_connected = False
         self._log.info("Disconnected.")
 
-    def stop(self):
-        self.is_running = False
+    async def post_disconnection(self) -> None:
+        """
+        Actions to be performed post disconnection.
+
+        """
+        # Override to implement additional disconnection related behaviour
+        # (canceling ping tasks etc.).
+        pass
 
     async def reconnect(self):
         self._log.info("Reconnecting")
         await self.disconnect()
         await self.connect()
 
-    async def post_connection(self):
+    async def post_reconnection(self) -> None:
         """
-        The actions to perform post-connection. i.e. sending further connection messages.
+        Actions to be performed post reconnection.
+
         """
-        await sleep0()
+        # Override to implement additional reconnection related behaviour
+        # (resubscribing etc.).
+        pass
 
     async def send(self, bytes raw):
         self._log.debug("[SEND] " + raw.decode())
@@ -146,11 +160,12 @@ cdef class SocketClient:
 
     async def start(self):
         self._log.debug("Starting recv loop")
+        self.is_running = True
 
         cdef:
             bytes partial = b""
             bytes raw = b""
-        while self.is_running:
+        while not self.is_stopping:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
@@ -178,4 +193,3 @@ cdef class SocketClient:
                 self._loop.create_task(self.reconnect())
                 return
         self.is_running = False
-        self.is_stopped = True
