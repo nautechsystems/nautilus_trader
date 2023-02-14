@@ -180,7 +180,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def watch_stream(self):
         """Ensure socket stream is connected"""
-        while self.stream.is_running:
+        while not self.stream.is_stopping:
             if not self.stream.is_connected:
                 await self.stream.connect()
             await asyncio.sleep(1)
