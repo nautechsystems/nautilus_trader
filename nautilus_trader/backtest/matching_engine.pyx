@@ -1888,7 +1888,7 @@ cdef class OrderMatchingEngine:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=self._generate_venue_order_id(),
+            venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
             ts_event=timestamp,
