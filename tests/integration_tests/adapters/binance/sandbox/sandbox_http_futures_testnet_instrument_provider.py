@@ -18,11 +18,14 @@ import os
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 
 
 @pytest.mark.asyncio
@@ -37,6 +40,7 @@ async def test_binance_futures_testnet_instrument_provider():
         account_type=BinanceAccountType.FUTURES_USDT,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
+        is_testnet=True,
     )
     await client.connect()
 
@@ -46,6 +50,9 @@ async def test_binance_futures_testnet_instrument_provider():
         logger=Logger(clock=clock),
     )
 
+    # await provider.load_all_async()
+    btcusdt_perp = InstrumentId(Symbol("BTCUSDT-PERP"), BINANCE_VENUE)
+    await provider.load_ids_async(instrument_ids=[btcusdt_perp])
     await provider.load_all_async()
 
     print(provider.count)

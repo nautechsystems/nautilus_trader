@@ -139,7 +139,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         # Extract all symbol strings
-        symbols = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols = [
+            str(BinanceSymbol(instrument_id.symbol.value)) for instrument_id in instrument_ids
+        ]
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
@@ -172,7 +174,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()

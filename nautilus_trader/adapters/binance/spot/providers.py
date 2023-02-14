@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
@@ -145,7 +146,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Extract all symbol strings
-        symbols = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols = [
+            str(BinanceSymbol(instrument_id.symbol.value)) for instrument_id in instrument_ids
+        ]
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_spot_exchange_info(symbols=symbols)
         symbol_info_dict: dict[str, BinanceSpotSymbolInfo] = {
@@ -166,7 +169,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
         # Get current commission rates
         try:
