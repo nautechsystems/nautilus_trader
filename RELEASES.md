@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
 
 ### Enhancements
+- Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
 - Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
 - Implemented optimized logger using Rust MPSC channel and separate thread
@@ -16,7 +17,8 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed registration of `SimulationModule` (and refine `Actor` base registration)
-- Fixed loading of previously emulated and transformed orders (handles second `OrderInitialized`)
+- Fixed loading of previously emulated and transformed orders (handles transforming `OrderInitialized` event)
+- Fixed handling of `MARKET_TO_LIMIT` orders in matching and risk engines, thanks @martinsaip
 
 ---
 
