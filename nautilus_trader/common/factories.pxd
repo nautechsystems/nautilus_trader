@@ -26,7 +26,9 @@ from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TrailingOffsetType
 from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
@@ -53,9 +55,13 @@ cdef class OrderFactory:
     cdef readonly StrategyId strategy_id
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
 
-    cpdef void set_order_id_count(self, int count) except *
+    cpdef void set_client_order_id_count(self, int count) except *
     cpdef void set_order_list_id_count(self, int count) except *
+    cpdef ClientOrderId generate_client_order_id(self) except *
+    cpdef OrderListId generate_order_list_id(self) except *
     cpdef void reset(self) except *
+
+    cpdef OrderList create_list(self, list orders)
 
     cpdef MarketOrder market(
         self,
