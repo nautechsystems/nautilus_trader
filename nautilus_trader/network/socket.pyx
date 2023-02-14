@@ -83,7 +83,7 @@ cdef class SocketClient:
         self._crlf = crlf or b"\r\n"
         self._encoding = encoding
         self._incomplete_read_count = 0
-        self.reconnection_count = 0
+        self._reconnection_count = 0
         self.is_stopping = False
         self.is_running = False
         self.is_connected = False
@@ -183,8 +183,8 @@ cdef class SocketClient:
                 await sleep0()
                 if self._incomplete_read_count > 10:
                     # Something probably wrong; reconnect
-                    self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
-                    self.reconnection_count += 1
+                    self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self._reconnection_count=})")
+                    self._reconnection_count += 1
                     self._loop.create_task(self.reconnect())
                     return
                 await sleep0()

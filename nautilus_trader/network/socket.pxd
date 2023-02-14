@@ -26,6 +26,7 @@ cdef class SocketClient:
     cdef bytes _crlf
     cdef str _encoding
     cdef int _incomplete_read_count
+    cdef readonly int _reconnection_count # readonly for test
 
     cdef readonly object host  # TODO(cs): Temporary `object` typing
     """The host for the socket client.\n\n:returns: `str`"""
