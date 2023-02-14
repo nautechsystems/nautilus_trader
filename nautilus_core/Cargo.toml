@@ -17,7 +17,7 @@ documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
 chrono = "0.4.22"
-pyo3 = "0.18.0"
+pyo3 = "0.18.1"
 rand = "0.8.5"
 rust-fsm = "0.6.1"
 strum = { version = "0.24.1", features = ["derive"] }
