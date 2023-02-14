@@ -26,9 +26,9 @@ from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import Future
 
-from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.common.functions import one
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig

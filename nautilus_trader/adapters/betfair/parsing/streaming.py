@@ -46,7 +46,7 @@ from nautilus_trader.adapters.betfair.parsing.constants import MARKET_STATUS_MAP
 from nautilus_trader.adapters.betfair.parsing.constants import STRICT_MARKET_DATA_HANDLING
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
-from nautilus_trader.adapters.betfair.util import one
+from nautilus_trader.common.functions import one
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.tick import TradeTick
