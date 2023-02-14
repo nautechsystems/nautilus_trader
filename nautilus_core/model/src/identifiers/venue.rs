@@ -38,7 +38,7 @@ impl Display for Venue {
 
 impl Venue {
     #[must_use]
-    pub fn new(s: &str) -> Venue {
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`Venue` value");
 
         Venue {

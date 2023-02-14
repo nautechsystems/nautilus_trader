@@ -49,7 +49,7 @@ impl Display for InstrumentId {
 
 impl InstrumentId {
     #[must_use]
-    pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
+    pub fn new(symbol: Symbol, venue: Venue) -> Self {
         InstrumentId { symbol, venue }
     }
 }

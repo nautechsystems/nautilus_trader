@@ -35,7 +35,7 @@ impl UUID4 {
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
-        Self {
+        UUID4 {
             value: Box::new(Rc::new(uuid.to_string())),
         }
     }

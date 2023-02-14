@@ -49,7 +49,7 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> QuoteTick {
+    ) -> Self {
         correctness::u8_equal(
             bid.precision,
             ask.precision,
@@ -107,7 +107,7 @@ impl TradeTick {
         trade_id: TradeId,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> TradeTick {
+    ) -> Self {
         TradeTick {
             instrument_id,
             price,

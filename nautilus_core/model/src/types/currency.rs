@@ -47,7 +47,7 @@ impl Currency {
         correctness::valid_string(name, "`Currency` name");
         correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
 
-        Self {
+        Currency {
             code: Box::new(Rc::new(code.to_string())),
             precision,
             iso4217,

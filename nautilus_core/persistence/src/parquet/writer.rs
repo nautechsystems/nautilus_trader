@@ -42,7 +42,7 @@ where
     W: Write,
 {
     #[must_use]
-    pub fn new(w: W, schema: Schema) -> ParquetWriter<A, W> {
+    pub fn new(w: W, schema: Schema) -> Self {
         let options = WriteOptions {
             write_statistics: true,
             compression: CompressionOptions::Uncompressed,

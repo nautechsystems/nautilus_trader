@@ -38,7 +38,7 @@ impl Display for ComponentId {
 
 impl ComponentId {
     #[must_use]
-    pub fn new(s: &str) -> ComponentId {
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`ComponentId` value");
 
         ComponentId {

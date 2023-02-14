@@ -38,7 +38,7 @@ impl Display for TradeId {
 
 impl TradeId {
     #[must_use]
-    pub fn new(s: &str) -> TradeId {
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`TradeId` value");
 
         TradeId {

@@ -38,14 +38,14 @@ impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
 
-        Self {
+        Price {
             raw: f64_to_fixed_i64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        Self { raw, precision }
+        Price { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
