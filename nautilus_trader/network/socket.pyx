@@ -177,4 +177,5 @@ cdef class SocketClient:
             except ConnectionResetError:
                 self._loop.create_task(self.reconnect())
                 return
-        self.is_running = True
+        self.is_running = False
+        self.is_stopped = True
