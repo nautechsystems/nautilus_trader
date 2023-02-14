@@ -96,18 +96,15 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get current commission rates
-        if self._client.base_url.__contains__("testnet.binance.vision"):
-            fees_dict: dict[str, BinanceSpotTradeFee] = {}
-        else:
-            try:
-                response = await self._http_wallet.query_spot_trade_fees()
-                fees_dict = {fee.symbol: fee for fee in response}
-            except BinanceClientError as e:
-                self._log.error(
-                    "Cannot load instruments: API key authentication failed "
-                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                )
-                return
+        try:
+            response = await self._http_wallet.query_spot_trade_fees()
+            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+        except BinanceClientError as e:
+            self._log.error(
+                "Cannot load instruments: API key authentication failed "
+                f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            )
+            return
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_spot_exchange_info()

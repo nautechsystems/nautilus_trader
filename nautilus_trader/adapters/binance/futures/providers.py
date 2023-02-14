@@ -103,18 +103,20 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         exchange_info = await self._http_market.query_futures_exchange_info()
 
         for symbol_info in exchange_info.symbols:
-            if self._client.base_url.__contains__("testnet.binancefuture.com"):
-                fee = None
-            else:
-                try:
-                    # Get current commission rates for the symbol
-                    fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
-                except BinanceClientError as e:
-                    self._log.error(
-                        "Cannot load instruments: API key authentication failed "
-                        f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                    )
-                    return
+            fee: Optional[BinanceFuturesCommissionRate] = None
+            # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
+            #  in some other way.
+            # if not self._client.base_url.__contains__("testnet.binancefuture.com"):
+            #     try:
+            #         # Get current commission rates for the symbol
+            #         fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
+            #         print(fee)
+            #     except BinanceClientError as e:
+            #         self._log.error(
+            #             "Cannot load instruments: API key authentication failed "
+            #             f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            #         )
+            #         return
 
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -151,15 +153,17 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         for symbol in symbols:
             fee: Optional[BinanceFuturesCommissionRate] = None
-            if not self._client.base_url.__contains__("testnet.binancefuture.com"):
-                try:
-                    # Get current commission rates for the symbol
-                    fee = await self._http_wallet.query_futures_commission_rate(symbol)
-                except BinanceClientError as e:
-                    self._log.error(
-                        "Cannot load instruments: API key authentication failed "
-                        f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                    )
+            # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
+            #  in some other way.
+            # if not self._client.base_url.__contains__("testnet.binancefuture.com"):
+            #     try:
+            #         # Get current commission rates for the symbol
+            #         fee = await self._http_wallet.query_futures_commission_rate(symbol)
+            #     except BinanceClientError as e:
+            #         self._log.error(
+            #             "Cannot load instruments: API key authentication failed "
+            #             f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            #         )
 
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
