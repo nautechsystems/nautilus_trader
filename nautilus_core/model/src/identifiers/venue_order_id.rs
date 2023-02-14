@@ -38,7 +38,7 @@ impl Display for VenueOrderId {
 
 impl VenueOrderId {
     #[must_use]
-    pub fn new(s: &str) -> VenueOrderId {
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`VenueOrderId` value");
 
         VenueOrderId {

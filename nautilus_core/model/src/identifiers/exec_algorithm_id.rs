@@ -38,7 +38,7 @@ impl Display for ExecAlgorithmId {
 
 impl ExecAlgorithmId {
     #[must_use]
-    pub fn new(s: &str) -> ExecAlgorithmId {
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`ExecAlgorithmId` value");
 
         ExecAlgorithmId {
