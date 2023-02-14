@@ -335,7 +335,7 @@ class TestBetfairDataClient:
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
             "BetfairTicker": 8,
-            "BSPOrderBookDeltas": 8,
+            "GenericData": 8,
             "OrderBookDeltas": 2,
             "InstrumentClose": 1,
         }
@@ -343,8 +343,8 @@ class TestBetfairDataClient:
         sp_deltas = [
             d
             for deltas in self.messages
-            if isinstance(deltas, BSPOrderBookDeltas)
-            for d in deltas.deltas
+            if isinstance(deltas, GenericData)
+            for d in deltas.data.deltas
         ]
         assert len(sp_deltas) == 30
 
