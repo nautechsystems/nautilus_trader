@@ -101,6 +101,6 @@ node.build()
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
     try:
-        node.start()
+        node.run()
     finally:
         node.dispose()
