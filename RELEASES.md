@@ -7,13 +7,18 @@ Released on TBD (UTC).
 - Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
 - Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
 - Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
+- Renamed `OrderFactory.set_order_count` -> `set_client_order_id_count` (clarity)
 
 ### Enhancements
 - Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
 - Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
+- Added `OrderFactory.generate_client_order_id()` (calls internal generator)
+- Added `OrderFactory.generate_order_list_id()` (calls internal generator)
+- Added `OrderFactory.create_list(...)` as easier method for creating order lists
 - Implemented optimized logger using Rust MPSC channel and separate thread
 - Expose and improve `MatchingEngine` public API for custom functionality
+- Added `__len__` implementation for `OrderList` (returns length of orders)
 
 ### Fixes
 - Fixed registration of `SimulationModule` (and refine `Actor` base registration)

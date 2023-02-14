@@ -1263,6 +1263,7 @@ class TestOrders:
         # Assert
         assert bracket.id == OrderListId("OL-19700101-000-001-1")
         assert bracket.instrument_id == AUDUSD_SIM.id
+        assert len(bracket) == 3
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.MARKET
         assert bracket.orders[1].order_type == OrderType.STOP_MARKET
@@ -1317,6 +1318,7 @@ class TestOrders:
         # Assert
         assert bracket.id == OrderListId("OL-19700101-000-001-1")
         assert bracket.instrument_id == AUDUSD_SIM.id
+        assert len(bracket) == 3
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.LIMIT
         assert bracket.orders[1].order_type == OrderType.STOP_MARKET
@@ -1374,6 +1376,7 @@ class TestOrders:
         # Assert
         assert bracket.id == OrderListId("OL-19700101-000-001-1")
         assert bracket.instrument_id == AUDUSD_SIM.id
+        assert len(bracket) == 3
         assert len(bracket.orders) == 3
         assert bracket.orders[0].order_type == OrderType.LIMIT_IF_TOUCHED
         assert bracket.orders[1].order_type == OrderType.STOP_MARKET

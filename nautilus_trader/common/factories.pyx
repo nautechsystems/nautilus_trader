@@ -18,6 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.generators cimport OrderListIdGenerator
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -96,7 +97,7 @@ cdef class OrderFactory:
             initial_count=initial_order_list_id_count,
         )
 
-    cpdef void set_order_id_count(self, int count) except *:
+    cpdef void set_client_order_id_count(self, int count) except *:
         """
         Set the internal order ID generator count to the given count.
 
@@ -128,6 +129,32 @@ cdef class OrderFactory:
         """
         self._order_list_id_generator.set_count(count)
 
+    cpdef ClientOrderId generate_client_order_id(self) except *:
+        """
+        Generate and return a new client order ID.
+
+        The identifier will be the next in the logical sequence.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._order_id_generator.generate()
+
+    cpdef OrderListId generate_order_list_id(self) except *:
+        """
+        Generate and return a new order list ID.
+
+        The identifier will be the next in the logical sequence.
+
+        Returns
+        -------
+        OrderListId
+
+        """
+        return self._order_list_id_generator.generate()
+
     cpdef void reset(self) except *:
         """
         Reset the order factory.
@@ -136,6 +163,36 @@ cdef class OrderFactory:
         """
         self._order_id_generator.reset()
         self._order_list_id_generator.reset()
+
+    cpdef OrderList create_list(self, list orders):
+        """
+        Return a new order list containing the given `orders`.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders for the list.
+
+        Returns
+        -------
+        OrderList
+
+        Raises
+        ------
+        ValueError
+            If `orders` is empty.
+
+        Notes
+        -----
+        The order at index 0 in the list will be considered the 'first' order.
+
+        """
+        Condition.not_empty(orders, "orders")
+
+        return OrderList(
+            order_list_id=self._order_list_id_generator.generate(),
+            orders=orders,
+        )
 
     cpdef MarketOrder market(
         self,
