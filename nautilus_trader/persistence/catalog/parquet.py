@@ -74,7 +74,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def __init__(
         self,
         path: str,
-        fs_protocol: str = "file",
+        fs_protocol: Optional[str] = "file",
         fs_storage_options: Optional[dict] = None,
     ):
         self.fs_protocol = fs_protocol
