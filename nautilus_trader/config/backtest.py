@@ -34,7 +34,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.identifiers import ClientId
 
 
-class BacktestVenueConfig(NautilusConfig):
+class BacktestVenueConfig(NautilusConfig, frozen=True):
     """
     Represents a venue configuration for one specific backtest engine.
     """
@@ -54,7 +54,7 @@ class BacktestVenueConfig(NautilusConfig):
     modules: Optional[list[ImportableConfig]] = None
 
 
-class BacktestDataConfig(NautilusConfig):
+class BacktestDataConfig(NautilusConfig, frozen=True):
     """
     Represents the data configuration for one specific backtest run.
     """
@@ -197,7 +197,7 @@ class BacktestEngineConfig(NautilusKernelConfig):
     run_analysis: bool = True
 
 
-class BacktestRunConfig(NautilusConfig):
+class BacktestRunConfig(NautilusConfig, frozen=True):
     """
     Represents the configuration for one specific backtest run.
 
