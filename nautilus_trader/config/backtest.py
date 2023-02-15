@@ -150,7 +150,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         }
 
 
-class BacktestEngineConfig(NautilusKernelConfig):
+class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     """
     Configuration for ``BacktestEngine`` instances.
 
