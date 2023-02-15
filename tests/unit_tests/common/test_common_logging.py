@@ -70,7 +70,11 @@ class TestLogLevel:
 class TestLoggerTests:
     def test_log_debug_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.DEBUG)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -81,7 +85,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -92,7 +100,11 @@ class TestLoggerTests:
 
     def test_log_info_with_annotation_sends_to_stdout(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         annotations = {"my_tag": "something"}
@@ -105,7 +117,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -116,7 +132,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -127,7 +147,11 @@ class TestLoggerTests:
 
     def test_log_warning_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.WARNING)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.WARNING,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -138,7 +162,11 @@ class TestLoggerTests:
 
     def test_log_error_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.ERROR)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.ERROR,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -149,7 +177,11 @@ class TestLoggerTests:
 
     def test_log_critical_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -160,7 +192,11 @@ class TestLoggerTests:
 
     def test_log_exception_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -172,7 +208,10 @@ class TestLoggerTests:
     def test_register_sink_sends_records_to_sink(self):
         # Arrange
         sink = []
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act

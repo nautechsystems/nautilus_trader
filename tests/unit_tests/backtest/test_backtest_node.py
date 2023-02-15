@@ -64,7 +64,7 @@ class TestBacktestNode:
         ]
         self.backtest_configs = [
             BacktestRunConfig(
-                engine=BacktestEngineConfig(strategies=self.strategies),
+                engine=BacktestEngineConfig(strategies=self.strategies, bypass_logging=True),
                 venues=[self.venue_config],
                 data=[self.data_config],
             ),
