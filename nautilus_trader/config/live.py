@@ -28,7 +28,7 @@ from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 
 
-class LiveDataEngineConfig(DataEngineConfig):
+class LiveDataEngineConfig(DataEngineConfig, frozen=True):
     """
     Configuration for ``LiveDataEngine`` instances.
 
@@ -41,7 +41,7 @@ class LiveDataEngineConfig(DataEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class LiveRiskEngineConfig(RiskEngineConfig):
+class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
     """
     Configuration for ``LiveRiskEngine`` instances.
 
@@ -54,7 +54,7 @@ class LiveRiskEngineConfig(RiskEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class LiveExecEngineConfig(ExecEngineConfig):
+class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     """
     Configuration for ``LiveExecEngine`` instances.
 
@@ -82,7 +82,7 @@ class LiveExecEngineConfig(ExecEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class RoutingConfig(NautilusConfig):
+class RoutingConfig(NautilusConfig, frozen=True):
     """
     Configuration for live client message routing.
 
@@ -99,7 +99,7 @@ class RoutingConfig(NautilusConfig):
     venues: Optional[frozenset[str]] = None
 
 
-class LiveDataClientConfig(NautilusConfig):
+class LiveDataClientConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``LiveDataClient`` instances.
 
@@ -118,7 +118,7 @@ class LiveDataClientConfig(NautilusConfig):
     routing: RoutingConfig = RoutingConfig()
 
 
-class LiveExecClientConfig(NautilusConfig):
+class LiveExecClientConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``LiveExecutionClient`` instances.
 
@@ -134,7 +134,7 @@ class LiveExecClientConfig(NautilusConfig):
     routing: RoutingConfig = RoutingConfig()
 
 
-class TradingNodeConfig(NautilusKernelConfig):
+class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     """
     Configuration for ``TradingNode`` instances.
 
