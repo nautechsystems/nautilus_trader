@@ -97,8 +97,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            response = await self._http_wallet.query_spot_trade_fees()
-            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # response = await self._http_wallet.query_spot_trade_fees()
+            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # TODO: Requests for testnet seem to fail auth
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -133,8 +135,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            response = await self._http_wallet.query_spot_trade_fees()
-            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # response = await self._http_wallet.query_spot_trade_fees()
+            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # TODO: Requests for testnet seem to fail auth
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -170,8 +174,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
-            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in trade_fees}
+            # trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
+            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in trade_fees}
+            # TODO: Requests for testnet seem to fail auth
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
