@@ -30,6 +30,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
@@ -81,10 +82,10 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         base_url_ws: Optional[str] = None,
         use_agg_trade_ticks: bool = False,
     ):
-        if not account_type.is_futures:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
-            )
+        PyCondition.true(
+            account_type.is_futures,
+            "account_type was not FUTURES_USDT or FUTURES_COIN",
+        )
 
         # Futures HTTP API
         self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)

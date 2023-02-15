@@ -38,6 +38,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -94,10 +95,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ):
-        if not account_type.is_futures:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
-            )
+        PyCondition.true(
+            account_type.is_futures,
+            "account_type was not FUTURES_USDT or FUTURES_COIN",
+        )
 
         # Futures HTTP API
         self._futures_http_account = BinanceFuturesAccountHttpAPI(client, clock, account_type)
@@ -174,7 +175,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
         # Check Binance for all active positions
@@ -196,7 +197,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[str]:
         # Check Binance for all active positions
         active_symbols: list[str] = []
