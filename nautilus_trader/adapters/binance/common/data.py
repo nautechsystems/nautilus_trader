@@ -123,11 +123,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
-        if account_type not in BinanceAccountType:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
-            )
-
         self._binance_account_type = account_type
         self._use_agg_trade_ticks = use_agg_trade_ticks
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)

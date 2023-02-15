@@ -35,6 +35,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import OrderType
@@ -89,10 +90,10 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ):
-        if not account_type.is_spot_or_margin:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
-            )
+        PyCondition.true(
+            account_type.is_spot_or_margin,
+            "account_type was not SPOT, MARGIN_CROSS or MARGIN_ISOLATED",
+        )
 
         # Spot HTTP API
         self._spot_http_account = BinanceSpotAccountHttpAPI(client, clock, account_type)
@@ -162,14 +163,14 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[PositionStatusReport]:
         # Never cash positions
         return []
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[str]:
         # Never cash positions
         return []
