@@ -79,7 +79,7 @@ cdef class Logger:
     rate_limit : int, default 100_000
         The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
-        If the logger should be bypassed.
+        If the log output is bypassed.
     """
 
     def __init__(

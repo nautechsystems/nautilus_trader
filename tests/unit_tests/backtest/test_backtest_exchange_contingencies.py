@@ -56,6 +56,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.INFO,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
