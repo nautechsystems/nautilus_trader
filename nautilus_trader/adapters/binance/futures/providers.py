@@ -102,6 +102,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
 
+        self._log.warning(
+            "Currently not requesting actual trade fees. All instruments will have zero fees.",
+        )
         for symbol_info in exchange_info.symbols:
             fee: Optional[BinanceFuturesCommissionRate] = None
             # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
@@ -151,6 +154,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             info.symbol: info for info in exchange_info.symbols
         }
 
+        self._log.warning(
+            "Currently not requesting actual trade fees. All instruments will have zero fees.",
+        )
         for symbol in symbols:
             fee: Optional[BinanceFuturesCommissionRate] = None
             # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
