@@ -1,6 +1,6 @@
 # NautilusTrader 1.169.0 Beta
 
-Released on 16th February 2023 (UTC).
+Released on 18th February 2023 (UTC).
 
 ### Breaking Changes
 - `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
