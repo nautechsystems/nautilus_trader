@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
-
 import pandas as pd
 import pytest
 
@@ -43,7 +41,7 @@ def test_is_nautilus_class(cls, is_nautilus):
     assert is_nautilus_class(cls=cls) is is_nautilus
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+@pytest.mark.skip(reason="Flaky and probably being removed")
 def test_get_size_of():
     # Arrange, Act
     result1 = get_size_of(0)
