@@ -229,7 +229,7 @@ class NautilusKernel:
 
         # Setup loop (if live)
         if environment == Environment.LIVE:
-            self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+            self._loop: Optional[asyncio.AbstractEventLoop] = loop or asyncio.get_event_loop()
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
                 self._loop.set_default_executor(self.executor)

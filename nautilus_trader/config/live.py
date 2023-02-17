@@ -154,9 +154,9 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The live execution engine configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    data_clients : dict[str, ImportableConfig], optional
+    data_clients : dict[str, ImportableConfig | LiveDataClientConfig], optional
         The data client configurations.
-    exec_clients : dict[str, ImportableConfig], optional
+    exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
@@ -178,7 +178,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The timeout for all engine clients to disconnect.
     timeout_post_stop : PositiveFloat (seconds)
         The timeout after stopping the node to await residual events before final shutdown.
-
     """
 
     environment: Environment = Environment.LIVE
