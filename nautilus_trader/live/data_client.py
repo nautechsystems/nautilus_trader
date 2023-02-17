@@ -445,7 +445,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         self.create_task(
             self._subscribe_order_book_deltas(
@@ -463,7 +463,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         self.create_task(
             self._subscribe_order_book_snapshots(
@@ -707,7 +707,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -718,7 +718,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
