@@ -350,14 +350,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[str]:
         # Implement in child class
         raise NotImplementedError
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[str]:
         # Implement in child class
         raise NotImplementedError
@@ -454,6 +454,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             #     continue
             # if end is not None and timestamp > end:
             #     continue
+            if trade.symbol is None:
+                self.log.warning(f"No symbol for trade {trade}.")
+                continue
             report = trade.parse_to_trade_report(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(trade.symbol),
