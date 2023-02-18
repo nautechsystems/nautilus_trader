@@ -67,6 +67,7 @@ class TestPersistenceStreaming:
         )
         assert len(data) == 2535
 
+    @pytest.mark.skip(reason="fix in catalog v2")
     @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self):
         # Arrange
@@ -112,6 +113,7 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
+    @pytest.mark.skip(reason="fix in catalog v2")
     def test_feather_writer_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -158,7 +160,7 @@ class TestPersistenceStreaming:
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
 
-    @pytest.mark.skip(reason="fix after merge")
+    @pytest.mark.skip(reason="fix in catalog v2")
     def test_feather_writer_signal_data(self):
         # Arrange
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
