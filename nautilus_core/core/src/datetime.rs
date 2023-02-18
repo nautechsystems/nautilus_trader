@@ -73,6 +73,7 @@ pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 }
 
 #[inline]
+#[must_use]
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)

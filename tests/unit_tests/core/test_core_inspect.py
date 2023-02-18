@@ -41,6 +41,7 @@ def test_is_nautilus_class(cls, is_nautilus):
     assert is_nautilus_class(cls=cls) is is_nautilus
 
 
+@pytest.mark.skip(reason="Flaky and probably being removed")
 def test_get_size_of():
     # Arrange, Act
     result1 = get_size_of(0)

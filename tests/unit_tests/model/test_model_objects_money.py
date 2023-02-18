@@ -46,7 +46,6 @@ class TestMoney:
             Money(-9_223_372_036 - 1, currency=USD)
 
     def test_instantiate_with_none_value_returns_money_with_zero_amount(self) -> None:
-
         # Arrange, Act
         money_zero = Money(None, currency=USD)
 

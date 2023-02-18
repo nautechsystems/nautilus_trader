@@ -94,7 +94,7 @@ cdef class DataClient(Component):
 
     cpdef void _set_connected(self, bint value=True) except *:
         """
-        Setter for pure Python implementations to change the readonly property.
+        Setter for Python implementations to change the readonly property.
 
         Parameters
         ----------
@@ -1008,7 +1008,7 @@ cdef class MarketDataClient(DataClient):
 
 # -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
-    # Convenient pure Python wrappers for the data handlers. Often Python methods
+    # Convenient Python wrappers for the data handlers. Often Python methods
     # involving threads or the event loop don't work with `cpdef` methods.
 
     def _handle_data_py(self, Data data):

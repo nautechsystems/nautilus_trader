@@ -64,7 +64,7 @@ class TestBacktestNode:
         ]
         self.backtest_configs = [
             BacktestRunConfig(
-                engine=BacktestEngineConfig(strategies=self.strategies),
+                engine=BacktestEngineConfig(strategies=self.strategies, bypass_logging=True),
                 venues=[self.venue_config],
                 data=[self.data_config],
             ),
@@ -85,7 +85,7 @@ class TestBacktestNode:
         # Assert
         assert len(results) == 1
 
-    def test_backtest_run_streaming_sync(self):
+    def test_backtest_run_batch_sync(self):
         # Arrange
         config = BacktestRunConfig(
             engine=BacktestEngineConfig(strategies=self.strategies),

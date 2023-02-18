@@ -13,32 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
-
-from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+import msgspec
 
 
-def parse_symbol(symbol: str, account_type: BinanceAccountType):
-    symbol = symbol.upper()
-    if account_type.is_spot or account_type.is_margin:
-        return symbol
-
-    # Parse Futures symbol
-    if symbol[-1].isdigit():
-        return symbol  # Deliverable
-    if symbol.endswith("_PERP"):
-        symbol = symbol.replace("_", "-")
-        return symbol
-    else:
-        return symbol + "-PERP"
+################################################################################
+# HTTP responses
+################################################################################
 
 
-def format_symbol(symbol: str):
-    return symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", "")
+class BinanceFuturesCommissionRate(msgspec.Struct, frozen=True):
+    """Schema of a single `Binance Futures` commissionRate."""
 
-
-def convert_symbols_list_to_json_array(symbols: list[str]):
-    if symbols is None:
-        return symbols
-    formatted_symbols: list[str] = [format_symbol(s) for s in symbols]
-    return json.dumps(formatted_symbols).replace(" ", "").replace("/", "")
+    symbol: str
+    makerCommissionRate: str
+    takerCommissionRate: str

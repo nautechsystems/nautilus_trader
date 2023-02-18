@@ -13,9 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+from typing import Optional
+
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 
 
 ################################################################################
@@ -23,7 +30,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 ################################################################################
 
 
-class BinanceSpotBalanceInfo(msgspec.Struct):
+class BinanceSpotBalanceInfo(msgspec.Struct, frozen=True):
     """
     HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/account (HMAC SHA256).
     """
@@ -32,8 +39,19 @@ class BinanceSpotBalanceInfo(msgspec.Struct):
     free: str
     locked: str
 
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.asset)
+        free = Decimal(self.free)
+        locked = Decimal(self.locked)
+        total: Decimal = free + locked
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
 
-class BinanceSpotAccountInfo(msgspec.Struct):
+
+class BinanceSpotAccountInfo(msgspec.Struct, frozen=True):
     """
     HTTP response from `Binance Spot/Margin` GET /api/v3/account (HMAC SHA256).
     """
@@ -49,3 +67,24 @@ class BinanceSpotAccountInfo(msgspec.Struct):
     accountType: BinanceAccountType
     balances: list[BinanceSpotBalanceInfo]
     permissions: list[str]
+
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [balance.parse_to_account_balance() for balance in self.balances]
+
+
+class BinanceSpotOrderOco(msgspec.Struct, frozen=True):
+    """
+    HTTP response from `Binance Spot/Margin` GET /api/v3/orderList (HMAC SHA256).
+    HTTP response from `Binance Spot/Margin` POST /api/v3/order/oco (HMAC SHA256).
+    HTTP response from `Binance Spot/Margin` DELETE /api/v3/orderList (HMAC SHA256).
+    """
+
+    orderListId: int
+    contingencyType: str
+    listStatusType: str
+    listOrderStatus: str
+    listClientOrderId: str
+    transactionTime: int
+    symbol: str
+    orders: Optional[list[BinanceOrder]] = None  # Included for ACK response type
+    orderReports: Optional[list[BinanceOrder]] = None  # Included for FULL & RESPONSE types

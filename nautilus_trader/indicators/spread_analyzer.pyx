@@ -28,25 +28,21 @@ from nautilus_trader.model.objects cimport Price
 cdef class SpreadAnalyzer(Indicator):
     """
     Provides various spread analysis metrics.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the tick updates.
+    capacity : int
+        The max length for the internal `QuoteTick` deque (determines averages).
+
+    Raises
+    ------
+    ValueError
+        If `capacity` is not positive (> 0).
     """
 
-    def __init__(self, InstrumentId instrument_id not None, int capacity):
-        """
-        Initialize a new instance of the ``SpreadAnalyzer`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the tick updates.
-        capacity : int
-            The max length for the internal `QuoteTick` deque (determines averages).
-
-        Raises
-        ------
-        ValueError
-            If `capacity` is not positive (> 0).
-
-        """
+    def __init__(self, InstrumentId instrument_id not None, int capacity) -> None:
         Condition.positive_int(capacity, "capacity")
         super().__init__(params=[instrument_id, capacity])
 

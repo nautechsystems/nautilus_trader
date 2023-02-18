@@ -13,19 +13,40 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 ################################################################################
@@ -33,24 +54,20 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorking
 ################################################################################
 
 
-class BinanceFuturesUserMsgData(msgspec.Struct):
-    """
-    Inner struct for execution WebSocket messages from `Binance`
-    """
+class BinanceFuturesUserMsgData(msgspec.Struct, frozen=True):
+    """Inner struct for execution WebSocket messages from `Binance`."""
 
     e: BinanceFuturesEventType
 
 
-class BinanceFuturesUserMsgWrapper(msgspec.Struct):
-    """
-    Provides a wrapper for execution WebSocket messages from `Binance`.
-    """
+class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
+    """Provides a wrapper for execution WebSocket messages from `Binance`."""
 
     stream: str
     data: BinanceFuturesUserMsgData
 
 
-class MarginCallPosition(msgspec.Struct):
+class MarginCallPosition(msgspec.Struct, frozen=True):
     """Inner struct position for `Binance Futures` Margin Call events."""
 
     s: str  # Symbol
@@ -63,7 +80,7 @@ class MarginCallPosition(msgspec.Struct):
     mm: str  # Maintenance Margin Required
 
 
-class BinanceFuturesMarginCallMsg(msgspec.Struct):
+class BinanceFuturesMarginCallMsg(msgspec.Struct, frozen=True):
     """WebSocket message for `Binance Futures` Margin Call events."""
 
     e: str  # Event Type
@@ -72,7 +89,7 @@ class BinanceFuturesMarginCallMsg(msgspec.Struct):
     p: list[MarginCallPosition]
 
 
-class BinanceFuturesBalance(msgspec.Struct):
+class BinanceFuturesBalance(msgspec.Struct, frozen=True):
     """Inner struct balance for `Binance Futures` Balance and Position update event."""
 
     a: str  # Asset
@@ -80,8 +97,20 @@ class BinanceFuturesBalance(msgspec.Struct):
     cw: str  # Cross Wallet Balance
     bc: str  # Balance Change except PnL and Commission
 
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.a)
+        free = Decimal(self.wb)
+        locked = Decimal(0)  # TODO(cs): Pending refactoring of accounting
+        total: Decimal = free + locked
 
-class BinanceFuturesPosition(msgspec.Struct):
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+
+
+class BinanceFuturesPosition(msgspec.Struct, frozen=True):
     """Inner struct position for `Binance Futures` Balance and Position update event."""
 
     s: str  # Symbol
@@ -94,15 +123,18 @@ class BinanceFuturesPosition(msgspec.Struct):
     ps: BinanceFuturesPositionSide
 
 
-class BinanceFuturesAccountUpdateData(msgspec.Struct):
+class BinanceFuturesAccountUpdateData(msgspec.Struct, frozen=True):
     """WebSocket message for `Binance Futures` Balance and Position Update events."""
 
     m: BinanceFuturesPositionUpdateReason
     B: list[BinanceFuturesBalance]
     P: list[BinanceFuturesPosition]
 
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [balance.parse_to_account_balance() for balance in self.B]
 
-class BinanceFuturesAccountUpdateMsg(msgspec.Struct):
+
+class BinanceFuturesAccountUpdateMsg(msgspec.Struct, frozen=True):
     """WebSocket message for `Binance Futures` Balance and Position Update events."""
 
     e: str  # Event Type
@@ -110,15 +142,24 @@ class BinanceFuturesAccountUpdateMsg(msgspec.Struct):
     T: int  # Transaction Time
     a: BinanceFuturesAccountUpdateData
 
+    def handle_account_update(self, exec_client: BinanceCommonExecutionClient):
+        """Handle BinanceFuturesAccountUpdateMsg as payload of ACCOUNT_UPDATE."""
+        exec_client.generate_account_state(
+            balances=self.a.parse_to_account_balances(),
+            margins=[],
+            reported=True,
+            ts_event=millis_to_nanos(self.T),
+        )
 
-class BinanceFuturesAccountUpdateWrapper(msgspec.Struct):
+
+class BinanceFuturesAccountUpdateWrapper(msgspec.Struct, frozen=True):
     """WebSocket message wrapper for `Binance Futures` Balance and Position Update events."""
 
     stream: str
     data: BinanceFuturesAccountUpdateMsg
 
 
-class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
+class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     """
     WebSocket message 'inner struct' for `Binance Futures` Order Update events.
 
@@ -130,8 +171,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     s: str  # Symbol
     c: str  # Client Order ID
     S: BinanceOrderSide
-    o: BinanceFuturesOrderType
-    f: BinanceFuturesTimeInForce
+    o: BinanceOrderType
+    f: BinanceTimeInForce
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
@@ -151,7 +192,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     m: bool  # Is trade the maker side
     R: bool  # Is reduce only
     wt: BinanceFuturesWorkingType
-    ot: BinanceFuturesOrderType
+    ot: BinanceOrderType
     ps: BinanceFuturesPositionSide
     cp: Optional[bool] = None  # If Close-All, pushed with conditional order
     AP: Optional[str] = None  # Activation Price, only pushed with TRAILING_STOP_MARKET order
@@ -161,8 +202,126 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     ss: int  # ignore
     rp: str  # Realized Profit of the trade
 
+    def parse_to_order_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+        ts_init: int,
+        enum_parser: BinanceEnumParser,
+    ) -> OrderStatusReport:
+        price = Price.from_str(self.p) if self.p is not None else None
+        trigger_price = Price.from_str(self.sp) if self.sp is not None else None
+        trailing_offset = Decimal(self.cr) * 100 if self.cr is not None else None
+        order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
+        post_only = self.f == BinanceTimeInForce.GTX
 
-class BinanceFuturesOrderUpdateMsg(msgspec.Struct):
+        return OrderStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            order_side=order_side,
+            order_type=enum_parser.parse_binance_order_type(self.o),
+            time_in_force=enum_parser.parse_binance_time_in_force(self.f),
+            order_status=OrderStatus.ACCEPTED,
+            price=price,
+            trigger_price=trigger_price,
+            trigger_type=enum_parser.parse_binance_trigger_type(self.wt.value),
+            trailing_offset=trailing_offset,
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+            quantity=Quantity.from_str(self.q),
+            filled_qty=Quantity.from_str(self.z),
+            avg_px=None,
+            post_only=post_only,
+            reduce_only=self.R,
+            report_id=UUID4(),
+            ts_accepted=ts_event,
+            ts_last=ts_event,
+            ts_init=ts_init,
+        )
+
+    def handle_order_trade_update(
+        self,
+        exec_client: BinanceCommonExecutionClient,
+    ):
+        """Handle BinanceFuturesOrderData as payload of ORDER_TRADE_UPDATE event."""
+        client_order_id = ClientOrderId(self.c) if self.c != "" else None
+        ts_event = millis_to_nanos(self.T)
+        venue_order_id = VenueOrderId(str(self.i))
+        instrument_id = exec_client._get_cached_instrument_id(self.s)
+        strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
+        if strategy_id is None:
+            report = self.parse_to_order_status_report(
+                account_id=exec_client.account_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+                ts_init=exec_client._clock.timestamp_ns(),
+                enum_parser=exec_client._enum_parser,
+            )
+            exec_client._send_order_status_report(report)
+        elif self.x == BinanceExecutionType.NEW:
+            exec_client.generate_order_accepted(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        elif self.x == BinanceExecutionType.TRADE:
+            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+
+            # Determine commission
+            commission_asset: str = self.N
+            commission_amount: str = self.n
+            if commission_asset is not None:
+                commission = Money.from_str(f"{commission_amount} {commission_asset}")
+            else:
+                # Commission in margin collateral currency
+                commission = Money(0, instrument.quote_currency)
+
+            exec_client.generate_order_filled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                venue_position_id=PositionId(f"{instrument_id}-{self.ps.value}"),
+                trade_id=TradeId(str(self.t)),  # Trade ID
+                order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
+                order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
+                last_qty=Quantity.from_str(self.l),
+                last_px=Price.from_str(self.L),
+                quote_currency=instrument.quote_currency,
+                commission=commission,
+                liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
+                ts_event=ts_event,
+            )
+        elif self.x == BinanceExecutionType.CANCELED:
+            exec_client.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        elif self.x == BinanceExecutionType.EXPIRED:
+            exec_client.generate_order_expired(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        else:
+            # Event not handled
+            exec_client._log.warning(f"Received unhandled {self}")
+
+
+class BinanceFuturesOrderUpdateMsg(msgspec.Struct, frozen=True):
     """WebSocket message for `Binance Futures` Order Update events."""
 
     e: str  # Event Type
@@ -171,7 +330,7 @@ class BinanceFuturesOrderUpdateMsg(msgspec.Struct):
     o: BinanceFuturesOrderData
 
 
-class BinanceFuturesOrderUpdateWrapper(msgspec.Struct):
+class BinanceFuturesOrderUpdateWrapper(msgspec.Struct, frozen=True):
     """WebSocket message wrapper for `Binance Futures` Order Update events."""
 
     stream: str

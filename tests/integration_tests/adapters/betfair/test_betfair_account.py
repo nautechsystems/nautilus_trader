@@ -20,7 +20,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
@@ -41,7 +41,7 @@ class TestBetfairAccount:
         self.instrument = TestInstrumentProvider.betting_instrument()
 
         # Setup logging
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
 
         self.msgbus = MessageBus(
             trader_id=TestIdStubs.trader_id(),

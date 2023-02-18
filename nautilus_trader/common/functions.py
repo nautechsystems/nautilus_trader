@@ -13,23 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForce
 
+def one(iterable):
+    it = iter(iterable)
 
-BINANCE_FUTURES_VALID_TIF = (
-    TimeInForce.GTC,
-    TimeInForce.GTD,  # Will be transformed to GTC with warning
-    TimeInForce.FOK,
-    TimeInForce.IOC,
-)
+    try:
+        first_value = next(it)
+    except StopIteration as e:
+        raise (ValueError("too few items in iterable (expected 1)")) from e
 
-BINANCE_FUTURES_VALID_ORDER_TYPES = (
-    OrderType.MARKET,
-    OrderType.LIMIT,
-    OrderType.STOP_MARKET,
-    OrderType.STOP_LIMIT,
-    OrderType.MARKET_IF_TOUCHED,
-    OrderType.LIMIT_IF_TOUCHED,
-    OrderType.TRAILING_STOP_MARKET,
-)
+    try:
+        second_value = next(it)
+    except StopIteration:
+        pass
+    else:
+        msg = f"Expected exactly one item in iterable, but got {first_value}, {second_value}, and perhaps more."
+        raise ValueError(msg)
+
+    return first_value

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import defaultdict
 from functools import partial
 from typing import Callable, Optional
 
@@ -39,7 +40,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import (
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import Bar
@@ -60,6 +60,25 @@ from nautilus_trader.msgbus.bus import MessageBus
 class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
     Provides a data client for the InteractiveBrokers exchange.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : IB
+        The ib_insync IB client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    instrument_provider : InteractiveBrokersInstrumentProvider
+        The instrument provider.
+    handle_revised_bars : bool
+        If DataClient will emit bar updates as soon new bar opens.
     """
 
     def __init__(
@@ -73,29 +92,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_provider: InteractiveBrokersInstrumentProvider,
         handle_revised_bars: bool,
     ):
-        """
-        Initialize a new instance of the ``InteractiveBrokersDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : IB
-            The ib_insync IB client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        instrument_provider : InteractiveBrokersInstrumentProvider
-            The instrument provider.
-        handle_revised_bars : bool
-            If DataClient will emit bar updates as soon new bar opens.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(IB_VENUE.value),
@@ -429,7 +425,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         has_new_bar: bool,
         bar_type: BarType,
     ):
-
         if not has_new_bar:
             return
 
@@ -458,7 +453,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         has_new_bar: bool,
         process_all: bool = False,
     ) -> None:
-
         if not process_all:
             if self._handle_revised_bars:
                 bars = [bar_data_list[-1]]

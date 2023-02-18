@@ -17,8 +17,7 @@ import pkgutil
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
-from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -34,9 +33,10 @@ class TestBinanceWebSocketParsing:
         )
 
         # Act
-        result = parse_ticker_24hr_ws(
+        decoder = msgspec.json.Decoder(BinanceTickerData)
+        data = decoder.decode(raw)
+        result = data.parse_to_binance_ticker(
             instrument_id=ETHUSDT.id,
-            data=msgspec.json.decode(raw, type=BinanceTickerData),
             ts_init=9999999999999991,
         )
 

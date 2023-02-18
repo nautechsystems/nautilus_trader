@@ -40,6 +40,7 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         bid: Price,
@@ -48,7 +49,7 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> QuoteTick {
+    ) -> Self {
         correctness::u8_equal(
             bid.precision,
             ask.precision,
@@ -97,6 +98,7 @@ pub struct TradeTick {
 }
 
 impl TradeTick {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         price: Price,
@@ -105,7 +107,7 @@ impl TradeTick {
         trade_id: TradeId,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> TradeTick {
+    ) -> Self {
         TradeTick {
             instrument_id,
             price,

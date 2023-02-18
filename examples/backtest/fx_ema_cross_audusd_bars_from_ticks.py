@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 from decimal import Decimal
 
 import pandas as pd
@@ -82,6 +83,7 @@ if __name__ == "__main__":
     strategy = EMACross(config=config)
     engine.add_strategy(strategy=strategy)
 
+    time.sleep(0.1)
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)

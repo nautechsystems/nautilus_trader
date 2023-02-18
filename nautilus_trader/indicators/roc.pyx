@@ -25,25 +25,21 @@ cdef class RateOfChange(Indicator):
     """
     An indicator which calculates the rate of change of price over a defined period.
     The return output can be simple or log.
+
+    Parameters
+    ----------
+    period : int
+        The period for the indicator.
+    use_log : bool
+        Use log returns for value calculation.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not > 1.
     """
 
     def __init__(self, int period, bint use_log=False):
-        """
-        Initialize a new instance of the ``RateOfChange`` class.
-
-        Parameters
-        ----------
-        period : int
-            The period for the indicator.
-        use_log : bool
-            Use log returns for value calculation.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not > 1.
-
-        """
         Condition.true(period > 1, "period was <= 1")
         super().__init__(params=[period])
 

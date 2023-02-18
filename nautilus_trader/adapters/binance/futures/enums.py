@@ -16,6 +16,14 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.orders.base import Order
+
 
 """
 Defines `Binance` Futures specific enums.
@@ -52,35 +60,12 @@ class BinanceFuturesContractStatus(Enum):
 
 
 @unique
-class BinanceFuturesOrderType(Enum):
-    """Represents a `Binance Futures` price type."""
-
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP = "STOP"
-    STOP_MARKET = "STOP_MARKET"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
-    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
-
-
-@unique
 class BinanceFuturesPositionSide(Enum):
     """Represents a `Binance Futures` position side."""
 
     BOTH = "BOTH"
     LONG = "LONG"
     SHORT = "SHORT"
-
-
-@unique
-class BinanceFuturesTimeInForce(Enum):
-    """Represents a `Binance Futures` order time in force."""
-
-    GTC = "GTC"
-    IOC = "IOC"
-    FOK = "FOK"
-    GTX = "GTX"  # Good Till Crossing (Post Only)
 
 
 @unique
@@ -129,3 +114,83 @@ class BinanceFuturesEventType(Enum):
     ACCOUNT_UPDATE = "ACCOUNT_UPDATE"
     ORDER_TRADE_UPDATE = "ORDER_TRADE_UPDATE"
     ACCOUNT_CONFIG_UPDATE = "ACCOUNT_CONFIG_UPDATE"
+
+
+class BinanceFuturesEnumParser(BinanceEnumParser):
+    """
+    Provides parsing methods for enums used by the 'Binance Futures' exchange.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.futures_ext_to_int_order_type = {
+            BinanceOrderType.LIMIT: OrderType.LIMIT,
+            BinanceOrderType.MARKET: OrderType.MARKET,
+            BinanceOrderType.STOP: OrderType.STOP_LIMIT,
+            BinanceOrderType.STOP_MARKET: OrderType.STOP_MARKET,
+            BinanceOrderType.TAKE_PROFIT: OrderType.LIMIT_IF_TOUCHED,
+            BinanceOrderType.TAKE_PROFIT_MARKET: OrderType.MARKET_IF_TOUCHED,
+            BinanceOrderType.TRAILING_STOP_MARKET: OrderType.TRAILING_STOP_MARKET,
+        }
+        self.futures_int_to_ext_order_type = {
+            b: a for a, b in self.futures_ext_to_int_order_type.items()
+        }
+
+        self.futures_ext_to_int_position_side = {
+            BinanceFuturesPositionSide.BOTH: PositionSide.FLAT,
+            BinanceFuturesPositionSide.LONG: PositionSide.LONG,
+            BinanceFuturesPositionSide.SHORT: PositionSide.SHORT,
+        }
+
+        self.futures_valid_time_in_force = {
+            TimeInForce.GTC,
+            TimeInForce.GTD,  # Will be transformed to GTC with warning
+            TimeInForce.FOK,
+            TimeInForce.IOC,
+        }
+
+        self.futures_valid_order_types = {
+            OrderType.MARKET,
+            OrderType.LIMIT,
+            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
+            OrderType.MARKET_IF_TOUCHED,
+            OrderType.LIMIT_IF_TOUCHED,
+            OrderType.TRAILING_STOP_MARKET,
+        }
+
+    def parse_binance_order_type(self, order_type: BinanceOrderType) -> OrderType:
+        try:
+            return self.futures_ext_to_int_order_type[order_type]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized Binance Futures order type, was {order_type}",  # pragma: no cover
+            )
+
+    def parse_internal_order_type(self, order: Order) -> BinanceOrderType:
+        try:
+            return self.futures_int_to_ext_order_type[order.order_type]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized or unsupported internal order type, was {order.order_type}",  # pragma: no cover
+            )
+
+    def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
+        if trigger_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
+            return TriggerType.LAST_TRADE
+        elif trigger_type == BinanceFuturesWorkingType.MARK_PRICE:
+            return TriggerType.MARK_PRICE
+        else:
+            return None
+
+    def parse_futures_position_side(
+        self,
+        position_side: BinanceFuturesPositionSide,
+    ) -> PositionSide:
+        try:
+            return self.futures_ext_to_int_position_side[position_side]
+        except KeyError:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized binance futures position side, was {position_side}",  # pragma: no cover
+            )

@@ -26,9 +26,9 @@ from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import Future
 
-from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.common.functions import one
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
@@ -40,6 +40,21 @@ from nautilus_trader.model.instruments.base import Instrument
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Interactive Brokers.
+
+    Parameters
+    ----------
+    client : ib_insync.IB
+        The Interactive Brokers client.
+    config : InstrumentProviderConfig
+        The instrument provider config
+    logger : Logger
+        The logger for the instrument provider.
+    host : str
+        The client host name or IP address.
+    port : str
+        The client port number.
+    client_id : int
+        The unique client ID number for the connection.
     """
 
     def __init__(
@@ -50,26 +65,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
-    ):
-        """
-        Initialize a new instance of the ``InteractiveBrokersInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : ib_insync.IB
-            The Interactive Brokers client.
-        config : InstrumentProviderConfig
-            The instrument provider config
-        logger : Logger
-            The logger for the instrument provider.
-        host : str
-            The client host name or IP address.
-        port : str
-            The client port number.
-        client_id : int
-            The unique client ID number for the connection.
-
-        """
+    ) -> None:
         super().__init__(
             venue=IB_VENUE,
             logger=logger,
@@ -212,15 +208,15 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         Parameters
         ----------
-        build_options_chain: bool (default: False)
-            Search for full option chain
-        option_kwargs: str (default: False)
-            JSON string for options filtering, available fields: min_expiry, max_expiry, min_strike, max_strike, kind
-        kwargs: **kwargs
+        build_options_chain : bool, default False
+            Search for full option chain.
+        option_kwargs : str, default False
+            JSON string for options filtering, available fields: min_expiry, max_expiry, min_strike, max_strike, kind.
+        kwargs : **kwargs
             Optional extra kwargs to search for, examples:
                 secType, conId, symbol, lastTradeDateOrContractMonth, strike, right, multiplier, exchange,
                 primaryExchange, currency, localSymbol, tradingClass, includeExpired, secIdType, secId,
-                comboLegsDescrip, comboLegs,  deltaNeutralContract
+                comboLegsDescrip, comboLegs,  deltaNeutralContract.
         """
         self._log.debug(f"Attempting to find instrument for {kwargs=}")
         contract = self._parse_contract(**kwargs)

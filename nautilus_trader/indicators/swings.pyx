@@ -26,18 +26,14 @@ from nautilus_trader.model.data.bar cimport Bar
 cdef class Swings(Indicator):
     """
     A swing indicator which calculates and stores various swing metrics.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
     """
 
     def __init__(self, int period):
-        """
-        Initialize a new instance of the Swings class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(params=[period])
 

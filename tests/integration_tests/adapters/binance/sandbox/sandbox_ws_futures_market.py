@@ -19,7 +19,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
@@ -30,7 +30,7 @@ async def test_binance_websocket_client():
     client = BinanceWebSocketClient(
         loop=loop,
         clock=clock,
-        logger=LiveLogger(loop=loop, clock=clock),
+        logger=Logger(clock=clock),
         handler=print,
         base_url="wss://fstream.binance.com",
     )

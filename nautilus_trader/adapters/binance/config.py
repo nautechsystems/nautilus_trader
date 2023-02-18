@@ -44,6 +44,9 @@ class BinanceDataClientConfig(LiveDataClientConfig):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
+    use_agg_trade_ticks : bool, default False
+        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
+        TradeId of ticks will be the Aggregate tradeId returned by Binance.
     """
 
     api_key: Optional[str] = None
@@ -53,6 +56,7 @@ class BinanceDataClientConfig(LiveDataClientConfig):
     base_url_ws: Optional[str] = None
     us: bool = False
     testnet: bool = False
+    use_agg_trade_ticks: bool = False
 
 
 class BinanceExecClientConfig(LiveExecClientConfig):
@@ -79,7 +83,7 @@ class BinanceExecClientConfig(LiveExecClientConfig):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
-    clock_sync_interval_secs : int, default 900 (15 mins)
+    clock_sync_interval_secs : int, default 0
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     warn_gtd_to_gtc : bool, default True
@@ -93,5 +97,5 @@ class BinanceExecClientConfig(LiveExecClientConfig):
     base_url_ws: Optional[str] = None
     us: bool = False
     testnet: bool = False
-    clock_sync_interval_secs: int = 900
+    clock_sync_interval_secs: int = 0
     warn_gtd_to_gtc: bool = True

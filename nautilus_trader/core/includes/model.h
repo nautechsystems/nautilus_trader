@@ -368,8 +368,6 @@ typedef struct Money_t {
  */
 const char *bar_specification_to_cstr(const struct BarSpecification_t *bar_spec);
 
-void bar_specification_free(struct BarSpecification_t bar_spec);
-
 uint64_t bar_specification_hash(const struct BarSpecification_t *bar_spec);
 
 struct BarSpecification_t bar_specification_new(uint64_t step,
@@ -1120,8 +1118,6 @@ struct Price_t price_new(double value, uint8_t precision);
 
 struct Price_t price_from_raw(int64_t raw, uint8_t precision);
 
-void price_free(struct Price_t price);
-
 double price_as_f64(const struct Price_t *price);
 
 void price_add_assign(struct Price_t a, struct Price_t b);
@@ -1131,8 +1127,6 @@ void price_sub_assign(struct Price_t a, struct Price_t b);
 struct Quantity_t quantity_new(double value, uint8_t precision);
 
 struct Quantity_t quantity_from_raw(uint64_t raw, uint8_t precision);
-
-void quantity_free(struct Quantity_t qty);
 
 double quantity_as_f64(const struct Quantity_t *qty);
 

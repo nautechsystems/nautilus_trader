@@ -518,6 +518,7 @@ cdef class Instrument(Data):
 
         """
         Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
 
         if self.is_inverse:
             if inverse_as_quote:

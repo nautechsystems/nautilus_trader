@@ -31,7 +31,6 @@ from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
@@ -61,7 +60,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.streaming import StreamingFeatherWriter
+from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -122,6 +121,8 @@ class NautilusKernel:
         If strategy state should be saved on stop.
     log_level : LogLevel, default LogLevel.INFO
         The log level for the kernels logger.
+    log_rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
         If logging to stdout should be bypassed.
 
@@ -156,6 +157,7 @@ class NautilusKernel:
         load_state: bool = False,
         save_state: bool = False,
         log_level: LogLevel = LogLevel.INFO,
+        log_rate_limit: int = 100_000,
         bypass_logging: bool = False,
     ):
         PyCondition.not_none(environment, "environment")
@@ -174,21 +176,14 @@ class NautilusKernel:
         PyCondition.valid_string(name, "name")
         PyCondition.type(cache_config, CacheConfig, "cache_config")
         PyCondition.type(cache_database_config, CacheDatabaseConfig, "cache_database_config")
-        PyCondition.true(
-            isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)),
-            "data_config was unrecognized type",
-            ex_type=TypeError,
-        )
-        PyCondition.true(
-            isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)),
-            "risk_config was unrecognized type",
-            ex_type=TypeError,
-        )
-        PyCondition.true(
-            isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)),
-            "exec_config was unrecognized type",
-            ex_type=TypeError,
-        )
+        if environment == Environment.BACKTEST:
+            PyCondition.type(data_config, DataEngineConfig, "data_config")
+            PyCondition.type(risk_config, RiskEngineConfig, "risk_config")
+            PyCondition.type(exec_config, ExecEngineConfig, "exec_config")
+        else:
+            PyCondition.type(data_config, LiveDataEngineConfig, "data_config")
+            PyCondition.type(risk_config, LiveRiskEngineConfig, "risk_config")
+            PyCondition.type(exec_config, LiveExecEngineConfig, "exec_config")
         PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self._environment = environment
@@ -205,28 +200,23 @@ class NautilusKernel:
         # Components
         if self._environment == Environment.BACKTEST:
             self._clock = TestClock()
-            self._logger = Logger(
-                clock=LiveClock(loop=loop),
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level,
-                bypass=bypass_logging,
-            )
         elif self.environment in (Environment.SANDBOX, Environment.LIVE):
             self._clock = LiveClock(loop=loop)
-            self._logger = LiveLogger(
-                loop=loop,
-                clock=self._clock,
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level,
-            )
+            bypass_logging = False  # Safety measure so live logging is visible
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        self._logger = Logger(
+            clock=self._clock,
+            trader_id=self._trader_id,
+            machine_id=self._machine_id,
+            instance_id=self._instance_id,
+            level_stdout=log_level,
+            rate_limit=log_rate_limit,
+            bypass=bypass_logging,
+        )
 
         # Setup logging
         self._log = LoggerAdapter(
@@ -239,7 +229,7 @@ class NautilusKernel:
 
         # Setup loop (if live)
         if environment == Environment.LIVE:
-            self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+            self._loop: Optional[asyncio.AbstractEventLoop] = loop or asyncio.get_event_loop()
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
                 self._loop.set_default_executor(self.executor)

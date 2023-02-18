@@ -93,7 +93,7 @@ cdef class BacktestEngine:
         If `config` is not of type `BacktestEngineConfig`.
     """
 
-    def __init__(self, config: Optional[BacktestEngineConfig] = None):
+    def __init__(self, config: Optional[BacktestEngineConfig] = None) -> None:
         if config is None:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
@@ -137,6 +137,7 @@ cdef class BacktestEngine:
             load_state=config.load_state,
             save_state=config.save_state,
             log_level=log_level_from_str(config.log_level.upper()),
+            log_rate_limit=config.log_rate_limit,
             bypass_logging=config.bypass_logging,
         )
 
@@ -339,7 +340,7 @@ cdef class BacktestEngine:
         """
         return self._kernel.portfolio
 
-    def list_venues(self):
+    def list_venues(self) -> list[Venue]:
         """
         Return the venues contained within the engine.
 
@@ -686,28 +687,6 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
 
-    cpdef list list_actors(self):
-        """
-        Return the actors for the backtest.
-
-        Returns
-        ----------
-        list[Actors]
-
-        """
-        return self.trader.actors()
-
-    cpdef list list_strategies(self):
-        """
-        Return the strategies for the backtest.
-
-        Returns
-        ----------
-        list[Strategy]
-
-        """
-        return self.trader.strategies()
-
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -718,7 +697,7 @@ cdef class BacktestEngine:
 
         if self.kernel.trader.is_running:
             # End current backtest run
-            self._end()
+            self.end()
 
         # Change logger clock back to live clock for consistent time stamping
         self.kernel.logger.change_clock(self._clock)
@@ -759,7 +738,7 @@ cdef class BacktestEngine:
 
         self._log.info("Reset.")
 
-    def clear_data(self):
+    def clear_data(self) -> None:
         """
         Clear the engines internal data stream.
 
@@ -786,12 +765,22 @@ cdef class BacktestEngine:
         start: Optional[Union[datetime, str, int]] = None,
         end: Optional[Union[datetime, str, int]] = None,
         run_config_id: Optional[str] = None,
+        streaming: bool = False,
     ) -> None:
         """
         Run a backtest.
 
         At the end of the run the trader and strategies will be stopped, then
         post-run analysis performed.
+
+        If more data than can fit in memory is to be run through the backtest
+        engine, then `streaming` mode can be utilized. The expected sequence is as
+        follows:
+         - Add initial data batch and strategies.
+         - Call `run(streaming=True)`.
+         - Call `clear_data()`.
+         - Add next batch of data stream.
+         - Call either `run(streaming=False)` or `end()`. When there is no more data to run on.
 
         Parameters
         ----------
@@ -803,6 +792,9 @@ cdef class BacktestEngine:
             to the end of the data.
         run_config_id : str, optional
             The tokenized `BacktestRunConfig` ID.
+        streaming : bool, default False
+            If running in streaming mode. If False then will end the backtest
+            following the run iterations.
 
         Raises
         ------
@@ -813,59 +805,37 @@ cdef class BacktestEngine:
 
         """
         self._run(start, end, run_config_id)
-        self._end()
+        if not streaming:
+            self.end()
 
-    def run_streaming(
-        self,
-        start: Optional[Union[datetime, str, int]] = None,
-        end: Optional[Union[datetime, str, int]] = None,
-        run_config_id: Optional[str] = None,
-    ):
+    def end(self):
         """
-        Run a backtest in streaming mode.
+        Manually end the backtest.
 
-        If more data than can fit in memory is to be run through the backtest
-        engine, then streaming mode can be utilized. The expected sequence is as
-        follows:
-         - Add initial data batch and strategies.
-         - Call `run_streaming()`.
-         - Call `clear_data()`.
-         - Add next batch of data stream.
-         - Call `run_streaming()`.
-         - Call `end_streaming()` when there is no more data to run on.
-
-        Parameters
-        ----------
-        start : Union[datetime, str, int], optional
-            The start datetime (UTC) for the current batch of data. If ``None``
-            engine runs from the start of the data.
-        end : Union[datetime, str, int], optional
-            The end datetime (UTC) for the current batch of data. If ``None`` engine runs
-            to the end of the data.
-        run_config_id : str, optional
-            The tokenized backtest run configuration ID.
-
-        Raises
-        ------
-        ValueError
-            If no data has been added to the engine.
-        ValueError
-            If the `start` is >= the `end` datetime.
+        Notes
+        -----
+        Only required if you have previously been running with streaming.
 
         """
-        self._run(start, end, run_config_id)
+        if self.kernel.trader.is_running:
+            self.kernel.trader.stop()
+        if self.kernel.data_engine.is_running:
+            self.kernel.data_engine.stop()
+        if self.kernel.risk_engine.is_running:
+            self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
 
-    def end_streaming(self):
-        """
-        End the backtest streaming run.
+        # Process remaining messages
+        for exchange in self._venues.values():
+            exchange.process(self.kernel.clock.timestamp_ns())
 
-        The following sequence of events will occur:
-         - The trader will be stopped which in turn stops the strategies.
-         - The exchanges will process all pending messages.
-         - Post-run analysis is performed.
+        self._run_finished = self._clock.utc_now()
+        self._backtest_end = self.kernel.clock.utc_now()
 
-        """
-        self._end()
+        self._log_post_run()
 
     def get_result(self):
         """
@@ -1019,27 +989,6 @@ cdef class BacktestEngine:
         # Process remaining time events
         for event_handler in now_events:
             event_handler.handle()
-
-    def _end(self):
-        if self.kernel.trader.is_running:
-            self.kernel.trader.stop()
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
-        if self.kernel.emulator.is_running:
-            self.kernel.emulator.stop()
-
-        # Process remaining messages
-        for exchange in self._venues.values():
-            exchange.process(self.kernel.clock.timestamp_ns())
-
-        self._run_finished = self._clock.utc_now()
-        self._backtest_end = self.kernel.clock.utc_now()
-
-        self._log_post_run()
 
     cdef Data _next(self):
         cdef uint64_t cursor = self._index

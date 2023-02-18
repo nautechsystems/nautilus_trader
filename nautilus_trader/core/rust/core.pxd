@@ -7,7 +7,7 @@ cdef extern from "../includes/core.h":
     cdef struct Rc_String:
         pass
 
-    # CVec is a C compatible struct that stores an opaque pointer to a block of
+    # `CVec` is a C compatible struct that stores an opaque pointer to a block of
     # memory, it's length and the capacity of the vector it was allocated from.
     #
     # NOTE: Changing the values here may lead to undefined behaviour when the
@@ -88,6 +88,8 @@ cdef extern from "../includes/core.h":
     #
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    # - If `ptr` cannot be cast to a valid C string.
     UUID4_t uuid4_from_cstr(const char *ptr);
 
     const char *uuid4_to_cstr(const UUID4_t *uuid);

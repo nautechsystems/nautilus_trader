@@ -12,3 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import msgspec
+
+
+################################################################################
+# HTTP responses
+################################################################################
+
+
+class BinanceListenKey(msgspec.Struct):
+    """HTTP response from creating a new `Binance` user listen key."""
+
+    listenKey: str

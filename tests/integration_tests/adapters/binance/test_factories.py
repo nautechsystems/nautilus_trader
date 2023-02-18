@@ -31,7 +31,7 @@ from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecution
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -42,11 +42,7 @@ class TestBinanceFactories:
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = LiveLogger(
-            loop=self.loop,
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-        )
+        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
 
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()
@@ -77,7 +73,13 @@ class TestBinanceFactories:
                 "https://api.binance.com",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                False,
+                "https://sapi.binance.com",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 False,
                 "https://sapi.binance.com",
@@ -101,7 +103,13 @@ class TestBinanceFactories:
                 "https://api.binance.us",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                True,
+                "https://sapi.binance.us",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 True,
                 "https://sapi.binance.us",
@@ -125,7 +133,13 @@ class TestBinanceFactories:
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                True,
+                False,
+                "https://testnet.binance.vision",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 True,
                 False,
                 "https://testnet.binance.vision",
@@ -155,7 +169,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                False,
+                "wss://stream.binance.com:9443",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 False,
                 "wss://stream.binance.com:9443",
@@ -179,7 +199,13 @@ class TestBinanceFactories:
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                False,
+                True,
+                "wss://stream.binance.us:9443",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 False,
                 True,
                 "wss://stream.binance.us:9443",
@@ -203,7 +229,13 @@ class TestBinanceFactories:
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN,
+                BinanceAccountType.MARGIN_CROSS,
+                True,
+                False,
+                "wss://testnet.binance.vision",
+            ],
+            [
+                BinanceAccountType.MARGIN_ISOLATED,
                 True,
                 False,
                 "wss://testnet.binance.vision",

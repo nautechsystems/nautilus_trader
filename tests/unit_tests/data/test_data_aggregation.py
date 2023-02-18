@@ -144,7 +144,7 @@ class TestBarBuilder:
         builder.set_partial(partial_bar1)
         builder.set_partial(partial_bar2)
 
-        bar = builder.build(4_000_000_000)
+        bar = builder.build(4_000_000_000, 4_000_000_000)
 
         # Assert
         assert bar.open == Price.from_str("1.00001")
@@ -1307,7 +1307,7 @@ class TestTimeBarAggregator:
         assert handler[0].ts_event == 1610064002000000000
         assert handler[0].ts_init == 1610064002000000000
 
-    def test_do_not_build_bars_with_no_updates(self):
+    def test_do_not_build_with_no_updates(self):
         # Arrange
         path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
         df_ticks = ParquetTickDataLoader.load(path)
@@ -1328,7 +1328,7 @@ class TestTimeBarAggregator:
             bar_store.append,
             clock,
             Logger(clock),
-            build_bars_with_no_updates=False,  # <-- set this True and test will fail
+            build_with_no_updates=False,  # <-- set this True and test will fail
         )
         aggregator.handle_quote_tick(ticks[0])
 
@@ -1338,3 +1338,39 @@ class TestTimeBarAggregator:
 
         # Assert
         assert len(bar_store) == 1  # <-- only 1 bar even after 5 minutes
+
+    def test_timestamp_on_close_false_timestamps_ts_event_as_open(self):
+        # Arrange
+        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
+        df_ticks = ParquetTickDataLoader.load(path)
+
+        wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
+        ticks = wrangler.process(df_ticks)
+
+        clock = TestClock()
+        bar_store = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(instrument_id, bar_spec)
+
+        # Act
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            bar_store.append,
+            clock,
+            Logger(clock),
+            timestamp_on_close=False,  # <-- set this True and test will fail
+        )
+        aggregator.handle_quote_tick(ticks[0])
+
+        events = clock.advance_time(dt_to_unix_nanos(UNIX_EPOCH + timedelta(minutes=2)))
+        for event in events:
+            event.handle()
+
+        # Assert
+        assert len(bar_store) == 2
+        assert bar_store[0].ts_event == 0  # <-- bar open
+        assert bar_store[0].ts_init == 60_000_000_000  # <-- bar close
+        assert bar_store[1].ts_event == 60_000_000_000  # <-- bar open
+        assert bar_store[1].ts_init == 120_000_000_000  # <-- bar close

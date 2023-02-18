@@ -807,7 +807,7 @@ cdef class Order:
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInitialized):
-            Condition.true(not self._events, "`OrderInitialized` should be the first order event")
+            pass  # Do nothing else
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)

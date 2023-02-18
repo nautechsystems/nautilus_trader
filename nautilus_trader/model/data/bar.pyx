@@ -26,7 +26,6 @@ from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_new_from_raw
 from nautilus_trader.core.rust.model cimport bar_specification_eq
-from nautilus_trader.core.rust.model cimport bar_specification_free
 from nautilus_trader.core.rust.model cimport bar_specification_ge
 from nautilus_trader.core.rust.model cimport bar_specification_gt
 from nautilus_trader.core.rust.model cimport bar_specification_hash
@@ -108,10 +107,6 @@ cdef class BarSpecification:
             state[1],
             state[2]
         )
-
-    def __del__(self) -> None:
-        # Never allocation heap memory
-        bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_specification_to_cstr(&self._mem))

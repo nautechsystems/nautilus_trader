@@ -721,7 +721,7 @@ cdef class RiskEngine(Component):
             Money cum_notional_sell = None
             double xrate
         for order in orders:
-            if order.order_type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT:
                 if last_px is None:
                     # Determine entry price
                     last_quote = self._cache.quote_tick(instrument.id)

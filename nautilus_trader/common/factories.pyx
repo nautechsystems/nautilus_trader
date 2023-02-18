@@ -97,7 +97,7 @@ cdef class OrderFactory:
             initial_count=initial_order_list_id_count,
         )
 
-    cpdef void set_order_id_count(self, int count) except *:
+    cpdef void set_client_order_id_count(self, int count) except *:
         """
         Set the internal order ID generator count to the given count.
 
@@ -129,6 +129,32 @@ cdef class OrderFactory:
         """
         self._order_list_id_generator.set_count(count)
 
+    cpdef ClientOrderId generate_client_order_id(self) except *:
+        """
+        Generate and return a new client order ID.
+
+        The identifier will be the next in the logical sequence.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._order_id_generator.generate()
+
+    cpdef OrderListId generate_order_list_id(self) except *:
+        """
+        Generate and return a new order list ID.
+
+        The identifier will be the next in the logical sequence.
+
+        Returns
+        -------
+        OrderListId
+
+        """
+        return self._order_list_id_generator.generate()
+
     cpdef void reset(self) except *:
         """
         Reset the order factory.
@@ -137,6 +163,36 @@ cdef class OrderFactory:
         """
         self._order_id_generator.reset()
         self._order_list_id_generator.reset()
+
+    cpdef OrderList create_list(self, list orders):
+        """
+        Return a new order list containing the given `orders`.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders for the list.
+
+        Returns
+        -------
+        OrderList
+
+        Raises
+        ------
+        ValueError
+            If `orders` is empty.
+
+        Notes
+        -----
+        The order at index 0 in the list will be considered the 'first' order.
+
+        """
+        Condition.not_empty(orders, "orders")
+
+        return OrderList(
+            order_list_id=self._order_list_id_generator.generate(),
+            orders=orders,
+        )
 
     cpdef MarketOrder market(
         self,
@@ -893,8 +949,8 @@ cdef class OrderFactory:
         OrderType tp_order_type = OrderType.LIMIT,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
-        bint post_only_entry = False,
-        bint post_only_tp = True,
+        bint entry_post_only = False,
+        bint tp_post_only = True,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
         ContingencyType contingency_type = ContingencyType.OUO,
     ):
@@ -931,9 +987,9 @@ cdef class OrderFactory:
             The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        post_only_entry : bool, default False
+        entry_post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
-        post_only_tp : bool, default False
+        tp_post_only : bool, default False
             If the take-profit order will only provide liquidity (make a market).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The emulation trigger type for the entry, as well as the TP and SL bracket orders.
@@ -983,7 +1039,7 @@ cdef class OrderFactory:
                 ts_init=self._clock.timestamp_ns(),
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
-                post_only=post_only_entry,
+                post_only=entry_post_only,
                 emulation_trigger=emulation_trigger,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
@@ -1027,7 +1083,7 @@ cdef class OrderFactory:
                 ts_init=self._clock.timestamp_ns(),
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
-                post_only=post_only_entry,
+                post_only=entry_post_only,
                 emulation_trigger=emulation_trigger,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
@@ -1053,7 +1109,7 @@ cdef class OrderFactory:
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
                 time_in_force=TimeInForce.GTC,
-                post_only=post_only_tp,
+                post_only=tp_post_only,
                 reduce_only=True,
                 display_qty=None,
                 emulation_trigger=emulation_trigger,
@@ -1077,7 +1133,7 @@ cdef class OrderFactory:
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
                 time_in_force=TimeInForce.GTC,
-                post_only=post_only_tp,
+                post_only=tp_post_only,
                 reduce_only=True,
                 display_qty=None,
                 emulation_trigger=emulation_trigger,

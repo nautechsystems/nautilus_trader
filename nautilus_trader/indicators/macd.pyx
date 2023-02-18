@@ -29,6 +29,26 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     """
     An indicator which calculates the difference between two moving averages.
     Different moving average types can be selected for the inner calculation.
+
+    Parameters
+    ----------
+    fast_period : int
+        The period for the fast moving average (> 0).
+    slow_period : int
+        The period for the slow moving average (> 0 & > fast_sma).
+    ma_type : MovingAverageType
+        The moving average type for the calculations.
+    price_type : PriceType
+        The specified price type for extracting values from quote ticks.
+
+    Raises
+    ------
+    ValueError
+        If `fast_period` is not positive (> 0).
+    ValueError
+        If `slow_period` is not positive (> 0).
+    ValueError
+        If `fast_period` is not < `slow_period`.
     """
 
     def __init__(
@@ -38,30 +58,6 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
         PriceType price_type=PriceType.LAST,
     ):
-        """
-        Initialize a new instance of the ``MovingAverageConvergenceDivergence`` class.
-
-        Parameters
-        ----------
-        fast_period : int
-            The period for the fast moving average (> 0).
-        slow_period : int
-            The period for the slow moving average (> 0 & > fast_sma).
-        ma_type : MovingAverageType
-            The moving average type for the calculations.
-        price_type : PriceType
-            The specified price type for extracting values from quote ticks.
-
-        Raises
-        ------
-        ValueError
-            If `fast_period` is not positive (> 0).
-        ValueError
-            If `slow_period` is not positive (> 0).
-        ValueError
-            If `fast_period` is not < `slow_period`.
-
-        """
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
         Condition.true(slow_period > fast_period, "slow_period was <= fast_period")
