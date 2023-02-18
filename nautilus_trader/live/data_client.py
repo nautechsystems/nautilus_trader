@@ -430,12 +430,13 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_ids = list(self._instrument_provider.get_all().keys())
         self.create_task(
             self._subscribe_instruments(),
+            log_msg=f"subscribe: instruments {self.venue}",
             actions=lambda: [self._add_subscription_instrument(i) for i in instrument_ids],
         )
 
     def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.create_task(
-            self._subscribe_instruments(),
+            self._subscribe_instrument(instrument_id),
             log_msg=f"subscribe: instrument {instrument_id}",
             actions=lambda: self._add_subscription_instrument(instrument_id),
         )
