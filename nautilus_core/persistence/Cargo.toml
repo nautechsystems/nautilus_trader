@@ -21,6 +21,7 @@ arrow2 = { version = "0.15.0", features = [ "io_parquet", "io_csv_read", "comput
 datafusion = "17.0.0"
 tokio = "1.25.0"
 futures = "0.3.26"
+pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
 
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]

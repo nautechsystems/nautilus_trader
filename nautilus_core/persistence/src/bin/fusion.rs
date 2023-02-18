@@ -9,16 +9,20 @@ use std::collections::HashMap;
 #[tokio::main]
 async fn main() -> Result<()> {
     let reader = PersistenceSession::new();
-    let mut parquet_options = ParquetReadOptions::default();
-    parquet_options.skip_metadata = Some(false);
+    let parquet_options = ParquetReadOptions::<'_> {
+        skip_metadata: Some(false),
+        ..Default::default()
+    };
     reader
         .register_parquet(
             "quote_tick",
-            "../../tests/test_data/quote_tick_data.parquet",
+            "../tests/test_data/quote_tick_data.parquet",
             parquet_options,
         )
         .await?;
-    let stream = reader.query("SELECT * FROM quote_tick SORT BY ts_init").await?;
+    let stream = reader
+        .query("SELECT * FROM quote_tick SORT BY ts_init")
+        .await?;
 
     let metadata: HashMap<String, String> = HashMap::from([
         ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
@@ -29,9 +33,12 @@ async fn main() -> Result<()> {
     // extract row batches from stream and decode them to vec of ticks
     let ticks: Vec<QuoteTick> = stream
         .into_iter()
-        .flat_map(|batch| {
-            dbg!(batch.schema().metadata());
-            QuoteTick::decode_batch(&metadata, batch)
+        .flat_map(|batch| match batch {
+            Ok(batch) => {
+                // dbg!(batch.schema().metadata());
+                QuoteTick::decode_batch(&metadata, batch)
+            }
+            Err(err) => panic!("Result stream has error {}", err),
         })
         .collect();
 

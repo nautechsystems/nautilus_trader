@@ -1,23 +1,39 @@
 use std::collections::HashMap;
-use std::ffi::c_void;
-use std::ops::Deref;
-use std::ptr::null_mut;
 
+use std::ops::Deref;
+
+use datafusion::error::Result;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::prelude::*;
-use datafusion::{arrow::record_batch::RecordBatch, error::Result};
 use futures::executor::{block_on, block_on_stream, BlockingStream};
 use nautilus_core::cvec::CVec;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
+use pyo3_asyncio::tokio::re_exports::runtime::Runtime;
 
 use crate::parquet::{DecodeFromRecordBatch, ParquetType};
 
 /// Store the data fusion session context
 #[pyclass]
+#[derive(Default)]
 pub struct PersistenceSession {
     session_ctx: SessionContext,
+    runtime: Option<Runtime>,
+    query_result: Option<PersistenceQuery>,
+}
+
+/// Store the result stream created by executing a query
+///
+/// The async stream has been wrapped into a blocking stream. The nautilus
+/// engine is a CPU intensive process so it will process the events in one
+/// batch and then request more. We want to block the thread until it
+/// receives more events to consume.
+pub struct PersistenceQuery {
+    result: BlockingStream<SendableRecordBatchStream>,
+    metadata: HashMap<String, String>,
+    parquet_type: ParquetType,
+    current_chunk: Option<CVec>,
 }
 
 impl Deref for PersistenceSession {
@@ -28,38 +44,27 @@ impl Deref for PersistenceSession {
     }
 }
 
-/// Store the result stream created by executing a query
-///
-/// The async stream has been wrapped into a blocking stream. The nautilus
-/// engine is a CPU intensive process so it will process the events in one
-/// batch and then request more. We want to block the thread until it
-/// receives more events to consume.
-#[pyclass]
-pub struct PersistenceQueryResult(pub BlockingStream<SendableRecordBatchStream>);
-
-impl Iterator for PersistenceQueryResult {
-    type Item = RecordBatch;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(result) = self.0.next() {
-            match result {
-                Ok(batch) => Some(batch),
-                // TODO log or handle error here
-                Err(_) => None,
-            }
-        } else {
-            None
+impl PersistenceSession {
+    /// Create a new data fusion session with a runtime
+    ///
+    /// This is mainly when using the persistence session in Python.
+    /// As it has to initialize it's own tokio runtime
+    pub fn new_with_runtime() -> Self {
+        let runtime = Runtime::new().expect("Unable to initialize tokio runtime in new session");
+        let session_ctx = SessionContext::new();
+        PersistenceSession {
+            session_ctx,
+            runtime: Some(runtime),
+            query_result: None,
         }
     }
-}
 
-impl PersistenceSession {
-    /// Create a new data fusion session
-    ///
-    /// This can register new files and data sources
     pub fn new() -> Self {
+        let session_ctx = SessionContext::new();
         PersistenceSession {
-            session_ctx: SessionContext::new(),
+            session_ctx,
+            runtime: None,
+            query_result: None,
         }
     }
 
@@ -68,10 +73,20 @@ impl PersistenceSession {
     /// The data frame is the logical plan that can be executed on the
     /// data sources registered with the context. The async stream
     /// is wrapped into a blocking stream.
-    pub async fn query(&self, sql: &str) -> Result<PersistenceQueryResult> {
-        let df = self.sql(sql).await?;
-        let stream = df.execute_stream().await?;
-        Ok(PersistenceQueryResult(block_on_stream(stream)))
+    pub async fn query(&self, sql: &str) -> Result<BlockingStream<SendableRecordBatchStream>> {
+        match self.runtime {
+            // Use own runtime if it exists
+            Some(ref rt) => {
+                let df = rt.block_on(self.sql(sql))?;
+                let stream = rt.block_on(df.execute_stream())?;
+                Ok(block_on_stream(stream))
+            }
+            None => {
+                let df = self.sql(sql).await?;
+                let stream = df.execute_stream().await?;
+                Ok(block_on_stream(stream))
+            }
+        }
     }
 }
 
@@ -80,6 +95,10 @@ impl PersistenceSession {
 /// session_ctx has all the methods needed to manipulate the session
 /// context. However we expose only limited or relevant  methods
 /// through python.
+///
+/// Creating a session also initialized a tokio runtime so that
+/// the query solver can use the runtime. This can be moved to
+/// a different entry point later.
 #[pymethods]
 impl PersistenceSession {
     #[new]
@@ -88,21 +107,20 @@ impl PersistenceSession {
     }
 
     pub fn new_query(
-        slf: PyRef<'_, Self>,
+        mut slf: PyRefMut<'_, Self>,
         sql: String,
         metadata: HashMap<String, String>,
         parquet_type: ParquetType,
-    ) -> PersistenceQuery {
+    ) {
         match block_on(slf.query(&sql)) {
-            Ok(query_result) => {
-                let boxed =
-                    Box::leak(Box::new(query_result)) as *mut PersistenceQueryResult as *mut c_void;
-                PersistenceQuery {
-                    query_result: boxed,
+            Ok(result) => {
+                let query = PersistenceQuery {
+                    result,
                     metadata,
                     parquet_type,
                     current_chunk: None,
-                }
+                };
+                slf.query_result = Some(query);
             }
             Err(err) => panic!("failed new_query with error {}", err),
         }
@@ -114,22 +132,7 @@ impl PersistenceSession {
             Err(err) => panic!("failed register_parquet_file with error {}", err),
         }
     }
-}
 
-#[pyclass]
-pub struct PersistenceQuery {
-    query_result: *mut c_void,
-    metadata: HashMap<String, String>,
-    parquet_type: ParquetType,
-    current_chunk: Option<CVec>,
-}
-
-/// Empty derivation for Send to satisfy `pyclass` requirements,
-/// however this is only designed for single threaded use for now.
-unsafe impl Send for PersistenceQuery {}
-
-#[pymethods]
-impl PersistenceQuery {
     /// The reader implements an iterator.
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
@@ -137,14 +140,16 @@ impl PersistenceQuery {
 
     /// Each iteration returns a chunk of values read from the parquet file.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
-        slf.drop_chunk();
-        let mut query_result =
-            unsafe { Box::from_raw(slf.query_result as *mut PersistenceQueryResult) };
+        let query_result = slf
+            .query_result
+            .as_mut()
+            .expect("Session needs a query to iterate");
+        query_result.drop_chunk();
 
-        let chunk: Option<CVec> = match slf.parquet_type {
+        let chunk: Option<CVec> = match query_result.parquet_type {
             ParquetType::QuoteTick => {
-                if let Some(batch) = query_result.next() {
-                    Some(QuoteTick::decode_batch(&slf.metadata, batch).into())
+                if let Some(Ok(batch)) = query_result.result.next() {
+                    Some(QuoteTick::decode_batch(&query_result.metadata, batch).into())
                 } else {
                     None
                 }
@@ -154,8 +159,7 @@ impl PersistenceQuery {
         };
 
         // Leak reader value back otherwise it will be dropped after this function
-        Box::into_raw(query_result);
-        slf.current_chunk = chunk;
+        query_result.current_chunk = chunk;
         match chunk {
             Some(cvec) => Python::with_gil(|py| {
                 Some(PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
@@ -193,7 +197,5 @@ impl PersistenceQuery {
 impl Drop for PersistenceQuery {
     fn drop(&mut self) {
         self.drop_chunk();
-        let query_result = unsafe { Box::from_raw(self.query_result as *mut PersistenceQuery) };
-        self.query_result = null_mut();
     }
 }
