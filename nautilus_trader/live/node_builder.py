@@ -143,7 +143,7 @@ class TradingNodeBuilder:
 
         Parameters
         ----------
-        config : dict[str, object]
+        config : dict[str, ImportableConfig | LiveDataClientConfig]
             The data clients configuration.
 
         """
@@ -191,7 +191,7 @@ class TradingNodeBuilder:
 
         Parameters
         ----------
-        config : dict[str, object]
+        config : dict[str, ImportableConfig | LiveExecClientConfig]
             The execution clients configuration.
 
         """

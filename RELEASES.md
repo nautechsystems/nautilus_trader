@@ -1,6 +1,20 @@
+# NautilusTrader 1.170.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Change parquet catalog schema dictionary integer key widths/types
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
 # NautilusTrader 1.169.0 Beta
 
-Released on 16th February 2023 (UTC).
+Released on 18th February 2023 (UTC).
 
 ### Breaking Changes
 - `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0

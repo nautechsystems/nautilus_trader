@@ -430,12 +430,13 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_ids = list(self._instrument_provider.get_all().keys())
         self.create_task(
             self._subscribe_instruments(),
+            log_msg=f"subscribe: instruments {self.venue}",
             actions=lambda: [self._add_subscription_instrument(i) for i in instrument_ids],
         )
 
     def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.create_task(
-            self._subscribe_instruments(),
+            self._subscribe_instrument(instrument_id),
             log_msg=f"subscribe: instrument {instrument_id}",
             actions=lambda: self._add_subscription_instrument(instrument_id),
         )
@@ -445,7 +446,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         self.create_task(
             self._subscribe_order_book_deltas(
@@ -463,7 +464,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         self.create_task(
             self._subscribe_order_book_snapshots(
@@ -707,7 +708,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -718,7 +719,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
