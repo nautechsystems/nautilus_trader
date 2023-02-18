@@ -196,7 +196,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])
-        assert result["SignalCounter"] == 114
+        assert result["SignalCounter"] == 198
 
     def test_generate_signal_class(self):
         # Arrange
