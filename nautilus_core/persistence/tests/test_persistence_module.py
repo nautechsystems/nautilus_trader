@@ -20,8 +20,31 @@ from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
+from nautilus_trader.core.nautilus_pyo3.persistence import PersistenceSession
+from nautilus_trader.core.nautilus_pyo3.persistence import PersistenceQuery
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+
+def test_python_persistence_reader():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    session = PersistenceSession()
+    session.register_parquet_file("quote_ticks", parquet_data_path)
+    
+    metadata = {
+        "instrument_id": "EUR/USD.SIM",
+        "price_precision": "5",
+        "size_precision": "0",
+    }
+    query_result = session.new_query("SELECT * FROM quote_ticks SORT BY ts_init", metadata, ParquetType.QuoteTick)
+    total_count = 0
+    print("query result")
+    for chunk in query_result:
+        tick_list = QuoteTick.list_from_capsule(chunk)
+        total_count += len(tick_list)
+
+    assert total_count == 9500
+    # test on last chunk tick i.e. 9500th record
+    assert str(tick_list[-1]) == "EUR/USD.SIM,1.12130,1.12132,0,0,1577919652000000125"
 
 
 def test_python_parquet_reader():

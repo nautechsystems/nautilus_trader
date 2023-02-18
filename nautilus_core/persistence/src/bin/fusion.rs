@@ -2,21 +2,23 @@ use datafusion::error::Result;
 use datafusion::prelude::*;
 
 use nautilus_model::data::tick::QuoteTick;
-use nautilus_persistence::datafusion::PersistenceSession;
 use nautilus_persistence::parquet::DecodeFromRecordBatch;
+use nautilus_persistence::session::PersistenceSession;
 use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let reader = PersistenceSession::new().await?;
+    let reader = PersistenceSession::new();
+    let mut parquet_options = ParquetReadOptions::default();
+    parquet_options.skip_metadata = Some(false);
     reader
         .register_parquet(
             "quote_tick",
-            "../tests/test_data/quote_tick_data.parquet",
-            ParquetReadOptions::default(),
+            "../../tests/test_data/quote_tick_data.parquet",
+            parquet_options,
         )
         .await?;
-    let stream = reader.query("SELECT * FROM quote_tick").await?;
+    let stream = reader.query("SELECT * FROM quote_tick SORT BY ts_init").await?;
 
     let metadata: HashMap<String, String> = HashMap::from([
         ("instrument_id".to_string(), "EUR/USD.SIM".to_string()),
@@ -27,7 +29,10 @@ async fn main() -> Result<()> {
     // extract row batches from stream and decode them to vec of ticks
     let ticks: Vec<QuoteTick> = stream
         .into_iter()
-        .flat_map(|batch| QuoteTick::decode_batch(&metadata, batch))
+        .flat_map(|batch| {
+            dbg!(batch.schema().metadata());
+            QuoteTick::decode_batch(&metadata, batch)
+        })
         .collect();
 
     let is_ascending_by_init = |ticks: &Vec<QuoteTick>| {
