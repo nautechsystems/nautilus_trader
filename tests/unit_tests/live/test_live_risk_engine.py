@@ -56,7 +56,7 @@ class TestLiveRiskEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = TestIdStubs.account_id()

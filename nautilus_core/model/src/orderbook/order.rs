@@ -28,6 +28,7 @@ pub struct BookOrder {
 }
 
 impl BookOrder {
+    #[must_use]
     pub fn new(price: Price, size: Quantity, side: OrderSide, order_id: u64) -> Self {
         BookOrder {
             price,

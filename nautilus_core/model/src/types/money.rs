@@ -34,10 +34,11 @@ pub struct Money {
 }
 
 impl Money {
-    pub fn new(amount: f64, currency: Currency) -> Money {
+    #[must_use]
+    pub fn new(amount: f64, currency: Currency) -> Self {
         correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
 
-        Self {
+        Money {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
         }

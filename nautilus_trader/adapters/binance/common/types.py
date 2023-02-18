@@ -108,7 +108,6 @@ class BinanceBar(Bar):
         )
 
     def __setstate__(self, state):
-
         super().__setstate__(state[:14])
         self.quote_volume = Decimal(state[14])
         self.count = state[15]

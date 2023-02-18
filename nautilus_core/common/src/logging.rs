@@ -14,141 +14,229 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::ffi::c_char;
+use std::io::{Stderr, Stdout};
+use std::sync::mpsc::{channel, Receiver, SendError, Sender};
+use std::time::{Duration, Instant};
 use std::{
-    io::{self, BufWriter, Stderr, Stdout, Write},
+    io::{self, BufWriter, Write},
     ops::{Deref, DerefMut},
+    thread,
 };
 
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
 use crate::enums::{LogColor, LogLevel};
 
 pub struct Logger {
+    /// The trader ID for the logger.
     pub trader_id: TraderId,
+    /// The machine ID for the logger.
     pub machine_id: String,
+    /// The instance ID for the logger.
     pub instance_id: UUID4,
+    /// The maximum log level to write to stdout.
     pub level_stdout: LogLevel,
+    /// The maximum messages per second which can be flushed to stdout or stderr.
+    pub rate_limit: usize,
+    /// If logging is bypassed.
     pub is_bypassed: bool,
-    log_template: String,
-    out: BufWriter<Stdout>,
-    err: BufWriter<Stderr>,
+    tx: Sender<LogMessage>,
 }
 
+#[derive(Clone, Debug)]
+pub struct LogMessage {
+    timestamp_ns: UnixNanos,
+    level: LogLevel,
+    color: LogColor,
+    component: String,
+    msg: String,
+}
+
+/// Provides a high-performance logger utilizing a MPSC channel under the hood.
+///
+/// A separate thead is spawned at initialization which receives `LogMessage` structs over the
+/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
+/// per second).
 impl Logger {
     fn new(
         trader_id: TraderId,
         machine_id: String,
         instance_id: UUID4,
         level_stdout: LogLevel,
+        rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
+        let trader_id_clone = trader_id.value.to_string();
+        let (tx, rx) = channel::<LogMessage>();
+
+        thread::spawn(move || {
+            Self::handle_messages(&trader_id_clone, level_stdout, rate_limit, rx)
+        });
+
         Logger {
             trader_id,
             machine_id,
             instance_id,
             level_stdout,
+            rate_limit,
             is_bypassed,
-            log_template: String::from(
-                "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
-            ),
-            out: BufWriter::new(io::stdout()),
-            err: BufWriter::new(io::stderr()),
+            tx,
         }
     }
 
-    #[inline]
-    fn log(
+    fn handle_messages(
+        trader_id: &str,
+        level_stdout: LogLevel,
+        rate_limit: usize,
+        rx: Receiver<LogMessage>,
+    ) {
+        let mut out = BufWriter::new(io::stdout());
+        let mut err = BufWriter::new(io::stderr());
+
+        let log_template = String::from(
+            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
+        );
+
+        let mut msg_count = 0;
+        let mut bucket_time = Instant::now();
+
+        // Continue to receive and handle log messages until channel is hung up
+        while let Ok(log_msg) = rx.recv() {
+            if log_msg.level < level_stdout {
+                continue;
+            }
+
+            while msg_count >= rate_limit {
+                if bucket_time.elapsed().as_secs() >= 1 {
+                    msg_count = 0;
+                    bucket_time = Instant::now();
+                } else {
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+
+            let fmt_line = log_template
+                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
+                .replace("{color}", &log_msg.color.to_string())
+                .replace("{level}", &log_msg.level.to_string())
+                .replace("{trader_id}", trader_id)
+                .replace("{component}", &log_msg.component)
+                .replace("{msg}", &log_msg.msg);
+
+            if log_msg.level >= LogLevel::Error {
+                Self::write_stderr(&mut err, fmt_line);
+                Self::flush_stderr(&mut err);
+            } else {
+                Self::write_stdout(&mut out, fmt_line);
+                Self::flush_stdout(&mut out);
+            }
+
+            msg_count += 1;
+        }
+
+        // Finally ensure remaining buffers are flushed
+        Self::flush_stderr(&mut err);
+        Self::flush_stdout(&mut out);
+    }
+
+    fn write_stdout(out: &mut BufWriter<Stdout>, line: String) {
+        match out.write_all(line.as_bytes()) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
+        }
+    }
+
+    fn flush_stdout(out: &mut BufWriter<Stdout>) {
+        match out.flush() {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
+        }
+    }
+
+    fn write_stderr(err: &mut BufWriter<Stderr>, line: String) {
+        match err.write_all(line.as_bytes()) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
+        }
+    }
+
+    fn flush_stderr(err: &mut BufWriter<Stderr>) {
+        match err.flush() {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+        }
+    }
+
+    fn send(
         &mut self,
         timestamp_ns: u64,
         level: LogLevel,
         color: LogColor,
-        component: &str,
-        msg: &str,
-    ) -> Result<(), io::Error> {
-        if level < self.level_stdout {
-            return Ok(());
-        }
-
-        let fmt_line = self
-            .log_template
-            .replace("{ts}", &unix_nanos_to_iso8601(timestamp_ns))
-            .replace("{color}", &color.to_string())
-            .replace("{level}", &level.to_string())
-            .replace("{trader_id}", &self.trader_id.to_string())
-            .replace("{component}", component)
-            .replace("{msg}", msg);
-
-        if level >= LogLevel::Error {
-            self.err.write_all(fmt_line.as_bytes())?;
-            self.err.flush()
-        } else {
-            self.out.write_all(fmt_line.as_bytes())?;
-            self.out.flush()
-        }
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        let log_message = LogMessage {
+            timestamp_ns,
+            level,
+            color,
+            component,
+            msg,
+        };
+        self.tx.send(log_message)
     }
 
-    #[inline]
     pub fn debug(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
-        component: &str,
-        msg: &str,
-    ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::Debug, color, component, msg)
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
     }
 
-    #[inline]
     pub fn info(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
-        component: &str,
-        msg: &str,
-    ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::Info, color, component, msg)
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Info, color, component, msg)
     }
 
-    #[inline]
     pub fn warn(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
-        component: &str,
-        msg: &str,
-    ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::Warning, color, component, msg)
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
     }
 
-    #[inline]
     pub fn error(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
-        component: &str,
-        msg: &str,
-    ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::Error, color, component, msg)
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Error, color, component, msg)
     }
 
-    #[inline]
     pub fn critical(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
-        component: &str,
-        msg: &str,
-    ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::Critical, color, component, msg)
-    }
-
-    #[inline]
-    fn flush(&mut self) -> Result<(), io::Error> {
-        self.out.flush()?;
-        self.err.flush()
+        component: String,
+        msg: String,
+    ) -> Result<(), SendError<LogMessage>> {
+        self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
     }
 }
 
@@ -187,6 +275,7 @@ pub unsafe extern "C" fn logger_new(
     machine_id_ptr: *const c_char,
     instance_id_ptr: *const c_char,
     level_stdout: LogLevel,
+    rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
@@ -194,19 +283,14 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
+        rate_limit,
         is_bypassed != 0,
     )))
 }
 
 #[no_mangle]
-pub extern "C" fn logger_free(mut logger: CLogger) {
-    let _ = logger.flush(); // ignore flushing error if any
+pub extern "C" fn logger_free(logger: CLogger) {
     drop(logger); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn flush(logger: &mut CLogger) {
-    let _ = logger.flush();
 }
 
 #[no_mangle]
@@ -245,7 +329,7 @@ pub unsafe extern "C" fn logger_log(
 ) {
     let component = cstr_to_string(component_ptr);
     let msg = cstr_to_string(msg_ptr);
-    let _ = logger.log(timestamp_ns, level, color, &component, &msg);
+    let _ = logger.send(timestamp_ns, level, color, component, msg);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -253,10 +337,9 @@ pub unsafe extern "C" fn logger_log(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::logging::{LogColor, LogLevel, Logger};
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
-
-    use crate::logging::{LogColor, LogLevel, Logger};
 
     #[test]
     fn test_new_logger() {
@@ -265,6 +348,7 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Debug,
+            100_000,
             false,
         );
         assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
@@ -278,6 +362,7 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
+            100_000,
             false,
         );
 
@@ -285,8 +370,8 @@ mod tests {
             .info(
                 1650000000000000,
                 LogColor::Normal,
-                "RiskEngine",
-                "This is a test.",
+                String::from("RiskEngine"),
+                String::from("This is a test."),
             )
             .expect("Error while logging");
     }

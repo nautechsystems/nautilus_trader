@@ -26,20 +26,16 @@ from nautilus_trader.model.identifiers cimport TraderId
 cdef class IdentifierGenerator:
     """
     Provides a generator for unique ID strings.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The ID tag for the trader.
+    clock : Clock
+        The internal clock.
     """
 
     def __init__(self, TraderId trader_id not None, Clock clock not None):
-        """
-        Initialize a new instance of the ``IdentifierGenerator`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The ID tag for the trader.
-        clock : Clock
-            The internal clock.
-
-        """
         self._clock = clock
         self._id_tag_trader = trader_id.get_tag()
 

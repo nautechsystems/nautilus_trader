@@ -16,6 +16,7 @@
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 
 from nautilus_trader.common.providers import InstrumentProvider
@@ -70,28 +71,7 @@ def hash_market_trade(timestamp: int, price: float, volume: float):
     return f"{str(timestamp)[:-6]}{price}{str(volume)}"
 
 
-def one(iterable):
-    it = iter(iterable)
-
-    try:
-        first_value = next(it)
-    except StopIteration as e:
-        raise (ValueError("too few items in iterable (expected 1)")) from e
-
-    try:
-        second_value = next(it)
-    except StopIteration:
-        pass
-    else:
-        msg = f"Expected exactly one item in iterable, but got {first_value}, {second_value}, and perhaps more."
-        raise ValueError(msg)
-
-    return first_value
-
-
 def historical_instrument_provider_loader(instrument_provider, line):
-    from betfair_parser.spec.streaming import MCM
-
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
     if instrument_provider is None:

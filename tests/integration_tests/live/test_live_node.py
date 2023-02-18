@@ -34,7 +34,6 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 
@@ -181,9 +180,8 @@ class TestTradingNodeConfiguration:
         config = TradingNodeConfig.parse(RAW_CONFIG)
 
         # Act
-        config.instance_id = UUID4().value
         node = TradingNode(config)
-        assert node.kernel.instance_id.value == config.instance_id
+        assert len(node.kernel.instance_id.value) == 36
 
 
 class TestTradingNodeOperation:
@@ -204,11 +202,12 @@ class TestTradingNodeOperation:
             node.build()
             node.build()
 
-    def test_start_when_not_built_raises_runtime_error(self):
+    @pytest.mark.asyncio
+    async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, # Act
         with pytest.raises(RuntimeError):
             node = TradingNode()
-            node.start()
+            await node.run_async()
 
     def test_add_data_client_factory(self):
         # Arrange
@@ -240,7 +239,7 @@ class TestTradingNodeOperation:
         node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
         node.build()
 
-        node.start()
+        node.run()
         await asyncio.sleep(1)
 
         # assert self.node.kernel.data_engine.registered_clients
@@ -257,7 +256,7 @@ class TestTradingNodeOperation:
         node.kernel.add_log_sink(sink.append)
         node.build()
 
-        node.start()
+        node.run()
         await asyncio.sleep(1)
 
         # Assert: Log record received
@@ -266,13 +265,13 @@ class TestTradingNodeOperation:
         assert sink[-1]["instance_id"] == node.instance_id.value
 
     @pytest.mark.asyncio
-    async def test_start(self):
+    async def test_run(self):
         # Arrange
         node = TradingNode()
         node.build()
 
         # Act
-        node.start()
+        node.run()
         await asyncio.sleep(2)
 
         # Assert
@@ -283,7 +282,7 @@ class TestTradingNodeOperation:
         # Arrange
         node = TradingNode()
         node.build()
-        node.start()
+        node.run()
         await asyncio.sleep(2)  # Allow node to start
 
         # Act
@@ -308,7 +307,7 @@ class TestTradingNodeOperation:
         node.build()
         node.kernel.cache.add_instrument(TestInstrumentProvider.ethusdt_perp_binance())
 
-        node.start()
+        node.run()
         await asyncio.sleep(2)  # Allow node to start
 
         node.stop()

@@ -94,7 +94,6 @@ cdef class Actor(Component):
 
     cpdef void register_base(
         self,
-        TraderId trader_id,
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,

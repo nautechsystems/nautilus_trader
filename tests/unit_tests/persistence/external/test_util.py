@@ -13,9 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.persistence.base import Singleton
-from nautilus_trader.persistence.base import clear_singleton_instances
-from nautilus_trader.persistence.base import resolve_kwargs
+
+import pandas as pd
+import pytest
+
+from nautilus_trader.persistence.external.util import Singleton
+from nautilus_trader.persistence.external.util import clear_singleton_instances
+from nautilus_trader.persistence.external.util import is_filename_in_time_range
+from nautilus_trader.persistence.external.util import parse_filename
+from nautilus_trader.persistence.external.util import parse_filename_start
+from nautilus_trader.persistence.external.util import resolve_kwargs
 
 
 def test_resolve_kwargs():
@@ -92,3 +99,108 @@ def test_dict_kwarg():
     assert test1.b == {"hello": "world"}
     instances = {(("a", 1), ("b", (("hello", "world"),))): test1}
     assert Test._instances == instances
+
+
+@pytest.mark.parametrize(
+    "filename, expected",
+    [
+        [
+            "1577836800000000000-1578182400000000000-0.parquet",
+            (1577836800000000000, 1578182400000000000),
+        ],
+        [
+            "/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet",
+            (None, None),
+        ],
+    ],
+)
+def test_parse_filename(filename, expected):
+    assert parse_filename(filename) == expected
+
+
+@pytest.mark.parametrize(
+    "filename, start, end, expected",
+    [
+        [
+            "1546383600000000000-1577826000000000000-SIM-1-HOUR-BID-EXTERNAL-0.parquet",
+            0,
+            9223372036854775807,
+            True,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            4,
+            7,
+            True,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            6,
+            9,
+            True,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            6,
+            7,
+            True,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            4,
+            9,
+            True,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            7,
+            10,
+            True,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            9,
+            10,
+            False,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            2,
+            4,
+            False,
+        ],
+        [
+            "0000000000000000005-0000000000000000008-0.parquet",
+            0,
+            9223372036854775807,
+            True,
+        ],
+    ],
+)
+def test_is_filename_in_time_range(filename, start, end, expected):
+    assert is_filename_in_time_range(filename, start, end) is expected
+
+
+@pytest.mark.parametrize(
+    "filename, expected",
+    [
+        [
+            "/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet",
+            ("a", pd.Timestamp("2020-01-01 00:00:00")),
+        ],
+        [
+            "1546383600000000000-1577826000000000000-SIM-1-HOUR-BID-EXTERNAL-0.parquet",
+            (None, pd.Timestamp("2019-01-01 23:00:00")),
+        ],
+        [
+            "/data/test/sample.parquet/instrument_id=a/0648140b1fd7491a97983c0c6ece8d57.parquet",
+            None,
+        ],
+        [
+            "0648140b1fd7491a97983c0c6ece8d57.parquet",
+            None,
+        ],
+    ],
+)
+def test_parse_filename_start(filename, expected):
+    assert parse_filename_start(filename) == expected

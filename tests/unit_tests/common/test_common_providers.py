@@ -30,7 +30,7 @@ class TestInstrumentProvider:
         clock = TestClock()
         self.provider = InstrumentProvider(
             venue=BITMEX,
-            logger=Logger(clock),
+            logger=Logger(clock, bypass=True),
         )
 
     def test_get_all_when_no_instruments_returns_empty_dict(self):

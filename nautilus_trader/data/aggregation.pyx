@@ -25,6 +25,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.model.data.bar cimport Bar
@@ -182,16 +183,18 @@ cdef class BarBuilder:
         Bar
 
         """
-        return self.build(self.ts_last)
+        return self.build(self.ts_last, self.ts_last)
 
-    cpdef Bar build(self, uint64_t ts_event):
+    cpdef Bar build(self, uint64_t ts_event, uint64_t ts_init):
         """
         Return the aggregated bar with the given closing timestamp, and reset.
 
         Parameters
         ----------
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) of the bar close.
+            The UNIX timestamp (nanoseconds) for the bar event.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) for the bar initialization.
 
         Returns
         -------
@@ -212,7 +215,7 @@ cdef class BarBuilder:
             close=self._close,
             volume=Quantity(self.volume, self.size_precision),
             ts_event=ts_event,
-            ts_init=ts_event,
+            ts_init=ts_init,
         )
 
         self._last_close = self._close
@@ -304,8 +307,8 @@ cdef class BarAggregator:
         cdef Bar bar = self._builder.build_now()
         self._handler(bar)
 
-    cdef void _build_and_send(self, uint64_t ts_event) except *:
-        cdef Bar bar = self._builder.build(ts_event)
+    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init) except *:
+        cdef Bar bar = self._builder.build(ts_event=ts_event, ts_init=ts_init)
         self._handler(bar)
 
 
@@ -526,8 +529,11 @@ cdef class TimeBarAggregator(BarAggregator):
         The clock for the aggregator.
     logger : Logger
         The logger for the aggregator.
-    build_bars_with_no_updates : bool, default True
+    build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
+    timestamp_on_close : bool, default True
+        If timestamp `ts_event` will be bar close.
+        If False then timestamp will be bar open.
 
     Raises
     ------
@@ -541,7 +547,8 @@ cdef class TimeBarAggregator(BarAggregator):
         handler not None: Callable[[Bar], None],
         Clock clock not None,
         Logger logger not None,
-        bint build_bars_with_no_updates = True,
+        bint build_with_no_updates = True,
+        bint timestamp_on_close = True,
     ):
         super().__init__(
             instrument=instrument,
@@ -557,9 +564,11 @@ cdef class TimeBarAggregator(BarAggregator):
         self._set_build_timer()
         self.next_close_ns = self._clock.next_time_ns(self._timer_name)
         self._build_on_next_tick = False
+        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time())
         self._stored_close_ns = 0
         self._cached_update = None
-        self._build_bars_with_no_updates = build_bars_with_no_updates
+        self._build_with_no_updates = build_with_no_updates
+        self._timestamp_on_close = timestamp_on_close
 
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
@@ -705,7 +714,12 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
         self._builder.update(price, size, ts_event)
         if self._build_on_next_tick:  # (fast C-level check)
-            self._build_and_send(self._stored_close_ns)
+            ts_init = ts_event
+            ts_event = self._stored_close_ns
+            if not self._timestamp_on_close:
+                # Timestamp on open
+                ts_event = self._stored_open_ns
+            self._build_and_send(ts_event=ts_event, ts_init=ts_init)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close_ns = 0
@@ -717,10 +731,18 @@ cdef class TimeBarAggregator(BarAggregator):
             self._stored_close_ns = self.next_close_ns
             return
 
-        if not self._build_bars_with_no_updates and self._builder.count == 0:
+        if not self._build_with_no_updates and self._builder.count == 0:
             return  # Do not build and emit bar
 
-        self._build_and_send(ts_event=event.ts_event)
+        cdef uint64_t ts_init = event.ts_event
+        cdef uint64_t ts_event = event.ts_event
+        if not self._timestamp_on_close:
+            # Timestamp on open
+            ts_event = self._stored_open_ns
+        self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
+        # Close time becomes the next open time
+        self._stored_open_ns = event.ts_event
 
         # On receiving this event, timer should now have a new `next_time_ns`
         self.next_close_ns = self._clock.next_time_ns(self._timer_name)

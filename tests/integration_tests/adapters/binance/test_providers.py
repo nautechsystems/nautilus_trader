@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -29,6 +30,10 @@ from nautilus_trader.model.identifiers import Venue
 
 @pytest.mark.skip(reason="WIP")
 class TestBinanceInstrumentProvider:
+    def setup(self):
+        # Fixture Setup
+        self.clock = LiveClock()
+
     @pytest.mark.asyncio
     async def test_load_all_async_for_spot_markets(
         self,
@@ -68,6 +73,7 @@ class TestBinanceInstrumentProvider:
         self.provider = BinanceSpotInstrumentProvider(
             client=binance_http_client,
             logger=live_logger,
+            clock=self.clock,
             account_type=BinanceAccountType.SPOT,
         )
 
@@ -122,6 +128,7 @@ class TestBinanceInstrumentProvider:
         self.provider = BinanceFuturesInstrumentProvider(
             client=binance_http_client,
             logger=live_logger,
+            clock=self.clock,
             account_type=BinanceAccountType.FUTURES_USDT,
         )
 

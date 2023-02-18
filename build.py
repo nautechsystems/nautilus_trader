@@ -234,14 +234,9 @@ def _get_clang_version() -> str:
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
+            "You are installing from source which requires the Clang compiler to be installed.\n"
             f"Error running clang: {e.stderr.decode()}",
         ) from e
-    except FileNotFoundError as e:
-        if "clang" in e.strerror:
-            raise RuntimeError(
-                "You are installing from source which requires the Clang compiler to be installed.",
-            ) from e
-        raise
 
 
 def _get_rustc_version() -> str:
@@ -256,15 +251,10 @@ def _get_rustc_version() -> str:
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
+            "You are installing from source which requires the Rust compiler to "
+            "be installed.\nFind more information at https://www.rust-lang.org/tools/install\n"
             f"Error running rustc: {e.stderr.decode()}",
         ) from e
-    except FileNotFoundError as e:
-        if "rustc" in e.strerror:
-            raise RuntimeError(
-                "You are installing from source which requires the Rust compiler to "
-                "be installed. Find more information at https://www.rust-lang.org/tools/install",
-            ) from e
-        raise
 
 
 def build(pyo3_only=False) -> None:

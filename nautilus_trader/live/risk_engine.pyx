@@ -67,32 +67,6 @@ cdef class LiveRiskEngine(RiskEngine):
         Logger logger not None,
         config: Optional[LiveRiskEngineConfig] = None,
     ):
-        """
-        Initialize a new instance of the ``LiveRiskEngine`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the engine.
-        portfolio : PortfolioFacade
-            The portfolio for the engine.
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : CacheFacade
-            The read-only cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : LiveRiskEngineConfig
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `LiveRiskEngineConfig`.
-
-        """
         if config is None:
             config = LiveRiskEngineConfig()
         Condition.type(config, LiveRiskEngineConfig, "config")

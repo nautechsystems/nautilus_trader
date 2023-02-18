@@ -31,7 +31,6 @@ from nautilus_trader.adapters.interactive_brokers.providers import (
 )
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -104,7 +103,7 @@ def get_cached_ib_client(
             port = port or GATEWAY.port
     port = port or InteractiveBrokersGateway.PORTS[trading_mode]
 
-    client_key: tuple = (host, port)
+    client_key: tuple = (host, port, client_id)
 
     if client_key not in IB_INSYNC_CLIENTS:
         client = ib_insync.IB()
@@ -113,7 +112,7 @@ def get_cached_ib_client(
                 try:
                     client.connect(host=host, port=port, timeout=6, clientId=client_id)
                     break
-                except (TimeoutError, AttributeError, asyncio.TimeoutError):
+                except (TimeoutError, AttributeError, asyncio.TimeoutError, ConnectionRefusedError):
                     continue
             else:
                 raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
@@ -163,7 +162,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> InteractiveBrokersDataClient:
         """
         Create a new InteractiveBrokers data client.
@@ -182,7 +181,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -191,8 +190,8 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.username,
-            password=config.password,
+            username=config.username or os.environ["TWS_USERNAME"],
+            password=config.password or os.environ["TWS_PASSWORD"],
             host=config.gateway_host,
             port=config.gateway_port,
             trading_mode=config.trading_mode,
@@ -235,7 +234,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ) -> InteractiveBrokersExecutionClient:
         """
         Create a new InteractiveBrokers execution client.
@@ -254,7 +253,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -263,8 +262,8 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.username,
-            password=config.password,
+            username=config.username or os.environ["TWS_USERNAME"],
+            password=config.password or os.environ["TWS_PASSWORD"],
             host=config.gateway_host,
             port=config.gateway_port,
             client_id=config.client_id,

@@ -74,6 +74,7 @@ class TestExecutionEngine:
         self.logger = Logger(
             clock=TestClock(),
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()

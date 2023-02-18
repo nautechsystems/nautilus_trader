@@ -26,6 +26,22 @@ cdef class Pressure(Indicator):
     """
     An indicator which calculates the relative volume (multiple of average volume)
     to move the market across a relative range (multiple of ATR).
+
+    Parameters
+    ----------
+    period : int
+        The period for the indicator (> 0).
+    ma_type : MovingAverageType
+        The moving average type for the calculations.
+    atr_floor : double
+        The ATR floor (minimum) output value for the indicator (>= 0.).
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
+    ValueError
+        If `atr_floor` is negative (< 0).
     """
 
     def __init__(
@@ -34,26 +50,6 @@ cdef class Pressure(Indicator):
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
         double atr_floor=0,
     ):
-        """
-        Initialize a new instance of the ``Pressure`` class.
-
-        Parameters
-        ----------
-        period : int
-            The period for the indicator (> 0).
-        ma_type : MovingAverageType
-            The moving average type for the calculations.
-        atr_floor : double
-            The ATR floor (minimum) output value for the indicator (>= 0.).
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-        ValueError
-            If `atr_floor` is negative (< 0).
-
-        """
         Condition.positive_int(period, "period")
         Condition.not_negative(atr_floor, "atr_floor")
 

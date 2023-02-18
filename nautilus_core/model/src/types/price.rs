@@ -34,17 +34,18 @@ pub struct Price {
 }
 
 impl Price {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
 
-        Self {
+        Price {
             raw: f64_to_fixed_i64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        Self { raw, precision }
+        Price { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -217,11 +218,6 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
     Price::from_raw(raw, precision)
-}
-
-#[no_mangle]
-pub extern "C" fn price_free(price: Price) {
-    drop(price); // Memory freed here
 }
 
 #[no_mangle]

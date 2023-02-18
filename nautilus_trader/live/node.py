@@ -22,7 +22,7 @@ from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common import Environment
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import log_level_from_str
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LiveDataEngineConfig
@@ -80,6 +80,7 @@ class TradingNode:
             save_state=config.save_state,
             loop_sig_callback=self._loop_sig_handler,
             log_level=log_level_from_str(config.log_level.upper()),
+            log_rate_limit=config.log_rate_limit,
         )
 
         self._builder = TradingNodeBuilder(
@@ -204,13 +205,13 @@ class TradingNode:
         """
         return self.kernel.loop
 
-    def get_logger(self) -> LiveLogger:
+    def get_logger(self) -> Logger:
         """
         Return the logger for the trading node.
 
         Returns
         -------
-        LiveLogger
+        Logger
 
         """
         return self.kernel.logger
@@ -268,21 +269,15 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> None:
+    def run(self) -> None:
         """
-        Start the trading node.
+        Start and run the trading node.
         """
-        if not self._is_built:
-            raise RuntimeError(
-                "The trading nodes clients have not been built. "
-                "Run `node.build()` prior to start.",
-            )
-
         try:
             if self.kernel.loop.is_running():
-                self.kernel.loop.create_task(self._run())
+                self.kernel.loop.create_task(self.run_async())
             else:
-                self.kernel.loop.run_until_complete(self._run())
+                self.kernel.loop.run_until_complete(self.run_async())
         except RuntimeError as e:
             self.kernel.log.exception("Error on run", e)
 
@@ -290,16 +285,15 @@ class TradingNode:
         """
         Stop the trading node gracefully.
 
-        After a specified delay the internal `Trader` residuals will be checked.
+        After a specified delay the internal `Trader` residual state will be checked.
 
-        If save strategy is specified then strategy states will then be saved.
-
+        If save strategy is configured, then strategy states will be saved.
         """
         try:
             if self.kernel.loop.is_running():
-                self.kernel.loop.create_task(self._stop())
+                self.kernel.loop.create_task(self.stop_async())
             else:
-                self.kernel.loop.run_until_complete(self._stop())
+                self.kernel.loop.run_until_complete(self.stop_async())
         except RuntimeError as e:
             self.kernel.log.exception("Error on stop", e)
 
@@ -308,7 +302,6 @@ class TradingNode:
         Dispose of the trading node.
 
         Gracefully shuts down the executor and event loop.
-
         """
         try:
             timeout = self.kernel.clock.utc_now() + timedelta(
@@ -392,13 +385,21 @@ class TradingNode:
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
-    async def _run(self) -> None:
+    async def run_async(self) -> None:
+        """
+        Start and run the trading node asynchronously.
+        """
         try:
+            if not self._is_built:
+                raise RuntimeError(
+                    "The trading nodes clients have not been built. "
+                    "Run `node.build()` prior to start.",
+                )
+
             self.kernel.log.info("STARTING...")
             self._is_running = True
 
             # Start system
-            self.kernel.logger.start()
             self.kernel.data_engine.start()
             self.kernel.risk_engine.start()
             self.kernel.exec_engine.start()
@@ -520,8 +521,14 @@ class TradingNode:
 
         return True  # Portfolio initialized
 
-    async def _stop(self) -> None:
-        self._is_stopping = True
+    async def stop_async(self) -> None:
+        """
+        Stop the trading node gracefully, asynchronously.
+
+        After a specified delay the internal `Trader` residual state will be checked.
+
+        If save strategy is configured, then strategy states will be saved.
+        """
         self.kernel.log.info("STOPPING...")
 
         if self.kernel.trader.is_running:
@@ -575,7 +582,6 @@ class TradingNode:
             self.kernel.writer.flush()
 
         self.kernel.log.info("STOPPED.")
-        self.kernel.logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:

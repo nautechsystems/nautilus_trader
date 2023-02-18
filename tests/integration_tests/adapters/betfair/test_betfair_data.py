@@ -35,7 +35,7 @@ from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -79,9 +79,8 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     global INSTRUMENTS
 
     # Setup
-    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.ERROR)
+    logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
-    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, filters={})
 
     # Load instruments
@@ -111,7 +110,7 @@ class TestBetfairDataClient:
         self.venue = BETFAIR_VENUE
 
         # Setup logging
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.ERROR)
+        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.ERROR)
         self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
 
         self.msgbus = MessageBus(
@@ -119,9 +118,9 @@ class TestBetfairDataClient:
             clock=self.clock,
             logger=self.logger,
         )
-
+        self.instrument_id = TestInstrumentProvider.betting_instrument()
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(TestInstrumentProvider.betting_instrument())
+        self.cache.add_instrument(self.instrument_id)
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -215,9 +214,9 @@ class TestBetfairDataClient:
         await self.client._connect()
 
     def test_subscriptions(self):
-        self.client.subscribe_trade_ticks(TestIdStubs.betting_instrument_id())
-        self.client.subscribe_instrument_status_updates(TestIdStubs.betting_instrument_id())
-        self.client.subscribe_instrument_close(TestIdStubs.betting_instrument_id())
+        self.client.subscribe_trade_ticks(self.instrument_id)
+        self.client.subscribe_instrument_status_updates(self.instrument_id)
+        self.client.subscribe_instrument_close(self.instrument_id)
 
     def test_market_heartbeat(self):
         self.client.on_market_update(BetfairStreaming.mcm_HEARTBEAT())
@@ -336,7 +335,7 @@ class TestBetfairDataClient:
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
             "BetfairTicker": 8,
-            "BSPOrderBookDeltas": 8,
+            "GenericData": 8,
             "OrderBookDeltas": 2,
             "InstrumentClose": 1,
         }
@@ -344,8 +343,8 @@ class TestBetfairDataClient:
         sp_deltas = [
             d
             for deltas in self.messages
-            if isinstance(deltas, BSPOrderBookDeltas)
-            for d in deltas.deltas
+            if isinstance(deltas, GenericData)
+            for d in deltas.data.deltas
         ]
         assert len(sp_deltas) == 30
 

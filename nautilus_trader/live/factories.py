@@ -17,7 +17,7 @@ import asyncio
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.msgbus.bus import MessageBus
@@ -36,7 +36,7 @@ class LiveDataClientFactory:
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ):
         """
         Return a new data client.
@@ -55,7 +55,7 @@ class LiveDataClientFactory:
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -79,7 +79,7 @@ class LiveExecClientFactory:
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ):
         """
         Return a new execution client.
@@ -98,7 +98,7 @@ class LiveExecClientFactory:
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns

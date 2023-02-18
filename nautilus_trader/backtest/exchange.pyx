@@ -181,6 +181,12 @@ cdef class SimulatedExchange:
         for module in modules:
             Condition.not_in(module, self.modules, "module", "modules")
             module.register_venue(self)
+            module.register_base(
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                logger=logger,
+            )
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
@@ -387,7 +393,31 @@ cdef class SimulatedExchange:
 
         return matching_engine.get_book()
 
+    cpdef OrderMatchingEngine get_matching_engine(self, InstrumentId instrument_id):
+        """
+        Return the matching engine for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the matching engine.
+
+        Returns
+        -------
+        OrderMatchingEngine or ``None``
+
+        """
+        return self._matching_engines.get(instrument_id)
+
     cpdef dict get_matching_engines(self):
+        """
+        Return all matching engines for the exchange (for every instrument).
+
+        Returns
+        -------
+        dict[InstrumentId, OrderMatchingEngine]
+
+        """
         return self._matching_engines.copy()
 
     cpdef dict get_books(self):

@@ -24,7 +24,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -107,4 +107,4 @@ async def websocket_server(event_loop):
 @pytest.fixture()
 def logger(event_loop):
     clock = LiveClock()
-    return LiveLogger(loop=event_loop, clock=clock)
+    return Logger(clock=clock)

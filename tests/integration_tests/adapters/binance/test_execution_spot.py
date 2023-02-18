@@ -80,6 +80,7 @@ class TestBinanceSpotExecutionClient:
         self.provider = BinanceSpotInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
+            clock=self.clock,
             config=InstrumentProviderConfig(load_all=True),
         )
 

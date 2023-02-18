@@ -32,6 +32,7 @@ pub struct UUID4 {
 }
 
 impl UUID4 {
+    #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
         UUID4 {
@@ -83,6 +84,8 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 ///
 /// # Safety
 /// - Assumes `ptr` is a valid C string pointer.
+/// # Panics
+/// - If `ptr` cannot be cast to a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     UUID4::from(
@@ -131,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_uuid4_default() {
-        let uuid: UUID4 = Default::default();
+        let uuid: UUID4 = UUID4::default();
         let uuid_string = uuid.value.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);

@@ -122,6 +122,7 @@ pub struct TestTimer {
 }
 
 impl TestTimer {
+    #[must_use]
     pub fn new(
         name: String,
         interval_ns: u64,

@@ -33,7 +33,7 @@ def resolve_path(path: str):
     return cls
 
 
-class NautilusConfig(msgspec.Struct, kw_only=True):
+class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
     """
     The base class for all Nautilus configuration objects.
     """
@@ -107,7 +107,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True):
         return bool(msgspec.json.decode(self.json(), type=self.__class__))
 
 
-class CacheConfig(NautilusConfig):
+class CacheConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``Cache`` instances.
 
@@ -123,7 +123,7 @@ class CacheConfig(NautilusConfig):
     bar_capacity: PositiveInt = 1000
 
 
-class CacheDatabaseConfig(NautilusConfig):
+class CacheDatabaseConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``CacheDatabase`` instances.
 
@@ -154,7 +154,7 @@ class CacheDatabaseConfig(NautilusConfig):
     flush: bool = False
 
 
-class InstrumentProviderConfig(NautilusConfig):
+class InstrumentProviderConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``InstrumentProvider`` instances.
 
@@ -190,26 +190,30 @@ class InstrumentProviderConfig(NautilusConfig):
     log_warnings: bool = True
 
 
-class DataEngineConfig(NautilusConfig):
+class DataEngineConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``DataEngine`` instances.
 
     Parameters
     ----------
-    build_time_bars_with_no_updates : bool, default True
+    time_bars_build_with_no_updates : bool, default True
         If time bar aggregators will build and emit bars with no new market updates.
+    time_bars_timestamp_on_close : bool, default True
+        If time bar aggregators will timestamp `ts_event` on bar close.
+        If False then will timestamp on bar open.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
-    build_time_bars_with_no_updates: bool = True
+    time_bars_build_with_no_updates: bool = True
+    time_bars_timestamp_on_close: bool = True
     validate_data_sequence: bool = False
     debug: bool = False
 
 
-class RiskEngineConfig(NautilusConfig):
+class RiskEngineConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``RiskEngine`` instances.
 
@@ -238,7 +242,7 @@ class RiskEngineConfig(NautilusConfig):
     debug: bool = False
 
 
-class ExecEngineConfig(NautilusConfig):
+class ExecEngineConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``ExecutionEngine`` instances.
 
@@ -257,13 +261,13 @@ class ExecEngineConfig(NautilusConfig):
     debug: bool = False
 
 
-class OrderEmulatorConfig(NautilusConfig):
+class OrderEmulatorConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``OrderEmulator`` instances.
     """
 
 
-class StreamingConfig(NautilusConfig):
+class StreamingConfig(NautilusConfig, frozen=True):
     """
     Configuration for streaming live or backtest runs to the catalog in feather format.
 
@@ -300,7 +304,7 @@ class StreamingConfig(NautilusConfig):
         )
 
 
-class ActorConfig(NautilusConfig, kw_only=True):
+class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
     """
     The base model for all actor configurations.
 
@@ -315,7 +319,7 @@ class ActorConfig(NautilusConfig, kw_only=True):
     component_id: Optional[str] = None
 
 
-class ImportableActorConfig(NautilusConfig):
+class ImportableActorConfig(NautilusConfig, frozen=True):
     """
     Represents an actor configuration for one specific backtest run.
 
@@ -365,7 +369,7 @@ class ActorFactory:
         return actor_cls(config=config_cls(**config.config))
 
 
-class StrategyConfig(NautilusConfig, kw_only=True):
+class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     """
     The base model for all trading strategy configurations.
 
@@ -386,7 +390,7 @@ class StrategyConfig(NautilusConfig, kw_only=True):
     oms_type: Optional[str] = None
 
 
-class ImportableStrategyConfig(NautilusConfig):
+class ImportableStrategyConfig(NautilusConfig, frozen=True):
     """
     Represents a trading strategy configuration for one specific backtest run.
 
@@ -436,7 +440,7 @@ class StrategyFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
-class NautilusKernelConfig(NautilusConfig):
+class NautilusKernelConfig(NautilusConfig, frozen=True):
     """
     Configuration for core system ``NautilusKernel`` instances.
 
@@ -470,6 +474,8 @@ class NautilusKernelConfig(NautilusConfig):
         If the asyncio event loop should be in debug mode.
     log_level : str, default "INFO"
         The stdout log level for the node.
+    log_rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
         If logging to stdout should be bypassed.
     """
@@ -489,10 +495,11 @@ class NautilusKernelConfig(NautilusConfig):
     save_state: bool = False
     loop_debug: bool = False
     log_level: str = "INFO"
+    log_rate_limit: int = 100_000
     bypass_logging: bool = False
 
 
-class ImportableFactoryConfig(NautilusConfig):
+class ImportableFactoryConfig(NautilusConfig, frozen=True):
     """
     Represents an importable (json) Factory config.
     """
@@ -504,9 +511,9 @@ class ImportableFactoryConfig(NautilusConfig):
         return cls()
 
 
-class ImportableConfig(NautilusConfig):
+class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable (typically live data or execution) client configuration.
+    Represents an importable (typically live data client or live execution client) configuration.
     """
 
     path: str

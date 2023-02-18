@@ -142,7 +142,7 @@ cdef class ExecutionClient(Component):
         return f"{type(self).__name__}-{self.id.value}"
 
     cpdef void _set_connected(self, bint value=True) except *:
-        # Setter for pure Python implementations to change the readonly property
+        # Setter for Python implementations to change the readonly property
         self.is_connected = value
 
     cpdef void _set_account_id(self, AccountId account_id) except *:

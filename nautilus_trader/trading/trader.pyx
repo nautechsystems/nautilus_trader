@@ -363,7 +363,6 @@ cdef class Trader(Component):
 
         # Wire component into trader
         actor.register_base(
-            trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per component

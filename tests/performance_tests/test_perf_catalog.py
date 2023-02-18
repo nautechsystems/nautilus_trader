@@ -27,11 +27,9 @@ from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
 class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_load_quote_ticks_python(benchmark):
-
         tempdir = tempfile.mkdtemp()
 
         def setup():
-
             # Arrange
             cls = TestPersistenceCatalogFile()
 
@@ -51,7 +49,6 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
     @staticmethod
     def test_load_quote_ticks_rust(benchmark):
-
         tempdir = tempfile.mkdtemp()
 
         def setup():

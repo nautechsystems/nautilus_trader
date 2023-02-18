@@ -271,7 +271,6 @@ cdef class Strategy(Actor):
         Condition.not_none(logger, "logger")
 
         self.register_base(
-            trader_id=trader_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -300,7 +299,7 @@ cdef class Strategy(Actor):
 
         cdef int order_id_count = len(client_order_ids)
         cdef int order_list_id_count = len(order_list_ids)
-        self.order_factory.set_order_id_count(order_id_count)
+        self.order_factory.set_client_order_id_count(order_id_count)
         self.order_factory.set_order_list_id_count(order_list_id_count)
         self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
         self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")

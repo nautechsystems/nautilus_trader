@@ -15,13 +15,10 @@
 
 from typing import Callable
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.rust.common cimport CLogger
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
@@ -81,16 +78,3 @@ cdef class LoggerAdapter:
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
 cpdef void log_memory(LoggerAdapter logger) except *
-
-
-cdef class LiveLogger(Logger):
-    cdef object _loop
-    cdef object _run_task
-    cdef timedelta _blocked_log_interval
-    cdef Queue _queue
-    cdef bint _is_running
-    cdef datetime _last_blocked
-
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cdef void _enqueue_sentinel(self) except *
