@@ -27,11 +27,10 @@ jobs:
         uses: actions/checkout@v3
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust environment
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust tool-chain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
           components: rustfmt, clippy
 
       # Cargo setup
@@ -72,11 +71,10 @@ jobs:
           fetch-depth: 2
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust environment
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust tool-chain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
           components: rustfmt, clippy
 
       # Cargo setup
@@ -100,9 +98,17 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit
 
       # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: cached-poetry-dir
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Set output (Linux)
+        if: runner.os == 'Linux'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (macOS)
+        if: runner.os == 'macOS'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (Windows)
+        if: runner.os == 'Windows'
+        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
@@ -156,11 +162,10 @@ jobs:
         uses: actions/checkout@v3
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust environment
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust tool-chain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
           components: rustfmt, clippy
 
       # Cargo setup
@@ -184,9 +189,17 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit
 
       # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: cached-poetry-dir
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Set output (Linux)
+        if: runner.os == 'Linux'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (macOS)
+        if: runner.os == 'macOS'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (Windows)
+        if: runner.os == 'Windows'
+        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
@@ -248,11 +261,10 @@ jobs:
         uses: actions/checkout@v3
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust environment
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust tool-chain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
           components: rustfmt, clippy
 
       # Cargo setup
@@ -276,9 +288,17 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit
 
       # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: cached-poetry-dir
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Set output (Linux)
+        if: runner.os == 'Linux'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (macOS)
+        if: runner.os == 'macOS'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (Windows)
+        if: runner.os == 'Windows'
+        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
