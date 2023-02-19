@@ -78,7 +78,7 @@ class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        self.engine = self.create_engine()
+        self.engine = self.create_engine(BacktestEngineConfig(bypass_logging=True))
 
     def create_engine(self, config: Optional[BacktestEngineConfig] = None):
         engine = BacktestEngine(config)

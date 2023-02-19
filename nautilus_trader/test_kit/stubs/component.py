@@ -55,6 +55,7 @@ class TestComponentStubs:
         return Logger(
             clock=TestComponentStubs.clock(),
             level_stdout=log_level_from_str(level),
+            bypass=True,
         )
 
     @staticmethod

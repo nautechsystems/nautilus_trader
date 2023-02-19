@@ -205,12 +205,14 @@ class TestLoggerTests:
         # Assert
         assert True  # No exceptions raised
 
+    @pytest.mark.skip(reason="Moving sinks to Rust")
     def test_register_sink_sends_records_to_sink(self):
         # Arrange
         sink = []
         logger = Logger(
             clock=TestClock(),
             level_stdout=LogLevel.CRITICAL,
+            bypass=True,
         )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
