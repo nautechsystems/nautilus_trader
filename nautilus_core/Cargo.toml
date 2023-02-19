@@ -2,6 +2,7 @@
 members = [
     "common",
     "core",
+    "indicators",
     "model",
     "persistence",
     "pyo3"

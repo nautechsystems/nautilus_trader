@@ -953,6 +953,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus_indicators"
+version = "0.2.0"
+dependencies = [
+ "nautilus_core",
+ "nautilus_model",
+ "pyo3",
+]
+
+[[package]]
 name = "nautilus_model"
 version = "0.2.0"
 dependencies = [
