@@ -71,7 +71,7 @@ jobs:
 
       - name: Set output (Windows)
         if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Appendche-dir)" >> $GITHUB_ENV
+        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
