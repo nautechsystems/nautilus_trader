@@ -208,6 +208,7 @@ cdef class HttpClient:
                 **self._connector_kwargs
             ),
             loop=self._loop,
+            trust_env=True,
         ) for address in self._addresses
         ]
         self._sessions_len = len(self._sessions)
