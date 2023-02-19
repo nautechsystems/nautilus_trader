@@ -309,7 +309,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=False,
+            bypass_logging=True,
             run_analysis=False,
             risk_engine=RiskEngineConfig(
                 bypass=True,  # Example of bypassing pre-trade risk checks for backtests
