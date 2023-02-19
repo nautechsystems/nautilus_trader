@@ -94,7 +94,7 @@ jobs:
         id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry-dir.outputs.dir }}
+          path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install
@@ -175,7 +175,7 @@ jobs:
         id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry-dir.outputs.dir }}
+          path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
@@ -264,7 +264,7 @@ jobs:
         id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry-dir.outputs.dir }}
+          path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
