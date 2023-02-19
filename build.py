@@ -251,13 +251,13 @@ def _get_rustc_version() -> str:
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            "You are installing from source which requires the Rust compiler to "
-            "be installed.\nFind more information at https://www.rust-lang.org/tools/install\n"
+            "You are installing from source which requires the Rust compiler to be installed.\n"
+            "Find more information at https://www.rust-lang.org/tools/install\n"
             f"Error running rustc: {e.stderr.decode()}",
         ) from e
 
 
-def build(pyo3_only=False) -> None:
+def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
     _copy_rust_dylibs_to_project()
