@@ -54,7 +54,6 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests import TEST_DATA_DIR
 
 
 class TestDataStubs:
@@ -409,7 +408,7 @@ class TestDataStubs:
         return updates
 
     @staticmethod
-    def l2_feed() -> list:
+    def l2_feed(filename: str) -> list:
         def parse_line(d):
             if "status" in d:
                 return {}
@@ -448,12 +447,10 @@ class TestDataStubs:
                 ),
             }
 
-        return [
-            parse_line(line) for line in json.loads(open(TEST_DATA_DIR + "/L2_feed.json").read())
-        ]
+        return [parse_line(line) for line in json.loads(open(filename).read())]
 
     @staticmethod
-    def l3_feed():
+    def l3_feed(filename: str):
         def parser(data):
             parsed = data
             if not isinstance(parsed, list):
@@ -493,8 +490,4 @@ class TestDataStubs:
                         ),
                     )
 
-        return [
-            msg
-            for data in json.loads(open(TEST_DATA_DIR + "/L3_feed.json").read())
-            for msg in parser(data)
-        ]
+        return [msg for data in json.loads(open(filename).read()) for msg in parser(data)]
