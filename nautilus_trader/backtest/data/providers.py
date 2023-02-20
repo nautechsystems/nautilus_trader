@@ -20,7 +20,6 @@ from typing import Optional
 
 import fsspec
 import pandas as pd
-from fsspec.implementations.github import GithubFileSystem
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -538,6 +537,9 @@ class TestDataProvider:
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
     def _make_uri(self, path: str):
+        # Moved here from top level import because GithubFileSystem has extra deps we may not have installed.
+        from fsspec.implementations.github import GithubFileSystem
+
         if isinstance(self.fs, LocalFileSystem):
             return f"file://{self.root}/{path}"
         elif isinstance(self.fs, GithubFileSystem):
