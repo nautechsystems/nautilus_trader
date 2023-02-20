@@ -15,7 +15,6 @@
 
 import datetime
 from collections import defaultdict
-from enum import Enum
 from typing import Literal, Optional, Union
 
 import pandas as pd
@@ -44,6 +43,7 @@ from nautilus_trader.adapters.betfair.parsing.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.parsing.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.parsing.constants import MARKET_STATUS_MAPPING
 from nautilus_trader.adapters.betfair.parsing.constants import STRICT_MARKET_DATA_HANDLING
+from nautilus_trader.adapters.betfair.parsing.constants import MarketDataKind
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.common.functions import one
@@ -282,14 +282,6 @@ def runner_to_betfair_starting_price(
         )
     else:
         return None
-
-
-class MarketDataKind(Enum):
-    """MarketDataKind"""
-
-    ALL = "ALL"
-    BEST = "BEST"
-    DISPLAY = "DISPLAY"
 
 
 def runner_change_to_market_data_kind(rc: RunnerChange) -> MarketDataKind:

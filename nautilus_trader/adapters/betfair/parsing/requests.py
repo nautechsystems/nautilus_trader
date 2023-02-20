@@ -65,16 +65,6 @@ def make_custom_order_ref(client_order_id: ClientOrderId, strategy_id: StrategyI
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
-def _probability_to_price(probability: Price, side: OrderSide):
-    if side == OrderSide.BUY:
-        tick_prob = BETFAIR_TICK_SCHEME.next_bid_price(value=probability)
-    elif side == OrderSide.SELL:
-        tick_prob = BETFAIR_TICK_SCHEME.next_ask_price(value=probability)
-    else:
-        raise RuntimeError(f"invalid `OrderSide`, was {side}")
-    return probability_to_price(probability=tick_prob)
-
-
 def _order_quantity_to_stake(quantity: Quantity) -> str:
     """
     Convert quantities from nautilus into liabilities in Betfair.
