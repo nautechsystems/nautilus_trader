@@ -43,7 +43,7 @@ repos:
         entry: cargo fmt
         language: system
         types: [rust]
-        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all"]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all", "--", "--check"]
         files: \.rs$
         pass_filenames: false
       - id: cargo-clippy
@@ -106,7 +106,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.0.0
+    rev: v1.0.1
     hooks:
       - id: mypy
         args: [

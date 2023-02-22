@@ -993,7 +993,7 @@ class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=False,
+            bypass_logging=True,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
         )
