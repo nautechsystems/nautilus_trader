@@ -14,13 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import re
 import time
 from decimal import Decimal
-from typing import Union
 
-from ib_insync import Contract
-from ib_insync import ContractDetails
+import msgspec
 
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
@@ -28,16 +30,54 @@ from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import CurrencyPair
-from nautilus_trader.model.instruments import Equity
-from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
+from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-def _extract_isin(details: ContractDetails):
+venues_cash = ["IDEALPRO"]
+venues_crypto = ["PAXOS"]
+venues_opt = ["SMART"]
+venues_stk = [
+    "ARCA",  # US
+    "NASDAQ",  # US
+    "NYSE",  # US
+    "AMEX",  # US
+    "ASX",  # AU
+    "MEXI",  # MX
+    "ALPHA",  # CA
+    "LSE",  # UK
+    "TSEJ",  # JP
+]
+venues_fut = [
+    "CBOT",  # US
+    "CME",  # US
+    "COMEX",  # US
+    "KCBT",  # US
+    "MGE",  # US
+    "NYMEX",  # US
+    "NYBOT",  # US
+    "SNFE",  # AU
+]
+
+re_cash = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")
+re_opt = re.compile(
+    r"^(?P<symbol>^[A-Z]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
+)
+re_ind = re.compile(r"^(?P<symbol>\w{1,3})$")
+re_fut = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)$")
+re_fop = re.compile(
+    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)(?P<right>[CP])(?P<strike>.{4,5})$",
+)
+re_crypto = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
+
+
+def _extract_isin(details: IBContractDetails):
     for tag_value in details.secIdList:
         if tag_value.tag == "ISIN":
             return tag_value.value
@@ -60,22 +100,31 @@ def sec_type_to_asset_class(sec_type: str):
 
 
 def parse_instrument(
-    contract_details: ContractDetails,
+    contract_details: IBContractDetails,
 ) -> Instrument:
     security_type = contract_details.contract.secType
     if security_type == "STK":
         return parse_equity_contract(details=contract_details)
-    elif security_type == "FUT":
+    elif security_type == "FUT" or security_type == "CONTFUT":
         return parse_future_contract(details=contract_details)
     elif security_type == "OPT":
         return parse_option_contract(details=contract_details)
     elif security_type == "CASH":
+        print(contract_details)
         return parse_forex_contract(details=contract_details)
+    elif security_type == "CRYPTO":
+        return parse_crypto_contract(details=contract_details)
     else:
         raise ValueError(f"Unknown {security_type=}")
 
 
-def parse_equity_contract(details: ContractDetails) -> Equity:
+def contract_details_to_dict(details: IBContractDetails) -> dict:
+    dict_details = details.dict().copy()
+    dict_details["contract"] = details.contract.dict().copy()
+    return dict_details
+
+
+def parse_equity_contract(details: IBContractDetails) -> Equity:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
@@ -85,23 +134,22 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
-        multiplier=Quantity.from_int(
-            int(details.contract.multiplier or details.mdSizeMultiplier),
-        ),  # is this right?
+        multiplier=Quantity.from_int(1),
         lot_size=Quantity.from_int(1),
         isin=_extract_isin(details),
         ts_event=timestamp,
         ts_init=timestamp,
+        info=contract_details_to_dict(details),
     )
 
 
 def parse_future_contract(
-    details: ContractDetails,
-) -> FuturesContract:
+    details: IBContractDetails,
+) -> Future:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
-    return FuturesContract(
+    return Future(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=sec_type_to_asset_class(details.underSecType),
@@ -117,12 +165,13 @@ def parse_future_contract(
         ).date(),
         ts_event=timestamp,
         ts_init=timestamp,
+        info=contract_details_to_dict(details),
     )
 
 
 def parse_option_contract(
-    details: ContractDetails,
-) -> OptionsContract:
+    details: IBContractDetails,
+) -> Option:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
@@ -133,7 +182,7 @@ def parse_option_contract(
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
-    return OptionsContract(
+    return Option(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,
@@ -151,11 +200,12 @@ def parse_option_contract(
         kind=kind,
         ts_event=timestamp,
         ts_init=timestamp,
+        info=contract_details_to_dict(details),
     )
 
 
 def parse_forex_contract(
-    details: ContractDetails,
+    details: IBContractDetails,
 ) -> CurrencyPair:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
@@ -182,38 +232,125 @@ def parse_forex_contract(
         taker_fee=Decimal(0),
         ts_event=timestamp,
         ts_init=timestamp,
+        info=contract_details_to_dict(details),
     )
 
 
-def ib_contract_to_instrument_id(contract: Union[dict, Contract]) -> InstrumentId:
-    if isinstance(contract, dict):
-        contract = Contract(**contract)
+def parse_crypto_contract(
+    details: IBContractDetails,
+) -> CryptoPerpetual:
+    price_precision: int = _tick_size_to_precision(details.minTick)
+    size_precision = details.minSize.as_tuple().exponent * -1
+    timestamp = time.time_ns()
+    instrument_id = ib_contract_to_instrument_id(details.contract)
+    return CryptoPerpetual(
+        instrument_id=instrument_id,
+        native_symbol=Symbol(details.contract.localSymbol),
+        base_currency=Currency.from_str(details.contract.symbol),
+        quote_currency=Currency.from_str(details.contract.currency),
+        settlement_currency=Currency.from_str(details.contract.currency),
+        is_inverse=False,  # No inverse instruments trade on InteractiveBrokers?
+        price_precision=price_precision,
+        size_precision=size_precision,
+        price_increment=Price(details.minTick, price_precision),
+        size_increment=Quantity(details.sizeIncrement, size_precision),
+        max_quantity=None,
+        min_quantity=Quantity(details.minSize, size_precision),
+        max_notional=None,
+        min_notional=None,
+        max_price=None,
+        min_price=None,
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal(0),
+        taker_fee=Decimal(0),
+        ts_event=timestamp,
+        ts_init=timestamp,
+        info=contract_details_to_dict(details),
+    )
+
+
+def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
+    PyCondition.type(contract, IBContract, "IBContract")
+
     security_type = contract.secType
     if security_type == "STK":
-        return InstrumentId(
-            symbol=Symbol(contract.localSymbol.replace(" ", "-")),
-            venue=Venue(
-                contract.primaryExchange if contract.exchange == "SMART" else contract.exchange,
-            ),
+        symbol = contract.localSymbol.replace(" ", "-")
+        venue = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
+    elif security_type in ["OPT", "FUT", "FOP", "CONTFUT"]:
+        symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")
+        venue = contract.exchange
+    elif security_type in ["CASH", "CRYPTO"]:
+        symbol = (
+            f"{contract.localSymbol}".replace(".", "/") or f"{contract.symbol}/{contract.currency}"
         )
-    elif security_type == "FUT":
-        return InstrumentId(
-            symbol=Symbol(contract.localSymbol),
-            venue=Venue(
-                contract.primaryExchange if contract.exchange == "SMART" else contract.exchange,
-            ),
-        )
-    elif security_type == "OPT":
-        return InstrumentId(
-            symbol=Symbol(contract.localSymbol.replace("  ", "")),
-            venue=Venue(contract.exchange),
-        )
-    elif security_type == "CASH":
-        return InstrumentId(
-            symbol=Symbol(f"{contract.localSymbol}".replace(".", "/")),
-            venue=Venue(
-                contract.primaryExchange if contract.exchange == "SMART" else contract.exchange,
-            ),
-        )
+        venue = contract.exchange
     else:
-        raise ValueError(f"Unknown {security_type=}")
+        symbol = None
+        venue = None
+    if symbol and venue:
+        return InstrumentId(Symbol(symbol), Venue(venue))
+    raise ValueError(f"Unknown {contract=}")
+
+
+def instrument_id_to_ib_contract(instrument_id: InstrumentId) -> IBContract:
+    PyCondition.type(instrument_id, InstrumentId, "InstrumentId")
+
+    if instrument_id.venue.value in venues_cash and (
+        m := re_cash.match(instrument_id.symbol.value)
+    ):
+        return IBContract(
+            secType="CASH",
+            exchange=instrument_id.venue.value,
+            localSymbol=f"{m['symbol']}.{m['currency']}",
+        )
+    elif instrument_id.venue.value in venues_crypto and (
+        m := re_crypto.match(instrument_id.symbol.value)
+    ):
+        return IBContract(
+            secType="CRYPTO",
+            exchange=instrument_id.venue.value,
+            localSymbol=f"{m['symbol']}.{m['currency']}",
+        )
+    elif instrument_id.venue.value in venues_opt and (
+        m := re_opt.match(instrument_id.symbol.value)
+    ):
+        return IBContract(
+            secType="OPT",
+            exchange=instrument_id.venue.value,
+            localSymbol=f"{m['symbol'].ljust(6)}{m['expiry']}{m['right']}{m['strike']}{m['decimal']}",
+        )
+    elif instrument_id.venue.value in venues_fut:
+        if m := re_fut.match(instrument_id.symbol.value):
+            return IBContract(
+                secType="FUT",
+                exchange=instrument_id.venue.value,
+                localSymbol=f"{m['symbol']}{m['month']}{m['year']}",
+            )
+        elif m := re_ind.match(instrument_id.symbol.value):
+            return IBContract(
+                secType="CONTFUT",
+                exchange=instrument_id.venue.value,
+                symbol=m["symbol"],
+            )
+        elif m := re_fop.match(instrument_id.symbol.value):
+            return IBContract(
+                secType="FOP",
+                exchange=instrument_id.venue.value,
+                localSymbol=f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}",
+            )
+    elif instrument_id.venue.value in venues_stk:
+        return IBContract(
+            secType="STK",
+            exchange="SMART",
+            primaryExchange=instrument_id.venue.value,
+            localSymbol=f"{instrument_id.symbol.value}".replace("-", " "),
+        )
+    elif instrument_id.venue.value == "InteractiveBrokers":  # keep until a better approach
+        # This will allow to make Instrument request using IBContract from within Strategy
+        # and depending on the Strategy requirement
+        return msgspec.json.decode(instrument_id.symbol.value, type=IBContract)
+    raise ValueError(
+        f"Ambiguous {instrument_id}, use `IBContract` instead. "
+        f"If you believe this is correct InstrumentId, submit Issue to support similar ids.",
+    )

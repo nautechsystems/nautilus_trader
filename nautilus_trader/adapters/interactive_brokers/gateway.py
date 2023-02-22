@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
+import os
 import warnings
 from enum import IntEnum
 from time import sleep
@@ -27,7 +28,6 @@ except ImportError as e:
         f"Docker required for Gateway, install manually via `pip install docker` ({e})",
     )
     docker = None
-from ib_insync import IB
 
 
 class ContainerStatus(IntEnum):
@@ -58,10 +58,13 @@ class InteractiveBrokersGateway:
         trading_mode: Optional[str] = "paper",
         start: bool = False,
         read_only_api: bool = True,
+        timeout: int = 90,
         logger: Optional[logging.Logger] = None,
     ):
-        assert username is not None, "`username` not set"
-        assert password is not None, "`password` not set"
+        username = username if username is not None else os.environ["TWS_USERNAME"]
+        password = password if password is not None else os.environ["TWS_PASSWORD"]
+        assert username is not None, "`username` not set nor available in env `TWS_USERNAME`"
+        assert password is not None, "`password` not set nor available in env `TWS_PASSWORD`"
         self.username = username
         self.password = password
         self.trading_mode = trading_mode
@@ -71,11 +74,10 @@ class InteractiveBrokersGateway:
         if docker is None:
             raise RuntimeError("Docker not installed")
         self._docker = docker.from_env()
-        self._client: Optional[IB] = None
         self._container = None
         self.log = logger or logging.getLogger("nautilus_trader")
         if start:
-            self.start()
+            self.start(timeout)
 
     @classmethod
     def from_container(cls, **kwargs):
@@ -105,13 +107,6 @@ class InteractiveBrokersGateway:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             self._container = all_containers.get(self.CONTAINER_NAME)
         return self._container
-
-    @property
-    def client(self) -> IB:
-        if self._client is None:
-            self._client = IB()
-            self._client.connect(host=self.host, port=self.port)
-        return self._client
 
     @staticmethod
     def is_logged_in(container) -> bool:

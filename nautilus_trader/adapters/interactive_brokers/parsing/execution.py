@@ -13,106 +13,85 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from itertools import groupby
 
-from ib_insync import AccountValue
-from ib_insync import LimitOrder as IBLimitOrder
-from ib_insync import MarketOrder as IBMarketOrder
-from ib_insync import Order as IBOrder
-from ib_insync import StopLimitOrder as IBStopLimitOrder
-from ib_insync import StopOrder as IBStopOrder
+from typing import Callable
 
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import order_side_from_str
-from nautilus_trader.model.enums import order_side_to_str
-from nautilus_trader.model.objects import AccountBalance
-from nautilus_trader.model.objects import MarginBalance
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orders import LimitOrder as NautilusLimitOrder
-from nautilus_trader.model.orders import MarketOrder as NautilusMarketOrder
-from nautilus_trader.model.orders import Order as NautilusOrder
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 
 
-def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
-    if isinstance(order, NautilusMarketOrder):
-        return IBMarketOrder(
-            action=order_side_to_str(order.side),
-            totalQuantity=order.quantity.as_double(),
-            orderRef=order.client_order_id.value,
-        )
-    elif isinstance(order, NautilusLimitOrder):
-        # TODO - Time in force, etc
-        return IBLimitOrder(
-            action=order_side_to_str(order.side),
-            lmtPrice=order.price.as_double(),
-            totalQuantity=order.quantity.as_double(),
-            orderRef=order.client_order_id.value,
-        )
-    else:
-        raise NotImplementedError(f"IB order type not implemented {type(order)} for {order}")
+map_trigger_method: dict[int, int] = {
+    TriggerType.DEFAULT: 0,
+    TriggerType.DOUBLE_BID_ASK: 1,
+    TriggerType.LAST_TRADE: 2,
+    TriggerType.DOUBLE_LAST: 3,
+    TriggerType.BID_ASK: 4,
+    TriggerType.LAST_OR_BID_ASK: 7,
+    TriggerType.MID_POINT: 8,
+}
+
+map_time_in_force: dict[int, str] = {
+    TimeInForce.DAY: "DAY",
+    TimeInForce.GTC: "GTC",
+    TimeInForce.IOC: "IOC",
+    TimeInForce.GTD: "GTD",
+    TimeInForce.AT_THE_OPEN: "OPG",
+    TimeInForce.FOK: "FOK",
+    # unsupported: 'DTC',
+}
+
+map_order_action: dict[int, str] = {
+    OrderSide.BUY: "BUY",
+    OrderSide.SELL: "SELL",
+}
+
+order_side_to_order_action: dict[str, str] = {
+    "BOT": "BUY",
+    "SLD": "SELL",
+}
+
+map_order_type: dict[int, str] = {
+    OrderType.LIMIT: "LMT",
+    OrderType.LIMIT_IF_TOUCHED: "LIT",
+    OrderType.MARKET: "MKT",
+    OrderType.MARKET_IF_TOUCHED: "MIT",
+    OrderType.MARKET_TO_LIMIT: "MTL",
+    OrderType.STOP_LIMIT: "STP LMT",
+    OrderType.STOP_MARKET: "STP",
+    OrderType.TRAILING_STOP_LIMIT: "TRAIL LIMIT",
+    OrderType.TRAILING_STOP_MARKET: "TRAIL",
+}
 
 
-def ib_order_side_to_nautilus_side(action: str) -> OrderSide:
-    return order_side_from_str(action.upper())
+map_order_fields: set[tuple[str, str, Callable]] = {
+    # ref: (nautilus_order_field, ib_order_field, value_fn)
+    ("client_order_id", "orderRef", lambda x: str(x)),
+    ("display_qty", "displaySize", lambda x: x.as_double()),
+    ("expire_time", "goodTillDate", lambda x: x.strftime("%Y%m%d %H:%M:%S %Z")),
+    ("limit_offset", "lmtPriceOffset", lambda x: float(x)),
+    ("order_type", "orderType", lambda x: map_order_type[x]),
+    ("price", "lmtPrice", lambda x: x.as_double()),
+    ("quantity", "totalQuantity", lambda x: x.as_decimal()),
+    ("side", "action", lambda x: map_order_action[x]),
+    ("time_in_force", "tif", lambda x: map_time_in_force[x]),
+    # ("trailing_offset", "trailStopPrice", lambda x: float(x)),
+    # ("trigger_price", "auxPrice", lambda x: x.as_double()),
+    # ("trigger_type", "triggerMethod", lambda x: map_trigger_method[x]),
+    ("parent_order_id", "parentId", lambda x: x.value),
+}
 
 
-def ib_order_to_nautilus_order_type(order: IBOrder) -> OrderType:
-    if isinstance(order, IBMarketOrder):
-        return OrderType.MARKET
-    elif isinstance(order, IBLimitOrder):
-        return OrderType.LIMIT
-    elif isinstance(order, IBStopOrder):
-        return OrderType.STOP_MARKET
-    elif isinstance(order, IBStopLimitOrder):
-        return OrderType.STOP_LIMIT
-
-
-def account_values_to_nautilus_account_info(
-    account_values: list[AccountValue],
-    account_id: str,
-) -> tuple[list[AccountBalance], list[MarginBalance]]:
-    """
-    When querying for account information, ib_insync returns a list of individual fields for potentially multiple
-    accounts. Parse these individual fields and return a list of balances and margin balances.
-    """
-
-    def group_key(x: AccountValue):
-        return (x.account, x.currency)
-
-    balances = []
-    margin_balances = []
-    for (account, currency), fields in groupby(
-        sorted(account_values, key=group_key),
-        key=group_key,
-    ):
-        if account != account_id:
-            continue
-        if currency in ("", "BASE"):
-            # Only report in base currency
-            continue
-        account_fields = {f.tag: f.value for f in fields}
-        if "FullAvailableFunds" in account_fields:
-            total_cash = float(account_fields["NetLiquidation"])
-            free = float(account_fields["FullAvailableFunds"])
-            balance = AccountBalance(
-                total=Money(total_cash, Currency.from_str(currency)),
-                free=Money(free, Currency.from_str(currency)),
-                locked=Money(total_cash - free, Currency.from_str(currency)),
-            )
-            balances.append(balance)
-        if "InitMarginReq" in account_fields:
-            margin_balance = MarginBalance(
-                initial=Money(
-                    float(account_fields["InitMarginReq"]),
-                    currency=Currency.from_str(currency),
-                ),
-                maintenance=Money(
-                    float(account_fields["MaintMarginReq"]),
-                    currency=Currency.from_str(currency),
-                ),
-            )
-            margin_balances.append(margin_balance)
-
-    return balances, margin_balances
+map_order_status = {
+    "ApiPending": OrderStatus.SUBMITTED,
+    "PendingSubmit": OrderStatus.SUBMITTED,
+    "PendingCancel": OrderStatus.PENDING_CANCEL,
+    "PreSubmitted": OrderStatus.SUBMITTED,
+    "Submitted": OrderStatus.ACCEPTED,
+    "ApiCancelled": OrderStatus.CANCELED,
+    "Cancelled": OrderStatus.CANCELED,
+    "Filled": OrderStatus.FILLED,
+    "Inactive": OrderStatus.DENIED,
+}

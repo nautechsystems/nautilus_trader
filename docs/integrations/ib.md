@@ -29,24 +29,24 @@ Example config:
 config_node = TradingNodeConfig(
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            instrument_provider=InstrumentProviderConfig(
-            load_all=True,
-            filters=tuple({"secType": "CASH", "symbol": "EUR", "currency": "USD"}.items())
-        )
+            instrument_provider=InteractiveBrokersInstrumentProviderConfig(
+                load_ids={"EUR/USD.IDEALPRO", "AAPL.NASDAQ"},
+                load_contracts={IBContract(secType="CONTFUT", exchange="CME", symbol="MES")},
+            )
     ),
     ...
 )
 ```
 
 ### Examples queries
-- Stock: `{"secType": "STK", "symbol": "AMD", "exchange": "SMART", "currency": "USD" }`
-- Stock: `{"secType": "STK", "symbol": "INTC", "exchange": "SMART", "primaryExchange": "NASDAQ", "currency": "USD"}`
-- Forex: `{"secType": "CASH", "symbol": "EUR","currency": "USD", "exchange": "IDEALPRO"}`
-- CFD: `{"secType": "CFD", "symbol": "IBUS30"}`
-- Future: `{"secType": "FUT", "symbol": "ES", "exchange": "GLOBEX", "lastTradeDateOrContractMonth": "20180921"}`
-- Option: `{"secType": "OPT", "symbol": "SPY", "exchange": "SMART", "lastTradeDateOrContractMonth": "20170721", "strike": 240, "right": "C" }`
-- Bond: `{"secType": "BOND", "secIdType": 'ISIN', "secId": 'US03076KAA60'}`
-- Crypto: `{"secType": "CRYPTO", "symbol": "BTC", "exchange": "PAXOS", "currency": "USD"}`
+- Stock: `IBContract(secType='STK', exchange='SMART', symbol='AMD', currency='USD')`
+- Stock: `IBContract(secType='STK', exchange='SMART', primaryExchange='NASDAQ', symbol='INTC')`
+- Forex: `InstrumentId('EUR/USD.IDEALPRO')`, `InstrumentId('USD/JPY.IDEALPRO')`
+- CFD: `IBContract(secType='CFD', symbol='IBUS30')`
+- Future: `InstrumentId('ES.CME')`, `IBContract(secType='CONTFUT', exchange='CME', symbol='ES', build_futures_chain=True)`
+- Option: `InstrumentId('SPY251219C00395000.SMART')`, `IBContract(secType='STK', exchange='SMART', primaryExchange='ARCA', symbol='SPY', lastTradeDateOrContractMonth='20251219', build_options_chain=True)`
+- Bond: `IBContract(secType='BOND', secIdType='ISIN', secId='US03076KAA60')`
+- Crypto: `InstrumentId('BTC/USD.PAXOS')`
 
 
 ## Configuration

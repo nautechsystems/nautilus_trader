@@ -16,46 +16,46 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import Optional
 
-import ib_insync
-
-# fmt: off
+from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.config import (
+    InteractiveBrokersInstrumentProviderConfig,
+)
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-# fmt: on
-
 GATEWAY = None
-IB_INSYNC_CLIENTS: dict[tuple, ib_insync.IB] = {}
+IB_CLIENTS: dict[tuple, InteractiveBrokersClient] = {}
 
 
 def get_cached_ib_client(
-    username: str,
-    password: str,
+    loop: asyncio.AbstractEventLoop,
+    msgbus: MessageBus,
+    cache: Cache,
+    clock: LiveClock,
+    logger: Logger,
     host: str = "127.0.0.1",
     port: Optional[int] = None,
-    trading_mode: Literal["paper", "live"] = "paper",
-    connect: bool = True,
-    timeout: int = 300,
     client_id: int = 1,
-    start_gateway: bool = True,
-    read_only_api: bool = True,
-) -> ib_insync.IB:
+    gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig(),
+) -> InteractiveBrokersClient:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
 
@@ -64,68 +64,60 @@ def get_cached_ib_client(
 
     Parameters
     ----------
-    username : str
-        Interactive Brokers account username
-    password : str
-        Interactive Brokers account password
-    trading_mode: str
-        paper or live
+    loop: asyncio.AbstractEventLoop,
+        loop
+    msgbus: MessageBus,
+        msgbus
+    cache: Cache,
+        cache
+    clock: LiveClock,
+        clock
+    logger: Logger,
+        logger
     host : str, optional
         The IB host to connect to
     port : int, optional
         The IB port to connect to
-    connect: bool, optional
-        Whether to connect to IB.
-    timeout: int, optional
-        The timeout for trying to establish a connection
     client_id: int, optional
         The client_id to connect with
-    start_gateway: bool
-        Start the IB Gateway docker container
-    read_only_api: bool
-        Set read-only (no execution) when starting the gateway.
+    gateway: InteractiveBrokersGatewayConfig
+        Configuration for the gateway.
 
     Returns
     -------
-    ib_insync.IB
+    InteractiveBrokersClient
 
     """
-    global IB_INSYNC_CLIENTS, GATEWAY
-    if start_gateway:
+    global IB_CLIENTS, GATEWAY
+    if gateway.start:
         # Start gateway
         if GATEWAY is None:
-            GATEWAY = InteractiveBrokersGateway(
-                username=username,
-                password=password,
-                trading_mode=trading_mode,
-                read_only_api=read_only_api,
-            )
-            GATEWAY.safe_start(wait=timeout)
+            GATEWAY = InteractiveBrokersGateway(**gateway.dict())
+            # GATEWAY.safe_start(wait=config.timeout)
             port = port or GATEWAY.port
-    port = port or InteractiveBrokersGateway.PORTS[trading_mode]
+    port = port or InteractiveBrokersGateway.PORTS[gateway.trading_mode]
 
     client_key: tuple = (host, port, client_id)
 
-    if client_key not in IB_INSYNC_CLIENTS:
-        client = ib_insync.IB()
-        if connect:
-            for _ in range(10):
-                try:
-                    client.connect(host=host, port=port, timeout=6, clientId=client_id)
-                    break
-                except (TimeoutError, AttributeError, asyncio.TimeoutError, ConnectionRefusedError):
-                    continue
-            else:
-                raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
-
-        IB_INSYNC_CLIENTS[client_key] = client
-    return IB_INSYNC_CLIENTS[client_key]
+    if client_key not in IB_CLIENTS:
+        client = InteractiveBrokersClient(
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            host=host,
+            port=port,
+            client_id=client_id,
+        )
+        IB_CLIENTS[client_key] = client
+    return IB_CLIENTS[client_key]
 
 
 @lru_cache(1)
 def get_cached_interactive_brokers_instrument_provider(
-    client: ib_insync.IB,
-    config: InstrumentProviderConfig,
+    client: InteractiveBrokersClient,
+    config: InteractiveBrokersInstrumentProviderConfig,
     logger: Logger,
 ) -> InteractiveBrokersInstrumentProvider:
     """
@@ -135,9 +127,9 @@ def get_cached_interactive_brokers_instrument_provider(
 
     Parameters
     ----------
-    client : InteractiveBrokersHttpClient
+    client : InteractiveBrokersClient
         The client for the instrument provider.
-    config: InstrumentProviderConfig
+    config: InteractiveBrokersInstrumentProviderConfig
         The instrument provider config
     logger : Logger
         The logger for the instrument provider.
@@ -191,14 +183,15 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.username or os.environ["TWS_USERNAME"],
-            password=config.password or os.environ["TWS_PASSWORD"],
-            host=config.gateway_host,
-            port=config.gateway_port,
-            trading_mode=config.trading_mode,
-            client_id=config.client_id,
-            start_gateway=config.start_gateway,
-            read_only_api=config.read_only_api,
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            host=config.ibg_host,
+            port=config.ibg_port,
+            client_id=config.ibg_client_id,
+            gateway=config.gateway,
         )
 
         # Get instrument provider singleton
@@ -217,7 +210,8 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            handle_revised_bars=config.handle_revised_bars,
+            ibg_client_id=config.ibg_client_id,
+            config=config,
         )
         return data_client
 
@@ -263,13 +257,15 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.username or os.environ["TWS_USERNAME"],
-            password=config.password or os.environ["TWS_PASSWORD"],
-            host=config.gateway_host,
-            port=config.gateway_port,
-            client_id=config.client_id,
-            start_gateway=config.start_gateway,
-            read_only_api=config.read_only_api,
+            loop=loop,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            host=config.ibg_host,
+            port=config.ibg_port,
+            client_id=config.ibg_client_id,
+            gateway=config.gateway,
         )
 
         # Get instrument provider singleton
@@ -284,6 +280,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         assert (
             ib_account
         ), f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
+
         account_id = AccountId(f"{IB_VENUE.value}-{ib_account}")
 
         # Create client
@@ -296,5 +293,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            ibg_client_id=config.ibg_client_id,
         )
         return exec_client
