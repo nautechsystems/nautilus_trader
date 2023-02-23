@@ -421,6 +421,8 @@ cdef class Strategy(Actor):
 
         A `SubmitOrder` command will be created and sent to the `RiskEngine`.
 
+        If the client order ID is duplicate, then the order will be denied.
+
         Parameters
         ----------
         order : Order
@@ -451,6 +453,13 @@ cdef class Strategy(Actor):
             topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
+
+        # Check for duplicate client order ID
+        if self.cache.order_exists(order.client_order_id):
+            self._deny_order(order, f"duplicate {repr(order.client_order_id)}")
+            return
+
+        self.cache.add_order(order, position_id)
 
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
@@ -484,6 +493,9 @@ cdef class Strategy(Actor):
 
         A `SubmitOrderList` command with be created and sent to the `RiskEngine`.
 
+        If the order list ID is duplicate, or any client order ID is duplicate,
+        then all orders will be denied.
+
         Parameters
         ----------
         order_list : OrderList
@@ -513,9 +525,32 @@ cdef class Strategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                    topic=f"events.order.{order.strategy_id.to_str()}",
+                topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
+
+        # Check for duplicate order list ID
+        if self.cache.order_list_exists(order_list.id):
+            self._deny_order_list(
+                order_list,
+                reason=f"duplicate {repr(order_list.id)}",
+            )
+            return
+
+        self.cache.add_order_list(order_list)
+
+        # Check for duplicate client order IDs
+        for order in order_list.orders:
+            if self.cache.order_exists(order.client_order_id):
+                for order in order_list.orders:
+                    self._deny_order(
+                        order,
+                        reason=f"duplicate {repr(order.client_order_id)}",
+                    )
+                return
+
+        for order in order_list.orders:
+            self.cache.add_order(order, position_id)
 
         cdef SubmitOrderList command = SubmitOrderList(
             trader_id=self.trader_id,
@@ -1208,6 +1243,36 @@ cdef class Strategy(Actor):
             indicator.handle_bar(bar)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _deny_order(self, Order order, str reason) except *:
+        self._log.error(f"Order denied: {reason}.")
+
+        if not self.cache.order_exists(order.client_order_id):
+            self.cache.add_order(order, position_id=None)
+
+        # Generate event
+        cdef OrderDenied denied = OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(denied)
+
+        # Publish denied event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=denied,
+        )
+
+    cdef void _deny_order_list(self, OrderList order_list, str reason) except *:
+        cdef Order order
+        for order in order_list.orders:
+            if not order.is_closed_c():
+                self._deny_order(order=order, reason=reason)
 
     cdef void _send_risk_command(self, TradingCommand command) except *:
         if not self.log.is_bypassed:

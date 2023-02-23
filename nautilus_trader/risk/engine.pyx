@@ -410,19 +410,6 @@ cdef class RiskEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
-        cdef Order order = command.order
-
-        # Check IDs for duplicate
-        if order.order_list_id is None:
-            if not self._check_order_id(order):
-                self._deny_command(
-                    command=command,
-                    reason=f"Duplicate {repr(order.client_order_id)}")
-                return  # Denied
-
-            # Cache order
-            self._cache.add_order(order, command.position_id)
-
         if self.is_bypassed:
             # Perform no further risk checks or throttling
             if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
@@ -430,6 +417,8 @@ cdef class RiskEngine(Component):
             else:
                 self._send_to_emulator(command)
             return
+
+        cdef Order order = command.order
 
         # Check reduce only
         cdef Position position
@@ -467,25 +456,6 @@ cdef class RiskEngine(Component):
             self._send_to_emulator(command)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
-        if self._cache.order_list_exists(command.order_list.id):
-            self._deny_command(
-                command=command,
-                reason=f"Duplicate {repr(command.order_list.id)}")
-            return  # Denied
-
-        cdef Order order
-        for order in command.order_list.orders:
-            # Check IDs for duplicates
-            if not self._check_order_id(order):
-                self._deny_command(
-                    command=command,
-                    reason=f"Duplicate {repr(order.client_order_id)}")
-                return  # Denied
-            # Cache order
-            self._cache.add_order(order, position_id=command.position_id)
-
-        self._cache.add_order_list(command.order_list)
-
         if self.is_bypassed:
             # Perform no further risk checks or throttling
             if command.has_emulated_order:
@@ -641,12 +611,6 @@ cdef class RiskEngine(Component):
         self._send_to_execution(command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
-
-    cdef bint _check_order_id(self, Order order) except *:
-        if order is None or not self._cache.order_exists(order.client_order_id):
-            return True  # Check passed
-        else:
-            return False  # Check failed (duplicate ID)
 
     cdef bint _check_order(self, Instrument instrument, Order order) except *:
         ########################################################################
