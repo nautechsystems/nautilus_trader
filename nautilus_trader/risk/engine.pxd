@@ -87,7 +87,6 @@ cdef class RiskEngine(Component):
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
-    cdef bint _check_order_id(self, Order order) except *
     cdef bint _check_order(self, Instrument instrument, Order order) except *
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
     cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *

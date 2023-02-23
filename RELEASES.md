@@ -6,7 +6,8 @@ Released on TBD (UTC).
 - Change parquet catalog schema dictionary integer key widths/types
 
 ### Enhancements
-None
+- Now immediately caching orders and order lists in `Strategy`
+- Now checking duplicate `client_order_id` and `order_list_id` in strategy
 
 ### Fixes
 None

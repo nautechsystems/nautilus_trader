@@ -121,5 +121,7 @@ cdef class Strategy(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
+    cdef void _deny_order(self, Order order, str reason) except *
+    cdef void _deny_order_list(self, OrderList order_list, str reason) except *
     cdef void _send_risk_command(self, TradingCommand command) except *
     cdef void _send_exec_command(self, TradingCommand command) except *
