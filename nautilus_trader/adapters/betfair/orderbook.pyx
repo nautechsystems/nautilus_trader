@@ -315,8 +315,8 @@ cdef class BettingOrderBook:
         cdef double best_ask = top_ask_level.price
         if best_bid is None or best_ask is None:
             return
-        if best_bid <= best_ask:
-            raise BookIntegrityError(f"Orders in cross [{best_ask} @ {best_bid}]")
+        if best_bid >= best_ask:
+            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
     cdef void update_quote_tick(self, QuoteTick tick) except*:
         raise NotImplementedError()

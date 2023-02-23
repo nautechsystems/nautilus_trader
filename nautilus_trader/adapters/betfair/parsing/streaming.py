@@ -459,12 +459,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
+                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
+                    BookOrder(back.price, back.volume, OrderSide.BUY),
                     ts_event,
                     ts_init,
                 )
-                for lay in rc.atl
+                for back in rc.atl
             ],
         )
 
@@ -475,12 +475,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.BUY),
+                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
+                    BookOrder(lay.price, lay.volume, OrderSide.SELL),
                     ts_event,
                     ts_init,
                 )
-                for back in rc.atb
+                for lay in rc.atb
             ],
         )
     if not deltas:
@@ -509,12 +509,12 @@ def runner_change_best_depth_to_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
+                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
+                    BookOrder(back.price, back.volume, OrderSide.BUY),
                     ts_event,
                     ts_init,
                 )
-                for lay in rc.batl
+                for back in rc.batl
             ],
         )
 
@@ -525,12 +525,12 @@ def runner_change_best_depth_to_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.BUY),
+                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
+                    BookOrder(lay.price, lay.volume, OrderSide.SELL),
                     ts_event,
                     ts_init,
                 )
-                for back in rc.batb
+                for lay in rc.batb
             ],
         )
     if not deltas:
@@ -559,12 +559,12 @@ def runner_change_display_depth_to_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
+                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
+                    BookOrder(back.price, back.volume, OrderSide.BUY),
                     ts_event,
                     ts_init,
                 )
-                for lay in rc.bdatl
+                for back in rc.bdatl
             ],
         )
 
@@ -575,12 +575,12 @@ def runner_change_display_depth_to_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.BUY),
+                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
+                    BookOrder(lay.price, lay.volume, OrderSide.SELL),
                     ts_event,
                     ts_init,
                 )
-                for back in rc.bdatb
+                for lay in rc.bdatb
             ],
         )
     if not deltas:

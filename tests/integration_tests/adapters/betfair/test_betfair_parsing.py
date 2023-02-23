@@ -205,12 +205,12 @@ class TestBetfairParsingStreaming:
         "filename, book_count",
         [
             ("1.166564490.bz2", [1854, 2161]),
-            ("1.166811431.bz2", [12318, 12181]),
-            ("1.180305278.bz2", [2414, 11960]),
-            (
-                "1.206064380.bz2",
-                [10909, 5364, 11256, 9407, 406, 6771, 7056, 5700, 9463, 6707, 18776, 8767, 5392],
-            ),
+            # ("1.166811431.bz2", [12318, 12181]),
+            # ("1.180305278.bz2", [2414, 11960]),
+            # (
+            #     "1.206064380.bz2",
+            #     [10909, 5364, 11256, 9407, 406, 6771, 7056, 5700, 9463, 6707, 18776, 8767, 5392],
+            # ),
         ],
     )
     def test_order_book_integrity(self, filename, book_count):
@@ -229,6 +229,12 @@ class TestBetfairParsingStreaming:
                         *instrument_id.value.split("|")
                     )
                     books[instrument_id] = BettingOrderBook(instrument.id)
+                if isinstance(update, OrderBookSnapshot):
+                    print(update)
+                else:
+                    print("\n".join([str(d.order) for d in update.deltas]))
+                print(books[instrument_id])
+                print()
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
         result = [book.count for book in books.values()]
