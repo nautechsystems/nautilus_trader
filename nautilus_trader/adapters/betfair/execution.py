@@ -30,12 +30,9 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
-from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.common import price_to_probability
-from nautilus_trader.adapters.betfair.common import probability_to_price
-from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_all_to_betfair
@@ -45,6 +42,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.adapters.betfair.util import betfair_instrument_id
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
@@ -76,8 +74,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -443,12 +439,11 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=VenueOrderId(update_instruction["betId"]),
-                quantity=Quantity(
+                quantity=betfair_float_to_quantity_c(
                     update_instruction["instruction"]["limitOrder"]["size"],
-                    precision=BETFAIR_QUANTITY_PRECISION,
                 ),
-                price=price_to_probability(
-                    str(update_instruction["instruction"]["limitOrder"]["price"]),
+                price=betfair_float_to_price_c(
+                    update_instruction["instruction"]["limitOrder"]["price"],
                 ),
                 trigger_price=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
@@ -693,8 +688,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 ]
                 for side, matched_order in matched_orders:
                     # We don't get much information from Betfair here, try our best to match order
-                    price = price_to_probability(str(matched_order.price))
-                    quantity = Quantity(matched_order.size, precision=BETFAIR_QUANTITY_PRECISION)
+                    price = betfair_float_to_price_c(matched_order.price)
+                    quantity = betfair_float_to_quantity_c(matched_order.size)
                     order = [
                         o
                         for o in orders
@@ -766,8 +761,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
-                    last_px=price_to_probability(str(fill_price)),
+                    last_qty=betfair_float_to_quantity_c(fill_qty),
+                    last_px=betfair_float_to_price_c(fill_price),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -783,16 +778,16 @@ class BetfairExecutionClient(LiveExecutionClient):
             # New fill, simply return average price
             return unmatched_order.avp
         else:
-            new_price = price_to_probability(str(unmatched_order.avp))
+            new_price = betfair_float_to_price_c(unmatched_order.avp)
             prev_price = order.avg_px
             if prev_price == new_price:
                 # Matched at same price
                 return unmatched_order.avp
             else:
-                avg_price = Price(order.avg_px, precision=BETFAIR_PRICE_PRECISION)
-                prev_price = probability_to_price(avg_price)
+                avg_price = betfair_float_to_price_c(order.avg_px)
+                prev_price = betfair_float_to_price_c(avg_price)
                 prev_size = order.filled_qty
-                new_price = Price(unmatched_order.avp, precision=BETFAIR_PRICE_PRECISION)
+                new_price = betfair_float_to_price_c(unmatched_order.avp)
                 new_size = unmatched_order.sm - prev_size
                 total_size = prev_size + new_size
                 price = (new_price - (prev_price * (prev_size / total_size))) / (
@@ -835,8 +830,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
-                    last_px=price_to_probability(str(fill_price)),
+                    last_qty=betfair_float_to_quantity_c(fill_qty),
+                    last_px=betfair_float_to_price_c(fill_price),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),

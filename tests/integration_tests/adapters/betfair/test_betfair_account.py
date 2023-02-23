@@ -13,32 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.core.rust.common import LogLevel
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
 class TestBetfairAccount:
     def setup(self):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
-        self.clock = LiveClock()
+        self.clock = Clock()
         self.venue = BETFAIR_VENUE
         self.account = TestExecStubs.betting_account()
-        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument = BetfairDataProvider.betting_instrument()
 
         # Setup logging
         self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
@@ -54,9 +50,7 @@ class TestBetfairAccount:
 
     def test_betting_instrument_notional_value(self):
         notional = self.instrument.notional_value(
-            quantity=Quantity.from_int(100),
-            price=Price.from_str("0.5"),
-            inverse_as_quote=False,
+            price=betfair_float_to_price_c(2.0),
+            quantity=betfair_float_to_quantity_c(100.0),
         ).as_decimal()
-        # We are long 100 at 0.5 probability, aka 2.0 in odds terms
         assert notional == Decimal("200.0")

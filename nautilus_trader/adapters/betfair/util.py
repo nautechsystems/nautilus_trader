@@ -12,16 +12,64 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from functools import lru_cache
 from typing import Optional
 
 import msgspec
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.persistence.external.readers import TextReader
+
+
+def hash_market_trade(timestamp: int, price: float, volume: float):
+    return f"{str(timestamp)[:-6]}{price}{str(volume)}"
+
+
+def make_symbol(
+    market_id: str,
+    selection_id: str,
+    selection_handicap: Optional[str],
+) -> Symbol:
+    """
+    Make symbol
+
+    >>> make_symbol(market_id="1.201070830", selection_id="123456", selection_handicap=None)
+    Symbol('1.201070830|123456|None')
+    """
+
+    def _clean(s):
+        return str(s).replace(" ", "").replace(":", "")
+
+    value: str = "|".join(
+        [_clean(k) for k in (market_id, selection_id, selection_handicap)],
+    )
+    assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
+    return Symbol(value)
+
+
+@lru_cache
+def betfair_instrument_id(
+    market_id: str,
+    runner_id: str,
+    runner_handicap: Optional[str],
+) -> InstrumentId:
+    """
+    Create an instrument ID from betfair fields
+
+    >>> betfair_instrument_id(market_id="1.201070830", selection_id="123456", selection_handicap=None)
+    InstrumentId('1.201070830|123456|None.BETFAIR')
+
+    """
+    PyCondition.not_empty(market_id, "market_id")
+    symbol = make_symbol(market_id, runner_id, runner_handicap)
+    return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)
 
 
 def flatten_tree(y: dict, **filters):
@@ -67,10 +115,6 @@ def chunk(list_like, n):
         yield list_like[i : i + n]
 
 
-def hash_market_trade(timestamp: int, price: float, volume: float):
-    return f"{str(timestamp)[:-6]}{price}{str(volume)}"
-
-
 def historical_instrument_provider_loader(instrument_provider, line):
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
@@ -95,7 +139,7 @@ def make_betfair_reader(
     instrument_provider: Optional[InstrumentProvider] = None,
     line_preprocessor: Optional[LinePreprocessor] = None,
 ) -> TextReader:
-    from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+    from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
     from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 
     instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])

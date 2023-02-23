@@ -35,6 +35,3 @@ cdef class Bet:
 
     @staticmethod
     cdef dict to_dict_c(Bet obj)
-
-
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)

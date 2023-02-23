@@ -13,14 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
-from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
-from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
-from nautilus_trader.adapters.betfair.common import price_to_probability
-from nautilus_trader.adapters.betfair.common import probability_to_price
-from nautilus_trader.model.objects import Price
+from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
+from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
 
 
 class TestBetfairCommon:
@@ -28,41 +24,9 @@ class TestBetfairCommon:
         self.tick_scheme = BETFAIR_TICK_SCHEME
 
     def test_min_max_bet(self):
-        assert MAX_BET_PROB == Price.from_str("0.9900990")
-        assert MIN_BET_PROB == Price.from_str("0.0010000")
+        assert MAX_BET_PRICE == betfair_float_to_price_c(1000)
+        assert MIN_BET_PRICE == betfair_float_to_price_c(1.01)
 
     def test_betfair_ticks(self):
-        assert self.tick_scheme.min_price == Price.from_str("0.0010000")
-        assert self.tick_scheme.max_price == Price.from_str("0.9900990")
-
-    @pytest.mark.parametrize(
-        "price, prob",
-        [
-            # Exact match
-            ("1.69", "0.591716"),
-            # Rounding match
-            ("2.02", "0.4950495"),
-            ("2.005", "0.50000"),
-            # Force for TradeTicks which can have non-tick prices
-            ("10.4", "0.0952381"),
-        ],
-    )
-    def test_price_to_probability(self, price, prob):
-        result = price_to_probability(price)
-        expected = Price.from_str(prob)
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        "raw_prob, price",
-        [
-            (0.5, "2.0"),
-            (0.499, "2.02"),
-            (0.501, "2.0"),
-            (0.503, "1.99"),
-            (0.125, "8.0"),
-        ],
-    )
-    def test_probability_to_price(self, raw_prob, price):
-        # Exact match
-        prob = self.tick_scheme.next_bid_price(raw_prob)
-        assert probability_to_price(prob) == Price.from_str(price)
+        assert self.tick_scheme.min_price == betfair_float_to_price_c(1.01)
+        assert self.tick_scheme.max_price == betfair_float_to_price_c(1000)

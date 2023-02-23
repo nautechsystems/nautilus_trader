@@ -18,7 +18,6 @@ from decimal import Decimal
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.data.bet cimport Bet
-from nautilus_trader.model.data.bet cimport nautilus_to_bet
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -69,7 +68,7 @@ cdef class BettingAccount(CashAccount):
         Condition.not_none(price, "price")
         Condition.not_equal(inverse_as_quote, True, "inverse_as_quote", "True")
 
-        cdef Bet bet = nautilus_to_bet(
+        cdef Bet bet = Bet(
             price=price,
             quantity=quantity,
             side=side

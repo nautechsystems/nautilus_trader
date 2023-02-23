@@ -29,6 +29,7 @@ from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.orderbook import BettingOrderBook
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
@@ -111,7 +112,7 @@ class TestBetfairDataClient:
 
         # Setup logging
         self.logger = Logger(clock=self.clock, level_stdout=LogLevel.ERROR)
-        self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
+        self._log = LoggerAdapter("TestBetfairDataClient", self.logger)
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -246,16 +247,16 @@ class TestBetfairDataClient:
             for order in ob_snap.bids + ob_snap.asks
         }
         expected = {
-            0.0010204,
-            0.0076923,
-            0.0217391,
-            0.0238095,
-            0.1724138,
-            0.2173913,
-            0.3676471,
-            0.3937008,
-            0.4587156,
-            0.5555556,
+            1.8,
+            2.72,
+            2.54,
+            4.6,
+            5.8,
+            2.18,
+            130.0,
+            42.0,
+            46.0,
+            980.0,
         }
         assert result == expected
 
@@ -290,12 +291,12 @@ class TestBetfairDataClient:
         result = [type(event).__name__ for event in self.messages]
         expected = ["OrderBookDeltas"] * 1
         assert result == expected
-        result = [d.action for d in self.messages[0].deltas]
-        expected = [BookAction.UPDATE, BookAction.DELETE]
+        result = {d.action for d in self.messages[0].deltas}
+        expected = {BookAction.UPDATE, BookAction.DELETE}
         assert result == expected
         # Ensure order prices are coming through as probability
         update_op = self.messages[0].deltas[0]
-        assert update_op.order.price == 0.212766
+        assert update_op.order.price == 4.7
 
     def test_market_update_md(self):
         self.client.on_market_update(BetfairStreaming.mcm_UPDATE_md())
@@ -362,11 +363,11 @@ class TestBetfairDataClient:
     def test_orderbook_repr(self):
         self.client.on_market_update(BetfairStreaming.mcm_live_IMAGE())
         ob_snap = self.messages[14]
-        ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
+        ob = BettingOrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
         ob.apply_snapshot(ob_snap)
         print(ob.pprint())
-        assert ob.best_ask_price() == 0.5882353
-        assert ob.best_bid_price() == 0.5847953
+        assert ob.best_ask_price() == 1.71
+        assert ob.best_bid_price() == 1.70
 
     def test_orderbook_updates(self):
         order_books = {}
@@ -392,14 +393,15 @@ class TestBetfairDataClient:
                     raise KeyError
 
         book = order_books[list(order_books)[0]]
-        expected = """bids       price   asks
---------  -------  ---------
-          0.8621   [932.64]
-          0.8547   [1275.83]
-          0.8475   [151.96]
-[147.79]  0.8403
-[156.74]  0.8333
-[76.38]   0.8264"""
+        expected = """bids        price   asks
+---------  -------  --------
+           1.2100   [76.38]
+           1.2000   [156.74]
+           1.1900   [147.79]
+[151.96]   1.1800
+[1275.83]  1.1700
+[932.64]   1.1600"""
+
         result = book.pprint()
         assert result == expected
 
@@ -472,7 +474,7 @@ class TestBetfairDataClient:
     def test_betfair_ticker(self):
         self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
-        assert ticker.last_traded_price == 0.3174603
+        assert ticker.last_traded_price == 3.15
         assert ticker.traded_volume == 364.45
 
     def test_betfair_ticker_sp(self):

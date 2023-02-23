@@ -26,17 +26,20 @@ from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 from betfair_parser.spec.streaming.mcm import MarketChange
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.parsing.requests import _order_quantity_to_stake
+from nautilus_trader.adapters.betfair.orderbook import BettingOrderBook
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
 from nautilus_trader.adapters.betfair.parsing.requests import make_order
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
-from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.parsing.streaming import (
     market_definition_to_betfair_starting_prices,
@@ -57,7 +60,6 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -70,9 +72,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -86,6 +85,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 class TestBetfairParsingStreaming:
     def setup(self):
         self.instrument = TestInstrumentProvider.betting_instrument()
+        self.tick_scheme = BETFAIR_TICK_SCHEME
 
     def test_market_definition_to_instrument_status_updates(self, market_definition_open):
         # Arrange, Act
@@ -145,8 +145,8 @@ class TestBetfairParsingStreaming:
             {
                 "type": "TradeTick",
                 "instrument_id": "1.205822330|49808334|0.0.BETFAIR",
-                "price": "0.2531646",
-                "size": "46.9500",
+                "price": "3.95",
+                "size": "46.95",
                 "aggressor_side": "NO_AGGRESSOR",
                 "trade_id": "3.9546.95",
                 "ts_event": 0,
@@ -217,7 +217,7 @@ class TestBetfairParsingStreaming:
         mcms = BetfairDataProvider.market_updates(filename)
         parser = BetfairParser()
 
-        books: dict[InstrumentId, OrderBook] = {}
+        books: dict[InstrumentId, BettingOrderBook] = {}
         for update in [x for mcm in mcms for x in parser.parse(mcm)]:
             if isinstance(update, (OrderBookDeltas, OrderBookSnapshot)) and not isinstance(
                 update,
@@ -228,7 +228,7 @@ class TestBetfairParsingStreaming:
                     instrument = TestInstrumentProvider.betting_instrument(
                         *instrument_id.value.split("|")
                     )
-                    books[instrument_id] = OrderBook.create(instrument, book_type=BookType.L2_MBP)
+                    books[instrument_id] = BettingOrderBook(instrument.id)
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
         result = [book.count for book in books.values()]
@@ -246,26 +246,11 @@ class TestBetfairParsing:
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()
 
-    @pytest.mark.parametrize(
-        "quantity, betfair_quantity",
-        [
-            ("100", "100.0"),
-            ("375", "375.0"),
-            ("6.25", "6.25"),
-            ("200", "200.0"),
-        ],
-    )
-    def test_order_quantity_to_stake(self, quantity, betfair_quantity):
-        result = _order_quantity_to_stake(
-            quantity=Quantity.from_str(quantity),
-        )
-        assert result == betfair_quantity
-
     def test_order_submit_to_betfair(self):
         command = TestCommandStubs.submit_order_command(
             order=TestExecStubs.limit_order(
-                price=Price.from_str("0.4"),
-                quantity=Quantity.from_str("10"),
+                price=betfair_float_to_price_c(2.5),
+                quantity=betfair_float_to_quantity_c(10),
             ),
         )
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
@@ -278,8 +263,8 @@ class TestBetfairParsing:
                     "handicap": None,
                     "limitOrder": {
                         "persistenceType": "PERSIST",
-                        "price": "2.5",
-                        "size": "10.0",
+                        "price": 2.5,
+                        "size": 10.0,
                     },
                     "orderType": "LIMIT",
                     "selectionId": "50214",
@@ -294,8 +279,8 @@ class TestBetfairParsing:
         modify = TestCommandStubs.modify_order_command(
             instrument_id=self.instrument.id,
             client_order_id=ClientOrderId("C-1"),
-            quantity=Quantity.from_int(10),
-            price=Price(0.74347, precision=5),
+            quantity=betfair_float_to_quantity_c(10),
+            price=betfair_float_to_price_c(1.35),
         )
 
         result = order_update_to_betfair(
@@ -406,26 +391,26 @@ class TestBetfairParsing:
 
     def test_make_order_limit(self):
         order = TestExecStubs.limit_order(
-            price=Price.from_str("0.33"),
-            quantity=Quantity.from_str("10"),
+            price=betfair_float_to_price_c(3.05),
+            quantity=betfair_float_to_quantity_c(10),
         )
         result = make_order(order)
         expected = {
-            "limitOrder": {"persistenceType": "PERSIST", "price": "3.05", "size": "10.0"},
+            "limitOrder": {"persistenceType": "PERSIST", "price": 3.05, "size": 10.0},
             "orderType": "LIMIT",
         }
         assert result == expected
 
     def test_make_order_limit_on_close(self):
         order = TestExecStubs.limit_order(
-            price=Price(0.33, precision=5),
-            quantity=Quantity.from_int(10),
+            price=betfair_float_to_price_c(3.05),
+            quantity=betfair_float_to_quantity_c(10),
             instrument_id=TestIdStubs.betting_instrument_id(),
             time_in_force=TimeInForce.AT_THE_OPEN,
         )
         result = make_order(order)
         expected = {
-            "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},
+            "limitOnCloseOrder": {"price": 3.05, "liability": 10.0},
             "orderType": "LIMIT_ON_CLOSE",
         }
         assert result == expected
@@ -436,8 +421,8 @@ class TestBetfairParsing:
         expected = {
             "limitOrder": {
                 "persistenceType": "LAPSE",
-                "price": "1.01",
-                "size": "100.0",
+                "price": 1.01,
+                "size": 100.0,
                 "timeInForce": "FILL_OR_KILL",
             },
             "orderType": "LIMIT",
@@ -450,8 +435,8 @@ class TestBetfairParsing:
         expected = {
             "limitOrder": {
                 "persistenceType": "LAPSE",
-                "price": "1000.0",
-                "size": "100.0",
+                "price": 1000.0,
+                "size": 100.0,
                 "timeInForce": "FILL_OR_KILL",
             },
             "orderType": "LIMIT",

@@ -21,15 +21,13 @@ import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
+from nautilus_trader.adapters.betfair.common import BETFAIR_FLOAT_TO_PRICE
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
-from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
-from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
+from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
+from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
 from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
-from nautilus_trader.adapters.betfair.common import price_to_probability
-from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -65,16 +63,9 @@ def make_custom_order_ref(client_order_id: ClientOrderId, strategy_id: StrategyI
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
-def _order_quantity_to_stake(quantity: Quantity) -> str:
-    """
-    Convert quantities from nautilus into liabilities in Betfair.
-    """
-    return str(quantity.as_double())
-
-
 def _make_limit_order(order: LimitOrder):
-    price = str(float(_probability_to_price(probability=order.price, side=order.side)))
-    size = _order_quantity_to_stake(quantity=order.quantity)
+    price = order.price.as_double()
+    size = order.quantity.as_double()
 
     if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
@@ -111,7 +102,7 @@ def _make_market_order(order: MarketOrder):
             client_order_id=order.client_order_id,
             order_side=order.side,
             quantity=order.quantity,
-            price=MAX_BET_PROB if order.side == OrderSide.BUY else MIN_BET_PROB,
+            price=MIN_BET_PRICE if order.side == OrderSide.BUY else MAX_BET_PRICE,
             time_in_force=TimeInForce.FOK,
             init_id=order.init_id,
             ts_init=order.ts_init,
@@ -119,7 +110,7 @@ def _make_market_order(order: MarketOrder):
         limit_order = _make_limit_order(order=limit_order)
         # We transform the size of a limit order inside `_make_limit_order` but for a market order we want to just use
         # the size as is.
-        limit_order["limitOrder"]["size"] = str(order.quantity.as_double())
+        limit_order["limitOrder"]["size"] = order.quantity.as_double()
         return limit_order
     else:
         raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
@@ -178,7 +169,7 @@ def order_update_to_betfair(
         "instructions": [
             {
                 "betId": venue_order_id.value,
-                "newPrice": float(_probability_to_price(probability=command.price, side=side)),
+                "newPrice": command.price.as_double(),
             },
         ],
     }
@@ -300,7 +291,7 @@ def bet_to_order_status_report(
         contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
         order_status=determine_order_status(order),
-        price=price_to_probability(str(order["priceSize"]["price"])),
+        price=BETFAIR_FLOAT_TO_PRICE[order["priceSize"]["price"]],
         quantity=Quantity(order["priceSize"]["size"], BETFAIR_QUANTITY_PRECISION),
         filled_qty=Quantity(order["sizeMatched"], BETFAIR_QUANTITY_PRECISION),
         report_id=report_id,

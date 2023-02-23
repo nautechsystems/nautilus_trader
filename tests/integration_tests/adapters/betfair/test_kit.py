@@ -36,10 +36,10 @@ from betfair_parser.spec.streaming.ocm import OrderChanges
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -48,10 +48,9 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
-from tests import TEST_DATA_DIR
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -196,11 +195,6 @@ class BetfairTestStubs:
     def parse_betfair(line):
         parser = BetfairParser()
         yield from parser.parse(STREAM_DECODER.decode(line))
-
-    @staticmethod
-    def betfair_reader(instrument_provider=None, **kwargs):
-        instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
-        return make_betfair_reader(instrument_provider=instrument_provider, **kwargs)
 
     @staticmethod
     def betfair_venue_config() -> BacktestVenueConfig:
@@ -599,6 +593,35 @@ class BetfairStreaming:
 
 class BetfairDataProvider:
     @staticmethod
+    def betting_instrument(
+        market_id: str = "1.179082386",
+        selection_id: str = "50214",
+        handicap: Optional[str] = None,
+    ) -> BettingInstrument:
+        return BettingInstrument(
+            venue_name=BETFAIR_VENUE.value,
+            betting_type="ODDS",
+            competition_id="12282733",
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id="29678534",
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+            event_type_id="6423",
+            event_type_name="American Football",
+            market_id=market_id,
+            market_name="AFC Conference Winner",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+            market_type="SPECIAL",
+            selection_handicap=handicap,
+            selection_id=selection_id,
+            selection_name="Kansas City Chiefs",
+            currency="GBP",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def market_ids():
         """
         A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`.
@@ -706,14 +729,14 @@ class BetfairDataProvider:
 
     @staticmethod
     def betfair_feed_parsed(market_id="1.166564490"):
-        instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        reader = BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider)
-        files = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/{market_id}*")
+        filename = pathlib.Path(f"{DATA_PATH}/{market_id}.bz2")
+        assert filename.exists()
+        parser = BetfairParser()
 
         data = []
-        for rf in files:
-            for block in rf.iter():
-                data.extend(reader.parse(block=block))
+        for line in filename.read_bytes():
+            mcm = STREAM_DECODER.decode(line)
+            data.extend(parser.parse(mcm))
 
         return data
 
