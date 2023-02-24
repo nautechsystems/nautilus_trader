@@ -70,7 +70,21 @@ cdef class BettingOrderBook:
         self.count = 0
         self.ts_last = 0
 
-    cpdef void add(self, BookOrder order, uint64_t sequence=0) except*:
+    cdef void _process_order(self, BookOrder order) except *:
+        # Because a L2OrderBook only has one order per level, we replace the
+        # order.order_id with a price level, which will let us easily process the
+        # order in the base class.
+        order.order_id = f"{order.price:.{self.price_precision}f}"
+
+    cdef void _remove_if_exists(self, BookOrder order, uint64_t sequence) except *:
+        # For a L2OrderBook, an order update means a whole level update. If this
+        # level exists, remove it so that we can insert the new level.
+        if order.side == OrderSide.BUY and order.price in self.bids.prices():
+            self._delete(order, sequence=sequence)
+        elif order.side == OrderSide.SELL and order.price in self.asks.prices():
+            self._delete(order, sequence=sequence)
+
+    cpdef void add(self, BookOrder order, uint64_t sequence=0) except *:
         """
         Add the given order to the book.
 
@@ -84,15 +98,16 @@ cdef class BettingOrderBook:
         """
         Condition.not_none(order, "order")
 
+        self._process_order(order=order)
         self._add(order=order, sequence=sequence)
 
-    cpdef void update(self, BookOrder order, uint64_t sequence=0) except*:
+    cpdef void update(self, BookOrder order, uint64_t sequence=0) except *:
         """
         Update the given order in the book.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to update.
         sequence : uint64, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
@@ -100,15 +115,17 @@ cdef class BettingOrderBook:
         """
         Condition.not_none(order, "order")
 
+        self._process_order(order=order)
+        self._remove_if_exists(order, sequence=sequence)
         self._update(order=order, sequence=sequence)
 
-    cpdef void delete(self, BookOrder order, uint64_t sequence=0) except*:
+    cpdef void delete(self, BookOrder order, uint64_t sequence=0) except *:
         """
         Delete the given order in the book.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to delete.
         sequence : uint64, default 0
             The unique sequence number for the update. If default 0 then will increment the `sequence`.
@@ -116,7 +133,43 @@ cdef class BettingOrderBook:
         """
         Condition.not_none(order, "order")
 
+        self._process_order(order=order)
         self._delete(order=order, sequence=sequence)
+
+    cpdef void check_integrity(self) except *:
+        """
+        Check order book integrity.
+
+        For a L2_MBP order book:
+        - There should be at most one order per level.
+        - The bid side price should not be greater than or equal to the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
+
+        """
+
+        # Check prices
+        cdef Level level
+        cdef Level top_bid_level = self.bids.top()
+        cdef Level top_ask_level = self.asks.top()
+        if top_bid_level is None or top_ask_level is None:
+            return
+
+        cdef double best_bid = top_bid_level.price
+        cdef double best_ask = top_ask_level.price
+        if best_bid is None or best_ask is None:
+            return
+        if best_bid >= best_ask:
+            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
+
+        # Check no more than one order per level
+        for level in self.bids.levels + self.asks.levels:
+            num_orders = len(level.orders)
+            if num_orders != 1:
+                raise BookIntegrityError(f"Number of orders on {level} != 1, was {num_orders}")
 
     cpdef void apply_delta(self, OrderBookDelta delta) except*:
         """
@@ -223,21 +276,6 @@ cdef class BettingOrderBook:
         elif isinstance(data, OrderBookDelta):
             self._apply_delta(delta=data)
 
-    cpdef void check_integrity(self) except*:
-        """
-        Check order book integrity.
-
-        For all order books:
-        - The bid side price should not be greater than the ask side price.
-
-        Raises
-        ------
-        BookIntegrityError
-            If any check fails.
-
-        """
-        self._check_integrity()
-
     cpdef void clear_bids(self) except*:
         """
         Clear the bids from the order book.
@@ -303,20 +341,6 @@ cdef class BettingOrderBook:
             self.sequence = sequence
 
         self.count += 1
-
-    cdef void _check_integrity(self) except *:
-        """ Betting order book is reversed """
-        cdef Level top_bid_level = self.bids.top()
-        cdef Level top_ask_level = self.asks.top()
-        if top_bid_level is None or top_ask_level is None:
-            return
-
-        cdef double best_bid = top_bid_level.price
-        cdef double best_ask = top_ask_level.price
-        if best_bid is None or best_ask is None:
-            return
-        if best_bid >= best_ask:
-            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
     cdef void update_quote_tick(self, QuoteTick tick) except*:
         raise NotImplementedError()

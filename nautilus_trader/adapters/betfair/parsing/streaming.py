@@ -460,7 +460,7 @@ def runner_change_all_depth_to_order_book_deltas(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.BUY),
+                    BookOrder(back.price, back.volume, OrderSide.SELL),
                     ts_event,
                     ts_init,
                 )
@@ -476,7 +476,7 @@ def runner_change_all_depth_to_order_book_deltas(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.SELL),
+                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
                     ts_event,
                     ts_init,
                 )
@@ -510,7 +510,7 @@ def runner_change_best_depth_to_deltas(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.BUY),
+                    BookOrder(back.price, back.volume, OrderSide.SELL),
                     ts_event,
                     ts_init,
                 )
@@ -526,7 +526,7 @@ def runner_change_best_depth_to_deltas(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.SELL),
+                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
                     ts_event,
                     ts_init,
                 )
@@ -560,7 +560,7 @@ def runner_change_display_depth_to_deltas(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.BUY),
+                    BookOrder(back.price, back.volume, OrderSide.SELL),
                     ts_event,
                     ts_init,
                 )
@@ -576,7 +576,7 @@ def runner_change_display_depth_to_deltas(
                     instrument_id,
                     BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.SELL),
+                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
                     ts_event,
                     ts_init,
                 )

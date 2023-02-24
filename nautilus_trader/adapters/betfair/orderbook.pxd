@@ -50,7 +50,8 @@ cdef class BettingOrderBook:
     """The update count for the book.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_last
     """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `uint64_t`"""
-
+    cdef void _process_order(self, BookOrder order) except *
+    cdef void _remove_if_exists(self, BookOrder order, uint64_t sequence) except*
     cpdef void add(self, BookOrder order, uint64_t sequence=*) except *
     cpdef void update(self, BookOrder order, uint64_t sequence=*) except *
     cpdef void delete(self, BookOrder order, uint64_t sequence=*) except *
@@ -67,7 +68,6 @@ cdef class BettingOrderBook:
     cdef void _delete(self, BookOrder order, uint64_t sequence) except *
     cdef void _apply_delta(self, OrderBookDelta delta) except *
     cdef void _apply_sequence(self, uint64_t sequence) except *
-    cdef void _check_integrity(self) except *
 
     cdef void update_quote_tick(self, QuoteTick tick) except *
     cdef void update_trade_tick(self, TradeTick tick) except *
