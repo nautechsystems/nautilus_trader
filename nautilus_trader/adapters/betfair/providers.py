@@ -19,7 +19,7 @@ from typing import Optional, Union
 import msgspec.json
 import pandas as pd
 from betfair_parser.spec.api.markets import MarketCatalog
-from betfair_parser.spec.api.markets import NavigationMarket
+from betfair_parser.spec.api.navigation import NavigationMarket
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
