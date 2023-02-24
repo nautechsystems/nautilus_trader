@@ -10,7 +10,8 @@ Released on TBD (UTC).
 - Now checking duplicate `client_order_id` and `order_list_id` in strategy
 
 ### Fixes
-None
+- Fixed Binance Futures trigger type parsing
+- Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
 
 ---
 # NautilusTrader 1.169.0 Beta

@@ -851,9 +851,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internally_aggregated() and bar_type not in self._bar_aggregators:
+        if bar_type.is_internally_aggregated():
             # Internal aggregation
-            self._start_bar_aggregator(client, bar_type)
+            if bar_type not in self._bar_aggregators:
+                self._start_bar_aggregator(client, bar_type)
         else:
             # External aggregation
             if bar_type not in client.subscribed_bars():
@@ -1016,12 +1017,16 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internally_aggregated() and bar_type in self._bar_aggregators:
+        if self._msgbus.has_subscribers(f"data.bars.{bar_type}"):
+            return
+
+        if bar_type.is_internally_aggregated():
             # Internal aggregation
-            self._stop_bar_aggregator(client, bar_type)
+            if bar_type in self._bar_aggregators:
+                self._stop_bar_aggregator(client, bar_type)
         else:
-            if not self._msgbus.has_subscribers(f"data.bars.{bar_type}"):
-                # External aggregation
+            # External aggregation
+            if bar_type in client.subscribed_bars():
                 client.unsubscribe_bars(bar_type)
 
     cdef void _handle_unsubscribe_data(
