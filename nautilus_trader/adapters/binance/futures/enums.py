@@ -177,9 +177,9 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
             )
 
     def parse_binance_trigger_type(self, trigger_type: str) -> TriggerType:
-        if trigger_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
+        if trigger_type == BinanceFuturesWorkingType.CONTRACT_PRICE.value:
             return TriggerType.LAST_TRADE
-        elif trigger_type == BinanceFuturesWorkingType.MARK_PRICE:
+        elif trigger_type == BinanceFuturesWorkingType.MARK_PRICE.value:
             return TriggerType.MARK_PRICE
         else:
             return None
