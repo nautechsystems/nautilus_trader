@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use pyo3::prelude::*;
+
 use nautilus_model::{
     data::{
         bar::Bar,
@@ -23,6 +25,7 @@ use nautilus_model::{
 
 use crate::Indicator;
 
+#[pyclass]
 #[derive(Debug)]
 pub struct ExponentialMovingAverage {
     pub period: usize,
@@ -34,7 +37,9 @@ pub struct ExponentialMovingAverage {
     _is_initialized: bool,
 }
 
+#[pymethods]
 impl ExponentialMovingAverage {
+    #[new]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         ExponentialMovingAverage {
             period,
