@@ -960,6 +960,7 @@ dependencies = [
  "nautilus_core",
  "nautilus_model",
  "pyo3",
+ "pyo3-macros",
 ]
 
 [[package]]
@@ -995,6 +996,8 @@ dependencies = [
 name = "nautilus_pyo3"
 version = "0.2.0"
 dependencies = [
+ "nautilus_indicators",
+ "nautilus_model",
  "nautilus_persistence",
  "pyo3",
 ]
@@ -1518,9 +1521,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.108"
+version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d56e159d99e6c2b93995d171050271edb50ecc5288fbc7cc17de8fdce4e58c14"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
 dependencies = [
  "proc-macro2",
  "quote",
