@@ -351,10 +351,18 @@ class TestBetfairDataClient:
 
     @pytest.mark.asyncio
     async def test_request_search_instruments(self):
-        req = DataType(type=InstrumentSearch, metadata={"event_type_id": "7"})
-        self.client.request(req, self.uuid)
+        # Arrange
+        _ = patch.object(self.client._instrument_provider, "load_all_async")
+
+        # Act
+        self.client.request(
+            DataType(type=InstrumentSearch, metadata={"event_type_id": "7"}),
+            self.uuid,
+        )
         await asyncio.sleep(0)
         resp = self.messages[0]
+
+        # Assert
         assert len(resp.data.instruments) == 6800
 
     def test_orderbook_repr(self):
