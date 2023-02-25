@@ -124,29 +124,19 @@ impl Logger {
         );
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
 
+        // Setup rate limiting
         let mut msg_count = 0;
-        let mut bucket_time = Instant::now();
+        let mut btime = Instant::now();
 
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
-            if log_msg.level < level_stdout && log_msg.level < level_file {
-                continue;
-            }
-
-            while msg_count >= rate_limit {
-                if bucket_time.elapsed().as_secs() >= 1 {
-                    msg_count = 0;
-                    bucket_time = Instant::now();
-                } else {
-                    thread::sleep(Duration::from_millis(10));
-                }
-            }
-
             if log_msg.level >= LogLevel::Error {
+                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
             } else if log_msg.level >= level_stdout {
+                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
@@ -157,14 +147,30 @@ impl Logger {
                 Self::write_file(&mut file_buf, &line);
                 Self::flush_file(&mut file_buf);
             }
-
-            msg_count += 1;
         }
 
         // Finally ensure remaining buffers are flushed
         Self::flush_stderr(&mut err_buf);
         Self::flush_stdout(&mut out_buf);
         Self::flush_file(&mut file_buf);
+    }
+
+    fn rate_limit_logging(
+        mut btime: Instant,
+        mut msg_count: usize,
+        rate_limit: usize,
+    ) -> (usize, Instant) {
+        while msg_count >= rate_limit {
+            if btime.elapsed().as_secs() >= 1 {
+                msg_count = 0;
+                btime = Instant::now();
+            } else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        msg_count += 1;
+        (msg_count, btime)
     }
 
     fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
