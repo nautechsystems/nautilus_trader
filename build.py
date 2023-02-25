@@ -131,6 +131,8 @@ def _build_extensions() -> list[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
+    extra_link_args = RUST_LIBS
+
     if platform.system() == "Darwin":
         extra_compile_args.append("-Wno-unreachable-code-fallthrough")
 
@@ -141,7 +143,6 @@ def _build_extensions() -> list[Extension]:
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
 
-    extra_link_args = RUST_LIBS
     if platform.system() == "Windows":
         extra_link_args += [
             "WS2_32.Lib",
