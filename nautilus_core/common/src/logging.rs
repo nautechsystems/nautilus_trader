@@ -112,10 +112,10 @@ impl Logger {
         rx: Receiver<LogMessage>,
     ) {
         // Setup buffers
-        let mut out = BufWriter::new(io::stdout());
-        let mut err = BufWriter::new(io::stderr());
+        let mut out_buf = BufWriter::new(io::stdout());
+        let mut err_buf = BufWriter::new(io::stderr());
 
-        let mut file =
+        let mut file_buf =
             file_path.map(|path| BufWriter::new(File::create(path).expect("Error creating file")));
 
         // Setup templates
@@ -144,27 +144,27 @@ impl Logger {
 
             if log_msg.level >= LogLevel::Error {
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
-                Self::write_stderr(&mut err, &line);
-                Self::flush_stderr(&mut err);
+                Self::write_stderr(&mut err_buf, &line);
+                Self::flush_stderr(&mut err_buf);
             } else if log_msg.level >= level_stdout {
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
-                Self::write_stdout(&mut out, &line);
-                Self::flush_stdout(&mut out);
+                Self::write_stdout(&mut out_buf, &line);
+                Self::flush_stdout(&mut out_buf);
             }
 
             if log_msg.level >= level_file {
                 let line = Self::format_log_line_file(&log_msg, trader_id, &template_file);
-                Self::write_file(&mut file, &line);
-                Self::flush_file(&mut file);
+                Self::write_file(&mut file_buf, &line);
+                Self::flush_file(&mut file_buf);
             }
 
             msg_count += 1;
         }
 
         // Finally ensure remaining buffers are flushed
-        Self::flush_stderr(&mut err);
-        Self::flush_stdout(&mut out);
-        Self::flush_file(&mut file);
+        Self::flush_stderr(&mut err_buf);
+        Self::flush_stdout(&mut out_buf);
+        Self::flush_file(&mut file_buf);
     }
 
     fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
@@ -186,29 +186,29 @@ impl Logger {
             .replace("{msg}", &log_msg.msg)
     }
 
-    fn write_stdout(out: &mut BufWriter<Stdout>, line: &str) {
-        match out.write_all(line.as_bytes()) {
+    fn write_stdout(out_buf: &mut BufWriter<Stdout>, line: &str) {
+        match out_buf.write_all(line.as_bytes()) {
             Ok(_) => {}
             Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
-    fn flush_stdout(out: &mut BufWriter<Stdout>) {
-        match out.flush() {
+    fn flush_stdout(out_buf: &mut BufWriter<Stdout>) {
+        match out_buf.flush() {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
     }
 
-    fn write_stderr(err: &mut BufWriter<Stderr>, line: &str) {
-        match err.write_all(line.as_bytes()) {
+    fn write_stderr(err_buf: &mut BufWriter<Stderr>, line: &str) {
+        match err_buf.write_all(line.as_bytes()) {
             Ok(_) => {}
             Err(e) => eprintln!("Error writing to stderr: {e:?}"),
         }
     }
 
-    fn flush_stderr(err: &mut BufWriter<Stderr>) {
-        match err.flush() {
+    fn flush_stderr(err_buf: &mut BufWriter<Stderr>) {
+        match err_buf.flush() {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
