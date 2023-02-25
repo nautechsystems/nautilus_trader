@@ -37,11 +37,9 @@ cdef str RES
 cdef class Logger:
     cdef CLogger _mem
     cdef Clock _clock
-    cdef list _sinks
+    cdef str _file_path
 
-    cpdef void register_sink(self, handler: Callable[[dict], None]) except *
     cpdef void change_clock(self, Clock clock) except *
-    cdef dict create_record(self, LogLevel level, str component, str msg, dict annotations=*)
     cdef void log(
         self,
         uint64_t timestamp_ns,

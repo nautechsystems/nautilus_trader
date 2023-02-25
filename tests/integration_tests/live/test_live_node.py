@@ -246,25 +246,6 @@ class TestTradingNodeOperation:
         # TODO(cs): Assert existence of client
 
     @pytest.mark.asyncio
-    async def test_register_log_sink(self):
-        # Arrange
-        node = TradingNode()
-
-        sink = []
-
-        # Act
-        node.kernel.add_log_sink(sink.append)
-        node.build()
-
-        node.run()
-        await asyncio.sleep(1)
-
-        # Assert: Log record received
-        assert sink[-1]["trader_id"] == node.trader_id.value
-        assert sink[-1]["machine_id"] == node.machine_id
-        assert sink[-1]["instance_id"] == node.instance_id.value
-
-    @pytest.mark.asyncio
     async def test_run(self):
         # Arrange
         node = TradingNode()
