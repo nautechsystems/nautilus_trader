@@ -36,8 +36,8 @@ from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 
 def _generate_batches_within_time_range(
     batches: Generator[list[Data], None, None],
-    start_nanos: int = None,
-    end_nanos: int = None,
+    start_nanos: Optional[int] = None,
+    end_nanos: Optional[int] = None,
 ) -> Generator[list[Data], None, None]:
     if start_nanos is None and end_nanos is None:
         yield from batches
@@ -98,6 +98,8 @@ def _generate_batches_rust(
                 objs = QuoteTick.list_from_capsule(capsule)
             elif cls == TradeTick:
                 objs = TradeTick.list_from_capsule(capsule)
+            else:
+                raise RuntimeError(f"Data type {cls} unsupported for Rust.")
 
             yield objs
 
@@ -106,8 +108,8 @@ def generate_batches_rust(
     files: list[str],
     cls: type,
     batch_size: int = 10_000,
-    start_nanos: int = None,
-    end_nanos: int = None,
+    start_nanos: Optional[int] = None,
+    end_nanos: Optional[int] = None,
 ) -> Generator[list[Data], None, None]:
     batches = _generate_batches_rust(files=files, cls=cls, batch_size=batch_size)
     yield from _generate_batches_within_time_range(batches, start_nanos, end_nanos)
@@ -143,8 +145,8 @@ def generate_batches(
     fs: fsspec.AbstractFileSystem,
     instrument_id: Optional[InstrumentId] = None,
     batch_size: int = 10_000,
-    start_nanos: int = None,
-    end_nanos: int = None,
+    start_nanos: Optional[int] = None,
+    end_nanos: Optional[int] = None,
 ) -> Generator[list[Data], None, None]:
     batches = _generate_batches(
         files=files,
