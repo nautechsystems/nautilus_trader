@@ -120,7 +120,11 @@ class NautilusKernel:
     save_state : bool, default False
         If strategy state should be saved on stop.
     log_level : LogLevel, default LogLevel.INFO
-        The log level for the kernels logger.
+        The minimum log level for write to stdout.
+    log_level_file : LogLevel, default LogLevel.DEBUG
+        The minimum log level to write to a log file.
+    log_file_path : str, optional
+        The optional log file path. If ``None`` then will not log to a file.
     log_rate_limit : int, default 100_000
         The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
@@ -157,6 +161,8 @@ class NautilusKernel:
         load_state: bool = False,
         save_state: bool = False,
         log_level: LogLevel = LogLevel.INFO,
+        log_level_file: LogLevel = LogLevel.DEBUG,
+        log_file_path: Optional[str] = None,
         log_rate_limit: int = 100_000,
         bypass_logging: bool = False,
     ):
@@ -214,6 +220,8 @@ class NautilusKernel:
             machine_id=self._machine_id,
             instance_id=self._instance_id,
             level_stdout=log_level,
+            level_file=log_level_file,
+            file_path=log_file_path,
             rate_limit=log_rate_limit,
             bypass=bypass_logging,
         )
@@ -733,23 +741,6 @@ class NautilusKernel:
 
         if self._writer:
             self._writer.close()
-
-    def add_log_sink(self, handler: Callable[[dict], None]):
-        """
-        Register the given sink handler with the nodes logger.
-
-        Parameters
-        ----------
-        handler : Callable[[dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        self.logger.register_sink(handler=handler)
 
     def cancel_all_tasks(self) -> None:
         PyCondition.not_none(self.loop, "self.loop")

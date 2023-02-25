@@ -4,8 +4,10 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Change parquet catalog schema dictionary integer key widths/types
+- Removed redundant log sink machinery
 
 ### Enhancements
+- Implemented logging to file at core Rust level
 - Now immediately caching orders and order lists in `Strategy`
 - Now checking duplicate `client_order_id` and `order_list_id` in strategy
 

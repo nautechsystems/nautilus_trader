@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import socket
-
 import pytest
 
 from nautilus_trader.common.clock import TestClock
@@ -204,30 +202,3 @@ class TestLoggerTests:
 
         # Assert
         assert True  # No exceptions raised
-
-    @pytest.mark.skip(reason="Moving sinks to Rust")
-    def test_register_sink_sends_records_to_sink(self):
-        # Arrange
-        sink = []
-        logger = Logger(
-            clock=TestClock(),
-            level_stdout=LogLevel.CRITICAL,
-            bypass=True,
-        )
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
-
-        # Act
-        logger.register_sink(sink.append)
-        logger_adapter.info("A log event", annotations={"tag": "risk"})
-
-        # Assert
-        assert sink[0] == {
-            "component": "TEST_LOGGER",
-            "machine_id": socket.gethostname(),
-            "level": "INF",
-            "msg": "A log event",
-            "instance_id": f"{logger.instance_id.value}",
-            "tag": "risk",
-            "timestamp": 0,
-            "trader_id": "TRADER-000",
-        }
