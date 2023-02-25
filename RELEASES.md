@@ -3,11 +3,16 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Renamed `from_datetime` to `start` across data request methods and properties
+- Renamed `to_datetime` to `end` across data request methods and properties
 - Change parquet catalog schema dictionary integer key widths/types
 - Removed redundant log sink machinery
 
 ### Enhancements
-- Implemented logging to file at core Rust level
+- Added logging to file at core Rust level
+- Added `DataCatalogConfig` for more cohesive data catalog configuration
+- Added `DataEngine.register_catalog` to support historical data requests
+- Added `catalog_config` field to base `NautilusKernelConfig`
 - Now immediately caching orders and order lists in `Strategy`
 - Now checking duplicate `client_order_id` and `order_list_id` in strategy
 

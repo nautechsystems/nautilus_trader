@@ -43,6 +43,7 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 cdef class DataEngine(Component):
     cdef Cache _cache
     cdef DataClient _default_client
+    cdef object _catalog
 
     cdef dict _clients
     cdef dict _routing_map

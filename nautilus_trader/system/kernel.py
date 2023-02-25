@@ -48,6 +48,7 @@ from nautilus_trader.config import OrderEmulatorConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import DataCatalogConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.uuid import UUID4
@@ -60,6 +61,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -105,6 +107,8 @@ class NautilusKernel:
         The order emulator configuration for the kernel.
     streaming_config : StreamingConfig, optional
         The configuration for streaming to feather files.
+    catalog_config : DataCatalogConfig, optional
+        The data catalog configuration.
     actor_configs : list[ImportableActorConfig], optional
         The list of importable actor configs.
     strategy_configs : list[ImportableStrategyConfig], optional
@@ -153,6 +157,7 @@ class NautilusKernel:
         instance_id: Optional[UUID4] = None,
         emulator_config: Optional[OrderEmulatorConfig] = None,
         streaming_config: Optional[StreamingConfig] = None,
+        catalog_config: Optional[DataCatalogConfig] = None,
         actor_configs: Optional[list[ImportableActorConfig]] = None,
         strategy_configs: Optional[list[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
@@ -235,9 +240,10 @@ class NautilusKernel:
         nautilus_header(self._log)
         self.log.info("Building system kernel...")
 
-        # Setup loop (if live)
-        if environment == Environment.LIVE:
-            self._loop: Optional[asyncio.AbstractEventLoop] = loop or asyncio.get_event_loop()
+        # Setup loop (if sandbox live)
+        self._loop: Optional[AbstractEventLoop] = None
+        if environment != Environment.BACKTEST:
+            self._loop = loop or asyncio.get_event_loop()
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
                 self._loop.set_default_executor(self.executor)
@@ -247,8 +253,6 @@ class NautilusKernel:
                     # Windows does not support signal handling
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
-        else:
-            self._loop = None
 
         if cache_database_config is None or cache_database_config.type == "in-memory":
             cache_db = None
@@ -383,10 +387,20 @@ class NautilusKernel:
         if self._load_state:
             self._trader.load()
 
-        # Setup writer
+        # Setup stream writer
         self._writer: Optional[StreamingFeatherWriter] = None
         if streaming_config:
             self._setup_streaming(config=streaming_config)
+
+        # Setup data catalog
+        self._catalog: Optional[ParquetDataCatalog] = None
+        if catalog_config:
+            self._catalog = ParquetDataCatalog(
+                path=catalog_config.path,
+                fs_protocol=catalog_config.fs_protocol,
+                fs_storage_options=catalog_config.fs_storage_options,
+            )
+            self._data_engine.register_catalog(self._catalog)
 
         # Create importable actors
         for actor_config in actor_configs:
@@ -711,6 +725,18 @@ class NautilusKernel:
 
         """
         return self._writer
+
+    @property
+    def catalog(self) -> Optional[ParquetDataCatalog]:
+        """
+        Return the kernels data catalog.
+
+        Returns
+        -------
+        ParquetDataCatalog or ``None``
+
+        """
+        return self._catalog
 
     def dispose(self) -> None:
         """

@@ -1639,36 +1639,37 @@ cdef class Actor(Component):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
     ) except *:
         """
         Request historical `QuoteTick` data.
 
-        If `to_datetime` is ``None`` then will request up to the most recent data.
+        If `end` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        from_datetime : datetime, optional
-            The specified from datetime for the data.
-        to_datetime : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range (inclusive).
+            If ``None`` then will default to the current datetime (UTC).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
-        Notes
-        -----
-        Always limited to the tick capacity of the `DataEngine` cache.
+        Raises
+        ------
+        ValueError
+            If `start` is not less than `end`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
@@ -1676,8 +1677,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={
                 "instrument_id": instrument_id,
-                "from_datetime": from_datetime,
-                "to_datetime": to_datetime,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_quote_ticks_response,
             request_id=UUID4(),
@@ -1689,36 +1690,37 @@ cdef class Actor(Component):
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
     ) except *:
         """
         Request historical `TradeTick` data.
 
-        If `to_datetime` is ``None`` then will request up to the most recent data.
+        If `end` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        from_datetime : datetime, optional
-            The specified from datetime for the data.
-        to_datetime : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range (inclusive).
+            If ``None`` then will default to the current datetime (UTC).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
-        Notes
-        -----
-        Always limited to the tick capacity of the `DataEngine` cache.
+        Raises
+        ------
+        ValueError
+            If `start` is not less than `end`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
@@ -1726,8 +1728,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={
                 "instrument_id": instrument_id,
-                "from_datetime": from_datetime,
-                "to_datetime": to_datetime,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_trade_ticks_response,
             request_id=UUID4(),
@@ -1739,24 +1741,24 @@ cdef class Actor(Component):
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
     ) except *:
         """
         Request historical `Bar` data.
 
-        If `to_datetime` is ``None`` then will request up to the most recent data.
+        If `end` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
         bar_type : BarType
             The bar type for the request.
-        from_datetime : datetime, optional
-            The specified from datetime for the data.
-        to_datetime : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range (inclusive).
+            If ``None`` then will default to the current datetime (UTC).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -1764,16 +1766,12 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `from_datetime` is not less than `to_datetime`.
-
-        Notes
-        -----
-        Always limited to the bar capacity of the `DataEngine` cache.
+            If `start` is not less than `end`.
 
         """
         Condition.not_none(bar_type, "bar_type")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
@@ -1781,9 +1779,8 @@ cdef class Actor(Component):
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={
                 "bar_type": bar_type,
-                "from_datetime": from_datetime,
-                "to_datetime": to_datetime,
-                "limit": self.cache.bar_capacity,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_bars_response,
             request_id=UUID4(),

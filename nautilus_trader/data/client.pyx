@@ -918,8 +918,8 @@ cdef class MarketDataClient(DataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
     ) except *:
         """
         Request historical `QuoteTick` data.
@@ -932,9 +932,9 @@ cdef class MarketDataClient(DataClient):
             The limit for the number of returned ticks.
         correlation_id : UUID4
             The correlation ID for the request.
-        from_datetime : datetime, optional
+        start : datetime, optional
             The specified from datetime for the data.
-        to_datetime : datetime, optional
+        end : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
@@ -949,8 +949,8 @@ cdef class MarketDataClient(DataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
     ) except *:
         """
         Request historical `TradeTick` data.
@@ -963,9 +963,9 @@ cdef class MarketDataClient(DataClient):
             The limit for the number of returned ticks.
         correlation_id : UUID4
             The correlation ID for the request.
-        from_datetime : datetime, optional
+        start : datetime, optional
             The specified from datetime for the data.
-        to_datetime : datetime, optional
+        end : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
@@ -980,8 +980,8 @@ cdef class MarketDataClient(DataClient):
         BarType bar_type,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
     ) except *:
         """
         Request historical `Bar` data.
@@ -994,9 +994,9 @@ cdef class MarketDataClient(DataClient):
             The limit for the number of returned bars.
         correlation_id : UUID4
             The correlation ID for the request.
-        from_datetime : datetime, optional
+        start : datetime, optional
             The specified from datetime for the data.
-        to_datetime : datetime, optional
+        end : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
