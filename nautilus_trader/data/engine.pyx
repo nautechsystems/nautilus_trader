@@ -33,6 +33,7 @@ from typing import Callable, Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 from cpython.datetime cimport timedelta
 
@@ -121,6 +122,7 @@ cdef class DataEngine(Component):
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
+        self._catalog: Optional[ParquetDataCatalog] = None
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
 
@@ -143,7 +145,7 @@ cdef class DataEngine(Component):
         self._msgbus.register(endpoint="DataEngine.response", handler=self.response)
 
     @property
-    def registered_clients(self):
+    def registered_clients(self) -> list[ClientId]:
         """
         Return the execution clients registered with the engine.
 
@@ -155,7 +157,7 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self):
+    def default_client(self) -> Optional[ClientId]:
         """
         Return the default data client registered with the engine.
 
@@ -165,6 +167,20 @@ cdef class DataEngine(Component):
 
         """
         return self._default_client.id if self._default_client is not None else None
+
+    def register_catalog(self, catalog: ParquetDataCatalog) -> None:
+        """
+        Register the given data catalog with the engine.
+
+        Parameters
+        ----------
+        catalog : ParquetDataCatalog
+            The data catalog to register.
+
+        """
+        Condition.not_none(catalog, "catalog")
+
+        self._catalog = catalog
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
@@ -1079,8 +1095,8 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("start"),
+                request.data_type.metadata.get("end"),
             )
         elif request.data_type.type == TradeTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
@@ -1088,8 +1104,8 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("start"),
+                request.data_type.metadata.get("end"),
             )
         elif request.data_type.type == Bar:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
@@ -1097,8 +1113,8 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("bar_type"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("start"),
+                request.data_type.metadata.get("end"),
             )
         else:
             try:

@@ -153,22 +153,22 @@ cdef class Actor(Component):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
+        datetime start=*,
+        datetime end=*,
         ClientId client_id=*,
     ) except *
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
+        datetime start=*,
+        datetime end=*,
         ClientId client_id=*,
     ) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
+        datetime start=*,
+        datetime end=*,
         ClientId client_id=*,
     ) except *
 

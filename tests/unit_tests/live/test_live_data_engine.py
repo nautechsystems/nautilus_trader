@@ -152,8 +152,8 @@ class TestLiveDataEngine:
                 QuoteTick,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
@@ -302,8 +302,8 @@ class TestLiveDataEngine:
                 QuoteTick,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
