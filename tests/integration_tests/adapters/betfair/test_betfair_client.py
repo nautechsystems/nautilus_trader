@@ -91,7 +91,7 @@ class TestBetfairClient:
             response=BetfairResponses.navigation_list_navigation_response(),
         ) as mock_request:
             nav = await self.client.list_navigation()
-            assert len(nav["children"]) == 28
+            assert len(nav.children) == 28
 
         result = mock_request.call_args.kwargs
         expected = BetfairRequests.navigation_list_navigation_request()

@@ -136,7 +136,7 @@ class TestBetfairInstrumentProvider:
 
         mc: MarketChange = update.mc[0]
         market_def = mc.marketDefinition
-        market_def.marketId = mc.id
+        market_def = msgspec.structs.replace(market_def, marketId=mc.id)
         instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 

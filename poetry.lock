@@ -218,23 +218,19 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.1.17"
+version = "0.1.18"
 description = ""
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.9,<4.0"
-files = []
-develop = false
+files = [
+    {file = "betfair_parser-0.1.18-py3-none-any.whl", hash = "sha256:5c14d34d81b257e01b23ce692ea04a1a3df3102ff1958b40dde00bf5e39f5518"},
+    {file = "betfair_parser-0.1.18.tar.gz", hash = "sha256:49bebc363847afc79da1a5249439e1742f7fa1feb7c06b8dadb90c6eb6fdd47d"},
+]
 
 [package.dependencies]
 fsspec = ">=2022"
 msgspec = ">=0.12"
-
-[package.source]
-type = "git"
-url = "https://github.com/limx0/betfair_parser.git"
-reference = "HEAD"
-resolved_reference = "41b97feec7fcca57c011f99abd5b72b8613f7384"
 
 [[package]]
 name = "black"
@@ -2194,14 +2190,14 @@ six = ">=1.5"
 
 [[package]]
 name = "python-slugify"
-version = "8.0.0"
+version = "8.0.1"
 description = "A Python slugify application that also handles Unicode"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "python-slugify-8.0.0.tar.gz", hash = "sha256:f1da83f3c7ab839b3f84543470cd95bdb5a81f1a0b80fed502f78b7dca256062"},
-    {file = "python_slugify-8.0.0-py2.py3-none-any.whl", hash = "sha256:51f217508df20a6c166c7821683384b998560adcf8f19a6c2ca8b460528ccd9c"},
+    {file = "python-slugify-8.0.1.tar.gz", hash = "sha256:ce0d46ddb668b3be82f4ed5e503dbc33dd815d83e2eb6824211310d3fb172a27"},
+    {file = "python_slugify-8.0.1-py2.py3-none-any.whl", hash = "sha256:70ca6ea68fe63ecc8fa4fcf00ae651fc8a5d02d93dcd12ae6d4fc7ca46c4d395"},
 ]
 
 [package.dependencies]
@@ -3047,4 +3043,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "a68d23a07af26ae6da3c8fdcca119ec7ddfc55415b24bc36e032547eafadd569"
+content-hash = "9e01f6549c4b4326e33eb220dcb3f10eb582bc8d5eeba868a0edc4121de6e7fc"

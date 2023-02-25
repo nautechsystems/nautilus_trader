@@ -175,7 +175,7 @@ class BetfairDataClient(LiveMarketDataClient):
             # Strategy has requested a list of instruments
             await self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id)
         else:
-            await super()._request(data_type=data_type, correlation_id=correlation_id)
+            self._log.warning(f"Received unknown request for {data_type=}")
 
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
         await self._instrument_provider.load_all_async(market_filter=data_type.metadata)

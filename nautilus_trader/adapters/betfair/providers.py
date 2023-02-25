@@ -20,8 +20,8 @@ import msgspec.json
 import pandas as pd
 from betfair_parser.spec.api.markets import MarketCatalog
 from betfair_parser.spec.api.navigation import FlattenedMarket
-from betfair_parser.spec.api.navigation import NavigationMarket
-from betfair_parser.spec.api.navigation import flatten_navigation
+from betfair_parser.spec.api.navigation import Navigation
+from betfair_parser.spec.api.navigation import navigation_to_flatten_markets
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -105,7 +105,10 @@ class BetfairInstrumentProvider(InstrumentProvider):
         market_filter = market_filter or self._filters
 
         self._log.info(f"Loading markets with market_filter={market_filter}")
-        markets = await load_markets(self._client, market_filter=market_filter)
+        markets: list[FlattenedMarket] = await load_markets(
+            self._client,
+            market_filter=market_filter,
+        )
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
         market_metadata = await load_markets_metadata(client=self._client, markets=markets)
@@ -282,18 +285,18 @@ async def load_markets(
             if k not in ("selection_id", "selection_handicap")
         }
     assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
-    navigation = await client.list_navigation()
-    markets = flatten_navigation(raw=msgspec.json.encode(navigation))
+    navigation: Navigation = await client.list_navigation()
+    markets = navigation_to_flatten_markets(navigation, **market_filter)
     return markets
 
 
 def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalog]:
-    return [msgspec.json.decode(msgspec.json.encode(r), type=MarketCatalog) for r in catalog]
+    return msgspec.json.decode(msgspec.json.encode(catalog), type=list[MarketCatalog])
 
 
 async def load_markets_metadata(
     client: BetfairClient,
-    markets: list[NavigationMarket],
+    markets: list[FlattenedMarket],
 ) -> list[MarketCatalog]:
     all_results = []
     for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):
