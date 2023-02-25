@@ -324,8 +324,8 @@ class TestBetfairDataClient:
         update = BetfairStreaming.mcm_BSP()
         provider = self.client.instrument_provider
         for mc in STREAM_DECODER.decode(update[0]).mc:
-            mc.marketDefinition.marketId = mc.id
-            instruments = make_instruments(market=mc.marketDefinition, currency="GBP")
+            market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
+            instruments = make_instruments(market=market_def, currency="GBP")
             provider.add_bulk(instruments)
 
         for u in update:

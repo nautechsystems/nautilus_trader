@@ -221,16 +221,20 @@ name = "betfair-parser"
 version = "0.1.17"
 description = ""
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.9,<4.0"
-files = [
-    {file = "betfair_parser-0.1.17-py3-none-any.whl", hash = "sha256:6ae2961261f7d5207318fbed0afb59863599b32804a3177258b2e836566b777d"},
-    {file = "betfair_parser-0.1.17.tar.gz", hash = "sha256:72df0bc36dabad76ed90926bb8183883b8d6a6b0f7e6c18446ba8031ff86872d"},
-]
+files = []
+develop = false
 
 [package.dependencies]
 fsspec = ">=2022"
 msgspec = ">=0.12"
+
+[package.source]
+type = "git"
+url = "https://github.com/limx0/betfair_parser.git"
+reference = "HEAD"
+resolved_reference = "41b97feec7fcca57c011f99abd5b72b8613f7384"
 
 [[package]]
 name = "black"
@@ -3043,4 +3047,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "d3330c8302e89454b6c632bd3bff3c314562938a6321f268ee6c987b17c0ab59"
+content-hash = "a68d23a07af26ae6da3c8fdcca119ec7ddfc55415b24bc36e032547eafadd569"

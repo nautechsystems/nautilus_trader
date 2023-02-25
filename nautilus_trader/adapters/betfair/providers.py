@@ -19,7 +19,9 @@ from typing import Optional, Union
 import msgspec.json
 import pandas as pd
 from betfair_parser.spec.api.markets import MarketCatalog
+from betfair_parser.spec.api.navigation import FlattenedMarket
 from betfair_parser.spec.api.navigation import NavigationMarket
+from betfair_parser.spec.api.navigation import flatten_navigation
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -27,7 +29,6 @@ from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
-from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -271,7 +272,7 @@ VALID_MARKET_FILTER_KEYS = (
 async def load_markets(
     client: BetfairClient,
     market_filter: Optional[dict] = None,
-) -> list[NavigationMarket]:
+) -> list[FlattenedMarket]:
     if isinstance(market_filter, dict):
         # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
         # only the market_id is relevant, so we just drop these two fields
@@ -282,11 +283,8 @@ async def load_markets(
         }
     assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
     navigation = await client.list_navigation()
-    markets = list(flatten_tree(navigation, **(market_filter or {})))
-    return [
-        msgspec.json.decode(msgspec.json.encode(market), type=NavigationMarket)
-        for market in markets
-    ]
+    markets = flatten_navigation(raw=msgspec.json.encode(navigation))
+    return markets
 
 
 def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalog]:

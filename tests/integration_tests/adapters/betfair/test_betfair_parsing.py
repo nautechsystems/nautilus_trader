@@ -358,7 +358,6 @@ class TestBetfairParsing:
 
     @pytest.mark.asyncio
     async def test_merge_order_book_deltas(self):
-        await self.provider.load_all_async(market_filter={"market_id": "1.180759290"})
         raw = msgspec.json.encode(
             {
                 "op": "mcm",
