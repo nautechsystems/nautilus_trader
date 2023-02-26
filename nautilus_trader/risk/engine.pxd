@@ -47,8 +47,6 @@ cdef class RiskEngine(Component):
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly bint is_bypassed
     """If the risk engine is completely bypassed.\n\n:returns: `bool`"""
-    cdef readonly bint deny_modify_pending_update
-    """If deny `ModifyOrder` commands when an order is in a `PENDING_UPDATE` state.\n\n:returns: `bool`"""
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
@@ -100,6 +98,8 @@ cdef class RiskEngine(Component):
     cpdef void _deny_new_order(self, TradingCommand command) except *
     cdef void _deny_order(self, Order order, str reason) except *
     cdef void _deny_order_list(self, OrderList order_list, str reason) except *
+    cdef void _reject_modify_order(self, Order order, str reason) except *
+    cdef void _reject_cancel_order(self, Order order, str reason) except *
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

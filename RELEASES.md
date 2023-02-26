@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Renamed `from_datetime` to `start` across data request methods and properties
 - Renamed `to_datetime` to `end` across data request methods and properties
 - Change parquet catalog schema dictionary integer key widths/types
+- Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
 - Removed redundant log sink machinery
 
 ### Enhancements
@@ -14,13 +15,15 @@ Released on TBD (UTC).
 - Added `DataEngine.register_catalog` to support historical data requests
 - Added `catalog_config` field to base `NautilusKernelConfig`
 - Now immediately caching orders and order lists in `Strategy`
-- Now checking duplicate `client_order_id` and `order_list_id` in strategy
+- Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
+- Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
 
 ### Fixes
 - Fixed Binance Futures trigger type parsing
 - Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
 
 ---
+
 # NautilusTrader 1.169.0 Beta
 
 Released on 18th February 2023 (UTC).

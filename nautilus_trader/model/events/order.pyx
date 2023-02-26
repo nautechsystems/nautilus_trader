@@ -1371,7 +1371,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         The client order ID.
     venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue).
-    account_id : AccountId
+    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -1390,7 +1390,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id not None,
+        AccountId account_id: Optional[AccountId],
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -1415,7 +1415,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
+            f"account_id={self.account_id}, "  # Can be None
             f"ts_event={self.ts_event})"
         )
 
@@ -1427,7 +1427,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
+            f"account_id={self.account_id}, "  # Can be None
             f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -1437,13 +1437,14 @@ cdef class OrderPendingUpdate(OrderEvent):
     cdef OrderPendingUpdate from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str v = values["venue_order_id"]
+        cdef str a = values["account_id"]
         return OrderPendingUpdate(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            account_id=AccountId(values["account_id"]),
+            account_id=AccountId(a) if a is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -1460,7 +1461,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             "instrument_id": obj.instrument_id.to_str(),
             "client_order_id": obj.client_order_id.to_str(),
             "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str(),
+            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -1514,7 +1515,7 @@ cdef class OrderPendingCancel(OrderEvent):
         The client order ID.
     venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue).
-    account_id : AccountId
+    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -1533,7 +1534,7 @@ cdef class OrderPendingCancel(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id: Optional[VenueOrderId],
-        AccountId account_id not None,
+        AccountId account_id: Optional[AccountId],
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -1558,7 +1559,7 @@ cdef class OrderPendingCancel(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
+            f"account_id={self.account_id}, "  # Can be None
             f"ts_event={self.ts_event})"
         )
 
@@ -1570,7 +1571,7 @@ cdef class OrderPendingCancel(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"account_id={self.account_id.to_str()}, "
+            f"account_id={self.account_id}, "  # Can be None
             f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -1580,13 +1581,14 @@ cdef class OrderPendingCancel(OrderEvent):
     cdef OrderPendingCancel from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str v = values["venue_order_id"]
+        cdef str a = values["account_id"]
         return OrderPendingCancel(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
-            account_id=AccountId(values["account_id"]),
+            account_id=AccountId(a) if a is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -1603,7 +1605,7 @@ cdef class OrderPendingCancel(OrderEvent):
             "instrument_id": obj.instrument_id.to_str(),
             "client_order_id": obj.client_order_id.to_str(),
             "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
-            "account_id": obj.account_id.to_str(),
+            "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

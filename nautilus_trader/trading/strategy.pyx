@@ -32,6 +32,8 @@ import cython
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -45,6 +47,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
@@ -59,6 +62,7 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
@@ -67,6 +71,8 @@ from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderModifyRejected
+from nautilus_trader.model.events.order cimport OrderPendingCancel
+from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -438,6 +444,11 @@ cdef class Strategy(Actor):
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
+        Raises
+        ------
+        ValueError
+            If `order.status` is not ``INITIALIZED``.
+
         Warning
         -------
         If a `position_id` is passed and a position does not yet exist, then any
@@ -447,6 +458,7 @@ cdef class Strategy(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
+        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -511,6 +523,11 @@ cdef class Strategy(Actor):
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
+        Raises
+        ------
+        ValueError
+            If any `order.status` is not ``INITIALIZED``.
+
         Warning
         -------
         If a `position_id` is passed and a position does not yet exist, then any
@@ -524,6 +541,7 @@ cdef class Strategy(Actor):
         # Publish initialized events
         cdef Order order
         for order in order_list.orders:
+            Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
             self._msgbus.publish_c(
                 topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
@@ -662,6 +680,23 @@ cdef class Strategy(Actor):
             )
             return  # Cannot send command
 
+        cdef OrderPendingUpdate event
+        if not order.is_emulated_c():
+            # Generate and apply event
+            event = self._generate_order_pending_update(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
         cdef ModifyOrder command = ModifyOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -704,6 +739,23 @@ cdef class Strategy(Actor):
                 f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
+
+        cdef OrderPendingCancel event
+        if not order.is_emulated_c():
+            # Generate and apply event
+            event = self._generate_order_pending_cancel(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
 
         cdef CancelOrder command = CancelOrder(
             trader_id=self.trader_id,
@@ -775,6 +827,20 @@ cdef class Strategy(Actor):
                 f"Canceling {emulated_count} emulated{order_side_str} "
                 f"{instrument_id.value} order{'' if emulated_count == 1 else 's'}...",
             )
+
+        cdef:
+            OrderPendingCancel event
+            Order order
+        for order in open_orders + emulated_orders:
+            if order.is_emulated_c():
+                continue
+            event = self._generate_order_pending_cancel(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                continue
 
         cdef CancelAllOrders command = CancelAllOrders(
             trader_id=self.trader_id,
@@ -1242,7 +1308,47 @@ cdef class Strategy(Actor):
         for indicator in indicators:
             indicator.handle_bar(bar)
 
-# -- EGRESS ---------------------------------------------------------------------------------------
+# -- EVENTS ---------------------------------------------------------------------------------------
+
+    cdef OrderDenied _generate_order_denied(self, Order order, str reason):
+        cdef uint64_t now = self._clock.timestamp_ns()
+        return OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_init=now,
+        )
+
+    cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
+        cdef uint64_t now = self._clock.timestamp_ns()
+        return OrderPendingUpdate(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+    cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
+        cdef uint64_t now = self._clock.timestamp_ns()
+        return OrderPendingCancel(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
 
     cdef void _deny_order(self, Order order, str reason) except *:
         self._log.error(f"Order denied: {reason}.")
@@ -1251,21 +1357,18 @@ cdef class Strategy(Actor):
             self.cache.add_order(order, position_id=None)
 
         # Generate event
-        cdef OrderDenied denied = OrderDenied(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            reason=reason,
-            event_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-        order.apply(denied)
+        cdef OrderDenied event = self._generate_order_denied(order, reason)
+
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as e:
+            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            return
 
         # Publish denied event
         self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.to_str()}",
-            msg=denied,
+            msg=event,
         )
 
     cdef void _deny_order_list(self, OrderList order_list, str reason) except *:
@@ -1273,6 +1376,8 @@ cdef class Strategy(Actor):
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
+
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_risk_command(self, TradingCommand command) except *:
         if not self.log.is_bypassed:

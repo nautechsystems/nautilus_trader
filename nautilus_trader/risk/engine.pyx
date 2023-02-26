@@ -53,7 +53,9 @@ from nautilus_trader.model.enums_c cimport TradingState
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.enums_c cimport trading_state_to_str
+from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -128,7 +130,6 @@ cdef class RiskEngine(Component):
         # Settings
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.bypass
-        self.deny_modify_pending_update = config.deny_modify_pending_update
         self.debug = config.debug
         self._log_state()
 
@@ -496,35 +497,28 @@ cdef class RiskEngine(Component):
         ########################################################################
         cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
-            self._deny_command(
-                command=command,
-                reason=f"Order with {repr(command.client_order_id)} not found",
+            self._log.error(
+                f"ModifyOrder DENIED: Order with {repr(command.client_order_id)} not found.",
             )
             return  # Denied
         elif order.is_closed_c():
-            self._deny_command(
-                command=command,
+            self._reject_modify_order(
+                order=order,
                 reason=f"Order with {repr(command.client_order_id)} already closed",
             )
             return  # Denied
         elif order.is_pending_cancel_c():
-            self._deny_command(
-                command=command,
+            self._reject_modify_order(
+                order=order,
                 reason=f"Order with {repr(command.client_order_id)} already pending cancel",
-            )
-            return  # Denied
-        elif self.deny_modify_pending_update and order.is_pending_update_c():
-            self._deny_command(
-                command=command,
-                reason=f"Order with {repr(command.client_order_id)} already pending update",
             )
             return  # Denied
 
         # Get instrument for orders
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
-            self._deny_command(
-                command=command,
+            self._reject_modify_order(
+                order=order,
                 reason=f"no instrument found for {command.instrument_id}",
             )
             return  # Denied
@@ -534,39 +528,39 @@ cdef class RiskEngine(Component):
         # Check price
         risk_msg = self._check_price(instrument, command.price)
         if risk_msg:
-            self._deny_command(command=command, reason=risk_msg)
+            self._reject_modify_order(order=order, reason=risk_msg)
             return  # Denied
 
         # Check trigger
         risk_msg = self._check_price(instrument, command.trigger_price)
         if risk_msg:
-            self._deny_command(command=command, reason=risk_msg)
+            self._reject_modify_order(order=order, reason=risk_msg)
             return  # Denied
 
         # Check quantity
         risk_msg = self._check_quantity(instrument, command.quantity)
         if risk_msg:
-            self._deny_command(command=command, reason=risk_msg)
+            self._reject_modify_order(order=order, reason=risk_msg)
             return  # Denied
 
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
-            self._deny_command(
-                command=command,
+            self._reject_modify_order(
+                order=order,
                 reason="TradingState is HALTED",
             )
             return  # Denied
         elif self.trading_state == TradingState.REDUCING:
             if command.quantity and command.quantity > order.quantity:
                 if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
-                    self._deny_command(
-                        command=command,
+                    self._reject_modify_order(
+                        order=order,
                         reason="TradingState is REDUCING and update will increase exposure",
                     )
                     return  # Denied
                 elif order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
-                    self._deny_command(
-                        command=command,
+                    self._reject_modify_order(
+                        order=order,
                         reason="TradingState is REDUCING and update will increase exposure",
                     )
                     return  # Denied
@@ -582,21 +576,14 @@ cdef class RiskEngine(Component):
         ########################################################################
         cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
-            self._deny_command(
-                command=command,
-                reason=f"Order with {repr(command.client_order_id)} not found",
+            self._log.error(
+                f"CancelOrder DENIED: Order with {repr(command.client_order_id)} not found.",
             )
             return  # Denied
         elif order.is_closed_c():
-            self._deny_command(
-                command=command,
+            self._reject_cancel_order(
+                order=order,
                 reason=f"Order with {repr(command.client_order_id)} already closed",
-            )
-            return  # Denied
-        elif order.is_pending_cancel_c():
-            self._deny_command(
-                command=command,
-                reason=f"Order with {repr(command.client_order_id)} already pending cancel",
             )
             return  # Denied
 
@@ -804,10 +791,8 @@ cdef class RiskEngine(Component):
             self._deny_order(command.order, reason=reason)
         elif isinstance(command, SubmitOrderList):
             self._deny_order_list(command.order_list, reason=reason)
-        elif isinstance(command, ModifyOrder):
-            self._log.error(f"ModifyOrder DENIED: {reason}.")
-        elif isinstance(command, CancelOrder):
-            self._log.error(f"CancelOrder DENIED: {reason}.")
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(f"Cannot deny command {command}")  # pragma: no cover (design-time error)
 
     # Needs to be `cpdef` due being called from throttler
     cpdef void _deny_new_order(self, TradingCommand command) except *:
@@ -848,6 +833,42 @@ cdef class RiskEngine(Component):
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
+
+    cdef void _reject_modify_order(self, Order order, str reason) except *:
+        # Generate event
+        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef OrderModifyRejected denied = OrderModifyRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
+
+    cdef void _reject_cancel_order(self, Order order, str reason) except *:
+        # Generate event
+        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef OrderCancelRejected denied = OrderCancelRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
