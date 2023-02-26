@@ -68,7 +68,7 @@ cdef class MovingAverage(Indicator):
         self.value = 0
         self.count = 0
 
-    cpdef void update_raw(self, double value) except *:
+    cpdef void update_raw(self, double value):
         """
         Update the indicator with the given raw value.
 
@@ -80,7 +80,7 @@ cdef class MovingAverage(Indicator):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void _increment_count(self) except *:
+    cpdef void _increment_count(self):
         self.count += 1
 
         # Initialization logic
@@ -89,10 +89,10 @@ cdef class MovingAverage(Indicator):
             if self.count >= self.period:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._reset_ma()
         self.count = 0
         self.value = 0
 
-    cpdef void _reset_ma(self) except *:
+    cpdef void _reset_ma(self):
         pass  # Optionally override if additional values to reset

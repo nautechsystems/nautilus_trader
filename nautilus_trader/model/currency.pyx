@@ -180,7 +180,7 @@ cdef class Currency:
         return self._mem.precision
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=False) except *:
+    cdef void register_c(Currency currency, bint overwrite=False):
         if not overwrite and currency.code in _CURRENCY_MAP:
             return
         _CURRENCY_MAP[currency.code] = currency

@@ -48,7 +48,7 @@ cdef class RateOfChange(Indicator):
         self._prices = deque(maxlen=period)
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -62,7 +62,7 @@ cdef class RateOfChange(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double price) except *:
+    cpdef void update_raw(self, double price):
         """
         Update the indicator with the given price.
 
@@ -84,6 +84,6 @@ cdef class RateOfChange(Indicator):
         else:
             self.value = (price - self._prices[0]) / self._prices[0]
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._prices.clear()
         self.value = 0

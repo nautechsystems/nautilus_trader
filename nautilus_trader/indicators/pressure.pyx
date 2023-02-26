@@ -66,7 +66,7 @@ cdef class Pressure(Indicator):
         self.value = 0
         self.value_cumulative = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -91,7 +91,7 @@ cdef class Pressure(Indicator):
         double low,
         double close,
         double volume,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -128,7 +128,7 @@ cdef class Pressure(Indicator):
         self.value = buy_pressure - sell_pressure
         self.value_cumulative += self.value
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._atr.reset()
         self._average_volume.reset()
         self.value = 0

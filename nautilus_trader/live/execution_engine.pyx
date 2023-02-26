@@ -228,7 +228,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, TradingCommand command) except *:
+    cpdef void execute(self, TradingCommand command):
         """
         Execute the given command.
 
@@ -258,7 +258,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             )
             self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
 
-    cpdef void process(self, OrderEvent event) except *:
+    cpdef void process(self, OrderEvent event):
         """
         Process the given event.
 
@@ -294,7 +294,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._evt_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel messages placed on queues.")
 
-    cpdef void _on_start(self) except *:
+    cpdef void _on_start(self):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
@@ -308,7 +308,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._inflight_check_task = self._loop.create_task(self._inflight_check_loop())
             self._log.debug(f"Scheduled {self._inflight_check_task}.")
 
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinel()
@@ -431,7 +431,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    cpdef void reconcile_report(self, ExecutionReport report) except *:
+    cpdef void reconcile_report(self, ExecutionReport report):
         """
         Check the given execution report.
 
@@ -445,7 +445,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._reconcile_report(report)
 
-    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *:
+    cpdef void reconcile_mass_status(self, ExecutionMassStatus report):
         """
         Reconcile the given execution mass status report.
 
@@ -461,7 +461,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
 # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    cdef bint _reconcile_report(self, ExecutionReport report) except *:
+    cdef bint _reconcile_report(self, ExecutionReport report):
         self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
@@ -489,7 +489,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return result
 
-    cdef bint _reconcile_mass_status(self, ExecutionMassStatus mass_status) except *:
+    cdef bint _reconcile_mass_status(self, ExecutionMassStatus mass_status):
         self._log.debug(f"{RECV}{RPT} {mass_status}.")
         self.report_count += 1
 
@@ -530,7 +530,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *:
+    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades):
         cdef ClientOrderId client_order_id = report.client_order_id
         if client_order_id is None:
             client_order_id = self._cache.client_order_id(report.venue_order_id)
@@ -613,7 +613,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return True  # Reconciled
 
-    cdef bint _reconcile_trade_report_single(self, TradeReport report) except *:
+    cdef bint _reconcile_trade_report_single(self, TradeReport report):
         cdef ClientOrderId client_order_id = self._cache.client_order_id(report.venue_order_id)
         if client_order_id is None:
             self._log.error(
@@ -640,7 +640,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return self._reconcile_trade_report(order, report, instrument)
 
-    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *:
+    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument):
         if report.trade_id in order.trade_ids_c():
             return True  # Fill already applied (assumes consistent trades)
         try:
@@ -655,13 +655,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             )
         return True
 
-    cdef bint _reconcile_position_report(self, PositionStatusReport report) except *:
+    cdef bint _reconcile_position_report(self, PositionStatusReport report):
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
             return self._reconcile_position_report_netting(report)
 
-    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report) except *:
+    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report):
         cdef Position position = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
@@ -680,7 +680,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return True  # Reconciled
 
-    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report) except *:
+    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report):
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
@@ -808,7 +808,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return order
 
-    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report):
         cdef OrderRejected rejected = OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -824,7 +824,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {rejected}.")
         self._handle_event(rejected)
 
-    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report):
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
@@ -840,7 +840,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {accepted}.")
         self._handle_event(accepted)
 
-    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report):
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
@@ -856,7 +856,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {triggered}.")
         self._handle_event(triggered)
 
-    cdef void _generate_order_updated(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_updated(self, Order order, OrderStatusReport report):
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
@@ -875,7 +875,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {updated}.")
         self._handle_event(updated)
 
-    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report):
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -891,7 +891,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {canceled}.")
         self._handle_event(canceled)
 
-    cdef void _generate_order_expired(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_expired(self, Order order, OrderStatusReport report):
         cdef OrderExpired expired = OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -907,7 +907,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {expired}.")
         self._handle_event(expired)
 
-    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *:
+    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument):
         cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -931,7 +931,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
         self._handle_event(filled)
 
-    cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
+    cdef bint _should_update(self, Order order, OrderStatusReport report):
         if report.quantity != order.quantity:
             return True
         elif order.order_type == OrderType.LIMIT:

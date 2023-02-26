@@ -51,9 +51,9 @@ cdef class BarBuilder:
     cdef Price _close
     cdef Quantity volume
 
-    cpdef void set_partial(self, Bar partial_bar) except *
-    cpdef void update(self, Price price, Quantity size, uint64_t ts_event) except *
-    cpdef void reset(self) except *
+    cpdef void set_partial(self, Bar partial_bar)
+    cpdef void update(self, Price price, Quantity size, uint64_t ts_event)
+    cpdef void reset(self)
     cpdef Bar build_now(self)
     cpdef Bar build(self, uint64_t ts_event, uint64_t ts_init)
 
@@ -66,11 +66,11 @@ cdef class BarAggregator:
     cdef readonly BarType bar_type
     """The aggregators bar type.\n\n:returns: `BarType`"""
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *
-    cdef void _build_now_and_send(self) except *
-    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick)
+    cpdef void handle_trade_tick(self, TradeTick tick)
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event)
+    cdef void _build_now_and_send(self)
+    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init)
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -105,9 +105,9 @@ cdef class TimeBarAggregator(BarAggregator):
     """The aggregators next closing time.\n\n:returns: `uint64_t`"""
 
     cpdef datetime get_start_time(self)
-    cpdef void set_partial(self, Bar partial_bar) except *
-    cpdef void stop(self) except *
+    cpdef void set_partial(self, Bar partial_bar)
+    cpdef void stop(self)
     cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
-    cpdef void _set_build_timer(self) except *
-    cpdef void _build_bar(self, TimeEvent event) except *
+    cpdef void _set_build_timer(self)
+    cpdef void _build_bar(self, TimeEvent event)

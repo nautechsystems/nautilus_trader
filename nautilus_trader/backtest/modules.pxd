@@ -25,10 +25,10 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 cdef class SimulationModule(Actor):
     cdef readonly SimulatedExchange exchange
 
-    cpdef void register_venue(self, SimulatedExchange exchange) except *
-    cpdef void process(self, uint64_t now_ns) except *
-    cpdef void log_diagnostics(self, LoggerAdapter log) except *
-    cpdef void reset(self) except *
+    cpdef void register_venue(self, SimulatedExchange exchange)
+    cpdef void process(self, uint64_t now_ns)
+    cpdef void log_diagnostics(self, LoggerAdapter log)
+    cpdef void reset(self)
 
 
 cdef class FXRolloverInterestModule(SimulationModule):
@@ -39,4 +39,4 @@ cdef class FXRolloverInterestModule(SimulationModule):
     cdef dict _rollover_totals
     cdef int _day_number
 
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day)

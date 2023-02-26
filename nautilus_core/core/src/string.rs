@@ -45,6 +45,19 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
         .to_string()
 }
 
+/// Convert a C string pointer into an owned `Option<String>`.
+///
+/// # Safety
+/// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
+pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        None
+    } else {
+        Some(cstr_to_string(ptr))
+    }
+}
+
 /// Create a C string pointer to newly allocated memory from a [&str].
 #[must_use]
 pub fn string_to_cstr(s: &str) -> *const c_char {
@@ -76,7 +89,7 @@ mod tests {
     #[test]
     fn test_pystr_to_string() {
         pyo3::prepare_freethreaded_python();
-        // Test with valid Python object pointer
+        // Create a valid Python object pointer
         let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
         let result = unsafe { pystr_to_string(ptr) };
         assert_eq!(result, "test string1");
@@ -85,14 +98,14 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_pystr_to_string_with_null_ptr() {
-        // Test with null Python object pointer
+        // Create a null Python object pointer
         let ptr: *mut ffi::PyObject = std::ptr::null_mut();
         unsafe { pystr_to_string(ptr) };
     }
 
     #[test]
     fn test_cstr_to_string() {
-        // Test with valid C string pointer
+        // Create a valid C string pointer
         let c_string = CString::new("test string2").expect("CString::new failed");
         let ptr = c_string.as_ptr();
         let result = unsafe { cstr_to_string(ptr) };
@@ -102,9 +115,27 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_cstr_to_string_with_null_ptr() {
-        // Test with null C string pointer
+        // Create a null C string pointer
         let ptr: *const c_char = std::ptr::null();
         unsafe { cstr_to_string(ptr) };
+    }
+
+    #[test]
+    fn test_optional_cstr_to_string_with_null_ptr() {
+        // Call optional_cstr_to_string with null pointer
+        let ptr = std::ptr::null();
+        let result = unsafe { optional_cstr_to_string(ptr) };
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_optional_cstr_to_string_with_valid_ptr() {
+        // Create a valid C string
+        let input_str = "hello world";
+        let c_str = CString::new(input_str).expect("CString::new failed");
+        let result = unsafe { optional_cstr_to_string(c_str.as_ptr()) };
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), input_str);
     }
 
     #[test]

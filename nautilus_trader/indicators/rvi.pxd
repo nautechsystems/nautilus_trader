@@ -35,5 +35,5 @@ cdef class RelativeVolatilityIndex(Indicator):
     cdef readonly double value
     """The current  value.\n\n:returns: `double`"""
 
-    cpdef void handle_bar(self, Bar bar) except *
-    cpdef void update_raw(self, double close) except *
+    cpdef void handle_bar(self, Bar bar)
+    cpdef void update_raw(self, double close)

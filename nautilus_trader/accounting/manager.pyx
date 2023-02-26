@@ -436,7 +436,7 @@ cdef class AccountsManager:
         Account account,
         OrderFilled fill,
         Money pnl,
-    ) except *:
+    ):
         cdef Money commission = fill.commission
         cdef list balances = []
         cdef double xrate
@@ -502,7 +502,7 @@ cdef class AccountsManager:
         Account account,
         OrderFilled fill,
         list pnls,
-    ) except *:
+    ):
         cdef list balances = []
 
         cdef Money commission = fill.commission
@@ -622,7 +622,7 @@ cdef class AccountsManager:
         Account account,
         Instrument instrument,
         OrderSide side,
-    ) except *:
+    ):
         if account.base_currency is None:
             return 1.0  # No conversion needed
         else:

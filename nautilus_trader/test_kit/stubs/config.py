@@ -73,7 +73,6 @@ class TestConfigStubs:
     def risk_engine_config() -> RiskEngineConfig:
         return RiskEngineConfig(
             bypass=False,
-            deny_modify_pending_update=True,
             max_order_submit_rate="100/00:00:01",
             max_order_modify_rate="100/00:00:01",
             max_notional_per_order={"AAPL": "100000"},

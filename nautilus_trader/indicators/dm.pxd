@@ -32,4 +32,4 @@ cdef class DirectionalMovement(Indicator):
     """The current pos value.\n\n:returns: `double`"""
     cdef readonly double neg
     """The current neg value.\n\n:returns: `double`"""
-    cpdef void update_raw(self, double high, double low) except *
+    cpdef void update_raw(self, double high, double low)

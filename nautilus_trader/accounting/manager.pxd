@@ -38,7 +38,7 @@ cdef class AccountsManager:
     cdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, uint64_t ts_event)
     cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
     cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
-    cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl) except *
-    cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls) except *
+    cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl)
+    cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls)
     cdef AccountState _generate_account_state(self, Account account, uint64_t ts_event)
-    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side) except *
+    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)

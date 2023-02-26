@@ -137,7 +137,7 @@ cdef class FuzzyCandlesticks(Indicator):
         self.vector = None
         self.value = None
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -161,7 +161,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double high,
         double low,
         double close,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -358,7 +358,7 @@ cdef class FuzzyCandlesticks(Indicator):
 
         return CandleWickSize.LARGE
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._lengths.clear()
         self._body_percents.clear()
         self._upper_wick_percents.clear()

@@ -49,11 +49,11 @@ cdef class Throttler:
     cdef readonly int sent_count
     """If count of messages sent from the throttler.\n\n:returns: `int`"""
 
-    cpdef double used(self) except *
-    cpdef void send(self, msg) except *
-    cdef int64_t _delta_next(self) except *
-    cdef void _limit_msg(self, msg) except *
-    cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *
-    cpdef void _process(self, TimeEvent event) except *
-    cpdef void _resume(self, TimeEvent event) except *
-    cdef void _send_msg(self, msg) except *
+    cpdef double used(self)
+    cpdef void send(self, msg)
+    cdef int64_t _delta_next(self)
+    cdef void _limit_msg(self, msg)
+    cdef void _set_timer(self, handler: Callable[[TimeEvent], None])
+    cpdef void _process(self, TimeEvent event)
+    cpdef void _resume(self, TimeEvent event)
+    cdef void _send_msg(self, msg)

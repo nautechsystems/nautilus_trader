@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_model"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 derive_builder = "0.12.0"
@@ -19,7 +19,10 @@ strum.workspace = true
 thiserror.workspace = true
 
 [features]
-extension-module = ["pyo3/extension-module", "nautilus_core/extension-module"]
+extension-module = [
+    "pyo3/extension-module",
+    "nautilus_core/extension-module",
+]
 default = []
 
 [dev-dependencies]

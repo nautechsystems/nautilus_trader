@@ -25,5 +25,5 @@ cdef class Bias(Indicator):
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double close) except *
-    cdef void _check_initialized(self) except *
+    cpdef void update_raw(self, double close)
+    cdef void _check_initialized(self)

@@ -51,7 +51,7 @@ cdef class Level:
     def __repr__(self) -> str:
         return f"Level(price={self.price}, orders={self.orders[:5]})"
 
-    cpdef void bulk_add(self, list orders) except *:
+    cpdef void bulk_add(self, list orders):
         """
         Add the list of bulk orders to this level.
 
@@ -65,7 +65,7 @@ cdef class Level:
         for order in orders:
             self.add(order)
 
-    cpdef void add(self, BookOrder order) except *:
+    cpdef void add(self, BookOrder order):
         """
         Add the given order to this level.
 
@@ -85,7 +85,7 @@ cdef class Level:
 
         self.orders.append(order)
 
-    cpdef void update(self, BookOrder order) except *:
+    cpdef void update(self, BookOrder order):
         """
         Update the given order on this level.
 
@@ -112,7 +112,7 @@ cdef class Level:
                 raise KeyError("Cannot update order: order not found")
             existing.update_size(size=order.size)
 
-    cpdef void delete(self, BookOrder order) except *:
+    cpdef void delete(self, BookOrder order):
         """
         Delete the given order from this level.
 
@@ -126,7 +126,7 @@ cdef class Level:
 
         self.orders.remove(order)
 
-    cpdef double volume(self) except *:
+    cpdef double volume(self):
         """
         Return the volume at this level.
 

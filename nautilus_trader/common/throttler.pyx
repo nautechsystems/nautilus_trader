@@ -124,7 +124,7 @@ cdef class Throttler:
         """
         return self._buffer.qsize()
 
-    cpdef double used(self) except *:
+    cpdef double used(self):
         """
         Return the percentage of maximum rate currently used.
 
@@ -147,7 +147,7 @@ cdef class Throttler:
 
         return used
 
-    cpdef void send(self, msg) except *:
+    cpdef void send(self, msg):
         """
         Send the given message through the throttler.
 
@@ -172,7 +172,7 @@ cdef class Throttler:
             # Start throttling
             self._limit_msg(msg)
 
-    cdef int64_t _delta_next(self) except *:
+    cdef int64_t _delta_next(self):
         if not self._warm:
             if self.sent_count < self.limit:
                 return 0
@@ -181,7 +181,7 @@ cdef class Throttler:
         cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
         return self._interval_ns - diff
 
-    cdef void _limit_msg(self, msg) except *:
+    cdef void _limit_msg(self, msg):
         if self._output_drop is None:
             # Buffer
             self._buffer.put_nowait(msg)
@@ -197,14 +197,14 @@ cdef class Throttler:
             self._set_timer(timer_target)
             self.is_limiting = True
 
-    cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *:
+    cdef void _set_timer(self, handler: Callable[[TimeEvent], None]):
         self._clock.set_time_alert_ns(
             name=self._timer_name,
             alert_time_ns=self._clock.timestamp_ns() + self._delta_next(),
             callback=handler,
         )
 
-    cpdef void _process(self, TimeEvent event) except *:
+    cpdef void _process(self, TimeEvent event):
         # Send next msg on buffer
         msg = self._buffer.get_nowait()
         self._send_msg(msg)
@@ -222,10 +222,10 @@ cdef class Throttler:
         # No longer throttling
         self.is_limiting = False
 
-    cpdef void _resume(self, TimeEvent event) except *:
+    cpdef void _resume(self, TimeEvent event):
         self.is_limiting = False
 
-    cdef void _send_msg(self, msg) except *:
+    cdef void _send_msg(self, msg):
         self._timestamps.appendleft(self._clock.timestamp_ns())
         self._output_send(msg)
         self.sent_count += 1

@@ -27,4 +27,4 @@ cdef class FiniteStateMachine:
     """The current state of the FSM.\n\n:returns: `int / C Enum`"""
 
     cdef str state_string_c(self)
-    cpdef void trigger(self, int trigger) except *
+    cpdef void trigger(self, int trigger)

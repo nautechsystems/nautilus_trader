@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::enums::PriceType;
+use pyo3::prelude::*;
+use pyo3::{PyResult, Python};
+
 pub mod data;
 pub mod enums;
 pub mod events;
@@ -20,3 +24,10 @@ pub mod identifiers;
 pub mod orderbook;
 pub mod orders;
 pub mod types;
+
+/// Loaded as nautilus_model
+#[pymodule]
+pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PriceType>()?;
+    Ok(())
+}

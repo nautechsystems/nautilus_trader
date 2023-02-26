@@ -44,37 +44,37 @@ cdef class MatchingCore:
 # -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Order get_order(self, ClientOrderId client_order_id)
-    cpdef bint order_exists(self, ClientOrderId client_order_id) except *
+    cpdef bint order_exists(self, ClientOrderId client_order_id)
     cpdef list get_orders(self)
     cpdef list get_orders_bid(self)
     cpdef list get_orders_ask(self)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cdef void set_bid_raw(self, int64_t bid_raw) except *
-    cdef void set_ask_raw(self, int64_t ask_raw) except *
-    cdef void set_last_raw(self, int64_t last_raw) except *
+    cdef void set_bid_raw(self, int64_t bid_raw)
+    cdef void set_ask_raw(self, int64_t ask_raw)
+    cdef void set_last_raw(self, int64_t last_raw)
 
-    cpdef void reset(self) except *
-    cpdef void add_order(self, Order order) except *
-    cdef void _add_order(self, Order order) except *
-    cdef void sort_bid_orders(self) except *
-    cdef void sort_ask_orders(self) except *
-    cpdef void delete_order(self, Order order) except *
-    cpdef void iterate(self, uint64_t timestamp_ns) except *
+    cpdef void reset(self)
+    cpdef void add_order(self, Order order)
+    cdef void _add_order(self, Order order)
+    cdef void sort_bid_orders(self)
+    cdef void sort_ask_orders(self)
+    cpdef void delete_order(self, Order order)
+    cpdef void iterate(self, uint64_t timestamp_ns)
 
 # -- MATCHING -------------------------------------------------------------------------------------
 
-    cpdef void match_order(self, Order order, bint initial=*) except *
-    cpdef void match_limit_order(self, Order order) except *
-    cpdef void match_stop_market_order(self, Order order) except *
-    cpdef void match_stop_limit_order(self, Order order, bint initial) except *
-    cpdef void match_market_if_touched_order(self, Order order) except *
-    cpdef void match_limit_if_touched_order(self, Order order, bint initial) except *
-    cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
-    cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *
-    cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *
-    cdef LiquiditySide _determine_order_liquidity(self, bint initial, OrderSide side, Price price, Price trigger_price) except *
+    cpdef void match_order(self, Order order, bint initial=*)
+    cpdef void match_limit_order(self, Order order)
+    cpdef void match_stop_market_order(self, Order order)
+    cpdef void match_stop_limit_order(self, Order order, bint initial)
+    cpdef void match_market_if_touched_order(self, Order order)
+    cpdef void match_limit_if_touched_order(self, Order order, bint initial)
+    cpdef bint is_limit_matched(self, OrderSide side, Price price)
+    cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price)
+    cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price)
+    cdef LiquiditySide _determine_order_liquidity(self, bint initial, OrderSide side, Price price, Price trigger_price)
 
 
-cdef int64_t order_sort_key(Order order) except *
+cdef int64_t order_sort_key(Order order)

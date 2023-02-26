@@ -159,7 +159,7 @@ cdef class MessageBus:
         """
         return len(self.subscriptions(pattern)) > 0
 
-    cpdef bint is_subscribed(self, str topic, handler: Callable[[Any], None]) except *:
+    cpdef bint is_subscribed(self, str topic, handler: Callable[[Any], None]):
         """
         Return if topic and handler is subscribed to the message bus.
 
@@ -188,7 +188,7 @@ cdef class MessageBus:
 
         return sub in self._subscriptions
 
-    cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
+    cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
         Register the given `handler` to receive messages at the `endpoint` address.
 
@@ -217,7 +217,7 @@ cdef class MessageBus:
 
         self._log.debug(f"Added endpoint '{endpoint}' {handler}.")
 
-    cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]) except *:
+    cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]):
         """
         Deregister the given `handler` from the `endpoint` address.
 
@@ -249,7 +249,7 @@ cdef class MessageBus:
 
         self._log.debug(f"Removed endpoint '{endpoint}' {handler}.")
 
-    cpdef void send(self, str endpoint, msg: Any) except *:
+    cpdef void send(self, str endpoint, msg: Any):
         """
         Send the given message to the given `endpoint` address.
 
@@ -274,7 +274,7 @@ cdef class MessageBus:
         handler(msg)
         self.sent_count += 1
 
-    cpdef void request(self, str endpoint, Request request) except *:
+    cpdef void request(self, str endpoint, Request request):
         """
         Handle the given `request`.
 
@@ -310,7 +310,7 @@ cdef class MessageBus:
         handler(request)
         self.req_count += 1
 
-    cpdef void response(self, Response response) except *:
+    cpdef void response(self, Response response):
         """
         Handle the given `response`.
 
@@ -340,7 +340,7 @@ cdef class MessageBus:
         str topic,
         handler: Callable[[Any], None],
         int priority = 0,
-    ) except *:
+    ):
         """
         Subscribe to the given message `topic` with the given callback `handler`.
 
@@ -405,7 +405,7 @@ cdef class MessageBus:
 
         self._log.debug(f"Added {sub}.")
 
-    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]):
         """
         Unsubscribe the given callback `handler` from the given message `topic`.
 
@@ -448,7 +448,7 @@ cdef class MessageBus:
 
         self._log.debug(f"Removed {sub}.")
 
-    cpdef void publish(self, str topic, msg: Any) except *:
+    cpdef void publish(self, str topic, msg: Any):
         """
         Publish the given message for the given `topic`.
 
@@ -467,7 +467,7 @@ cdef class MessageBus:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void publish_c(self, str topic, msg: Any) except *:
+    cdef void publish_c(self, str topic, msg: Any):
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
@@ -508,7 +508,7 @@ cdef class MessageBus:
         return subs_array
 
 
-cdef inline bint is_matching(str topic, str pattern) except *:
+cdef inline bint is_matching(str topic, str pattern):
     # Get length of string and wildcard pattern
     cdef int n = len(topic)
     cdef int m = len(pattern)

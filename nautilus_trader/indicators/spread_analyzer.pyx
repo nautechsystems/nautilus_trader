@@ -53,7 +53,7 @@ cdef class SpreadAnalyzer(Indicator):
         self.current = 0
         self.average = 0
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the analyzer with the given quote tick.
 
@@ -93,7 +93,7 @@ cdef class SpreadAnalyzer(Indicator):
             drop_left=False,
         )
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._spreads.clear()
         self.current = 0
         self.average = 0

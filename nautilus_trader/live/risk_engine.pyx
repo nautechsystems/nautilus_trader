@@ -151,7 +151,7 @@ cdef class LiveRiskEngine(RiskEngine):
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, Command command) except *:
+    cpdef void execute(self, Command command):
         """
         Execute the given command.
 
@@ -180,7 +180,7 @@ cdef class LiveRiskEngine(RiskEngine):
             )
             self._loop.create_task(self._cmd_queue.put(command))
 
-    cpdef void process(self, Event event) except *:
+    cpdef void process(self, Event event):
         """
         Process the given event.
 
@@ -216,7 +216,7 @@ cdef class LiveRiskEngine(RiskEngine):
         self._evt_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel messages placed on queues.")
 
-    cpdef void _on_start(self) except *:
+    cpdef void _on_start(self):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
@@ -227,7 +227,7 @@ cdef class LiveRiskEngine(RiskEngine):
         self._log.debug(f"Scheduled {self._cmd_queue_task}")
         self._log.debug(f"Scheduled {self._evt_queue_task}")
 
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinel()

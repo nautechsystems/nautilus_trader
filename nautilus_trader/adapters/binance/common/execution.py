@@ -707,14 +707,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
         await self._cancel_order_single(
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
@@ -729,13 +721,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         for order in open_orders_strategy:
             if order.is_pending_cancel:
                 continue  # Already pending cancel
-            self.generate_order_pending_cancel(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
 
         # Check total orders for instrument
         open_orders_total_count = self._cache.orders_open_count(

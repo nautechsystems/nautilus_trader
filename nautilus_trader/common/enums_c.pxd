@@ -19,15 +19,15 @@ from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
 
 
-cpdef ComponentState component_state_from_str(str value) except *
+cpdef ComponentState component_state_from_str(str value)
 cpdef str component_state_to_str(ComponentState value)
 
-cpdef ComponentTrigger component_trigger_from_str(str value) except *
+cpdef ComponentTrigger component_trigger_from_str(str value)
 cpdef str component_trigger_to_str(ComponentTrigger value)
 
 
-cpdef LogColor log_color_from_str(str value) except *
+cpdef LogColor log_color_from_str(str value)
 cpdef str log_color_to_str(LogColor value)
 
-cpdef LogLevel log_level_from_str(str value) except *
+cpdef LogLevel log_level_from_str(str value)
 cpdef str log_level_to_str(LogLevel value)
