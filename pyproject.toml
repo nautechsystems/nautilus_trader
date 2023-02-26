@@ -37,7 +37,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.5.1",
     "numpy>=1.24.2",
-    "Cython==3.0.0a11",
+    "Cython==3.0.0b1",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -47,7 +47,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.0a11"
+cython = "==3.0.0b1"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.4"
 click = "^8.1.3"

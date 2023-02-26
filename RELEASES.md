@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Now immediately caching orders and order lists in `Strategy`
 - Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
 - Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
+- Upgrade Cython to `3.0.0b1`
 
 ### Fixes
 - Fixed Binance Futures trigger type parsing
