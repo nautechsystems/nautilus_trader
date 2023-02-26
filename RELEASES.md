@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Change parquet catalog schema dictionary integer key widths/types
 - Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
 - Removed redundant log sink machinery
+- All pickled data due Cython 3.0.0b1
 
 ### Enhancements
 - Added logging to file at core Rust level
