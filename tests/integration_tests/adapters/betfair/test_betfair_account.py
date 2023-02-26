@@ -52,5 +52,5 @@ class TestBetfairAccount:
         notional = self.instrument.notional_value(
             price=betfair_float_to_price_c(2.0),
             quantity=betfair_float_to_quantity_c(100.0),
-        ).as_decimal()
+        )
         assert notional == Decimal("200.0")

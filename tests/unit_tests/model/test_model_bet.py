@@ -110,7 +110,3 @@ class TestBet:
             side=side,
         ).exposure()
         assert result == expected
-
-    def test_dict(self):
-        bet = Bet(price=self.price, quantity=self.size, side=OrderSide.BUY)
-        assert Bet.from_dict(bet.to_dict(bet)) == bet

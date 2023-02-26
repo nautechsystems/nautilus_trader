@@ -19,7 +19,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Bet:
-    cdef object price
+    cdef Price price
     cdef Quantity quantity
     cdef OrderSide side
 
