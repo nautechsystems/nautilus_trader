@@ -142,7 +142,6 @@ class TestRiskEngineWithCashAccount:
 
         config = RiskEngineConfig(
             bypass=True,  # <-- bypassing pre-trade risk checks for backtest
-            deny_modify_pending_update=False,
             max_order_submit_rate="5/00:00:01",
             max_order_modify_rate="5/00:00:01",
             max_notional_per_order={"GBP/USD.SIM": 2_000_000},
@@ -160,7 +159,6 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert risk_engine.is_bypassed
-        assert not risk_engine.deny_modify_pending_update
         assert risk_engine.max_order_submit_rate() == (5, timedelta(seconds=1))
         assert risk_engine.max_order_modify_rate() == (5, timedelta(seconds=1))
         assert risk_engine.max_notionals_per_order() == {GBPUSD_SIM.id: Decimal("2000000")}
@@ -1873,6 +1871,8 @@ class TestRiskEngineWithCashAccount:
         )
 
         strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
 
         new_trigger_price = Price.from_str("1.00010")
 
@@ -1970,60 +1970,6 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_client.calls == ["_start", "submit_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 1
-
-    def test_cancel_order_when_already_pending_cancel_then_denies(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-        )
-
-        submit = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=strategy.id,
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        cancel = CancelOrder(
-            self.trader_id,
-            strategy.id,
-            order.instrument_id,
-            order.client_order_id,
-            VenueOrderId("1"),
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.risk_engine.execute(submit)
-        self.exec_engine.process(TestEventStubs.order_submitted(order))
-        self.exec_engine.process(TestEventStubs.order_accepted(order))
-
-        self.risk_engine.execute(cancel)
-        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
-
-        # Act
-        self.risk_engine.execute(cancel)
-
-        # Assert
-        assert self.exec_client.calls == ["_start", "submit_order", "cancel_order"]
-        assert self.risk_engine.command_count == 3
-        assert self.exec_engine.command_count == 2
 
     def test_cancel_order_with_default_settings_then_sends_to_client(self):
         # Arrange

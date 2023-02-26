@@ -29,6 +29,9 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderPendingCancel
+from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -119,9 +122,15 @@ cdef class Strategy(Actor):
     cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick) except *
     cdef void _handle_indicators_for_bar(self, list indicators, Bar bar) except *
 
-# -- EGRESS ---------------------------------------------------------------------------------------
+# -- EVENTS ---------------------------------------------------------------------------------------
 
+    cdef OrderDenied _generate_order_denied(self, Order order, str reason)
+    cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
+    cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
     cdef void _deny_order(self, Order order, str reason) except *
     cdef void _deny_order_list(self, OrderList order_list, str reason) except *
+
+# -- EGRESS ---------------------------------------------------------------------------------------
+
     cdef void _send_risk_command(self, TradingCommand command) except *
     cdef void _send_exec_command(self, TradingCommand command) except *

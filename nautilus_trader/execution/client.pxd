@@ -111,22 +111,6 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         uint64_t ts_event,
     ) except *
-    cpdef void generate_order_pending_update(
-        self,
-        StrategyId strategy_id,
-        InstrumentId instrument_id,
-        ClientOrderId client_order_id,
-        VenueOrderId venue_order_id,
-        uint64_t ts_event,
-    ) except *
-    cpdef void generate_order_pending_cancel(
-        self,
-        StrategyId strategy_id,
-        InstrumentId instrument_id,
-        ClientOrderId client_order_id,
-        VenueOrderId venue_order_id,
-        uint64_t ts_event,
-    ) except *
     cpdef void generate_order_modify_rejected(
         self,
         StrategyId strategy_id,

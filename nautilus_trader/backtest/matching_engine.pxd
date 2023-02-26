@@ -202,8 +202,6 @@ cdef class OrderMatchingEngine:
 
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
-    cdef void _generate_order_pending_update(self, Order order) except *
-    cdef void _generate_order_pending_cancel(self, Order order) except *
     cdef void _generate_order_modify_rejected(
         self,
         TraderId trader_id,

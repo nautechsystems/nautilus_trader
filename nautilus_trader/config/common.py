@@ -221,8 +221,6 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
     ----------
     bypass : bool, default False
         If True then will bypass all pre-trade risk checks and rate limits (will still check for duplicate IDs).
-    deny_modify_pending_update : bool, default True
-        If deny `ModifyOrder` commands when an order is in a `PENDING_UPDATE` state.
     max_order_submit_rate : str, default 100/00:00:01
         The maximum rate of submit order commands per timedelta.
     max_order_modify_rate : str, default 100/00:00:01
@@ -235,7 +233,6 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
     """
 
     bypass: bool = False
-    deny_modify_pending_update: bool = True
     max_order_submit_rate: str = "100/00:00:01"
     max_order_modify_rate: str = "100/00:00:01"
     max_notional_per_order: dict[str, int] = {}

@@ -54,8 +54,6 @@ from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderModifyRejected
-from nautilus_trader.model.events.order cimport OrderPendingCancel
-from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -649,7 +647,6 @@ cdef class OrderMatchingEngine:
                 reason=f"{repr(command.client_order_id)} not found",
             )
         else:
-            self._generate_order_pending_update(order)
             self.update_order(
                 order,
                 command.quantity,
@@ -671,7 +668,6 @@ cdef class OrderMatchingEngine:
             )
         else:
             if order.is_inflight_c() or order.is_open_c():
-                self._generate_order_pending_cancel(order)
                 self.cancel_order(order)
 
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id) except *:
@@ -680,7 +676,6 @@ cdef class OrderMatchingEngine:
             if command.order_side != OrderSide.NO_ORDER_SIDE and command.order_side != order.side:
                 continue
             if order.is_inflight_c() or order.is_open_c():
-                self._generate_order_pending_cancel(order)
                 self.cancel_order(order)
 
     cdef void _process_market_order(self, MarketOrder order) except *:
@@ -1889,38 +1884,6 @@ cdef class OrderMatchingEngine:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
-            account_id=order.account_id or self._account_ids[order.trader_id],
-            event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
-        )
-        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
-
-    cdef void _generate_order_pending_update(self, Order order) except *:
-        # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
-        cdef OrderPendingUpdate event = OrderPendingUpdate(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            account_id=order.account_id or self._account_ids[order.trader_id],
-            event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
-        )
-        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
-
-    cdef void _generate_order_pending_cancel(self, Order order) except *:
-        # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
-        cdef OrderPendingCancel event = OrderPendingCancel(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
             ts_event=timestamp,

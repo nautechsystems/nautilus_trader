@@ -1214,40 +1214,6 @@ class TestStrategy:
         assert not strategy.cache.is_order_open(order.client_order_id)
         assert strategy.cache.is_order_closed(order.client_order_id)
 
-    def test_modify_order_when_pending_update_does_not_submit_command(self):
-        # Arrange
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            USDJPY_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-            Price.from_str("90.001"),
-        )
-
-        strategy.submit_order(order)
-        self.exchange.process(0)
-        self.exec_engine.process(TestEventStubs.order_pending_update(order))
-
-        # Act
-        strategy.modify_order(
-            order=order,
-            quantity=Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),
-        )
-        self.exchange.process(0)
-
-        # Assert
-        assert self.exec_engine.command_count == 1
-
     def test_modify_order_when_pending_cancel_does_not_submit_command(self):
         # Arrange
         strategy = Strategy()
