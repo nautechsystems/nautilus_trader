@@ -141,11 +141,11 @@ cdef class ExecutionClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
-    cpdef void _set_connected(self, bint value=True) except *:
+    cpdef void _set_connected(self, bint value=True):
         # Setter for Python implementations to change the readonly property
         self.is_connected = value
 
-    cpdef void _set_account_id(self, AccountId account_id) except *:
+    cpdef void _set_account_id(self, AccountId account_id):
         Condition.not_none(account_id, "account_id")
         Condition.equal(self.id.to_str(), account_id.get_issuer(), "id.value", "account_id.get_issuer()")
 
@@ -164,7 +164,7 @@ cdef class ExecutionClient(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void submit_order(self, SubmitOrder command) except *:
+    cpdef void submit_order(self, SubmitOrder command):
         """
         Submit the order contained in the given command for execution.
 
@@ -180,7 +180,7 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void submit_order_list(self, SubmitOrderList command) except *:
+    cpdef void submit_order_list(self, SubmitOrderList command):
         """
         Submit the order list contained in the given command for execution.
 
@@ -196,7 +196,7 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void modify_order(self, ModifyOrder command) except *:
+    cpdef void modify_order(self, ModifyOrder command):
         """
         Modify the order with parameters contained in the command.
 
@@ -212,7 +212,7 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void cancel_order(self, CancelOrder command) except *:
+    cpdef void cancel_order(self, CancelOrder command):
         """
         Cancel the order with the client order ID contained in the given command.
 
@@ -228,7 +228,7 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
+    cpdef void cancel_all_orders(self, CancelAllOrders command):
         """
         Cancel all orders for the instrument ID contained in the given command.
 
@@ -244,7 +244,7 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void query_order(self, QueryOrder command) except *:
+    cpdef void query_order(self, QueryOrder command):
         """
         Initiate a reconciliation for the queried order which will generate an
         `OrderStatusReport`.
@@ -270,7 +270,7 @@ cdef class ExecutionClient(Component):
         bint reported,
         uint64_t ts_event,
         dict info = None,
-    ) except *:
+    ):
         """
         Generate an `AccountState` event and publish on the message bus.
 
@@ -310,7 +310,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderSubmitted` event and send it to the `ExecutionEngine`.
 
@@ -347,7 +347,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         str reason,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderRejected` event and send it to the `ExecutionEngine`.
 
@@ -387,7 +387,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderAccepted` event and send it to the `ExecutionEngine`.
 
@@ -428,7 +428,7 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         str reason,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderModifyRejected` event and send it to the `ExecutionEngine`.
 
@@ -472,7 +472,7 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         str reason,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderCancelRejected` event and send it to the `ExecutionEngine`.
 
@@ -519,7 +519,7 @@ cdef class ExecutionClient(Component):
         Price trigger_price,
         uint64_t ts_event,
         bint venue_order_id_modified=False,
-    ) except *:
+    ):
         """
         Generate an `OrderUpdated` event and send it to the `ExecutionEngine`.
 
@@ -581,7 +581,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderCanceled` event and send it to the `ExecutionEngine`.
 
@@ -621,7 +621,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderTriggered` event and send it to the `ExecutionEngine`.
 
@@ -661,7 +661,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderExpired` event and send it to the `ExecutionEngine`.
 
@@ -710,7 +710,7 @@ cdef class ExecutionClient(Component):
         Money commission,
         LiquiditySide liquidity_side,
         uint64_t ts_event,
-    ) except *:
+    ):
         """
         Generate an `OrderFilled` event and send it to the `ExecutionEngine`.
 
@@ -777,31 +777,31 @@ cdef class ExecutionClient(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void _send_account_state(self, AccountState account_state) except *:
+    cpdef void _send_account_state(self, AccountState account_state):
         self._msgbus.send(
             endpoint=f"Portfolio.update_account",
             msg=account_state,
         )
 
-    cpdef void _send_order_event(self, OrderEvent event) except *:
+    cpdef void _send_order_event(self, OrderEvent event):
         self._msgbus.send(
             endpoint="ExecEngine.process",
             msg=event,
         )
 
-    cpdef void _send_mass_status_report(self, ExecutionMassStatus report) except *:
+    cpdef void _send_mass_status_report(self, ExecutionMassStatus report):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_mass_status",
             msg=report,
         )
 
-    cpdef void _send_order_status_report(self, OrderStatusReport report) except *:
+    cpdef void _send_order_status_report(self, OrderStatusReport report):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_report",
             msg=report,
         )
 
-    cpdef void _send_trade_report(self, TradeReport report) except *:
+    cpdef void _send_trade_report(self, TradeReport report):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_report",
             msg=report,

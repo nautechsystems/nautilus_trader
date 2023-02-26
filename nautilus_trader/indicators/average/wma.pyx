@@ -71,7 +71,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         self.weights = weights
         self.value = 0
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the indicator with the given quote tick.
 
@@ -86,7 +86,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         cdef Price price = tick.extract_price(self.price_type)
         self.update_raw(Price.raw_to_f64_c(price._mem.raw))
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Update the indicator with the given trade tick.
 
@@ -100,7 +100,7 @@ cdef class WeightedMovingAverage(MovingAverage):
 
         self.update_raw(Price.raw_to_f64_c(tick._mem.price.raw))
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -114,7 +114,7 @@ cdef class WeightedMovingAverage(MovingAverage):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double value) except *:
+    cpdef void update_raw(self, double value):
         """
         Update the indicator with the given raw value.
 
@@ -133,5 +133,5 @@ cdef class WeightedMovingAverage(MovingAverage):
 
         self._increment_count()
 
-    cpdef void _reset_ma(self) except *:
+    cpdef void _reset_ma(self):
         self._inputs.clear()

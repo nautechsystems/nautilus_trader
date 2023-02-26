@@ -41,9 +41,9 @@ cdef class BarSpecification:
     @staticmethod
     cdef bint check_information_aggregated_c(BarAggregation aggregation)
 
-    cpdef bint is_time_aggregated(self) except *
-    cpdef bint is_threshold_aggregated(self) except *
-    cpdef bint is_information_aggregated(self) except *
+    cpdef bint is_time_aggregated(self)
+    cpdef bint is_threshold_aggregated(self)
+    cpdef bint is_information_aggregated(self)
 
     @staticmethod
     cdef BarSpecification from_mem_c(BarSpecification_t raw)
@@ -60,8 +60,8 @@ cdef class BarType:
     @staticmethod
     cdef BarType from_str_c(str value)
 
-    cpdef bint is_externally_aggregated(self) except *
-    cpdef bint is_internally_aggregated(self) except *
+    cpdef bint is_externally_aggregated(self)
+    cpdef bint is_internally_aggregated(self)
 
 
 cdef class Bar(Data):

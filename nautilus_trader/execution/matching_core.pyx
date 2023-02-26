@@ -119,7 +119,7 @@ cdef class MatchingCore:
     cpdef Order get_order(self, ClientOrderId client_order_id):
         return self._orders.get(client_order_id)
 
-    cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
+    cpdef bint order_exists(self, ClientOrderId client_order_id):
         return client_order_id in self._orders
 
     cpdef list get_orders(self):
@@ -133,19 +133,19 @@ cdef class MatchingCore:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cdef void set_bid_raw(self, int64_t bid_raw) except *:
+    cdef void set_bid_raw(self, int64_t bid_raw):
         self.is_bid_initialized = True
         self.bid_raw = bid_raw
 
-    cdef void set_ask_raw(self, int64_t ask_raw) except *:
+    cdef void set_ask_raw(self, int64_t ask_raw):
         self.is_ask_initialized = True
         self.ask_raw = ask_raw
 
-    cdef void set_last_raw(self, int64_t last_raw) except *:
+    cdef void set_last_raw(self, int64_t last_raw):
         self.is_last_initialized = True
         self.last_raw = last_raw
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         self._orders.clear()
         self._orders_bid.clear()
         self._orders_ask.clear()
@@ -156,11 +156,11 @@ cdef class MatchingCore:
         self.is_ask_initialized = False
         self.is_last_initialized = False
 
-    cpdef void add_order(self, Order order) except *:
+    cpdef void add_order(self, Order order):
         # Needed as closures not supported in cpdef functions
         self._add_order(order)
 
-    cdef void _add_order(self, Order order) except *:
+    cdef void _add_order(self, Order order):
         # Index order
         self._orders[order.client_order_id] = order
 
@@ -173,13 +173,13 @@ cdef class MatchingCore:
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
-    cdef void sort_bid_orders(self) except *:
+    cdef void sort_bid_orders(self):
         self._orders_bid.sort(key=order_sort_key, reverse=True)
 
-    cdef void sort_ask_orders(self) except *:
+    cdef void sort_ask_orders(self):
         self._orders_ask.sort(key=order_sort_key)
 
-    cpdef void delete_order(self, Order order) except *:
+    cpdef void delete_order(self, Order order):
         self._orders.pop(order.client_order_id, None)
 
         if order.side == OrderSide.BUY:
@@ -191,7 +191,7 @@ cdef class MatchingCore:
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
-    cpdef void iterate(self, uint64_t timestamp_ns) except *:
+    cpdef void iterate(self, uint64_t timestamp_ns):
         cdef Order order
         for order in self._orders_bid + self._orders_ask:  # Lists implicitly copied
             if order.is_closed_c():
@@ -200,7 +200,7 @@ cdef class MatchingCore:
 
 # -- MATCHING -------------------------------------------------------------------------------------
 
-    cpdef void match_order(self, Order order, bint initial = False) except *:
+    cpdef void match_order(self, Order order, bint initial = False):
         """
         Match the given order.
 
@@ -239,18 +239,18 @@ cdef class MatchingCore:
         else:
             raise TypeError(f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
-    cpdef void match_limit_order(self, Order order) except *:
+    cpdef void match_limit_order(self, Order order):
         if self.is_limit_matched(order.side, order.price):
             order.liquidity_side = LiquiditySide.MAKER
             self._fill_limit_order(order)
 
-    cpdef void match_stop_market_order(self, Order order) except *:
+    cpdef void match_stop_market_order(self, Order order):
         if self.is_stop_triggered(order.side, order.trigger_price):
             order.set_triggered_price_c(order.trigger_price)
             # Triggered stop places market order
             self._fill_market_order(order)
 
-    cpdef void match_stop_limit_order(self, Order order, bint initial) except *:
+    cpdef void match_stop_limit_order(self, Order order, bint initial):
         if order.is_triggered:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
@@ -272,13 +272,13 @@ cdef class MatchingCore:
                 order.liquidity_side = LiquiditySide.TAKER
                 self._fill_limit_order(order)
 
-    cpdef void match_market_if_touched_order(self, Order order) except *:
+    cpdef void match_market_if_touched_order(self, Order order):
         if self.is_touch_triggered(order.side, order.trigger_price):
             order.set_triggered_price_c(order.trigger_price)
             # Triggered stop places market order
             self._fill_market_order(order)
 
-    cpdef void match_limit_if_touched_order(self, Order order, bint initial) except *:
+    cpdef void match_limit_if_touched_order(self, Order order, bint initial):
         if order.is_triggered:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
@@ -301,7 +301,7 @@ cdef class MatchingCore:
                 order.liquidity_side = LiquiditySide.TAKER
                 self._fill_limit_order(order)
 
-    cpdef bint is_limit_matched(self, OrderSide side, Price price) except *:
+    cpdef bint is_limit_matched(self, OrderSide side, Price price):
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
@@ -313,7 +313,7 @@ cdef class MatchingCore:
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
-    cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *:
+    cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price):
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
@@ -325,7 +325,7 @@ cdef class MatchingCore:
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
-    cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *:
+    cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price):
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
@@ -343,7 +343,7 @@ cdef class MatchingCore:
         OrderSide side,
         Price price,
         Price trigger_price,
-    ) except *:
+    ):
         if initial:
             return LiquiditySide.TAKER
 
@@ -355,7 +355,7 @@ cdef class MatchingCore:
         return LiquiditySide.TAKER
 
 
-cdef inline int64_t order_sort_key(Order order) except *:
+cdef inline int64_t order_sort_key(Order order):
     cdef Price trigger_price
     cdef Price price
     if order.order_type == OrderType.LIMIT:

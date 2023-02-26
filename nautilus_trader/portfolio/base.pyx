@@ -62,18 +62,18 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
+    cpdef bint is_net_long(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
+    cpdef bint is_net_short(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef bint is_flat(self, InstrumentId instrument_id) except *:
+    cpdef bint is_flat(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef bint is_completely_flat(self) except *:
+    cpdef bint is_completely_flat(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

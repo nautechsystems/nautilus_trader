@@ -56,11 +56,11 @@ cdef class RiskEngine(Component):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void execute(self, Command command) except *
-    cpdef void process(self, Event event) except *
-    cpdef void set_trading_state(self, TradingState state) except *
-    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal) except *
-    cdef void _log_state(self) except *
+    cpdef void execute(self, Command command)
+    cpdef void process(self, Event event)
+    cpdef void set_trading_state(self, TradingState state)
+    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal)
+    cdef void _log_state(self)
 
 # -- RISK SETTINGS --------------------------------------------------------------------------------
 
@@ -71,42 +71,42 @@ cdef class RiskEngine(Component):
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *
-    cpdef void _on_stop(self) except *
+    cpdef void _on_start(self)
+    cpdef void _on_stop(self)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command) except *
-    cdef void _handle_submit_order(self, SubmitOrder command) except *
-    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
-    cdef void _handle_modify_order(self, ModifyOrder command) except *
-    cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
+    cdef void _execute_command(self, Command command)
+    cdef void _handle_submit_order(self, SubmitOrder command)
+    cdef void _handle_submit_order_list(self, SubmitOrderList command)
+    cdef void _handle_modify_order(self, ModifyOrder command)
+    cdef void _handle_cancel_order(self, CancelOrder command)
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
-    cdef bint _check_order(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_price(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
-    cdef bint _check_orders_risk(self, Instrument instrument, list orders) except *
+    cdef bint _check_order(self, Instrument instrument, Order order)
+    cdef bint _check_order_price(self, Instrument instrument, Order order)
+    cdef bint _check_order_quantity(self, Instrument instrument, Order order)
+    cdef bint _check_orders_risk(self, Instrument instrument, list orders)
     cdef str _check_price(self, Instrument instrument, Price price)
     cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
 # -- DENIALS --------------------------------------------------------------------------------------
 
-    cdef void _deny_command(self, TradingCommand command, str reason) except *
-    cpdef void _deny_new_order(self, TradingCommand command) except *
-    cdef void _deny_order(self, Order order, str reason) except *
-    cdef void _deny_order_list(self, OrderList order_list, str reason) except *
-    cdef void _reject_modify_order(self, Order order, str reason) except *
-    cdef void _reject_cancel_order(self, Order order, str reason) except *
+    cdef void _deny_command(self, TradingCommand command, str reason)
+    cpdef void _deny_new_order(self, TradingCommand command)
+    cdef void _deny_order(self, Order order, str reason)
+    cdef void _deny_order_list(self, OrderList order_list, str reason)
+    cdef void _reject_modify_order(self, Order order, str reason)
+    cdef void _reject_cancel_order(self, Order order, str reason)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *
-    cpdef void _send_to_execution(self, TradingCommand command) except *
-    cpdef void _send_to_emulator(self, TradingCommand command) except *
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command)
+    cpdef void _send_to_execution(self, TradingCommand command)
+    cpdef void _send_to_emulator(self, TradingCommand command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_event(self, Event event) except *
+    cpdef void _handle_event(self, Event event)

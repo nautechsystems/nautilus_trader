@@ -59,7 +59,7 @@ cdef class Stochastics(Indicator):
         self.value_k = 0
         self.value_d = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -82,7 +82,7 @@ cdef class Stochastics(Indicator):
         double high,
         double low,
         double close,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -120,7 +120,7 @@ cdef class Stochastics(Indicator):
         self.value_k = 100 * ((close - k_min_low) / (k_max_high - k_min_low))
         self.value_d = 100 * (sum(self._c_sub_l) / sum(self._h_sub_l))
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._highs.clear()
         self._lows.clear()
         self._c_sub_l.clear()

@@ -40,7 +40,7 @@ cdef class PositionSizer:
     def __init__(self, Instrument instrument not None):
         self.instrument = instrument
 
-    cpdef void update_instrument(self, Instrument instrument) except *:
+    cpdef void update_instrument(self, Instrument instrument):
         """
         Update the internal instrument with the given instrument.
 

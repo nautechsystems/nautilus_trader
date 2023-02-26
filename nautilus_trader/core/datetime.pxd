@@ -19,20 +19,20 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 
-cpdef uint64_t secs_to_nanos(double seconds) except *
-cpdef uint64_t secs_to_millis(double secs) except *
-cpdef uint64_t millis_to_nanos(double millis) except *
-cpdef uint64_t micros_to_nanos(double micros) except *
-cpdef double nanos_to_secs(uint64_t nanos) except *
-cpdef uint64_t nanos_to_millis(uint64_t nanos) except *
-cpdef uint64_t nanos_to_micros(uint64_t nanos) except *
+cpdef uint64_t secs_to_nanos(double seconds)
+cpdef uint64_t secs_to_millis(double secs)
+cpdef uint64_t millis_to_nanos(double millis)
+cpdef uint64_t micros_to_nanos(double micros)
+cpdef double nanos_to_secs(uint64_t nanos)
+cpdef uint64_t nanos_to_millis(uint64_t nanos)
+cpdef uint64_t nanos_to_micros(uint64_t nanos)
 cpdef unix_nanos_to_dt(uint64_t nanos)
 cpdef dt_to_unix_nanos(dt: pd.Timestamp)
 cpdef maybe_unix_nanos_to_dt(nanos)
 cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp)
-cpdef bint is_datetime_utc(datetime dt) except *
-cpdef bint is_tz_aware(time_object) except *
-cpdef bint is_tz_naive(time_object) except *
+cpdef bint is_datetime_utc(datetime dt)
+cpdef bint is_tz_aware(time_object)
+cpdef bint is_tz_naive(time_object)
 cpdef datetime as_utc_timestamp(datetime dt)
 cpdef object as_utc_index(time_object)
 cpdef str format_iso8601(datetime dt)

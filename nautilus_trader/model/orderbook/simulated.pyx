@@ -65,13 +65,13 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._top_bid_level = None
         self._top_ask_level = None
 
-    cpdef void add(self, BookOrder order, uint64_t sequence=0) except *:
+    cpdef void add(self, BookOrder order, uint64_t sequence=0):
         """
         NotImplemented (Use `update(order)` for SimulatedOrderBook).
         """
         raise NotImplementedError("Use `update(order)` for L1OrderBook")  # pragma: no cover
 
-    cdef void update_quote_tick(self, QuoteTick tick) except *:
+    cdef void update_quote_tick(self, QuoteTick tick):
         """
         Update the order book with the given quote tick.
 
@@ -84,7 +84,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._update_bid(tick._mem.bid.raw / FIXED_SCALAR, tick._mem.bid_size.raw / FIXED_SCALAR)
         self._update_ask(tick._mem.ask.raw / FIXED_SCALAR, tick._mem.ask_size.raw / FIXED_SCALAR)
 
-    cdef void update_trade_tick(self, TradeTick tick) except *:
+    cdef void update_trade_tick(self, TradeTick tick):
         """
         Update the order book with the given trade tick.
 
@@ -99,7 +99,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._update_bid(price, size)
         self._update_ask(price, size)
 
-    cdef void _update_bid(self, double price, double size) except *:
+    cdef void _update_bid(self, double price, double size):
         cdef BookOrder bid
         if self._top_bid is None:
             bid = BookOrder(price, size, OrderSide.BUY, "B")
@@ -111,7 +111,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             self._top_bid.price = price
             self._top_bid.size = size
 
-    cdef void _update_ask(self, double price, double size) except *:
+    cdef void _update_ask(self, double price, double size):
         cdef BookOrder ask
         if self._top_ask is None:
             ask = BookOrder(price, size, OrderSide.SELL, "A")

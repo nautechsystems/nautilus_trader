@@ -34,7 +34,7 @@ cdef class TimeEventHandler:
     cdef readonly TimeEvent event
     """The handlers event.\n\n:returns: `TimeEvent`"""
 
-    cpdef void handle(self) except *
+    cpdef void handle(self)
 
 
 cdef class LiveTimer:
@@ -56,9 +56,9 @@ cdef class LiveTimer:
     """If the timer is expired.\n\n:returns: `bool`"""
 
     cpdef TimeEvent pop_event(self, UUID4 event_id, uint64_t ts_init)
-    cpdef void iterate_next_time(self, uint64_t to_time_ns) except *
-    cpdef void cancel(self) except *
-    cpdef void repeat(self, uint64_t now_ns) except *
+    cpdef void iterate_next_time(self, uint64_t to_time_ns)
+    cpdef void cancel(self)
+    cpdef void repeat(self, uint64_t now_ns)
     cdef object _start_timer(self, uint64_t now_ns)
 
 

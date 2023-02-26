@@ -49,7 +49,7 @@ cdef class Bias(Indicator):
         self._ma = MovingAverageFactory.create(period, ma_type)
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -65,7 +65,7 @@ cdef class Bias(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(self, double close) except *:
+    cpdef void update_raw(self, double close):
         """
         Update the indicator with the given raw values.
 
@@ -80,12 +80,12 @@ cdef class Bias(Indicator):
         self.value = (close / self._ma.value) - 1.0
         self._check_initialized()
 
-    cdef void _check_initialized(self) except *:
+    cdef void _check_initialized(self):
         if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._ma.reset()
         self.value = 0

@@ -29,5 +29,5 @@ cdef class AroonOscillator(Indicator):
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double high, double low) except *
-    cdef void _check_initialized(self) except *
+    cpdef void update_raw(self, double high, double low)
+    cdef void _check_initialized(self)

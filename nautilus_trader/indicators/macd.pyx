@@ -76,7 +76,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self.price_type = price_type
         self.value = 0
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the indicator with the given quote tick.
 
@@ -91,7 +91,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         cdef Price price = tick.extract_price(self.price_type)
         self.update_raw(Price.raw_to_f64_c(price._mem.raw))
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Update the indicator with the given trade tick.
 
@@ -105,7 +105,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
 
         self.update_raw(Price.raw_to_f64_c(tick._mem.price.raw))
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -119,7 +119,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double close) except *:
+    cpdef void update_raw(self, double close):
         """
         Update the indicator with the given close price.
 
@@ -139,7 +139,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             if self._fast_ma.initialized and self._slow_ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._fast_ma.reset()
         self._slow_ma.reset()
         self.value = 0

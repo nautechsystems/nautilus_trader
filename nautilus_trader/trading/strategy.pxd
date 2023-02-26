@@ -62,7 +62,7 @@ cdef class Strategy(Actor):
     cdef readonly str order_id_tag
     """The order ID tag for the strategy.\n\n:returns: `str`"""
 
-    cpdef bint indicators_initialized(self) except *
+    cpdef bint indicators_initialized(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -74,10 +74,10 @@ cdef class Strategy(Actor):
         CacheFacade cache,
         Clock clock,
         Logger logger,
-    ) except *
-    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
-    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
-    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
+    )
+    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator)
+    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator)
+    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -88,7 +88,7 @@ cdef class Strategy(Actor):
         bint manage_gtd_expiry=*,
         ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
-    ) except *
+    )
     cpdef void submit_order_list(
         self,
         OrderList order_list,
@@ -96,7 +96,7 @@ cdef class Strategy(Actor):
         bint manage_gtd_expiry=*,
         list exec_algorithm_specs=*,
         ClientId client_id=*,
-    ) except *
+    )
     cpdef void modify_order(
         self,
         Order order,
@@ -104,33 +104,33 @@ cdef class Strategy(Actor):
         Price price=*,
         Price trigger_price=*,
         ClientId client_id=*,
-    ) except *
-    cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*) except *
-    cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
-    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*) except *
-    cpdef void query_order(self, Order order, ClientId client_id=*) except *
+    )
+    cpdef void cancel_order(self, Order order, ClientId client_id=*)
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*)
+    cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*)
+    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*)
+    cpdef void query_order(self, Order order, ClientId client_id=*)
 
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
-    cdef void _set_gtd_expiry(self, Order order) except *
-    cdef void _cancel_gtd_expiry(self, Order order) except *
-    cpdef void _expire_gtd_order(self, TimeEvent event) except *
+    cdef void _set_gtd_expiry(self, Order order)
+    cdef void _cancel_gtd_expiry(self, Order order)
+    cpdef void _expire_gtd_order(self, TimeEvent event)
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
-    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick) except *
-    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick) except *
-    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar) except *
+    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
+    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)
+    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 
     cdef OrderDenied _generate_order_denied(self, Order order, str reason)
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
-    cdef void _deny_order(self, Order order, str reason) except *
-    cdef void _deny_order_list(self, OrderList order_list, str reason) except *
+    cdef void _deny_order(self, Order order, str reason)
+    cdef void _deny_order_list(self, OrderList order_list, str reason)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_command(self, TradingCommand command) except *
-    cdef void _send_exec_command(self, TradingCommand command) except *
+    cdef void _send_risk_command(self, TradingCommand command)
+    cdef void _send_exec_command(self, TradingCommand command)

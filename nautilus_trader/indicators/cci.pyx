@@ -67,7 +67,7 @@ cdef class CommodityChannelIndex(Indicator):
         self._mad = 0.0
         self.value = 0.0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -90,7 +90,7 @@ cdef class CommodityChannelIndex(Indicator):
         double high,
         double low,
         double close,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -120,7 +120,7 @@ cdef class CommodityChannelIndex(Indicator):
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         """
         Reset the indicator.
 

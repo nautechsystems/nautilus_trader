@@ -343,7 +343,7 @@ cdef class Account:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void apply(self, AccountState event) except *:
+    cpdef void apply(self, AccountState event):
         """
         Apply the given account event to the account.
 
@@ -379,7 +379,7 @@ cdef class Account:
         self._events.append(event)
         self.update_balances(event.balances)
 
-    cpdef void update_balances(self, list balances, bint allow_zero=True) except *:
+    cpdef void update_balances(self, list balances, bint allow_zero=True):
         """
         Update the account balances.
 
@@ -417,7 +417,7 @@ cdef class Account:
                     self._balances.pop(balance.currency, None)
             self._balances[balance.currency] = balance
 
-    cpdef void update_commissions(self, Money commission) except *:
+    cpdef void update_commissions(self, Money commission):
         """
         Update the commissions.
 
@@ -445,7 +445,7 @@ cdef class Account:
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
-    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id):
         """
         Return whether the given instrument is leveraged for this account (leverage == 1).
 
@@ -461,7 +461,7 @@ cdef class Account:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cdef void _recalculate_balance(self, Currency currency) except *:
+    cdef void _recalculate_balance(self, Currency currency):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Money calculate_commission(

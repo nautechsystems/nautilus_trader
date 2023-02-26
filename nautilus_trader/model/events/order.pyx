@@ -2367,10 +2367,10 @@ cdef class OrderFilled(OrderEvent):
         """
         return OrderFilled.to_dict_c(obj)
 
-    cdef bint is_buy_c(self) except *:
+    cdef bint is_buy_c(self):
         return self.order_side == OrderSide.BUY
 
-    cdef bint is_sell_c(self) except *:
+    cdef bint is_sell_c(self):
         return self.order_side == OrderSide.SELL
 
     @property

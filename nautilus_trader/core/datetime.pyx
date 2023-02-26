@@ -42,7 +42,7 @@ from nautilus_trader.core.rust.core cimport secs_to_nanos as rust_secs_to_nanos
 cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
 
 
-cpdef uint64_t secs_to_nanos(double secs) except *:
+cpdef uint64_t secs_to_nanos(double secs):
     """
     Return round nanoseconds (ns) converted from the given seconds.
 
@@ -59,7 +59,7 @@ cpdef uint64_t secs_to_nanos(double secs) except *:
     return rust_secs_to_nanos(secs)
 
 
-cpdef uint64_t secs_to_millis(double secs) except *:
+cpdef uint64_t secs_to_millis(double secs):
     """
     Return round milliseconds (ms) converted from the given seconds.
 
@@ -76,7 +76,7 @@ cpdef uint64_t secs_to_millis(double secs) except *:
     return rust_secs_to_millis(secs)
 
 
-cpdef uint64_t millis_to_nanos(double millis) except *:
+cpdef uint64_t millis_to_nanos(double millis):
     """
     Return round nanoseconds (ns) converted from the given milliseconds (ms).
 
@@ -93,7 +93,7 @@ cpdef uint64_t millis_to_nanos(double millis) except *:
     return rust_millis_to_nanos(millis)
 
 
-cpdef uint64_t micros_to_nanos(double micros) except *:
+cpdef uint64_t micros_to_nanos(double micros):
     """
     Return round nanoseconds (ns) converted from the given microseconds (μs).
 
@@ -110,7 +110,7 @@ cpdef uint64_t micros_to_nanos(double micros) except *:
     return rust_micros_to_nanos(micros)
 
 
-cpdef double nanos_to_secs(uint64_t nanos) except *:
+cpdef double nanos_to_secs(uint64_t nanos):
     """
     Return seconds converted from the given nanoseconds (ns).
 
@@ -127,7 +127,7 @@ cpdef double nanos_to_secs(uint64_t nanos) except *:
     return rust_nanos_to_secs(nanos)
 
 
-cpdef uint64_t nanos_to_millis(uint64_t nanos) except *:
+cpdef uint64_t nanos_to_millis(uint64_t nanos):
     """
     Return round milliseconds (ms) converted from the given nanoseconds (ns).
 
@@ -144,7 +144,7 @@ cpdef uint64_t nanos_to_millis(uint64_t nanos) except *:
     return rust_nanos_to_millis(nanos)
 
 
-cpdef uint64_t nanos_to_micros(uint64_t nanos) except *:
+cpdef uint64_t nanos_to_micros(uint64_t nanos):
     """
     Return round microseconds (μs) converted from the given nanoseconds (ns).
 
@@ -257,7 +257,7 @@ cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     return <uint64_t>dt.value
 
 
-cpdef bint is_datetime_utc(datetime dt) except *:
+cpdef bint is_datetime_utc(datetime dt):
     """
     Return a value indicating whether the given timestamp is timezone aware UTC.
 
@@ -277,7 +277,7 @@ cpdef bint is_datetime_utc(datetime dt) except *:
     return datetime_tzinfo(dt) == pytz.utc
 
 
-cpdef bint is_tz_aware(time_object) except *:
+cpdef bint is_tz_aware(time_object):
     """
     Return a value indicating whether the given object is timezone aware.
 
@@ -302,7 +302,7 @@ cpdef bint is_tz_aware(time_object) except *:
         raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object")
 
 
-cpdef bint is_tz_naive(time_object) except *:
+cpdef bint is_tz_naive(time_object):
     """
     Return a value indicating whether the given object is timezone naive.
 

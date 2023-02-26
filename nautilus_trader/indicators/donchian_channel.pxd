@@ -29,4 +29,4 @@ cdef class DonchianChannel(Indicator):
     cdef readonly double lower
     """The current value of the lower band.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double high, double low) except *
+    cpdef void update_raw(self, double high, double low)

@@ -49,26 +49,26 @@ cdef class OrderBook:
     cdef readonly uint64_t ts_last
     """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `uint64_t`"""
 
-    cpdef void add(self, BookOrder order, uint64_t sequence=*) except *
-    cpdef void update(self, BookOrder order, uint64_t sequence=*) except *
-    cpdef void delete(self, BookOrder order, uint64_t sequence=*) except *
-    cpdef void apply_delta(self, OrderBookDelta delta) except *
-    cpdef void apply_deltas(self, OrderBookDeltas deltas) except *
-    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
-    cpdef void apply(self, OrderBookData data) except *
-    cpdef void clear_bids(self) except *
-    cpdef void clear_asks(self) except *
-    cpdef void clear(self) except *
-    cpdef void check_integrity(self) except *
-    cdef void _add(self, BookOrder order, uint64_t sequence) except *
-    cdef void _update(self, BookOrder order, uint64_t sequence) except *
-    cdef void _delete(self, BookOrder order, uint64_t sequence) except *
-    cdef void _apply_delta(self, OrderBookDelta delta) except *
-    cdef void _apply_sequence(self, uint64_t sequence) except *
-    cdef void _check_integrity(self) except *
+    cpdef void add(self, BookOrder order, uint64_t sequence=*)
+    cpdef void update(self, BookOrder order, uint64_t sequence=*)
+    cpdef void delete(self, BookOrder order, uint64_t sequence=*)
+    cpdef void apply_delta(self, OrderBookDelta delta)
+    cpdef void apply_deltas(self, OrderBookDeltas deltas)
+    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot)
+    cpdef void apply(self, OrderBookData data)
+    cpdef void clear_bids(self)
+    cpdef void clear_asks(self)
+    cpdef void clear(self)
+    cpdef void check_integrity(self)
+    cdef void _add(self, BookOrder order, uint64_t sequence)
+    cdef void _update(self, BookOrder order, uint64_t sequence)
+    cdef void _delete(self, BookOrder order, uint64_t sequence)
+    cdef void _apply_delta(self, OrderBookDelta delta)
+    cdef void _apply_sequence(self, uint64_t sequence)
+    cdef void _check_integrity(self)
 
-    cdef void update_quote_tick(self, QuoteTick tick) except *
-    cdef void update_trade_tick(self, TradeTick tick) except *
+    cdef void update_quote_tick(self, QuoteTick tick)
+    cdef void update_trade_tick(self, TradeTick tick)
     cpdef Level best_bid_level(self)
     cpdef Level best_ask_level(self)
     cpdef best_bid_price(self)
@@ -98,8 +98,8 @@ cdef class L3OrderBook(OrderBook):
 
 
 cdef class L2OrderBook(OrderBook):
-    cdef void _process_order(self, BookOrder order) except *
-    cdef void _remove_if_exists(self, BookOrder order, uint64_t sequence) except *
+    cdef void _process_order(self, BookOrder order)
+    cdef void _remove_if_exists(self, BookOrder order, uint64_t sequence)
 
 
 cdef class L1OrderBook(OrderBook):

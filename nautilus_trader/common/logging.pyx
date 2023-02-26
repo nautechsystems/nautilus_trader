@@ -185,7 +185,7 @@ cdef class Logger:
         """
         return logger_is_bypassed(&self._mem)
 
-    cpdef void change_clock(self, Clock clock) except *:
+    cpdef void change_clock(self, Clock clock):
         """
         Change the loggers internal clock to the given clock.
 
@@ -206,7 +206,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations = None,
-    ) except *:
+    ):
         self._log(
             timestamp_ns,
             level,
@@ -224,7 +224,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations,
-    ) except *:
+    ):
         logger_log(
             &self._mem,
             timestamp_ns,
@@ -334,7 +334,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given debug message with the logger.
 
@@ -366,7 +366,7 @@ cdef class LoggerAdapter:
         self, str msg,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given information message with the logger.
 
@@ -399,7 +399,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.YELLOW,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given warning message with the logger.
 
@@ -432,7 +432,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.RED,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given error message with the logger.
 
@@ -465,7 +465,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.RED,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given critical message with the logger.
 
@@ -498,7 +498,7 @@ cdef class LoggerAdapter:
         str msg,
         ex,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given exception including stack trace information.
 
@@ -526,7 +526,7 @@ cdef class LoggerAdapter:
         self.error(f"{msg}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
 
 
-cpdef void nautilus_header(LoggerAdapter logger) except *:
+cpdef void nautilus_header(LoggerAdapter logger):
     Condition.not_none(logger, "logger")
     print("")  # New line to begin
     logger.info("\033[36m=================================================================")
@@ -596,7 +596,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
 
     logger.info("\033[36m=================================================================")
 
-cpdef void log_memory(LoggerAdapter logger) except *:
+cpdef void log_memory(LoggerAdapter logger):
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m MEMORY USAGE")
     logger.info("\033[36m=================================================================")

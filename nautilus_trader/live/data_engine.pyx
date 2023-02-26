@@ -220,7 +220,7 @@ cdef class LiveDataEngine(DataEngine):
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, DataCommand command) except *:
+    cpdef void execute(self, DataCommand command):
         """
         Execute the given data command.
 
@@ -250,7 +250,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
 
-    cpdef void request(self, DataRequest request) except *:
+    cpdef void request(self, DataRequest request):
         """
         Handle the given request.
 
@@ -280,7 +280,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._req_queue.put(request))  # Blocking until qsize reduces
 
-    cpdef void response(self, DataResponse response) except *:
+    cpdef void response(self, DataResponse response):
         """
         Handle the given response.
 
@@ -309,7 +309,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._res_queue.put(response))  # Blocking until qsize reduces
 
-    cpdef void process(self, Data data) except *:
+    cpdef void process(self, Data data):
         """
         Process the given data.
 
@@ -348,7 +348,7 @@ cdef class LiveDataEngine(DataEngine):
         self._data_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel messages placed on queues.")
 
-    cpdef void _on_start(self) except *:
+    cpdef void _on_start(self):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
@@ -363,7 +363,7 @@ cdef class LiveDataEngine(DataEngine):
         self._log.debug(f"Scheduled {self._req_queue_task}")
         self._log.debug(f"Scheduled {self._data_queue_task}")
 
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinels()

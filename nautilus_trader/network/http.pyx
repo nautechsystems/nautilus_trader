@@ -116,7 +116,7 @@ cdef class HttpClient:
         """
         return self._get_session()
 
-    cpdef uint64_t min_latency(self) except *:
+    cpdef uint64_t min_latency(self):
         """
         Return the minimum round-trip latency (nanoseconds) for this client.
 
@@ -135,7 +135,7 @@ cdef class HttpClient:
         # Could use a heap here, but we don't need to be too optimal yet
         return sorted(self._latencies)[0]
 
-    cpdef uint64_t max_latency(self) except *:
+    cpdef uint64_t max_latency(self):
         """
         Return the maximum round-trip latency (nanoseconds) for this client.
 
@@ -154,7 +154,7 @@ cdef class HttpClient:
         # Could use a heap here, but we don't need to be too optimal yet
         return sorted(self._latencies)[-1]
 
-    cpdef uint64_t avg_latency(self) except *:
+    cpdef uint64_t avg_latency(self):
         """
         Return the average round-trip latency (nanoseconds) for this client.
 

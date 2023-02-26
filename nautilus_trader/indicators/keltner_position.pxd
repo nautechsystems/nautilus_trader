@@ -27,4 +27,4 @@ cdef class KeltnerPosition(Indicator):
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double high, double low, double close) except *
+    cpdef void update_raw(self, double high, double low, double close)

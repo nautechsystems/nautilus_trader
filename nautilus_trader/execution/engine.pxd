@@ -54,54 +54,54 @@ cdef class ExecutionEngine(Component):
     cdef readonly int report_count
     """The total count of reports received by the engine.\n\n:returns: `int`"""
 
-    cpdef int position_id_count(self, StrategyId strategy_id) except *
-    cpdef bint check_integrity(self) except *
-    cpdef bint check_connected(self) except *
-    cpdef bint check_disconnected(self) except *
-    cpdef bint check_residuals(self) except *
+    cpdef int position_id_count(self, StrategyId strategy_id)
+    cpdef bint check_integrity(self)
+    cpdef bint check_connected(self)
+    cpdef bint check_disconnected(self)
+    cpdef bint check_residuals(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef void register_client(self, ExecutionClient client) except *
-    cpdef void register_default_client(self, ExecutionClient client) except *
-    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
-    cpdef void register_oms_type(self, Strategy strategy) except *
-    cpdef void deregister_client(self, ExecutionClient client) except *
+    cpdef void register_client(self, ExecutionClient client)
+    cpdef void register_default_client(self, ExecutionClient client)
+    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue)
+    cpdef void register_oms_type(self, Strategy strategy)
+    cpdef void deregister_client(self, ExecutionClient client)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *
-    cpdef void _on_stop(self) except *
+    cpdef void _on_start(self)
+    cpdef void _on_stop(self)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef void _set_position_id_counts(self) except *
+    cdef void _set_position_id_counts(self)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void load_cache(self) except *
-    cpdef void execute(self, TradingCommand command) except *
-    cpdef void process(self, OrderEvent event) except *
-    cpdef void flush_db(self) except *
+    cpdef void load_cache(self)
+    cpdef void execute(self, TradingCommand command)
+    cpdef void process(self, OrderEvent event)
+    cpdef void flush_db(self)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, TradingCommand command) except *
-    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
-    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *
-    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *
-    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
-    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *
-    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *
+    cdef void _execute_command(self, TradingCommand command)
+    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command)
+    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command)
+    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command)
+    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command)
+    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command)
+    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, OrderEvent event) except *
-    cdef OmsType _determine_oms_type(self, OrderFilled fill) except *
-    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type) except *
-    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type) except *
-    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
-    cdef bint _will_flip_position(self, Position position, OrderFilled fill) except *
-    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef void _handle_event(self, OrderEvent event)
+    cdef OmsType _determine_oms_type(self, OrderFilled fill)
+    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type)
+    cdef void _apply_event_to_order(self, Order order, OrderEvent event)
+    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type)
+    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
+    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
+    cdef bint _will_flip_position(self, Position position, OrderFilled fill)
+    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
