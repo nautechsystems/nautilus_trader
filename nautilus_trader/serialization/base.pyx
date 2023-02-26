@@ -156,7 +156,7 @@ cpdef void register_serializable_object(
     obj,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
-) except *:
+):
     """
     Register the given object with the global serialization object maps.
 

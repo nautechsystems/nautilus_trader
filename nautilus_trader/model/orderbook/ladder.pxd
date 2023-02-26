@@ -34,9 +34,9 @@ cdef class Ladder:
     cdef readonly uint8_t size_precision
     """The ladders size precision.\n\n:returns: `uint8`"""
 
-    cpdef void add(self, BookOrder order) except *
-    cpdef void update(self, BookOrder order) except *
-    cpdef void delete(self, BookOrder order) except *
+    cpdef void add(self, BookOrder order)
+    cpdef void update(self, BookOrder order)
+    cpdef void delete(self, BookOrder order)
     cpdef list depth(self, int n=*)
     cpdef list prices(self)
     cpdef list volumes(self)
@@ -47,7 +47,7 @@ cdef class Ladder:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline int bisect_right(list a, double x, int lo = 0, hi = None) except *:
+cdef inline int bisect_right(list a, double x, int lo = 0, hi = None):
     # Return the index where to insert item x in list `a`, assuming `a` is sorted.
     # The return value `i` is such that all e in `a[:i]` have `e` <= `x`, and all `e` in
     # `a[i:]` have `e` > `x`.  So if `x` already appears in the list, `a.insert(i, x)` will

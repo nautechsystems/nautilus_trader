@@ -33,9 +33,9 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
     cdef readonly int count
     """The count of IDs generated.\n\n:returns: `int`"""
 
-    cpdef void set_count(self, int count) except *
+    cpdef void set_count(self, int count)
     cpdef ClientOrderId generate(self)
-    cpdef void reset(self) except *
+    cpdef void reset(self)
 
 
 cdef class OrderListIdGenerator(IdentifierGenerator):
@@ -44,15 +44,15 @@ cdef class OrderListIdGenerator(IdentifierGenerator):
     cdef readonly int count
     """The count of IDs generated.\n\n:returns: `int`"""
 
-    cpdef void set_count(self, int count) except *
+    cpdef void set_count(self, int count)
     cpdef OrderListId generate(self)
-    cpdef void reset(self) except *
+    cpdef void reset(self)
 
 
 cdef class PositionIdGenerator(IdentifierGenerator):
     cdef dict _counts
 
-    cpdef void set_count(self, StrategyId strategy_id, int count) except *
-    cpdef int get_count(self, StrategyId strategy_id) except *
+    cpdef void set_count(self, StrategyId strategy_id, int count)
+    cpdef int get_count(self, StrategyId strategy_id)
     cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=*)
-    cpdef void reset(self) except *
+    cpdef void reset(self)

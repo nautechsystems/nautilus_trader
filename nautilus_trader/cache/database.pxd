@@ -35,7 +35,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 cdef class CacheDatabase:
     cdef LoggerAdapter _log
 
-    cpdef void flush(self) except *
+    cpdef void flush(self)
     cpdef dict load(self)
     cpdef dict load_currencies(self)
     cpdef dict load_instruments(self)
@@ -50,23 +50,23 @@ cdef class CacheDatabase:
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
     cpdef dict load_actor(self, ComponentId component_id)
-    cpdef void delete_actor(self, ComponentId component_id) except *
+    cpdef void delete_actor(self, ComponentId component_id)
     cpdef dict load_strategy(self, StrategyId strategy_id)
-    cpdef void delete_strategy(self, StrategyId strategy_id) except *
+    cpdef void delete_strategy(self, StrategyId strategy_id)
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
     cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
-    cpdef void add(self, str key, bytes value) except *
-    cpdef void add_currency(self, Currency currency) except *
-    cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order) except *
-    cpdef void add_position(self, Position position) except *
-    cpdef void add_submit_order_command(self, SubmitOrder command) except *
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *
+    cpdef void add(self, str key, bytes value)
+    cpdef void add_currency(self, Currency currency)
+    cpdef void add_instrument(self, Instrument instrument)
+    cpdef void add_account(self, Account account)
+    cpdef void add_order(self, Order order)
+    cpdef void add_position(self, Position position)
+    cpdef void add_submit_order_command(self, SubmitOrder command)
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command)
 
-    cpdef void update_account(self, Account account) except *
-    cpdef void update_order(self, Order order) except *
-    cpdef void update_position(self, Position position) except *
-    cpdef void update_actor(self, Actor actor) except *
-    cpdef void update_strategy(self, Strategy strategy) except *
+    cpdef void update_account(self, Account account)
+    cpdef void update_order(self, Order order)
+    cpdef void update_position(self, Position position)
+    cpdef void update_actor(self, Actor actor)
+    cpdef void update_strategy(self, Strategy strategy)

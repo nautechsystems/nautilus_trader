@@ -27,31 +27,31 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class Quantity:
     cdef Quantity_t _mem
 
-    cdef bint eq(self, Quantity other) except *
-    cdef bint ne(self, Quantity other) except *
-    cdef bint lt(self, Quantity other) except *
-    cdef bint le(self, Quantity other) except *
-    cdef bint gt(self, Quantity other) except *
-    cdef bint ge(self, Quantity other) except *
-    cdef bint is_zero(self) except *
-    cdef bint is_negative(self) except *
-    cdef bint is_positive(self) except *
-    cdef uint64_t raw_uint64_c(self) except *
-    cdef double as_f64_c(self) except *
+    cdef bint eq(self, Quantity other)
+    cdef bint ne(self, Quantity other)
+    cdef bint lt(self, Quantity other)
+    cdef bint le(self, Quantity other)
+    cdef bint gt(self, Quantity other)
+    cdef bint ge(self, Quantity other)
+    cdef bint is_zero(self)
+    cdef bint is_negative(self)
+    cdef bint is_positive(self)
+    cdef uint64_t raw_uint64_c(self)
+    cdef double as_f64_c(self)
 
     cdef Quantity add(self, Quantity other)
     cdef Quantity sub(self, Quantity other)
-    cdef void add_assign(self, Quantity other) except *
-    cdef void sub_assign(self, Quantity other) except *
+    cdef void add_assign(self, Quantity other)
+    cdef void sub_assign(self, Quantity other)
 
     @staticmethod
     cdef object _extract_decimal(object obj)
 
     @staticmethod
-    cdef bint _compare(a, b, int op) except *
+    cdef bint _compare(a, b, int op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw) except *
+    cdef double raw_to_f64_c(uint64_t raw)
 
     @staticmethod
     cdef Quantity from_raw_c(uint64_t raw, uint8_t precision)
@@ -67,37 +67,37 @@ cdef class Quantity:
 
     cpdef str to_str(self)
     cpdef object as_decimal(self)
-    cpdef double as_double(self) except *
+    cpdef double as_double(self)
 
 
 cdef class Price:
     cdef Price_t _mem
 
-    cdef bint eq(self, Price other) except *
-    cdef bint ne(self, Price other) except *
-    cdef bint lt(self, Price other) except *
-    cdef bint le(self, Price other) except *
-    cdef bint gt(self, Price other) except *
-    cdef bint ge(self, Price other) except *
-    cdef bint is_zero(self) except *
-    cdef bint is_negative(self) except *
-    cdef bint is_positive(self) except *
-    cdef int64_t raw_int64_c(self) except *
-    cdef double as_f64_c(self) except *
+    cdef bint eq(self, Price other)
+    cdef bint ne(self, Price other)
+    cdef bint lt(self, Price other)
+    cdef bint le(self, Price other)
+    cdef bint gt(self, Price other)
+    cdef bint ge(self, Price other)
+    cdef bint is_zero(self)
+    cdef bint is_negative(self)
+    cdef bint is_positive(self)
+    cdef int64_t raw_int64_c(self)
+    cdef double as_f64_c(self)
 
     cdef Price add(self, Price other)
     cdef Price sub(self, Price other)
-    cdef void add_assign(self, Price other) except *
-    cdef void sub_assign(self, Price other) except *
+    cdef void add_assign(self, Price other)
+    cdef void sub_assign(self, Price other)
 
     @staticmethod
     cdef object _extract_decimal(object obj)
 
     @staticmethod
-    cdef bint _compare(a, b, int op) except *
+    cdef bint _compare(a, b, int op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw) except *
+    cdef double raw_to_f64_c(uint64_t raw)
 
     @staticmethod
     cdef Price from_raw_c(int64_t raw, uint8_t precision)
@@ -109,21 +109,21 @@ cdef class Price:
     cdef Price from_int_c(int value)
 
     cpdef object as_decimal(self)
-    cpdef double as_double(self) except *
+    cpdef double as_double(self)
 
 
 cdef class Money:
     cdef Money_t _mem
 
     cdef str currency_code_c(self)
-    cdef bint is_zero(self) except *
-    cdef bint is_negative(self) except *
-    cdef bint is_positive(self) except *
+    cdef bint is_zero(self)
+    cdef bint is_negative(self)
+    cdef bint is_positive(self)
     cdef int64_t raw_int64_c(self)
     cdef double as_f64_c(self)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw) except *
+    cdef double raw_to_f64_c(uint64_t raw)
 
     @staticmethod
     cdef Money from_raw_c(uint64_t raw, Currency currency)
@@ -138,11 +138,11 @@ cdef class Money:
 
     cdef Money add(self, Money other)
     cdef Money sub(self, Money other)
-    cdef void add_assign(self, Money other) except *
-    cdef void sub_assign(self, Money other) except *
+    cdef void add_assign(self, Money other)
+    cdef void sub_assign(self, Money other)
 
     cpdef object as_decimal(self)
-    cpdef double as_double(self) except *
+    cpdef double as_double(self)
 
 
 cdef class AccountBalance:

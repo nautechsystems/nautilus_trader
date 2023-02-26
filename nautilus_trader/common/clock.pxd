@@ -30,25 +30,25 @@ cdef class Clock:
     cdef dict _handlers
     cdef object _default_handler
 
-    cpdef double timestamp(self) except *
-    cpdef uint64_t timestamp_ms(self) except *
-    cpdef uint64_t timestamp_ns(self) except *
+    cpdef double timestamp(self)
+    cpdef uint64_t timestamp_ms(self)
+    cpdef uint64_t timestamp_ns(self)
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz=*)
-    cpdef uint64_t next_time_ns(self, str name) except *
-    cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None]) except *
+    cpdef uint64_t next_time_ns(self, str name)
+    cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None])
     cpdef void set_time_alert(
         self,
         str name,
         datetime alert_time,
         callback: Callable[[TimeEvent], None]=*,
-    ) except *
+    )
     cpdef void set_time_alert_ns(
         self,
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None]=*,
-    ) except *
+    )
     cpdef void set_timer(
         self,
         str name,
@@ -56,7 +56,7 @@ cdef class Clock:
         datetime start_time=*,
         datetime stop_time=*,
         callback: Callable[[TimeEvent], None]=*,
-    ) except *
+    )
     cpdef void set_timer_ns(
         self,
         str name,
@@ -64,15 +64,15 @@ cdef class Clock:
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None]=*,
-    ) except *
-    cpdef void cancel_timer(self, str name) except *
-    cpdef void cancel_timers(self) except *
+    )
+    cpdef void cancel_timer(self, str name)
+    cpdef void cancel_timers(self)
 
 
 cdef class TestClock(Clock):
     cdef CTestClock _mem
 
-    cpdef void set_time(self, uint64_t to_time_ns) except *
+    cpdef void set_time(self, uint64_t to_time_ns)
     cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=*)
 
 
@@ -87,14 +87,14 @@ cdef class LiveClock(Clock):
     cdef tzinfo _utc
     cdef uint64_t _next_event_time_ns
 
-    cpdef void set_offset(self, int64_t offset_ns) except *
-    cpdef void _raise_time_event(self, LiveTimer timer) except *
+    cpdef void set_offset(self, int64_t offset_ns)
+    cpdef void _raise_time_event(self, LiveTimer timer)
 
-    cdef void _handle_time_event(self, TimeEvent event) except *
-    cdef void _add_timer(self, LiveTimer timer, handler: Callable[[TimeEvent], None]) except *
-    cdef void _remove_timer(self, LiveTimer timer) except *
-    cdef void _update_stack(self) except *
-    cdef void _update_timing(self) except *
+    cdef void _handle_time_event(self, TimeEvent event)
+    cdef void _add_timer(self, LiveTimer timer, handler: Callable[[TimeEvent], None])
+    cdef void _remove_timer(self, LiveTimer timer)
+    cdef void _update_stack(self)
+    cdef void _update_timing(self)
     cdef LiveTimer _create_timer(
         self,
         str name,

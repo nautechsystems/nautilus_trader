@@ -45,14 +45,14 @@ cdef class MarginAccount(Account):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void set_default_leverage(self, leverage: Decimal) except *
-    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *
-    cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint) except *
-    cpdef void update_margin(self, MarginBalance margin) except *
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *
-    cpdef void clear_margin_maint(self, InstrumentId instrument_id) except *
-    cpdef void clear_margin(self, InstrumentId instrument_id) except *
+    cpdef void set_default_leverage(self, leverage: Decimal)
+    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal)
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init)
+    cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint)
+    cpdef void update_margin(self, MarginBalance margin)
+    cpdef void clear_margin_init(self, InstrumentId instrument_id)
+    cpdef void clear_margin_maint(self, InstrumentId instrument_id)
+    cpdef void clear_margin(self, InstrumentId instrument_id)
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 

@@ -90,7 +90,7 @@ cdef class BarBuilder:
             f"{self.volume})"
         )
 
-    cpdef void set_partial(self, Bar partial_bar) except *:
+    cpdef void set_partial(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
 
@@ -124,7 +124,7 @@ cdef class BarBuilder:
         self._partial_set = True
         self.initialized = True
 
-    cpdef void update(self, Price price, Quantity size, uint64_t ts_event) except *:
+    cpdef void update(self, Price price, Quantity size, uint64_t ts_event):
         """
         Update the bar builder.
 
@@ -161,7 +161,7 @@ cdef class BarBuilder:
         self.count += 1
         self.ts_last = ts_event
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the bar builder.
 
@@ -264,7 +264,7 @@ cdef class BarAggregator:
             bar_type=self.bar_type,
         )
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the aggregator with the given tick.
 
@@ -282,7 +282,7 @@ cdef class BarAggregator:
             ts_event=tick.ts_event,
         )
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Update the aggregator with the given tick.
 
@@ -300,14 +300,14 @@ cdef class BarAggregator:
             ts_event=tick.ts_event,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cdef void _build_now_and_send(self) except *:
+    cdef void _build_now_and_send(self):
         cdef Bar bar = self._builder.build_now()
         self._handler(bar)
 
-    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init) except *:
+    cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
         cdef Bar bar = self._builder.build(ts_event=ts_event, ts_init=ts_init)
         self._handler(bar)
 
@@ -350,7 +350,7 @@ cdef class TickBarAggregator(BarAggregator):
             logger=logger,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         self._builder.update(price, size, ts_event)
 
         if self._builder.count == self.bar_type.spec.step:
@@ -395,7 +395,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             logger=logger,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         cdef uint64_t raw_size_update = size._mem.raw
         cdef uint64_t raw_step = int(self.bar_type.spec.step * 1e9)
         cdef uint64_t raw_size_diff = 0
@@ -477,7 +477,7 @@ cdef class ValueBarAggregator(BarAggregator):
         """
         return self._cum_value
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         size_update = size
 
         while size_update > 0:  # While there is value to apply
@@ -638,7 +638,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         return start_time
 
-    cpdef void set_partial(self, Bar partial_bar) except *:
+    cpdef void set_partial(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
 
@@ -652,7 +652,7 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         self._builder.set_partial(partial_bar)
 
-    cpdef void stop(self) except *:
+    cpdef void stop(self):
         """
         Stop the bar aggregator.
         """
@@ -699,7 +699,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
-    cpdef void _set_build_timer(self) except *:
+    cpdef void _set_build_timer(self):
         self._timer_name = str(self.bar_type)
         self._clock.set_timer(
             name=self._timer_name,
@@ -711,7 +711,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._log.debug(f"Started timer {self._timer_name}.")
 
-    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         self._builder.update(price, size, ts_event)
         if self._build_on_next_tick:  # (fast C-level check)
             ts_init = ts_event
@@ -724,7 +724,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._build_on_next_tick = False
             self._stored_close_ns = 0
 
-    cpdef void _build_bar(self, TimeEvent event) except *:
+    cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
             # Set flag to build on next close with the stored close time
             self._build_on_next_tick = True

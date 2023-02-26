@@ -96,26 +96,26 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
-    cpdef void cache_general(self) except *
-    cpdef void cache_currencies(self) except *
-    cpdef void cache_instruments(self) except *
-    cpdef void cache_accounts(self) except *
-    cpdef void cache_orders(self) except *
-    cpdef void cache_order_lists(self) except *
-    cpdef void cache_positions(self) except *
-    cpdef void cache_commands(self) except *
-    cpdef void build_index(self) except *
-    cpdef bint check_integrity(self) except *
-    cpdef bint check_residuals(self) except *
-    cpdef void clear_index(self) except *
-    cpdef void reset(self) except *
-    cpdef void flush_db(self) except *
+    cpdef void cache_general(self)
+    cpdef void cache_currencies(self)
+    cpdef void cache_instruments(self)
+    cpdef void cache_accounts(self)
+    cpdef void cache_orders(self)
+    cpdef void cache_order_lists(self)
+    cpdef void cache_positions(self)
+    cpdef void cache_commands(self)
+    cpdef void build_index(self)
+    cpdef bint check_integrity(self)
+    cpdef bint check_residuals(self)
+    cpdef void clear_index(self)
+    cpdef void reset(self)
+    cpdef void flush_db(self)
 
     cdef tuple _build_quote_table(self, Venue venue)
-    cdef void _build_index_venue_account(self) except *
-    cdef void _cache_venue_account_id(self, AccountId account_id) except *
-    cdef void _build_indexes_from_orders(self) except *
-    cdef void _build_indexes_from_positions(self) except *
+    cdef void _build_index_venue_account(self)
+    cdef void _cache_venue_account_id(self, AccountId account_id)
+    cdef void _build_indexes_from_orders(self)
+    cdef void _build_indexes_from_positions(self)
     cdef set _build_order_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
     cdef set _build_position_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
@@ -125,34 +125,34 @@ cdef class Cache(CacheFacade):
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
-    cpdef void load_actor(self, Actor actor) except *
-    cpdef void load_strategy(self, Strategy strategy) except *
+    cpdef void load_actor(self, Actor actor)
+    cpdef void load_strategy(self, Strategy strategy)
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
     cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
-    cpdef void add_order_book(self, OrderBook order_book) except *
-    cpdef void add_ticker(self, Ticker ticker) except *
-    cpdef void add_quote_tick(self, QuoteTick tick) except *
-    cpdef void add_trade_tick(self, TradeTick tick) except *
-    cpdef void add_bar(self, Bar bar) except *
-    cpdef void add_quote_ticks(self, list ticks) except *
-    cpdef void add_trade_ticks(self, list ticks) except *
-    cpdef void add_bars(self, list bars) except *
-    cpdef void add_currency(self, Currency currency) except *
-    cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order, PositionId position_id, bint override=*) except *
-    cpdef void add_order_list(self, OrderList order_list) except *
-    cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
-    cpdef void add_position(self, Position position, OmsType oms_type) except *
-    cpdef void snapshot_position(self, Position position) except *
-    cpdef void add_submit_order_command(self, SubmitOrder command) except *
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *
+    cpdef void add_order_book(self, OrderBook order_book)
+    cpdef void add_ticker(self, Ticker ticker)
+    cpdef void add_quote_tick(self, QuoteTick tick)
+    cpdef void add_trade_tick(self, TradeTick tick)
+    cpdef void add_bar(self, Bar bar)
+    cpdef void add_quote_ticks(self, list ticks)
+    cpdef void add_trade_ticks(self, list ticks)
+    cpdef void add_bars(self, list bars)
+    cpdef void add_currency(self, Currency currency)
+    cpdef void add_instrument(self, Instrument instrument)
+    cpdef void add_account(self, Account account)
+    cpdef void add_order(self, Order order, PositionId position_id, bint override=*)
+    cpdef void add_order_list(self, OrderList order_list)
+    cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
+    cpdef void add_position(self, Position position, OmsType oms_type)
+    cpdef void snapshot_position(self, Position position)
+    cpdef void add_submit_order_command(self, SubmitOrder command)
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command)
 
-    cpdef void update_account(self, Account account) except *
-    cpdef void update_order(self, Order order) except *
-    cpdef void update_position(self, Position position) except *
-    cpdef void update_actor(self, Actor actor) except *
-    cpdef void delete_actor(self, Actor actor) except *
-    cpdef void update_strategy(self, Strategy strategy) except *
-    cpdef void delete_strategy(self, Strategy strategy) except *
+    cpdef void update_account(self, Account account)
+    cpdef void update_order(self, Order order)
+    cpdef void update_position(self, Position position)
+    cpdef void update_actor(self, Actor actor)
+    cpdef void delete_actor(self, Actor actor)
+    cpdef void update_strategy(self, Strategy strategy)
+    cpdef void delete_strategy(self, Strategy strategy)

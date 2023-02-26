@@ -72,7 +72,7 @@ cdef class BollingerBands(Indicator):
         self.middle = 0.0
         self.lower = 0.0
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the indicator with the given tick.
 
@@ -89,7 +89,7 @@ cdef class BollingerBands(Indicator):
         cdef double mid = (ask + bid) / 2.0
         self.update_raw(ask, bid, mid)
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Update the indicator with the given tick.
 
@@ -104,7 +104,7 @@ cdef class BollingerBands(Indicator):
         cdef double price = Price.raw_to_f64_c(tick._mem.price.raw)
         self.update_raw(price, price, price)
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -122,7 +122,7 @@ cdef class BollingerBands(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(self, double high, double low, double close) except *:
+    cpdef void update_raw(self, double high, double low, double close):
         """
         Update the indicator with the given prices.
 
@@ -159,7 +159,7 @@ cdef class BollingerBands(Indicator):
         self.middle = self._ma.value
         self.lower = self._ma.value - (self.k * std)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._ma.reset()
         self._prices.clear()
 

@@ -55,11 +55,11 @@ cdef class OrderFactory:
     cdef readonly StrategyId strategy_id
     """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
 
-    cpdef void set_client_order_id_count(self, int count) except *
-    cpdef void set_order_list_id_count(self, int count) except *
-    cpdef ClientOrderId generate_client_order_id(self) except *
-    cpdef OrderListId generate_order_list_id(self) except *
-    cpdef void reset(self) except *
+    cpdef void set_client_order_id_count(self, int count)
+    cpdef void set_order_list_id_count(self, int count)
+    cpdef ClientOrderId generate_client_order_id(self)
+    cpdef OrderListId generate_order_list_id(self)
+    cpdef void reset(self)
 
     cpdef OrderList create_list(self, list orders)
 

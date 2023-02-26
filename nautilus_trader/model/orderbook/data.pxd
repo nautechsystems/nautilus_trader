@@ -81,9 +81,9 @@ cdef class BookOrder:
     cdef readonly str order_id
     """The orders ID.\n\n:returns: `str`"""
 
-    cpdef void update_price(self, double price) except *
-    cpdef void update_size(self, double size) except *
-    cpdef void update_order_id(self, str value) except *
+    cpdef void update_price(self, double price)
+    cpdef void update_size(self, double size)
+    cpdef void update_order_id(self, str value)
     cpdef double exposure(self)
     cpdef double signed_size(self)
 

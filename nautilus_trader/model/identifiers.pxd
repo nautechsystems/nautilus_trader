@@ -99,7 +99,7 @@ cdef class PositionId(Identifier):
 
     @staticmethod
     cdef PositionId from_mem_c(PositionId_t mem)
-    cdef bint is_virtual_c(self) except *
+    cdef bint is_virtual_c(self)
 
 
 cdef class TradeId(Identifier):

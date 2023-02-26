@@ -28,5 +28,5 @@ cdef class VolatilityRatio(Indicator):
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double high, double low, double close) except *
-    cdef void _check_initialized(self) except *
+    cpdef void update_raw(self, double high, double low, double close)
+    cdef void _check_initialized(self)
