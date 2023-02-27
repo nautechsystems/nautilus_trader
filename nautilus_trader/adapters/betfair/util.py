@@ -125,7 +125,8 @@ def historical_instrument_provider_loader(instrument_provider, line):
     # Find instruments in data
     for mc in mcm.mc:
         if mc.marketDefinition:
-            mc.marketDefinition.marketId = mc.id
+            market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
+            mc = msgspec.structs.replace(mc, marketDefinition=market_def)
             instruments = make_instruments(mc.marketDefinition, currency="GBP")
             instrument_provider.add_bulk(instruments)
 

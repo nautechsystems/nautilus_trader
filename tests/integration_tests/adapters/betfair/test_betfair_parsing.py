@@ -146,7 +146,7 @@ class TestBetfairParsingStreaming:
                 "type": "TradeTick",
                 "instrument_id": "1.205822330|49808334|0.0.BETFAIR",
                 "price": "3.95",
-                "size": "46.95",
+                "size": "46.950000",
                 "aggressor_side": "NO_AGGRESSOR",
                 "trade_id": "3.9546.95",
                 "ts_event": 0,

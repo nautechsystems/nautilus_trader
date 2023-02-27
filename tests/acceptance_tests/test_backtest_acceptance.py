@@ -650,8 +650,9 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         )
 
         # Setup data
-        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431.bz2")
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
+        assert instruments
 
         for instrument in instruments[:1]:
             trade_ticks = [
@@ -705,7 +706,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             book_type=BookType.L2_MBP,
         )
 
-        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431.bz2")
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
@@ -739,6 +740,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9999.77",
+            "9860.37",
             GBP,
         )

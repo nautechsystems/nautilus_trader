@@ -369,7 +369,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
-                venue_order_id=VenueOrderId("-1"),
+                venue_order_id=None,
                 reason="ORDER MISSING VENUE_ORDER_ID",
                 ts_event=self._clock.timestamp_ns(),
             )

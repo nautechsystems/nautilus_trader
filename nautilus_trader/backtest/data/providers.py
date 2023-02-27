@@ -364,8 +364,10 @@ class TestInstrumentProvider:
         # Check tick precision of quote currency
         if quote_currency == "JPY":
             price_precision = 3
+            tick_scheme_name = "FOREX_3DECIMAL"
         else:
             price_precision = 5
+            tick_scheme_name = "FOREX_5DECIMAL"
 
         return CurrencyPair(
             instrument_id=instrument_id,
@@ -387,6 +389,7 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
+            tick_scheme_name=tick_scheme_name,
             ts_event=0,
             ts_init=0,
         )

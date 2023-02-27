@@ -16,6 +16,7 @@
 import asyncio
 from typing import Optional
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import msgspec
 import pytest
@@ -40,17 +41,16 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderModifyRejected
-from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -155,6 +155,7 @@ class TestBaseExecutionClient:
             clock=self.clock,
             logger=self.logger,
         )
+        self.strategy_id = StrategyId("S-001")
 
         # Capture events flowing through execution engine
         self.events = []
@@ -272,9 +273,9 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         assert isinstance(updated, OrderUpdated)
         assert updated.price == betfair_float_to_price_c(50)
 
-    @pytest.mark.skip(reason="Log sinks removed")
     @pytest.mark.asyncio
-    async def test_modify_order_error_order_doesnt_exist(self):
+    @patch.object(BetfairExecutionClient, "generate_order_modify_rejected")
+    async def test_modify_order_error_order_doesnt_exist(self, mock_reject):
         # Arrange
         command = TestCommandStubs.modify_order_command(
             order=self.test_order,
@@ -285,19 +286,19 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await asyncio.sleep(0)
 
         # Assert
-        logs = [log["msg"] for log in self.logs[-5:]]
-        expected = [
-            "Order with ClientOrderId('O-20210410-022422-001-001-1') not found in the cache to apply OrderPendingUpdate(instrument_id=1.179082386|50214|None.BETFAIR, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, account_id=BETFAIR-001, ts_event=0).",  # noqa
-            "Cannot apply event to any order: ClientOrderId('O-20210410-022422-001-001-1') not found in the cache with no `VenueOrderId`.",  # noqa
-            "Attempting to update order that does not exist in the cache: ModifyOrder(instrument_id=1.179082386|50214|None.BETFAIR, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, quantity=None, price=10.0, trigger_price=None)",  # noqa
-            "Order with ClientOrderId('O-20210410-022422-001-001-1') not found in the cache to apply OrderModifyRejected(instrument_id=1.179082386|50214|None.BETFAIR, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, account_id=BETFAIR-001, reason=ORDER NOT IN CACHE, ts_event=0).",  # noqa
-            "Cannot apply event to any order: ClientOrderId('O-20210410-022422-001-001-1') not found in the cache with no `VenueOrderId`.",  # noqa
-        ]
-        assert logs == expected
+        expected_kw = {
+            "strategy_id": StrategyId("S-001"),
+            "instrument_id": InstrumentId.from_str("1.179082386|50214|None.BETFAIR"),
+            "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
+            "venue_order_id": None,
+            "reason": "ORDER NOT IN CACHE",
+            "ts_event": 0,
+        }
+        assert mock_reject.call_args.kwargs == expected_kw
 
-    @pytest.mark.skip(reason="Log sinks removed")
     @pytest.mark.asyncio
-    async def test_modify_order_error_no_venue_id(self):
+    @patch.object(BetfairExecutionClient, "generate_order_modify_rejected")
+    async def test_modify_order_error_no_venue_id(self, mock_reject):
         # Arrange
         order = await self.submit_order(self.test_order)
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
@@ -311,13 +312,19 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await asyncio.sleep(0)
 
         # Assert
-        rejected = self.events[-1]
-        assert isinstance(rejected, OrderModifyRejected)
-        assert rejected.reason == "ORDER MISSING VENUE_ORDER_ID"
+        expected_kw = {
+            "strategy_id": self.strategy_id,
+            "instrument_id": self.instrument_id,
+            "client_order_id": self.test_order.client_order_id,
+            "venue_order_id": None,
+            "reason": "ORDER MISSING VENUE_ORDER_ID",
+            "ts_event": 0,
+        }
+        assert mock_reject.call_args.kwargs == expected_kw
 
-    @pytest.mark.skip(reason="Event generation and sequencing changed")
     @pytest.mark.asyncio
-    async def test_cancel_order_success(self):
+    @patch.object(BetfairExecutionClient, "generate_order_canceled")
+    async def test_cancel_order_success(self, mock_generate_order_canceled):
         # Arrange
         order = await self.accept_order(order=self.test_order, venue_order_id=self.venue_order_id)
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_success())
@@ -328,13 +335,18 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await asyncio.sleep(0)
 
         # Assert
-        pending_cancel, cancelled = self.events[-2:]
-        assert isinstance(pending_cancel, OrderPendingCancel)
-        assert isinstance(cancelled, OrderCanceled)
+        expected_kw = {
+            "strategy_id": self.strategy_id,
+            "instrument_id": self.instrument_id,
+            "client_order_id": self.test_order.client_order_id,
+            "venue_order_id": self.venue_order_id,
+            "ts_event": 0,
+        }
+        assert mock_generate_order_canceled.call_args.kwargs == expected_kw
 
-    @pytest.mark.skip(reason="Changed command and event sequencing, reconsider test")
     @pytest.mark.asyncio
-    async def test_cancel_order_fail(self):
+    @patch.object(BetfairExecutionClient, "generate_order_cancel_rejected")
+    async def test_cancel_order_fail(self, mock_generate_order_cancel_rejected):
         # Arrange
         order = await self.accept_order(order=self.test_order, venue_order_id=self.venue_order_id)
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_error())
@@ -349,9 +361,15 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await asyncio.sleep(0)
 
         # Assert
-        pending_cancel, cancelled = self.events[-2:]
-        assert isinstance(pending_cancel, OrderPendingCancel)
-        assert isinstance(cancelled, OrderCancelRejected)
+        expected_kw = {
+            "strategy_id": self.strategy_id,
+            "instrument_id": self.instrument_id,
+            "client_order_id": self.test_order.client_order_id,
+            "venue_order_id": self.venue_order_id,
+            "reason": "Error: ERROR_IN_ORDER",
+            "ts_event": 0,
+        }
+        assert mock_generate_order_cancel_rejected.call_args.kwargs == expected_kw
 
     @pytest.mark.asyncio
     async def test_order_multiple_fills(self):
@@ -710,9 +728,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
         assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
 
-    @pytest.mark.skip(reason="Log sinks removed")
     @pytest.mark.asyncio
-    async def test_check_cache_against_order_image(self):
+    async def test_check_cache_against_order_image(self, capfdbinary):
         # Arrange
         ocm = BetfairStreaming.generate_order_change_message(
             price=5.8,
@@ -730,6 +747,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         self.exec_client.check_cache_against_order_image(ocm)
 
         # Assert
-        expected = "UNKNOWN FILL: instrument_id=InstrumentId('1|1|None.BETFAIR') MatchedOrder(price=5.0, size=100)"
-        log = self.logs[-1]["msg"]
-        assert log == expected
+        out, err = capfdbinary.readouterr()
+        errors = err.split(b"\n")
+        assert b"TRADER-000.ExecClient-BETFAIR: UNKNOWN ORDER NOT IN CACHE" in errors[0]
+        # assert b"TRADER-000.ExecClient-BETFAIR: UNKNOWN FILL" in errors[1]

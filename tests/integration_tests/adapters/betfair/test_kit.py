@@ -39,7 +39,10 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
+from nautilus_trader.adapters.betfair.util import make_betfair_reader
+from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -50,6 +53,7 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TESTS_PACKAGE_ROOT
 
@@ -271,6 +275,13 @@ class BetfairTestStubs:
             ],
         )
         return run_config
+
+    @staticmethod
+    def betfair_reader(
+        instrument_provider: Optional[InstrumentProvider] = None,
+        line_preprocessor: Optional[LinePreprocessor] = None,
+    ):
+        return make_betfair_reader(instrument_provider, line_preprocessor)
 
 
 class BetfairRequests:
@@ -728,14 +739,28 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
+    def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
+        instruments: list[BettingInstrument] = []
+        if mcm.marketDefinition:
+            instruments.extend(market_definition_to_instruments(mcm.marketDefinition, currency))
+        for mc in mcm.mc:
+            if mc.marketDefinition:
+                market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
+                instruments.extend(market_definition_to_instruments(market_def, currency))
+        return instruments
+
+    @staticmethod
     def betfair_feed_parsed(market_id="1.166564490"):
         filename = pathlib.Path(f"{DATA_PATH}/{market_id}.bz2")
         assert filename.exists()
         parser = BetfairParser()
 
+        instruments = []
         data = []
-        for line in filename.read_bytes():
-            mcm = STREAM_DECODER.decode(line)
+        for mcm in BetfairDataProvider.read_mcm(str(filename)):
+            if not instruments:
+                instruments = BetfairDataProvider.mcm_to_instruments(mcm)
+                data.extend(instruments)
             data.extend(parser.parse(mcm))
 
         return data

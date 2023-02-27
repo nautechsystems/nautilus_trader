@@ -222,15 +222,17 @@ class TestBetfairDataClient:
     def test_market_heartbeat(self):
         self.client.on_market_update(BetfairStreaming.mcm_HEARTBEAT())
 
-    @pytest.mark.skip(reason="Log sinks removed")
-    def test_stream_latency(self):
-        logs = []
+    @patch.object(BetfairDataClient, "degrade")
+    def test_stream_latency(self, mock_degrade):
+        # Arrange
         self.client.start()
+        assert mock_degrade.call_count == 0
+
+        # Act
         self.client.on_market_update(BetfairStreaming.mcm_latency())
-        warning, degrading, degraded = logs[2:]
-        assert warning["level"] == "WRN"
-        assert warning["msg"] == "Stream unhealthy, waiting for recover"
-        assert degraded["msg"] == "DEGRADED."
+
+        # Assert
+        assert mock_degrade.call_count == 1
 
     @pytest.mark.asyncio
     async def test_market_sub_image_market_def(self):

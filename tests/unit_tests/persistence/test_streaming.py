@@ -52,7 +52,7 @@ class TestPersistenceStreaming:
     def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490*.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -94,20 +94,19 @@ class TestPersistenceStreaming:
         result = dict(Counter([r.__class__.__name__ for r in result]))
 
         expected = {
-            "ComponentStateChanged": 21,
-            "OrderBookSnapshot": 1,
-            "TradeTick": 198,
-            "OrderBookDeltas": 1077,
-            "AccountState": 648,
-            "OrderAccepted": 324,
-            "OrderFilled": 324,
-            "OrderInitialized": 325,
-            "OrderSubmitted": 324,
-            "PositionOpened": 3,
-            "PositionClosed": 2,
-            "PositionChanged": 321,
-            "OrderDenied": 1,
+            "AccountState": 670,
             "BettingInstrument": 1,
+            "ComponentStateChanged": 21,
+            "OrderAccepted": 324,
+            "OrderBookDeltas": 1077,
+            "OrderBookSnapshot": 1,
+            "OrderFilled": 346,
+            "OrderInitialized": 325,
+            "OrderSubmitted": 325,
+            "PositionChanged": 343,
+            "PositionClosed": 2,
+            "PositionOpened": 3,
+            "TradeTick": 198,
         }
 
         assert result == expected

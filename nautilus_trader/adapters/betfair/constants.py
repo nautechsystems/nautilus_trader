@@ -23,8 +23,8 @@ from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.objects import Price
 
 
-BETFAIR_PRICE_PRECISION = 2
-BETFAIR_QUANTITY_PRECISION = 2
+BETFAIR_PRICE_PRECISION = 6
+BETFAIR_QUANTITY_PRECISION = 6
 BETFAIR_BOOK_TYPE = BookType.L2_MBP
 
 CLOSE_PRICE_WINNER = Price(1.0, precision=BETFAIR_PRICE_PRECISION)
@@ -80,17 +80,3 @@ EVENT_TYPE_TO_NAME = {
     "4339": "Greyhound Racing",
     "2378961": "Politics",
 }
-
-
-class HistoricalSportType(Enum):
-    """
-    Represents a `Betfair` historical sport type.
-    """
-
-    HORSE_RACING = "Horse Racing"
-    SOCCER = "Soccer"
-    TENNIS = "Tennis"
-    CRICKET = "Cricket"
-    GOLF = "Golf"
-    GREYHOUND_RACING = "Greyhound Racing"
-    OTHER_SPORTS = "Other Sports"
