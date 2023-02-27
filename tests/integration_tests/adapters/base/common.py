@@ -29,9 +29,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -46,9 +44,9 @@ class TestBaseClient:
         self,
         venue: Venue,
         instrument: Instrument,
-        exec_client_factory: Optional[LiveExecClientFactory] = None,
+        exec_client_factory: Optional[type[LiveExecClientFactory]] = None,
         exec_client_config: Optional[LiveExecClientConfig] = None,
-        data_client_factory: Optional[LiveDataClientFactory] = None,
+        data_client_factory: Optional[type[LiveDataClientFactory]] = None,
         data_client_config: Optional[LiveDataClientConfig] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
     ):
@@ -66,15 +64,16 @@ class TestBaseClient:
         self.instrument_provider = instrument_provider
 
         # Identifiers
+        self.account_id = AccountId(f"{self.venue.value}-001")
         self.instrument_id = self.instrument.id
         self.trader_id = TestIdStubs.trader_id()
-        self.account_id = AccountId(f"{self.venue.value}-001")
-        self.venue_order_id = VenueOrderId("V-1")
-        self.client_order_id = ClientOrderId("C-1")
+        self.venue_order_id = TestIdStubs.venue_order_id()
+        self.client_order_id = TestIdStubs.client_order_id()
+        self.strategy_id = TestIdStubs.strategy_id()
 
         # Components
         self.clock = LiveClock()
-        self.logger: Logger = Logger(self.loop, self.clock)
+        self.logger: Logger = Logger(self.clock)
         self.msgbus = MessageBus(
             self.trader_id,
             self.clock,
@@ -123,9 +122,6 @@ class TestBaseClient:
         # Capture events flowing through engines
         self.order_events: list[Event] = []
         self.msgbus.subscribe("events.order*", self.order_events.append)
-
-        self.logs: list[str] = []
-        self.logger.register_sink(self.logs.append)
 
     @property
     def data_client(self) -> LiveDataClient:

@@ -87,8 +87,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    instrument_provider : BinanceInstrumentProvider
-        The instrument provider.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
     """
@@ -140,11 +138,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     async def _connect(self):
         # Connect client
         if not self._client.isConnected():
-            await self._client.connect()
+            await self._client.connectAsync()
 
         # Load account balance
         account_values: list[AccountValue] = self._client.accountValues()
         self.on_account_update(account_values)
+
+        self._set_connected(True)
 
     async def _disconnect(self):
         # Disconnect clients

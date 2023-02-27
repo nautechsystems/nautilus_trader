@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 import datetime
 from unittest.mock import patch
 
@@ -24,6 +24,7 @@ from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
@@ -48,41 +49,32 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
+from tests.integration_tests.adapters.base.base_execution import TestBaseExecClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-class TestInteractiveBrokersExecution(InteractiveBrokersTestBase):
+class TestInteractiveBrokersExecution(TestBaseExecClient):
     def setup(self):
-        super().setup()
         self.ib = IB()
-        self.instrument = IBTestProviderStubs.aapl_instrument()
-        self.contract_details = IBTestProviderStubs.aapl_equity_contract_details()
-        self.contract = self.contract_details.contract
-        self.client_order_id = TestIdStubs.client_order_id()
-        self.venue_order_id = TestIdStubs.venue_order_id()
         with patch(
             "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
             return_value=self.ib,
         ):
-            self.exec_client: InteractiveBrokersExecutionClient = (
-                InteractiveBrokersLiveExecClientFactory.create(
-                    loop=self.loop,
-                    name="IB",
-                    config=InteractiveBrokersExecClientConfig(  # noqa: S106
-                        username="test",
-                        password="test",
-                        account_id="DU123456",
-                    ),
-                    msgbus=self.msgbus,
-                    cache=self.cache,
-                    clock=self.clock,
-                    logger=self.logger,
-                )
+            super().setup(
+                venue=IB_VENUE,
+                instrument=IBTestProviderStubs.aapl_instrument(),
+                exec_client_config=InteractiveBrokersExecClientConfig(
+                    username="test",
+                    password="test",
+                    account_id="DU123456",
+                ),
+                exec_client_factory=InteractiveBrokersLiveExecClientFactory,
             )
             assert isinstance(self.exec_client, InteractiveBrokersExecutionClient)
+        self.contract_details = IBTestProviderStubs.aapl_equity_contract_details()
+        self.contract = self.contract_details.contract
 
     def instrument_setup(self, instrument=None, contract_details=None):
         instrument = instrument or self.instrument
@@ -111,6 +103,37 @@ class TestInteractiveBrokersExecution(InteractiveBrokersTestBase):
         return order
 
     @pytest.mark.asyncio
+    @patch.object(IB, "connectAsync")
+    @patch.object(IB, "accountValues", lambda x: IBTestDataStubs.account_values())
+    async def test_connect(self, mock_connect_async):
+        # Arrange
+
+        # Act
+        self.exec_client.connect()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        # Assert
+        assert self.exec_client.is_connected
+
+    @pytest.mark.asyncio
+    @patch.object(IB, "connectAsync")
+    @patch.object(IB, "accountValues", lambda x: IBTestDataStubs.account_values())
+    async def test_disconnect(self, mock_connect_async):
+        # Arrange
+        self.exec_client.connect()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        # Act
+        self.exec_client.disconnect()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        # Assert
+        assert not self.exec_client.is_connected
+
+    @pytest.mark.asyncio
     async def test_factory(self, event_loop):
         # Act
         exec_client = self.exec_client
@@ -118,7 +141,7 @@ class TestInteractiveBrokersExecution(InteractiveBrokersTestBase):
         # Assert
         assert exec_client is not None
 
-    def test_place_order(self):
+    def test_submit_order(self):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -157,7 +180,11 @@ class TestInteractiveBrokersExecution(InteractiveBrokersTestBase):
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
         assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
-    def test_update_order(self):
+    def test_submit_bracket_order(self):
+        # TODO - not implemented
+        pass
+
+    def test_modify_order(self):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -431,3 +458,6 @@ class TestInteractiveBrokersExecution(InteractiveBrokersTestBase):
         assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
         assert expected["margins"][0].to_dict() == kwargs["margins"][0].to_dict()
         assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins")])
+
+    def test_generate_order_status_report(self):
+        pass

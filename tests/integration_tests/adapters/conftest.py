@@ -15,31 +15,14 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.core import TEMPLATE_VENUE  # noqa
-from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider  # noqa
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import Logger
 
+def pytest_collection_modifyitems(config, items):
+    """Skip any tests that exist on the base classes, while allowing them to run in their subclasses."""
+    from tests.integration_tests.adapters.base.base_data import TestBaseDataClient
+    from tests.integration_tests.adapters.base.base_execution import TestBaseExecClient
 
-@pytest.fixture(scope="function")
-def instrument_provider():
-    clock = TestClock()
-    return TemplateInstrumentProvider(
-        venue=TEMPLATE_VENUE,
-        logger=Logger(clock),
-    )
+    TEMPLATE_CLASSES = (TestBaseExecClient, TestBaseDataClient)
 
-
-@pytest.mark.skip(reason="example")
-def test_load_all_async(instrument_provider):
-    pass
-
-
-@pytest.mark.skip(reason="example")
-def test_load_all(instrument_provider):
-    pass
-
-
-@pytest.mark.skip(reason="example")
-def test_load(instrument_provider):
-    pass
+    for item in items:
+        if item.cls in TEMPLATE_CLASSES:
+            item.add_marker(pytest.mark.skip(reason="base_class"))

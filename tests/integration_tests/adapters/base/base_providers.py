@@ -1,0 +1,60 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+from typing import Optional
+
+import pytest
+
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
+from tests.integration_tests.adapters.base.common import TestBaseClient
+
+
+class TestBaseProvider(TestBaseClient):
+    def setup(
+        self,
+        venue: Venue,
+        instrument: Instrument,
+        exec_client_factory: Optional[type[LiveExecClientFactory]] = None,
+        exec_client_config: Optional[LiveExecClientConfig] = None,
+        data_client_factory: Optional[type[LiveDataClientFactory]] = None,
+        data_client_config: Optional[LiveDataClientConfig] = None,
+        instrument_provider: Optional[InstrumentProvider] = None,
+    ):
+        super().setup(
+            venue=venue,
+            instrument=instrument,
+            exec_client_config=exec_client_config,
+            exec_client_factory=exec_client_factory,
+            data_client_config=data_client_config,
+            data_client_factory=data_client_factory,
+            instrument_provider=instrument_provider,
+        )
+
+    @pytest.mark.skip(reason="base_class")
+    def test_load_all_async(self):
+        raise NotImplementedError
+
+    @pytest.mark.skip(reason="base_class")
+    def test_load_all(self):
+        raise NotImplementedError
+
+    @pytest.mark.skip(reason="base_class")
+    def test_load(self):
+        raise NotImplementedError

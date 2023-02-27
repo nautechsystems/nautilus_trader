@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 import asyncio
 import datetime
 from unittest.mock import patch
@@ -21,37 +22,30 @@ import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
-from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
+from tests.integration_tests.adapters.base.base_data import TestBaseDataClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-class TestInteractiveBrokersData(InteractiveBrokersTestBase):
+class TestInteractiveBrokersData(TestBaseDataClient):
     def setup(self):
-        super().setup()
-        self.instrument = TestInstrumentProvider.aapl_equity()
         with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            self.data_client: InteractiveBrokersDataClient = (
-                InteractiveBrokersLiveDataClientFactory.create(
-                    loop=self.loop,
-                    name="IB",
-                    config=InteractiveBrokersDataClientConfig(  # noqa: S106
-                        username="test",
-                        password="test",
-                    ),
-                    msgbus=self.msgbus,
-                    cache=self.cache,
-                    clock=self.clock,
-                    logger=self.logger,
-                )
+            super().setup(
+                venue=IB_VENUE,
+                instrument=IBTestProviderStubs.aapl_instrument(),
+                data_client_factory=InteractiveBrokersLiveDataClientFactory,
+                data_client_config=InteractiveBrokersDataClientConfig(
+                    username="test",
+                    password="test",
+                ),
             )
             assert isinstance(self.data_client, InteractiveBrokersDataClient)
 
@@ -198,7 +192,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         expected = QuoteTick.from_dict(
             {
                 "type": "QuoteTick",
-                "instrument_id": "AAPL.NASDAQ",
+                "instrument_id": "AAPL.AMEX",
                 "bid": "0.00",
                 "ask": "0.00",
                 "bid_size": "44600",

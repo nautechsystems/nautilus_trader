@@ -13,22 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from unittest import mock
-from unittest.mock import MagicMock
 from unittest.mock import call
+from unittest.mock import patch
+
+import docker
 
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
-from tests import TESTS_PACKAGE_ROOT
-
-
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
-    def test_gateway_start_no_container(self):
-        mock.patch("nautilus_trader.adapters.interactive_brokers.gateway.docker")
+    @patch.object(docker, "from_env")
+    def test_gateway_start_no_container(self, _):
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
-        self.gateway._docker = MagicMock()
 
         # Arrange, Act
         self.gateway.start(wait=None)
