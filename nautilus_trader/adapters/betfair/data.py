@@ -318,6 +318,9 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
-            # TODO (bm) - self._loop.create_task(self._stream.reconnect())
-            self._log.error(str(update))
-            raise RuntimeError()
+            self._log.warning(str(update))
+            if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
+                raise RuntimeError("No more connections available")
+            else:
+                self._log.info("Attempting reconnect")
+                self._loop.create_task(self._stream.reconnect())

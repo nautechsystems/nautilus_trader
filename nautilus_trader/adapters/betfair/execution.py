@@ -897,7 +897,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
-            self._log.error(str(update))
+            self._log.warning(str(update))
             if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             else:
