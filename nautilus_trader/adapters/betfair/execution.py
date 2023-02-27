@@ -667,6 +667,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     if order is not None:
                         continue  # Order exists
                     self._log.error(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=} ")
+                    raise RuntimeError(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=}")
                 matched_orders = [(OrderSide.SELL, lay) for lay in selection.ml] + [
                     (OrderSide.BUY, back) for back in selection.mb
                 ]
@@ -683,6 +684,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                         continue
                     else:
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
+                        raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder):
         """

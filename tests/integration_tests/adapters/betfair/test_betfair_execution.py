@@ -728,8 +728,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
         assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
 
-    @pytest.mark.asyncio
-    async def test_check_cache_against_order_image(self, capfdbinary):
+    def test_check_cache_against_order_image(self):
         # Arrange
         ocm = BetfairStreaming.generate_order_change_message(
             price=5.8,
@@ -743,11 +742,6 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             mb=[MatchedOrder(5.0, 100)],
         )
 
-        # Act
-        self.exec_client.check_cache_against_order_image(ocm)
-
-        # Assert
-        out, err = capfdbinary.readouterr()
-        errors = err.split(b"\n")
-        assert b"TRADER-000.ExecClient-BETFAIR: UNKNOWN ORDER NOT IN CACHE" in errors[0]
-        # assert b"TRADER-000.ExecClient-BETFAIR: UNKNOWN FILL" in errors[1]
+        # Act, Assert
+        with pytest.raises(RuntimeError):
+            self.exec_client.check_cache_against_order_image(ocm)
