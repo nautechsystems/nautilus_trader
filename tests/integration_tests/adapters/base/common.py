@@ -107,8 +107,6 @@ class TestBaseClient:
         )
 
         # Create clients & strategy
-        self._exec_client: Optional[LiveExecutionClient] = None
-        self._data_client: Optional[LiveDataClient] = None
         self.strategy = Strategy()
         self.strategy.register(
             self.trader_id,
@@ -119,29 +117,9 @@ class TestBaseClient:
             self.logger,
         )
 
-        # Capture events flowing through engines
-        self.order_events: list[Event] = []
-        self.msgbus.subscribe("events.order*", self.order_events.append)
-
-    @property
-    def data_client(self) -> LiveDataClient:
-        if self._data_client is None:
-            self._data_client = self.data_client_factory.create(
-                loop=self.loop,
-                name=self.venue.value,
-                config=self.data_client_config,
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
-            self.data_engine.register_client(self._data_client)
-        return self._data_client
-
-    @property
-    def exec_client(self) -> LiveExecutionClient:
-        if self._exec_client is None:
-            self._exec_client = self.exec_client_factory.create(
+        # Setup exec client
+        if self.exec_client_factory is not None:
+            self.exec_client: Optional[LiveExecutionClient] = self.exec_client_factory.create(
                 loop=self.loop,
                 name=self.venue.value,
                 config=self.exec_client_config,
@@ -150,5 +128,25 @@ class TestBaseClient:
                 clock=self.clock,
                 logger=self.logger,
             )
-            self.exec_engine.register_client(self._exec_client)
-        return self._exec_client
+            self.exec_engine.register_client(self.exec_client)
+        else:
+            self.exec_client = None
+
+        # Setup data client
+        if self.data_client_factory is not None:
+            self.data_client: Optional[LiveDataClient] = self.data_client_factory.create(
+                loop=self.loop,
+                name=self.venue.value,
+                config=self.data_client_config,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
+            self.data_engine.register_client(self.data_client)
+        else:
+            self.data_client = None
+
+        # Capture events flowing through engines
+        self.order_events: list[Event] = []
+        self.msgbus.subscribe("events.order*", self.order_events.append)
