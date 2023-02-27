@@ -178,7 +178,7 @@ class TestBaseExecutionClient:
                     if not self.cache.order(client_order_id):
                         order = TestExecStubs.limit_order(
                             instrument_id=self.instrument.id,
-                            price=betfair_float_to_price(2.0),
+                            price=betfair_float_to_price(order_update.p),
                             client_order_id=client_order_id,
                         )
                         self.exec_client.venue_order_id_to_client_order_id[
@@ -460,8 +460,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             venue_position_id=None,
             order_side=order.side,
             order_type=order.order_type,
-            last_px=betfair_float_to_price(2.0),
-            last_qty=betfair_float_to_quantity(2.0),
+            last_px=betfair_float_to_price(12.0),
+            last_qty=betfair_float_to_quantity(4.75),
             quote_currency=GBP,
             commission=Money.from_str("0 GBP"),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -471,7 +471,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         # Act
         self.exec_client.handle_order_stream_update(raw)
         await asyncio.sleep(0)
-        assert len(self.events) == 4
+        assert len(self.events) == 3
 
     @pytest.mark.asyncio
     async def test_order_stream_sub_image(self):

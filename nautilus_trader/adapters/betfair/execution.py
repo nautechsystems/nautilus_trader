@@ -652,7 +652,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self.check_cache_against_order_image(order_change_message)
                     continue
 
-    def check_cache_against_order_image(self, order_change_message: OCM):
+    def check_cache_against_order_image(self, order_change_message: OCM):  # noqa
         for market in order_change_message.oc:
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
@@ -676,16 +676,17 @@ class BetfairExecutionClient(LiveExecutionClient):
                     # We don't get much information from Betfair here, try our best to match order
                     price = betfair_float_to_price(matched_order.price)
                     quantity = betfair_float_to_quantity(matched_order.size)
+                    matched = False
                     for order in orders:
                         for event in order.events:
                             if isinstance(event, OrderFilled):
                                 if (
                                     order.side == side
                                     and order.price == price
-                                    and order.quantity == quantity
+                                    and quantity <= order.quantity
                                 ):
-                                    break
-                    else:
+                                    matched = True
+                    if not matched:
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
                         raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
