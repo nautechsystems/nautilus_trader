@@ -1,113 +1,37 @@
 {
-  "op": "ocm",
-  "id": 3,
-  "clk": "AMYkAJokAJAnAIk2ANYk",
-  "pt": 1566480793554,
-  "oc": [
-    {
-      "id": "1.179082386",
-      "fullImage": true,
-      "orc": [
-        {
-          "fullImage": true,
-          "id": 50210,
-          "uo": [
-            {
-              "id": "175706685827",
-              "p": 2,
-              "s": 2,
-              "side": "B",
-              "status": "EC",
-              "pt": "L",
-              "ot": "L",
-              "pd": 1566480793000,
-              "md": 1566480793000,
-              "avp": 2,
-              "sm": 2,
-              "sr": 0,
-              "sl": 0,
-              "sc": 0,
-              "sv": 0,
-              "rac": "",
-              "rc": "REG_LGA",
-              "rfo": "O-20210409-070830-001-001-1",
-              "rfs": "BetfairTestStrategy-001"
-            }
-          ],
-          "mb": [
-            [
-              2,
-              2
+    "op": "ocm",
+    "id": 6,
+    "initialClk": "GpOH0JwBH762w50BHKKomJ0BGpzR5ZoBH5mWsJwB",
+    "clk": "AAAAAAAAAAAAAA==",
+    "conflateMs": 0,
+    "heartbeatMs": 5000,
+    "pt": 1468943673782,
+    "ct": "SUB_IMAGE",
+    "oc": [{
+        "id": "1.125657760",
+        "orc": [{
+            "fullImage": true,
+            "id": 151478,
+            "uo": [{
+                "id": "71352090695",
+                "p": 12,
+                "s": 5,
+                "side": "B",
+                "status": "E",
+                "pt": "L",
+                "ot": "L",
+                "pd": 1468919099000,
+                "md": 1468933833000,
+                "avp": 12,
+                "sm": 4.75,
+                "sr": 0.25,
+                "sl": 0,
+                "sc": 0,
+                "sv": 0
+            }],
+            "mb": [
+                [12, 4.75]
             ]
-          ]
-        },
-        {
-          "fullImage": true,
-          "id": 50210,
-          "uo": [
-            {
-              "id": "175706685828",
-              "p": 2,
-              "s": 2,
-              "side": "B",
-              "status": "EC",
-              "pt": "L",
-              "ot": "L",
-              "pd": 1566480793000,
-              "md": 1566480793000,
-              "avp": 2,
-              "sm": 2,
-              "sr": 0,
-              "sl": 0,
-              "sc": 0,
-              "sv": 0,
-              "rac": "",
-              "rc": "REG_LGA",
-              "rfo": "O-20210408-062924-001-001-2",
-              "rfs": "BetfairTestStrategy-001"
-            }
-          ],
-          "mb": [
-            [
-              2,
-              2
-            ]
-          ]
-        },
-        {
-          "fullImage": true,
-          "id": 50214,
-          "uo": [
-            {
-              "id": "175706685828",
-              "p": 2,
-              "s": 2,
-              "side": "B",
-              "status": "EC",
-              "pt": "L",
-              "ot": "L",
-              "pd": 1566480793000,
-              "md": 1566480793000,
-              "avp": 2,
-              "sm": 2,
-              "sr": 0,
-              "sl": 0,
-              "sc": 0,
-              "sv": 0,
-              "rac": "",
-              "rc": "REG_LGA",
-              "rfo": "O-20210408-062924-001-001-2",
-              "rfs": "BetfairTestStrategy-001"
-            }
-          ],
-          "mb": [
-            [
-              2,
-              2
-            ]
-          ]
-        }
-      ]
-    }
-  ]
+        }]
+    }]
 }

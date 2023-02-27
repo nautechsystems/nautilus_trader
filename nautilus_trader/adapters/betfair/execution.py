@@ -67,6 +67,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -659,7 +660,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     runner_id=str(selection.id),
                     runner_handicap=selection.hc,
                 )
-                orders = self._cache.orders()
+                orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}
                 for unmatched_order in selection.uo:
                     # We can match on venue_order_id here
@@ -675,13 +676,15 @@ class BetfairExecutionClient(LiveExecutionClient):
                     # We don't get much information from Betfair here, try our best to match order
                     price = betfair_float_to_price(matched_order.price)
                     quantity = betfair_float_to_quantity(matched_order.size)
-                    order = [
-                        o
-                        for o in orders
-                        if o.side == side and o.price == price and o.quantity == quantity
-                    ]
-                    if order:
-                        continue
+                    for order in orders:
+                        for event in order.events:
+                            if isinstance(event, OrderFilled):
+                                if (
+                                    order.side == side
+                                    and order.price == price
+                                    and order.quantity == quantity
+                                ):
+                                    break
                     else:
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
                         raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")

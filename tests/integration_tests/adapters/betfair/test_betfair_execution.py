@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -38,6 +37,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -163,12 +164,11 @@ class TestBaseExecutionClient:
 
         self.logs = []
 
-    async def _setup_state(self, order_change_message: Optional[OCM] = None):
+    async def _setup_state(self, order_change_message):
         """
         Ready the engine to test a message from betfair, setting orders into the correct state
         """
-        if isinstance(order_change_message, bytes):
-            order_change_message = STREAM_DECODER.decode(order_change_message)
+        assert isinstance(order_change_message, OCM)
         for oc in order_change_message.oc:
             for orc in oc.orc:
                 for order_update in orc.uo:
@@ -447,15 +447,31 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
     @pytest.mark.asyncio
     async def test_order_stream_new_full_image(self):
         # Arrange
-        order_change_message = BetfairStreaming.ocm_NEW_FULL_IMAGE()
-        await self._setup_state(order_change_message)
+        raw = BetfairStreaming.ocm_NEW_FULL_IMAGE()
+        ocm = msgspec.json.decode(raw, type=OCM)
+        await self._setup_state(ocm)
+        order = self.cache.orders()[0]
+        self.exec_client.generate_order_filled(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("1"),
+            venue_position_id=None,
+            order_side=order.side,
+            order_type=order.order_type,
+            last_px=betfair_float_to_price(2.0),
+            last_qty=betfair_float_to_quantity(2.0),
+            quote_currency=GBP,
+            commission=Money.from_str("0 GBP"),
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+            ts_event=0,
+        )
 
         # Act
-        self.exec_client.handle_order_stream_update(
-            BetfairStreaming.ocm_NEW_FULL_IMAGE(),
-        )
+        self.exec_client.handle_order_stream_update(raw)
         await asyncio.sleep(0)
-        assert len(self.events) == 6
+        assert len(self.events) == 4
 
     @pytest.mark.asyncio
     async def test_order_stream_sub_image(self):

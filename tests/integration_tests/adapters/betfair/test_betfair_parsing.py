@@ -30,9 +30,9 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.orderbook import BettingOrderBook
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
+from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
@@ -72,6 +72,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -217,7 +218,7 @@ class TestBetfairParsingStreaming:
         mcms = BetfairDataProvider.market_updates(filename)
         parser = BetfairParser()
 
-        books: dict[InstrumentId, BettingOrderBook] = {}
+        books: dict[InstrumentId, L2OrderBook] = {}
         for update in [x for mcm in mcms for x in parser.parse(mcm)]:
             if isinstance(update, (OrderBookDeltas, OrderBookSnapshot)) and not isinstance(
                 update,
@@ -228,7 +229,7 @@ class TestBetfairParsingStreaming:
                     instrument = TestInstrumentProvider.betting_instrument(
                         *instrument_id.value.split("|")
                     )
-                    books[instrument_id] = BettingOrderBook(instrument.id)
+                    books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
         result = [book.count for book in books.values()]

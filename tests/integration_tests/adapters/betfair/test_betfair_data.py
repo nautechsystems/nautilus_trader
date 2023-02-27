@@ -29,7 +29,7 @@ from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.orderbook import BettingOrderBook
+from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
@@ -363,7 +363,7 @@ class TestBetfairDataClient:
     def test_orderbook_repr(self):
         self.client.on_market_update(BetfairStreaming.mcm_live_IMAGE())
         ob_snap = self.messages[14]
-        ob = BettingOrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
+        ob = create_betfair_order_book(InstrumentId(Symbol("1"), BETFAIR_VENUE))
         ob.apply_snapshot(ob_snap)
         print(ob.pprint())
         assert ob.best_ask_price() == 1.71
@@ -379,10 +379,8 @@ class TestBetfairDataClient:
                     continue
                 print(update)
                 if isinstance(update, OrderBookSnapshot):
-                    order_books[update.instrument_id] = L2OrderBook(
+                    order_books[update.instrument_id] = create_betfair_order_book(
                         instrument_id=update.instrument_id,
-                        price_precision=4,
-                        size_precision=4,
                     )
                     order_books[update.instrument_id].apply_snapshot(update)
                 elif isinstance(update, OrderBookDeltas):
@@ -393,14 +391,14 @@ class TestBetfairDataClient:
                     raise KeyError
 
         book = order_books[list(order_books)[0]]
-        expected = """bids        price   asks
----------  -------  --------
-           1.2100   [76.38]
-           1.2000   [156.74]
-           1.1900   [147.79]
-[151.96]   1.1800
-[1275.83]  1.1700
-[932.64]   1.1600"""
+        expected = """bids        price    asks
+---------  --------  --------
+           1.210000  [76.38]
+           1.200000  [156.74]
+           1.190000  [147.79]
+[151.96]   1.180000
+[1275.83]  1.170000
+[932.64]   1.160000"""
 
         result = book.pprint()
         assert result == expected
@@ -512,12 +510,12 @@ class TestBetfairDataClient:
         assert len(starting_prices) == 36
 
     def test_betfair_orderbook(self):
-        books: dict[InstrumentId, BettingOrderBook] = {}
+        books: dict[InstrumentId, L2OrderBook] = {}
         parser = BetfairParser()
         for update in BetfairDataProvider.market_updates():
             for message in parser.parse(update):
                 if message.instrument_id not in books:
-                    books[message.instrument_id] = BettingOrderBook(
+                    books[message.instrument_id] = create_betfair_order_book(
                         instrument_id=message.instrument_id,
                     )
                 book = books[message.instrument_id]
