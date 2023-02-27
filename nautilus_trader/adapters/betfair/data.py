@@ -240,6 +240,10 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId):
+        instrument = self._instrument_provider.load(instrument_id)
+        self._handle_data(data=instrument)
+
+    async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():
             self._handle_data(data=instrument)
 

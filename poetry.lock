@@ -218,14 +218,14 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.1.19"
+version = "0.1.20"
 description = ""
 category = "main"
 optional = true
 python-versions = ">=3.9,<4.0"
 files = [
-    {file = "betfair_parser-0.1.19-py3-none-any.whl", hash = "sha256:da6e488e8fc0e029408254852f52e51e24921451bdc7cd0cf03f9ed0ef921123"},
-    {file = "betfair_parser-0.1.19.tar.gz", hash = "sha256:9d80d63fdbe7b083548fdb835f0f2b5cf5c8c1ff97784a613b4f76f573c33986"},
+    {file = "betfair_parser-0.1.20-py3-none-any.whl", hash = "sha256:db66c678c037b5d418cca93f8e36cddc1895bd43c892dc7c304c5a62faf0b7e4"},
+    {file = "betfair_parser-0.1.20.tar.gz", hash = "sha256:f9170c61151d94f48ec67faa18c1d55deb5a2d872bc5613307738eed2e052ffc"},
 ]
 
 [package.dependencies]
@@ -3056,4 +3056,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "b5167537075c08a1ff83b88c56f664eb756b6bc1953fd7e2c2963f3be3ef69c2"
+content-hash = "7b50b05e799b5fb8729e4b4f35dad6e6c6f7c4f235ffe75de9e0c8c7413855a9"
