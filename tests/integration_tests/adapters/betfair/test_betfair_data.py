@@ -512,31 +512,29 @@ class TestBetfairDataClient:
         assert len(starting_prices) == 36
 
     def test_betfair_orderbook(self):
-        book = L2OrderBook(
-            instrument_id=TestIdStubs.betting_instrument_id(),
-            price_precision=2,
-            size_precision=2,
-        )
+        books: dict[InstrumentId, BettingOrderBook] = {}
         parser = BetfairParser()
         for update in BetfairDataProvider.market_updates():
             for message in parser.parse(update):
-                try:
-                    if isinstance(message, OrderBookSnapshot):
-                        book.apply_snapshot(message)
-                    elif isinstance(message, OrderBookDeltas):
-                        book.apply_deltas(message)
-                    elif isinstance(message, OrderBookDelta):
-                        book.apply_delta(message)
-                    elif isinstance(
-                        message,
-                        (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClose),
-                    ):
-                        pass
-                    else:
-                        raise NotImplementedError(str(type(message)))
-                    book.check_integrity()
-                except Exception as e:
-                    print(str(type(e)) + " " + str(e))
+                if message.instrument_id not in books:
+                    books[message.instrument_id] = BettingOrderBook(
+                        instrument_id=message.instrument_id,
+                    )
+                book = books[message.instrument_id]
+                if isinstance(message, OrderBookSnapshot):
+                    book.apply_snapshot(message)
+                elif isinstance(message, OrderBookDeltas):
+                    book.apply_deltas(message)
+                elif isinstance(message, OrderBookDelta):
+                    book.apply_delta(message)
+                elif isinstance(
+                    message,
+                    (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClose),
+                ):
+                    pass
+                else:
+                    raise NotImplementedError(str(type(message)))
+                book.check_integrity()
 
     def test_bsp_deltas_apply(self):
         # Arrange

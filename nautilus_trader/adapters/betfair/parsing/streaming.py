@@ -36,8 +36,8 @@ from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import betfair_instrument_id
 from nautilus_trader.adapters.betfair.util import hash_market_trade
@@ -328,14 +328,14 @@ def runner_change_all_depth_to_order_book_snapshot(
     # ATL = Available To Lay = Back orders
     if rc.atl:
         asks = [
-            (betfair_float_to_price_c(order.price), order.volume) for order in rc.atl if order.price
+            (betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price
         ]
     else:
         asks = []
     # Asks are available to back (atb)
     if rc.atb:
         bids: list = [
-            (betfair_float_to_price_c(order.price), order.volume) for order in rc.atb if order.price
+            (betfair_float_to_price(order.price), order.volume) for order in rc.atb if order.price
         ]
     else:
         bids = []
@@ -359,9 +359,7 @@ def runner_change_best_depth_to_order_book_snapshot(
     # Bids are best available to lay (batl)
     if rc.batl:
         asks: list = [
-            (betfair_float_to_price_c(order.price), order.volume)
-            for order in rc.batl
-            if order.price
+            (betfair_float_to_price(order.price), order.volume) for order in rc.batl if order.price
         ]
     else:
         asks = []
@@ -369,9 +367,7 @@ def runner_change_best_depth_to_order_book_snapshot(
     # Asks are best available to back (batb)
     if rc.batb:
         bids: list = [
-            (betfair_float_to_price_c(order.price), order.volume)
-            for order in rc.batb
-            if order.price
+            (betfair_float_to_price(order.price), order.volume) for order in rc.batb if order.price
         ]
     else:
         bids = []
@@ -394,18 +390,14 @@ def runner_change_display_depth_to_order_book_snapshot(
     # Bids are best display available to lay (bdatl)
     if rc.bdatl:
         asks = [
-            (betfair_float_to_price_c(order.price), order.volume)
-            for order in rc.bdatl
-            if order.price
+            (betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price
         ]
     else:
         asks = []
     # Asks are best display available to back (bdatb)
     if rc.bdatb:
         bids: list = [
-            (betfair_float_to_price_c(order.price), order.volume)
-            for order in rc.bdatb
-            if order.price
+            (betfair_float_to_price(order.price), order.volume) for order in rc.bdatb if order.price
         ]
     else:
         bids = []
@@ -607,8 +599,8 @@ def runner_change_to_trade_ticks(
         trade_id = hash_market_trade(timestamp=ts_event, price=trd.price, volume=trd.volume)
         tick = TradeTick(
             instrument_id=instrument_id,
-            price=betfair_float_to_price_c(trd.price),
-            size=betfair_float_to_quantity_c(trd.volume),
+            price=betfair_float_to_price(trd.price),
+            size=betfair_float_to_quantity(trd.volume),
             aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
@@ -662,8 +654,8 @@ def _create_bsp_order_book_delta(
         book_type=BookType.L2_MBP,
         action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
         order=BookOrder(
-            price=betfair_float_to_price_c(price),
-            size=betfair_float_to_quantity_c(volume),
+            price=betfair_float_to_price(price),
+            size=betfair_float_to_quantity(volume),
             side=B2N_MARKET_STREAM_SIDE[side],
         ),
         ts_event=ts_event,
@@ -757,8 +749,8 @@ async def generate_trades_list(
             venue_order_id=VenueOrderId(fill.betId),
             venue_position_id=None,  # Can be None
             trade_id=TradeId(fill.lastMatchedDate),
-            last_qty=betfair_float_to_quantity_c(fill.sizeSettled),
-            last_px=betfair_float_to_price_c(fill.priceMatched),
+            last_qty=betfair_float_to_quantity(fill.sizeSettled),
+            last_px=betfair_float_to_price(fill.priceMatched),
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,

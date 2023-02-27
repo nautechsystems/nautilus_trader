@@ -18,8 +18,8 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.rust.common import LogLevel
@@ -53,7 +53,7 @@ class TestBetfairAccount:
     @pytest.mark.skip(reason="needs accounting fixes")
     def test_betting_instrument_notional_value(self):
         notional = self.instrument.notional_value(
-            price=betfair_float_to_price_c(2.0),
-            quantity=betfair_float_to_quantity_c(100.0),
+            price=betfair_float_to_price(2.0),
+            quantity=betfair_float_to_quantity(100.0),
         )
         assert notional == Decimal("200.0")

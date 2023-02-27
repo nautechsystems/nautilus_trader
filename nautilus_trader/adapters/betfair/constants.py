@@ -40,6 +40,7 @@ MARKET_STATUS_MAPPING: dict[tuple[BetfairMarketStatus, bool], MarketStatus] = {
     (BetfairMarketStatus.CLOSED, True): MarketStatus.CLOSED,
 }
 
+# Betfair allows subscribing to
 STRICT_MARKET_DATA_HANDLING = os.environ.get("BETFAIR_STRICT_MARKET_DATA_HANDLING", "1")
 
 
@@ -49,34 +50,3 @@ class MarketDataKind(Enum):
     ALL = "ALL"
     BEST = "BEST"
     DISPLAY = "DISPLAY"
-
-
-EVENT_TYPE_TO_NAME = {
-    "1": "Soccer",
-    "2": "Tennis",
-    "3": "Golf",
-    "4": "Cricket",
-    "5": "Rugby Union",
-    "1477": "Rugby League",
-    "6": "Boxing",
-    "7": "Horse Racing",
-    "8": "Motor Sport",
-    "27454571": "Esports",
-    "10": "Special Bets",
-    "998917": "Volleyball",
-    "11": "Cycling",
-    "2152880": "Gaelic Games",
-    "3988": "Athletics",
-    "6422": "Snooker",
-    "7511": "Baseball",
-    "6231": "Financial Bets",
-    "6423": "American Football",
-    "7522": "Basketball",
-    "7524": "Ice Hockey",
-    "61420": "Australian Rules",
-    "468328": "Handball",
-    "3503": "Darts",
-    "26420387": "Mixed Martial Arts",
-    "4339": "Greyhound Racing",
-    "2378961": "Politics",
-}

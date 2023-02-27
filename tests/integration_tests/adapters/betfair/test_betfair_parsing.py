@@ -31,8 +31,8 @@ from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.orderbook import BettingOrderBook
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
@@ -249,8 +249,8 @@ class TestBetfairParsing:
     def test_order_submit_to_betfair(self):
         command = TestCommandStubs.submit_order_command(
             order=TestExecStubs.limit_order(
-                price=betfair_float_to_price_c(2.5),
-                quantity=betfair_float_to_quantity_c(10),
+                price=betfair_float_to_price(2.5),
+                quantity=betfair_float_to_quantity(10),
             ),
         )
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
@@ -279,8 +279,8 @@ class TestBetfairParsing:
         modify = TestCommandStubs.modify_order_command(
             instrument_id=self.instrument.id,
             client_order_id=ClientOrderId("C-1"),
-            quantity=betfair_float_to_quantity_c(10),
-            price=betfair_float_to_price_c(1.35),
+            quantity=betfair_float_to_quantity(10),
+            price=betfair_float_to_price(1.35),
         )
 
         result = order_update_to_betfair(
@@ -390,8 +390,8 @@ class TestBetfairParsing:
 
     def test_make_order_limit(self):
         order = TestExecStubs.limit_order(
-            price=betfair_float_to_price_c(3.05),
-            quantity=betfair_float_to_quantity_c(10),
+            price=betfair_float_to_price(3.05),
+            quantity=betfair_float_to_quantity(10),
         )
         result = make_order(order)
         expected = {
@@ -402,8 +402,8 @@ class TestBetfairParsing:
 
     def test_make_order_limit_on_close(self):
         order = TestExecStubs.limit_order(
-            price=betfair_float_to_price_c(3.05),
-            quantity=betfair_float_to_quantity_c(10),
+            price=betfair_float_to_price(3.05),
+            quantity=betfair_float_to_quantity(10),
             instrument_id=TestIdStubs.betting_instrument_id(),
             time_in_force=TimeInForce.AT_THE_OPEN,
         )

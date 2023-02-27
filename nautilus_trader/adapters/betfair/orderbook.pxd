@@ -95,5 +95,5 @@ cdef class BettingOrderBook:
     cpdef double get_vwap_for_volume(self, bint is_buy, double volume)
 
 
-cpdef Price betfair_float_to_price_c(double value) except *
-cpdef Quantity betfair_float_to_quantity_c(double value) except *
+cpdef Price betfair_float_to_price(double value) except *
+cpdef Quantity betfair_float_to_quantity(double value) except *

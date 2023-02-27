@@ -31,8 +31,8 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_all_to_betfair
@@ -431,10 +431,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=VenueOrderId(update_instruction["betId"]),
-                quantity=betfair_float_to_quantity_c(
+                quantity=betfair_float_to_quantity(
                     update_instruction["instruction"]["limitOrder"]["size"],
                 ),
-                price=betfair_float_to_price_c(
+                price=betfair_float_to_price(
                     update_instruction["instruction"]["limitOrder"]["price"],
                 ),
                 trigger_price=None,  # Not applicable for Betfair
@@ -672,8 +672,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 ]
                 for side, matched_order in matched_orders:
                     # We don't get much information from Betfair here, try our best to match order
-                    price = betfair_float_to_price_c(matched_order.price)
-                    quantity = betfair_float_to_quantity_c(matched_order.size)
+                    price = betfair_float_to_price(matched_order.price)
+                    quantity = betfair_float_to_quantity(matched_order.size)
                     order = [
                         o
                         for o in orders
@@ -745,8 +745,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
-                    last_qty=betfair_float_to_quantity_c(fill_qty),
-                    last_px=betfair_float_to_price_c(fill_price),
+                    last_qty=betfair_float_to_quantity(fill_qty),
+                    last_px=betfair_float_to_price(fill_price),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -762,16 +762,16 @@ class BetfairExecutionClient(LiveExecutionClient):
             # New fill, simply return average price
             return unmatched_order.avp
         else:
-            new_price = betfair_float_to_price_c(unmatched_order.avp)
+            new_price = betfair_float_to_price(unmatched_order.avp)
             prev_price = order.avg_px
             if prev_price == new_price:
                 # Matched at same price
                 return unmatched_order.avp
             else:
-                avg_price = betfair_float_to_price_c(order.avg_px)
-                prev_price = betfair_float_to_price_c(avg_price)
+                avg_price = betfair_float_to_price(order.avg_px)
+                prev_price = betfair_float_to_price(avg_price)
                 prev_size = order.filled_qty
-                new_price = betfair_float_to_price_c(unmatched_order.avp)
+                new_price = betfair_float_to_price(unmatched_order.avp)
                 new_size = unmatched_order.sm - prev_size
                 total_size = prev_size + new_size
                 price = (new_price - (prev_price * (prev_size / total_size))) / (
@@ -814,8 +814,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
-                    last_qty=betfair_float_to_quantity_c(fill_qty),
-                    last_px=betfair_float_to_price_c(fill_price),
+                    last_qty=betfair_float_to_quantity(fill_qty),
+                    last_px=betfair_float_to_price(fill_price),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),

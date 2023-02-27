@@ -29,8 +29,8 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.execution import BetfairClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price_c
-from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity_c
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -178,7 +178,7 @@ class TestBaseExecutionClient:
                     if not self.cache.order(client_order_id):
                         order = TestExecStubs.limit_order(
                             instrument_id=self.instrument.id,
-                            price=betfair_float_to_price_c(2.0),
+                            price=betfair_float_to_price(2.0),
                             client_order_id=client_order_id,
                         )
                         self.exec_client.venue_order_id_to_client_order_id[
@@ -217,7 +217,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
         self.test_order = TestExecStubs.limit_order(
             instrument_id=self.instrument.id,
-            price=betfair_float_to_price_c(2.0),
+            price=betfair_float_to_price(2.0),
         )
         self.exec_client.venue_order_id_to_client_order_id[
             self.venue_order_id
@@ -264,14 +264,14 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await self.accept_order(self.test_order, venue_order_id=self.venue_order_id)
 
         # Act
-        self.strategy.modify_order(self.test_order, price=betfair_float_to_price_c(2.5))
+        self.strategy.modify_order(self.test_order, price=betfair_float_to_price(2.5))
         await asyncio.sleep(0)
 
         # Assert
         pending_update, updated = self.events[-2:]
         assert isinstance(pending_update, OrderPendingUpdate)
         assert isinstance(updated, OrderUpdated)
-        assert updated.price == betfair_float_to_price_c(50)
+        assert updated.price == betfair_float_to_price(50)
 
     @pytest.mark.asyncio
     @patch.object(BetfairExecutionClient, "generate_order_modify_rejected")
@@ -279,7 +279,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         # Arrange
         command = TestCommandStubs.modify_order_command(
             order=self.test_order,
-            price=betfair_float_to_price_c(10),
+            price=betfair_float_to_price(10),
         )
         # Act
         self.exec_client.modify_order(command)
@@ -305,7 +305,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
 
         # Act
         command = TestCommandStubs.modify_order_command(
-            price=betfair_float_to_price_c(2.0),
+            price=betfair_float_to_price(2.0),
             order=order,
         )
         self.exec_client.modify_order(command)
@@ -385,9 +385,9 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         # Assert
         result = [fill.last_qty for fill in self.events[-3:]]
         expected = [
-            betfair_float_to_quantity_c(16.1900),
-            betfair_float_to_quantity_c(0.77),
-            betfair_float_to_quantity_c(0.77),
+            betfair_float_to_quantity(16.1900),
+            betfair_float_to_quantity(0.77),
+            betfair_float_to_quantity(0.77),
         ]
         assert result == expected
 
@@ -412,7 +412,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             client_order_id = ClientOrderId(order_id)
             order = TestExecStubs.limit_order(
                 instrument_id=self.instrument.id,
-                price=betfair_float_to_price_c(2.0),
+                price=betfair_float_to_price(2.0),
                 client_order_id=client_order_id,
             )
             self.exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
@@ -502,7 +502,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         # Assert
         assert len(self.events) == 3
         assert isinstance(self.events[2], OrderFilled)
-        assert self.events[2].last_px == betfair_float_to_price_c(1.10)
+        assert self.events[2].last_px == betfair_float_to_price(1.10)
 
     @pytest.mark.asyncio
     async def test_order_stream_filled_multiple_prices(self):
@@ -539,8 +539,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         assert len(self.events) == 6
         assert isinstance(self.events[2], OrderFilled)
         assert isinstance(self.events[5], OrderFilled)
-        assert self.events[2].last_px == betfair_float_to_price_c(1.60)
-        assert self.events[5].last_px == betfair_float_to_price_c(1.50)
+        assert self.events[2].last_px == betfair_float_to_price(1.60)
+        assert self.events[5].last_px == betfair_float_to_price(1.50)
 
     @pytest.mark.asyncio
     async def test_order_stream_mixed(self):

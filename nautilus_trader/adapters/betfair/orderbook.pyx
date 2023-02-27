@@ -651,13 +651,13 @@ cdef class BettingOrderBook:
         return self.get_vwap_for_volume_c(is_buy, volume)
 
 
-cpdef Price betfair_float_to_price_c(double value) except *:
+cpdef Price betfair_float_to_price(double value) except *:
     try:
         return BETFAIR_FLOAT_TO_PRICE[value]
     except KeyError:
         return Price(value, BETFAIR_PRICE_PRECISION)
 
 
-cpdef Quantity betfair_float_to_quantity_c(double value) except *:
+cpdef Quantity betfair_float_to_quantity(double value) except *:
     cdef Quantity quantity = Quantity(value, BETFAIR_QUANTITY_PRECISION)
     return quantity
