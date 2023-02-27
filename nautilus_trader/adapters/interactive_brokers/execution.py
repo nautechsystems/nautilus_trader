@@ -308,14 +308,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         assert trade.orderStatus.status == IBOrderStatus.PendingCancel
         client_order_id = ClientOrderId(trade.order.orderRef)
         order: Order = self._cache.order(client_order_id)
-        if trade.orderStatus.status == IBOrderStatus.PendingCancel:
-            self.generate_order_pending_cancel(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=dt_to_unix_nanos(trade.log[-1].time),
-            )
+        assert order.status == OrderStatus.PENDING_CANCEL
 
     def _on_order_cancelled(self, trade: IBTrade):
         assert trade.orderStatus.status in (IBOrderStatus.Cancelled, IBOrderStatus.ApiCancelled)

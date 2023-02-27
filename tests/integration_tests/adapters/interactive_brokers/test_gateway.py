@@ -17,8 +17,6 @@ from unittest import mock
 from unittest.mock import MagicMock
 from unittest.mock import call
 
-import pytest
-
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from tests import TESTS_PACKAGE_ROOT
 
@@ -27,7 +25,6 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
-    @pytest.mark.skip(reason="local test")
     def test_gateway_start_no_container(self):
         mock.patch("nautilus_trader.adapters.interactive_brokers.gateway.docker")
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
@@ -43,7 +40,12 @@ class TestIBGateway:
             detach=True,
             ports={"4001": "4001", "4002": "4002", "5900": "5900"},
             platform="amd64",
-            environment={"TWSUSERID": "test", "TWSPASSWORD": "test", "TRADING_MODE": "paper"},
+            environment={
+                "TWS_USERID": "test",
+                "TWS_PASSWORD": "test",
+                "TRADING_MODE": "paper",
+                "READ_ONLY_API": "yes",
+            },
         )
         result = self.gateway._docker.method_calls[-1]
         assert result == expected

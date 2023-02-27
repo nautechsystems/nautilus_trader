@@ -17,6 +17,7 @@ import asyncio
 import datetime
 from unittest.mock import MagicMock
 
+import msgspec.structs
 import pytest
 from ib_insync import CFD
 from ib_insync import Bond
@@ -252,7 +253,6 @@ class TestIBInstrumentProvider:
         # Assert
         assert len(self.provider.get_all()) == 1
 
-    @pytest.mark.skip(reason="Configs now immutable, limx0 to fix")
     @pytest.mark.asyncio
     async def test_instrument_filter_callable_option_filter(self, mocker):
         # Arrange
@@ -262,9 +262,8 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        self.provider.config.filter_callable = (
-            "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
-        )
+        new_cb = "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
+        self.provider.config = msgspec.structs.replace(self.provider.config, filter_callable=new_cb)
         await self.provider.load()
         option_instruments = self.provider.get_all()
 

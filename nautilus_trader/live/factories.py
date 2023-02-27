@@ -20,6 +20,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.live.data_client import LiveDataClient
+from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -37,7 +39,7 @@ class LiveDataClientFactory:
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-    ):
+    ) -> LiveDataClient:
         """
         Return a new data client.
 
@@ -80,7 +82,7 @@ class LiveExecClientFactory:
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-    ):
+    ) -> LiveExecutionClient:
         """
         Return a new execution client.
 

@@ -176,7 +176,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
-            if depth == 0:
+            if depth in (None, 0):
                 depth = (
                     5  # depth = 0 is default for Nautilus, but not handled by Interactive Brokers
                 )

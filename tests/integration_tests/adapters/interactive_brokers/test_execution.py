@@ -29,11 +29,12 @@ from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBr
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -53,8 +54,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-@pytest.mark.skip
-class TestInteractiveBrokersData(InteractiveBrokersTestBase):
+class TestInteractiveBrokersExecution(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
         self.ib = IB()
@@ -62,6 +62,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         self.contract = self.contract_details.contract
         self.client_order_id = TestIdStubs.client_order_id()
+        self.venue_order_id = TestIdStubs.venue_order_id()
         with patch(
             "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
             return_value=self.ib,
@@ -98,15 +99,16 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def order_setup(self, status: OrderStatus = OrderStatus.SUBMITTED):
         order = TestExecStubs.limit_order(
             instrument_id=self.instrument.id,
-            client_order_id=ClientOrderId("C-1"),
+            client_order_id=self.client_order_id,
         )
         if status == OrderStatus.SUBMITTED:
             order = TestExecStubs.make_submitted_order(order)
         elif status == OrderStatus.ACCEPTED:
-            order = TestExecStubs.make_accepted_order(order)
+            order = TestExecStubs.make_accepted_order(order, venue_order_id=self.venue_order_id)
         else:
             raise ValueError(status)
         self.exec_client._cache.add_order(order, PositionId("1"))
+        return order
 
     @pytest.mark.asyncio
     async def test_factory(self, event_loop):
@@ -121,9 +123,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        order = TestExecStubs.limit_order(instrument_id=instrument.id)
+        order = TestExecStubs.limit_order(
+            instrument_id=instrument.id,
+            client_order_id=self.client_order_id,
+        )
         command = TestCommandStubs.submit_order_command(order=order)
-        trade = IBTestExecStubs.trade_submitted()
+        trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
 
         # Act
         with patch.object(self.exec_client._client, "placeOrder", return_value=trade) as mock:
@@ -248,7 +253,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         self.instrument_setup()
         self.order_setup()
-        trade = IBTestExecStubs.trade_pre_submit()
+        trade = IBTestExecStubs.trade_pre_submit(client_order_id=self.client_order_id)
 
         # Act
         with patch.object(self.exec_client, "generate_order_accepted") as mock:
@@ -257,7 +262,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Assert
         kwargs = mock.call_args.kwargs
         expected = {
-            "client_order_id": ClientOrderId("C-1"),
+            "client_order_id": self.client_order_id,
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646449586871811000,
@@ -284,7 +289,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
         )
-        trade = IBTestExecStubs.trade_submitted()
+        trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
         with patch.object(self.exec_client, "generate_order_filled") as mock:
             self.exec_client._on_execution_detail(trade, fill)
 
@@ -292,7 +297,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         kwargs = mock.call_args.kwargs
 
         expected = {
-            "client_order_id": ClientOrderId("C-1"),
+            "client_order_id": self.client_order_id,
             "commission": Money("1.00", USD),
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "last_px": Price.from_str("50.00"),
@@ -314,7 +319,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
-        order = IBTestExecStubs.create_order(permId=1)
+        order = IBTestExecStubs.create_order(permId=1, client_order_id=self.client_order_id)
         trade = IBTestExecStubs.trade_submitted(order=order)
 
         # Act
@@ -324,7 +329,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Assert
         kwargs = mock.call_args.kwargs
         expected = {
-            "client_order_id": ClientOrderId("C-1"),
+            "client_order_id": self.client_order_id,
             "instrument_id": self.instrument.id,
             "price": Price.from_str("105.00"),
             "quantity": Quantity.from_str("100000"),
@@ -340,33 +345,36 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_order_cancel_pending(self):
         # Arrange
         self.instrument_setup()
-        self.order_setup()
-        nautilus_order = TestExecStubs.limit_order()
-        order = IBTestExecStubs.create_order(permId=1)
+        nautilus_order = self.order_setup()
+        order = IBTestExecStubs.create_order(permId=1, client_order_id=self.client_order_id)
         trade = IBTestExecStubs.trade_pre_cancel(order=order)
-        self.cache.add_order(nautilus_order, None)
 
         # Act
-        with patch.object(self.exec_client, "generate_order_pending_cancel") as mock:
-            self.exec_client._on_order_pending_cancel(trade)
+        pending_cancel = OrderPendingCancel(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=self.instrument.id,
+            client_order_id=self.client_order_id,
+            venue_order_id=self.venue_order_id,
+            account_id=self.account_id,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        nautilus_order.apply(pending_cancel)
+        self.exec_client._on_order_pending_cancel(trade)
 
         # Assert
-        call = mock.call_args_list[0]
-        expected = {
-            "client_order_id": ClientOrderId("C-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
-            "strategy_id": StrategyId("S-001"),
-            "ts_event": 1646533038455087000,
-            "venue_order_id": None,
-        }
-        assert call.kwargs == expected
+        order = self.cache.order(self.client_order_id)
+        assert order.status == OrderStatus.PENDING_CANCEL
 
     @pytest.mark.asyncio
     async def test_on_order_cancel_cancelled(self):
         # Arrange
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
-        order = IBTestExecStubs.create_order(permId=1)
+        order = IBTestExecStubs.create_order(permId=1, client_order_id=self.client_order_id)
         trade = IBTestExecStubs.trade_canceled(order=order)
 
         # Act
@@ -376,7 +384,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Assert
         kwargs = mock.call_args.kwargs
         expected = {
-            "client_order_id": ClientOrderId("C-1"),
+            "client_order_id": self.client_order_id,
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533382000847000,
