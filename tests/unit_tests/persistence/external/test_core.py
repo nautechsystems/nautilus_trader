@@ -23,8 +23,8 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
 
+from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
