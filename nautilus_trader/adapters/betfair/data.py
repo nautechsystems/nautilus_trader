@@ -176,7 +176,7 @@ class BetfairDataClient(LiveMarketDataClient):
             await super()._request(data_type=data_type, correlation_id=correlation_id)
 
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
-        await self._instrument_provider.load_all_async(filters=[data_type.metadata])
+        await self._instrument_provider.load_all_async(filters=data_type.metadata["filters"])
         instruments = self._instrument_provider.search_instruments(
             instrument_filter=data_type.metadata,
         )

@@ -273,9 +273,9 @@ async def load_markets(
 ) -> list[NavigationMarket]:
     if isinstance(filters, dict):
         raise NotImplementedError
-    assert all(k in VALID_MARKET_FILTER_KEYS for k in (filters or []))
+
     navigation = await client.list_navigation()
-    markets = list(flatten_tree(navigation, **merge_filters(filters)))
+    markets = list(flatten_tree(navigation, **merge_filters(filters or [])))
     return [
         msgspec.json.decode(msgspec.json.encode(market), type=NavigationMarket)
         for market in markets

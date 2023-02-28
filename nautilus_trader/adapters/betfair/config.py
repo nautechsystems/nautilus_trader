@@ -25,7 +25,7 @@ class BetfairInstrumentFilter(InstrumentFilter, frozen=True):
     """Betfair instrument filter"""
 
     event_type_id: Optional[str] = None
-    market_ids: Optional[list[str]] = None
+    market_id: Optional[list[str]] = None
 
 
 class BetfairInstrumentProviderConfig(InstrumentProviderConfig):

@@ -23,6 +23,7 @@ import pytest
 from betfair_parser.spec.streaming import STREAM_DECODER
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentFilter
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
@@ -155,7 +156,6 @@ class TestBetfairDataClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.instrument_provider,
-            market_filter={},
         )
 
         self.data_engine.register_client(self.client)
@@ -350,7 +350,7 @@ class TestBetfairDataClient:
     async def test_request_search_instruments(self):
         req = DataType(
             type=InstrumentSearch,
-            metadata={"event_type_id": "7"},
+            metadata={"filters": tuple([BetfairInstrumentFilter(event_type_id="7")])},
         )
         self.client.request(req, self.uuid)
         await asyncio.sleep(0)
