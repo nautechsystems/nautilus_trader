@@ -141,7 +141,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         # Assert
         assert exec_client is not None
 
-    def test_submit_order(self):
+    @patch.object(IB, "placeOrder")
+    def test_submit_order(self, mock_placeOrder):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -152,10 +153,10 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         )
         command = TestCommandStubs.submit_order_command(order=order)
         trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
+        mock_placeOrder.return_value = trade
 
         # Act
-        with patch.object(self.exec_client._client, "placeOrder", return_value=trade) as mock:
-            self.exec_client.submit_order(command=command)
+        self.exec_client.submit_order(command=command)
 
         # Assert
         expected = {
@@ -173,7 +174,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         }
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_placeOrder.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -184,7 +185,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         # TODO - not implemented
         pass
 
-    def test_modify_order(self):
+    @patch.object(IB, "placeOrder")
+    def test_modify_order(self, mock_placeOrder):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -203,8 +205,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
             price=Price.from_int(10),
             quantity=Quantity.from_str("100"),
         )
-        with patch.object(self.exec_client._client, "placeOrder") as mock:
-            self.exec_client.modify_order(command=command)
+        self.exec_client.modify_order(command=command)
 
         # Assert
         expected = {
@@ -229,14 +230,15 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         }
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_placeOrder.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
         assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
-    def test_cancel_order(self):
+    @patch.object(IB, "cancelOrder")
+    def test_cancel_order(self, mock_cancelOrder):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -250,8 +252,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
 
         # Act
         command = TestCommandStubs.cancel_order_command(instrument_id=instrument.id)
-        with patch.object(self.exec_client._client, "cancelOrder") as mock:
-            self.exec_client.cancel_order(command=command)
+        self.exec_client.cancel_order(command=command)
 
         # Assert
         expected = {
@@ -269,25 +270,25 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         }
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_cancelOrder.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
         assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
     @pytest.mark.asyncio
-    async def test_on_submitted_event(self):
+    @patch.object(InteractiveBrokersExecutionClient, "generate_order_accepted")
+    async def test_on_submitted_event(self, mock_generate_order_accepted):
         # Arrange
         self.instrument_setup()
         self.order_setup()
         trade = IBTestExecStubs.trade_pre_submit(client_order_id=self.client_order_id)
 
         # Act
-        with patch.object(self.exec_client, "generate_order_accepted") as mock:
-            self.exec_client._on_order_update_event(trade)
+        self.exec_client._on_order_update_event(trade)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_generate_order_accepted.call_args.kwargs
         expected = {
             "client_order_id": self.client_order_id,
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
@@ -298,7 +299,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    async def test_on_exec_details(self):
+    @patch.object(InteractiveBrokersExecutionClient, "generate_order_filled")
+    async def test_on_exec_details(self, mock_generate_order_filled):
         # Arrange
         self.instrument_setup()
         self.order_setup()
@@ -317,11 +319,10 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
             time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
         )
         trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
-        with patch.object(self.exec_client, "generate_order_filled") as mock:
-            self.exec_client._on_execution_detail(trade, fill)
+        self.exec_client._on_execution_detail(trade, fill)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_generate_order_filled.call_args.kwargs
 
         expected = {
             "client_order_id": self.client_order_id,
@@ -342,7 +343,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    async def test_on_order_modify(self):
+    @patch.object(InteractiveBrokersExecutionClient, "generate_order_updated")
+    async def test_on_order_modify(self, mock_generate_order_updated):
         # Arrange
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
@@ -350,11 +352,10 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         trade = IBTestExecStubs.trade_submitted(order=order)
 
         # Act
-        with patch.object(self.exec_client, "generate_order_updated") as mock:
-            self.exec_client._on_order_modify(trade)
+        self.exec_client._on_order_modify(trade)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_generate_order_updated.call_args.kwargs
         expected = {
             "client_order_id": self.client_order_id,
             "instrument_id": self.instrument.id,
@@ -397,7 +398,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert order.status == OrderStatus.PENDING_CANCEL
 
     @pytest.mark.asyncio
-    async def test_on_order_cancel_cancelled(self):
+    @patch.object(InteractiveBrokersExecutionClient, "generate_order_canceled")
+    async def test_on_order_cancel_cancelled(self, mock_generate_order_canceled):
         # Arrange
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
@@ -405,11 +407,10 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         trade = IBTestExecStubs.trade_canceled(order=order)
 
         # Act
-        with patch.object(self.exec_client, "generate_order_canceled") as mock:
-            self.exec_client._on_order_cancelled(trade)
+        self.exec_client._on_order_cancelled(trade)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_generate_order_canceled.call_args.kwargs
         expected = {
             "client_order_id": self.client_order_id,
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
@@ -420,16 +421,16 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    async def test_on_account_update(self):
+    @patch.object(InteractiveBrokersExecutionClient, "generate_account_state")
+    async def test_on_account_update(self, mock_generate_account_state):
         # Arrange
         account_values = IBTestDataStubs.account_values()
 
         # Act
-        with patch.object(self.exec_client, "generate_account_state") as mock:
-            self.exec_client.on_account_update(account_values)
+        self.exec_client.on_account_update(account_values)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = mock_generate_account_state.call_args.kwargs
         expected = {
             "balances": [
                 AccountBalance.from_dict(

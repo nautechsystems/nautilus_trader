@@ -36,18 +36,18 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 
 class TestInteractiveBrokersData(TestBaseDataClient):
-    def setup(self):
-        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            super().setup(
-                venue=IB_VENUE,
-                instrument=IBTestProviderStubs.aapl_instrument(),
-                data_client_factory=InteractiveBrokersLiveDataClientFactory,
-                data_client_config=InteractiveBrokersDataClientConfig(
-                    username="test",
-                    password="test",
-                ),
-            )
-            assert isinstance(self.data_client, InteractiveBrokersDataClient)
+    @patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client")
+    def setup(self, func, mock_client):
+        super().setup(
+            venue=IB_VENUE,
+            instrument=IBTestProviderStubs.aapl_instrument(),
+            data_client_factory=InteractiveBrokersLiveDataClientFactory,
+            data_client_config=InteractiveBrokersDataClientConfig(
+                username="test",
+                password="test",
+            ),
+        )
+        assert isinstance(self.data_client, InteractiveBrokersDataClient)
 
     def instrument_setup(self, instrument, contract_details):
         self.data_client.instrument_provider.contract_details[
@@ -59,7 +59,7 @@ class TestInteractiveBrokersData(TestBaseDataClient):
         self.data_client.instrument_provider.add(instrument)
 
     @pytest.mark.asyncio
-    async def test_factory(self, event_loop):
+    async def test_factory(self):
         # Arrange
         # Act
         data_client = self.data_client
@@ -68,7 +68,7 @@ class TestInteractiveBrokersData(TestBaseDataClient):
         assert data_client is not None
 
     @pytest.mark.asyncio
-    async def test_subscribe_trade_ticks(self, event_loop):
+    async def test_subscribe_trade_ticks(self):
         # Arrange
         instrument_aapl = IBTestProviderStubs.aapl_instrument()
         self.data_client.instrument_provider.contract_details[
@@ -76,12 +76,11 @@ class TestInteractiveBrokersData(TestBaseDataClient):
         ] = IBTestProviderStubs.aapl_equity_contract_details()
 
         # Act
-        with patch.object(self.data_client._client, "reqMktData") as mock:
-            self.data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
-            await asyncio.sleep(0)
+        self.data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
+        await asyncio.sleep(0)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = self.data_client._client.reqMktData.call_args.kwargs
         expected = {
             "contract": Contract(
                 secType="STK",
@@ -103,15 +102,14 @@ class TestInteractiveBrokersData(TestBaseDataClient):
         self.instrument_setup(instrument, IBTestProviderStubs.aapl_equity_contract_details())
 
         # Act
-        with patch.object(self.data_client._client, "reqMktDepth") as mock:
-            self.data_client.subscribe_order_book_snapshots(
-                instrument_id=instrument.id,
-                book_type=BookType.L2_MBP,
-            )
-            await asyncio.sleep(0)
+        self.data_client.subscribe_order_book_snapshots(
+            instrument_id=instrument.id,
+            book_type=BookType.L2_MBP,
+        )
+        await asyncio.sleep(0)
 
         # Assert
-        kwargs = mock.call_args.kwargs
+        kwargs = self.data_client._client.reqMktDepth.call_args.kwargs
         expected = {
             "contract": Contract(
                 secType="STK",

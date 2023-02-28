@@ -201,9 +201,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         contract_details: ContractDetails = self.instrument_provider.contract_details[
             instrument_id.value
         ]
-        ticker = self._client.reqMktData(
-            contract=contract_details.contract,
-        )
+        ticker = self._client.reqMktData(contract=contract_details.contract)
         ticker.updateEvent += self._on_trade_ticker_update
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
