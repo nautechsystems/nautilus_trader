@@ -27,6 +27,7 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.api.navigation import flatten_tree
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
@@ -38,10 +39,9 @@ from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
+from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
-from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig

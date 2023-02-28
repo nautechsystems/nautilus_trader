@@ -33,6 +33,7 @@ from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
+from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_all_to_betfair
@@ -42,7 +43,6 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
-from nautilus_trader.adapters.betfair.util import betfair_instrument_id
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
@@ -657,8 +657,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
-                    runner_id=str(selection.id),
-                    runner_handicap=selection.hc,
+                    selection_id=str(selection.id),
+                    selection_handicap=selection.hc,
                 )
                 orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}

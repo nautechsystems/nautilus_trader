@@ -239,7 +239,7 @@ class TestBetfairParsingStreaming:
 class TestBetfairParsing:
     def setup(self):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.new_event_loop()
         self.clock = LiveClock()
         self.logger = Logger(clock=self.clock)
         self.instrument = TestInstrumentProvider.betting_instrument()

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -30,6 +31,7 @@ from nautilus_trader.adapters.betfair.execution import BetfairClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
+from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -37,6 +39,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderAccepted
@@ -164,20 +167,33 @@ class TestBaseExecutionClient:
 
         self.logs = []
 
-    async def _setup_state(self, order_change_message):
+    async def _setup_state(self, order_change_message, include_fills: bool = False):
         """
         Ready the engine to test a message from betfair, setting orders into the correct state
         """
-        assert isinstance(order_change_message, OCM)
+        if isinstance(order_change_message, bytes):
+            order_change_message = STREAM_DECODER.decode(order_change_message)
         for oc in order_change_message.oc:
             for orc in oc.orc:
                 for order_update in orc.uo:
+                    instrument_id = betfair_instrument_id(
+                        market_id=oc.id,
+                        selection_id=str(orc.id),
+                        selection_handicap=str(orc.hc),
+                    )
                     order_id = order_update.id
                     venue_order_id = VenueOrderId(order_id)
                     client_order_id = ClientOrderId(order_id)
+                    if not self.cache.instrument(instrument_id):
+                        instrument = TestInstrumentProvider.betting_instrument(
+                            market_id=oc.id,
+                            selection_id=str(orc.id),
+                            selection_handicap=str(orc.hc),
+                        )
+                        self.cache.add_instrument(instrument)
                     if not self.cache.order(client_order_id):
                         order = TestExecStubs.limit_order(
-                            instrument_id=self.instrument.id,
+                            instrument_id=instrument_id,
                             price=betfair_float_to_price(order_update.p),
                             client_order_id=client_order_id,
                         )
@@ -185,6 +201,15 @@ class TestBaseExecutionClient:
                             venue_order_id
                         ] = client_order_id
                         await self.accept_order(order, venue_order_id)
+
+                        if include_fills and order_update.sm:
+                            await self.fill_order(
+                                order,
+                                fill_price=order_update.avp or order_update.p,
+                                fill_qty=order_update.sm,
+                                venue_order_id=venue_order_id,
+                                quote_currency=GBP,
+                            )
 
     async def submit_order(self, order: Order) -> Order:
         # We don't want the execution client to actually do anything here
@@ -201,6 +226,34 @@ class TestBaseExecutionClient:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id or order.venue_order_id,
+            ts_event=0,
+        )
+        await asyncio.sleep(0)
+        return order
+
+    async def fill_order(
+        self,
+        order: Order,
+        venue_order_id: VenueOrderId,
+        fill_price: float,
+        fill_qty: float,
+        quote_currency: Currency,
+        trade_id: Optional[str] = None,
+    ) -> Order:
+        self.exec_client.generate_order_filled(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
+            trade_id=TradeId(trade_id or "1"),
+            venue_position_id=None,
+            order_side=order.side,
+            order_type=order.order_type,
+            last_qty=betfair_float_to_quantity(fill_qty),
+            last_px=betfair_float_to_price(fill_price),
+            quote_currency=quote_currency,
+            commission=Money.from_str(f"0 {quote_currency.code}"),
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=0,
         )
         await asyncio.sleep(0)
@@ -407,18 +460,10 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
     @pytest.mark.asyncio
     async def test_order_stream_full_image(self):
         # Arrange
-        for order_id in ("175706685825", "175706685826", "175706685827", "175706685828"):
-            venue_order_id = VenueOrderId(order_id)
-            client_order_id = ClientOrderId(order_id)
-            order = TestExecStubs.limit_order(
-                instrument_id=self.instrument.id,
-                price=betfair_float_to_price(2.0),
-                client_order_id=client_order_id,
-            )
-            self.exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
-            await self.accept_order(order, venue_order_id)
+        raw = BetfairStreaming.ocm_FULL_IMAGE()
+        ocm = STREAM_DECODER.decode(raw)
+        await self._setup_state(ocm, include_fills=True)
         self.exec_client._check_order_update = MagicMock()
-        # self.events = []
 
         # Act
         self.exec_client.handle_order_stream_update(
@@ -428,7 +473,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
 
         # Assert
         fills = [event for event in self.events if isinstance(event, OrderFilled)]
-        assert len(fills) == 5
+        assert len(fills) == 4
 
     @pytest.mark.asyncio
     async def test_order_stream_empty_image(self):
@@ -724,7 +769,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             TestInstrumentProvider.betting_instrument(
                 market_id=str(order_resp[0]["marketId"]),
                 selection_id=str(order_resp[0]["selectionId"]),
-                handicap=str(order_resp[0]["handicap"]),
+                selection_handicap=str(order_resp[0]["handicap"]),
             ),
         )
         venue_order_id = VenueOrderId("1")

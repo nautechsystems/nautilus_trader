@@ -56,12 +56,12 @@ if __name__ == "__main__":
         TestInstrumentProvider.betting_instrument(
             market_id="1.166811431",
             selection_id="19248890",
-            handicap="0.0",
+            selection_handicap="0.0",
         ),
         TestInstrumentProvider.betting_instrument(
             market_id="1.166811431",
             selection_id="38848248",
-            handicap="0.0",
+            selection_handicap="0.0",
         ),
     ]
     engine.add_instrument(instruments[0])

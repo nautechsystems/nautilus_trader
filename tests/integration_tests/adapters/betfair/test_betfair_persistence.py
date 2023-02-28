@@ -17,7 +17,7 @@ import fsspec
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.util import make_betfair_reader
+from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file

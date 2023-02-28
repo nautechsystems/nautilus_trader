@@ -27,8 +27,8 @@ from betfair_parser.spec.streaming.mcm import MarketDefinition
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider

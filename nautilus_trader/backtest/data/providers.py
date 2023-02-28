@@ -449,7 +449,7 @@ class TestInstrumentProvider:
     def betting_instrument(
         market_id: str = "1.179082386",
         selection_id: str = "50214",
-        handicap: Optional[str] = None,
+        selection_handicap: Optional[str] = None,
     ) -> BettingInstrument:
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
@@ -466,7 +466,7 @@ class TestInstrumentProvider:
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap=handicap,
+            selection_handicap=selection_handicap,
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",

@@ -38,9 +38,9 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
+from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.adapters.betfair.util import betfair_instrument_id
-from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.tick import TradeTick
@@ -112,8 +112,8 @@ def market_change_to_updates(  # noqa: C901
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
-            runner_id=str(rc.id),
-            runner_handicap=parse_handicap(rc.hc),
+            selection_id=str(rc.id),
+            selection_handicap=parse_handicap(rc.hc),
         )
 
         # Order book data
@@ -170,8 +170,8 @@ def market_definition_to_instrument_status_updates(
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            runner_id=str(runner.runner_id),
-            runner_handicap=parse_handicap(runner.handicap),
+            selection_id=str(runner.runner_id),
+            selection_handicap=parse_handicap(runner.handicap),
         )
         key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
         if runner.status == RunnerStatus.REMOVED:
@@ -215,8 +215,8 @@ def runner_to_instrument_close(
 ) -> Optional[InstrumentClose]:
     instrument_id = betfair_instrument_id(
         market_id=market_id,
-        runner_id=str(runner.runner_id),
-        runner_handicap=parse_handicap(runner.handicap),
+        selection_id=str(runner.runner_id),
+        selection_handicap=parse_handicap(runner.handicap),
     )
 
     if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED):
@@ -264,8 +264,8 @@ def runner_to_betfair_starting_price(
     if runner.bsp is not None:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            runner_id=str(runner.runner_id),
-            runner_handicap=parse_handicap(runner.handicap),
+            selection_id=str(runner.runner_id),
+            selection_handicap=parse_handicap(runner.handicap),
         )
         return BetfairStartingPrice(
             instrument_id=make_bsp_instrument_id(instrument_id),
