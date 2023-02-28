@@ -187,6 +187,8 @@ cdef class OrderEmulator(Actor):
                         f"Cannot load `SubmitOrderList` command for {repr(order.order_list_id)}: not found in cache."
                     )
                     continue
+                if command in self._commands_submit_order_list:
+                    continue  # Already loaded
                 self._log.info(f"Loaded {command}.", LogColor.BLUE)
                 self._handle_submit_order_list(command)
             else:
