@@ -400,7 +400,10 @@ class NautilusKernel:
                 fs_protocol=catalog_config.fs_protocol,
                 fs_storage_options=catalog_config.fs_storage_options,
             )
-            self._data_engine.register_catalog(self._catalog)
+            self._data_engine.register_catalog(
+                catalog=self._catalog,
+                use_rust=catalog_config.use_rust,
+            )
 
         # Create importable actors
         for actor_config in actor_configs:
