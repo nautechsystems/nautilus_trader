@@ -86,6 +86,7 @@ cdef class Future(Instrument):
         Quantity lot_size not None,
         str underlying,
         date expiry_date,
+        str tick_scheme_name,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -108,6 +109,7 @@ cdef class Future(Instrument):
             min_notional=None,
             max_price=None,
             min_price=None,
+            tick_scheme_name=tick_scheme_name,
             margin_init=Decimal(0),
             margin_maint=Decimal(0),
             maker_fee=Decimal(0),

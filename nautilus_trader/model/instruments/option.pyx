@@ -93,6 +93,7 @@ cdef class Option(Instrument):
         str underlying,
         date expiry_date,
         OptionKind kind,
+        str tick_scheme_name,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -120,6 +121,7 @@ cdef class Option(Instrument):
             margin_maint=Decimal(0),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
+            tick_scheme_name=tick_scheme_name,
             ts_event=ts_event,
             ts_init=ts_init,
             info={},

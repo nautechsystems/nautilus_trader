@@ -180,6 +180,7 @@ cdef class CurrencyPair(Instrument):
             ts_event=ts_event,
             ts_init=ts_init,
             info=info,
+            tick_scheme_name=tick_scheme_name,
         )
 
         self.base_currency = base_currency

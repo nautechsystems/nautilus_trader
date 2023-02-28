@@ -35,6 +35,7 @@ from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick_scheme.base import get_tick_scheme
 
 
 def _extract_isin(details: ContractDetails):
@@ -59,6 +60,22 @@ def sec_type_to_asset_class(sec_type: str):
     return asset_class_from_str(mapping.get(sec_type, sec_type))
 
 
+def get_contract_details_tick_scheme_name(details: ContractDetails) -> str:
+    exchange_to_market_rules = dict(
+        zip(details.validExchanges.split(","), details.marketRuleIds.split(",")),
+    )
+    unique_market_rules = sorted(set(exchange_to_market_rules.values()))
+    if len(unique_market_rules) == 1:
+        # Only one tick scheme, use it.
+        market_rule_id = unique_market_rules[0]
+        tick_scheme_name = f"IB_R{market_rule_id}_TICK_SCHEME"
+        tick_scheme = get_tick_scheme(tick_scheme_name)
+        return tick_scheme.name
+    else:
+        # Multiple tick schemes, try and find SMART as the default.
+        raise NotImplementedError(unique_market_rules)
+
+
 def parse_instrument(
     contract_details: ContractDetails,
 ) -> Instrument:
@@ -79,6 +96,7 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+    tick_scheme_name = get_contract_details_tick_scheme_name(details)
     return Equity(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -87,9 +105,10 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
         price_increment=Price(details.minTick, price_precision),
         multiplier=Quantity.from_int(
             int(details.contract.multiplier or details.mdSizeMultiplier),
-        ),  # is this right?
+        ),  # TODO - is this right?
         lot_size=Quantity.from_int(1),
         isin=_extract_isin(details),
+        tick_scheme_name=tick_scheme_name,
         ts_event=timestamp,
         ts_init=timestamp,
     )
@@ -101,6 +120,7 @@ def parse_future_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+    tick_scheme_name = get_contract_details_tick_scheme_name(details)
     return Future(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -115,6 +135,7 @@ def parse_future_contract(
             details.contract.lastTradeDateOrContractMonth,
             "%Y%m%d",
         ).date(),
+        tick_scheme_name=tick_scheme_name,
         ts_event=timestamp,
         ts_init=timestamp,
     )
@@ -133,6 +154,7 @@ def parse_option_contract(
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
+    tick_scheme_name = get_contract_details_tick_scheme_name(details)
     return Option(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -149,6 +171,7 @@ def parse_option_contract(
             "%Y%m%d",
         ).date(),
         kind=kind,
+        tick_scheme_name=tick_scheme_name,
         ts_event=timestamp,
         ts_init=timestamp,
     )
@@ -160,6 +183,7 @@ def parse_forex_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+    tick_scheme_name = get_contract_details_tick_scheme_name(details)
     return CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -180,6 +204,7 @@ def parse_forex_contract(
         margin_maint=Decimal(0),
         maker_fee=Decimal(0),
         taker_fee=Decimal(0),
+        tick_scheme_name=tick_scheme_name,
         ts_event=timestamp,
         ts_init=timestamp,
     )
