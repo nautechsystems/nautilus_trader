@@ -34,7 +34,7 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
+# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 instrument_filters = [
     InteractiveBrokersInstrumentFilter.stock("AAPL.AMEX"),
@@ -47,15 +47,17 @@ config_node = TradingNodeConfig(
     log_level="DEBUG",
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
                 filters=instrument_filters,
             ),
+            start_gateway=False,
         ),
     },
     exec_clients={
-        "IB": InteractiveBrokersExecClientConfig(),
+        "IB": InteractiveBrokersExecClientConfig(
+            start_gateway=False,
+        ),
     },
     timeout_connection=90.0,
     timeout_reconciliation=5.0,
@@ -90,6 +92,6 @@ node.build()
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
     try:
-        node.start()
+        node.run()
     finally:
         node.dispose()

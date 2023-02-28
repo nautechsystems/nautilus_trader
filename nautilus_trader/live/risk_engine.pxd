@@ -13,19 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.risk.engine cimport RiskEngine
 
 
 cdef class LiveRiskEngine(RiskEngine):
     cdef object _loop
-    cdef object _queue
-    cdef object _run_queue_task
+    cdef object _cmd_queue_task
+    cdef object _evt_queue_task
+    cdef Queue _cmd_queue
+    cdef Queue _evt_queue
 
     cdef readonly bint is_running
     """If the risk engine is running.\n\n:returns: `bool`"""
-
-    cpdef object get_event_loop(self)
-    cpdef object get_run_queue_task(self)
-    cpdef int qsize(self) except *
-
-    cpdef void kill(self) except *

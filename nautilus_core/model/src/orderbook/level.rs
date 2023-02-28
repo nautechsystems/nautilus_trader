@@ -17,27 +17,28 @@ use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::orderbook::ladder::BookPrice;
-use crate::orderbook::order::Order;
+use crate::orderbook::order::BookOrder;
 
 #[repr(C)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Level {
     pub price: BookPrice,
-    pub orders: Box<Vec<Order>>,
+    pub orders: Box<Vec<BookOrder>>,
 }
 
 impl Level {
+    #[must_use]
     pub fn new(price: BookPrice) -> Self {
         Level {
             price,
-            orders: Box::<Vec<Order>>::default(),
+            orders: Box::<Vec<BookOrder>>::default(),
         }
     }
 
-    pub fn from_order(order: Order) -> Self {
+    pub fn from_order(order: BookOrder) -> Self {
         let mut level = Level {
             price: order.to_book_price(),
-            orders: Box::<Vec<Order>>::default(),
+            orders: Box::<Vec<BookOrder>>::default(),
         };
         level.add(order);
         level
@@ -51,19 +52,19 @@ impl Level {
         self.orders.len() == 0
     }
 
-    pub fn add_bulk(&mut self, orders: Vec<Order>) {
+    pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
         for order in orders {
             self.add(order)
         }
     }
 
-    pub fn add(&mut self, order: Order) {
+    pub fn add(&mut self, order: BookOrder) {
         assert_eq!(order.price, self.price.value); // Confirm order for this level
 
         self.orders.push(order);
     }
 
-    pub fn update(&mut self, order: Order) {
+    pub fn update(&mut self, order: BookOrder) {
         assert_eq!(order.price, self.price.value); // Confirm order for this level
 
         if order.size.raw == 0 {
@@ -72,17 +73,17 @@ impl Level {
             let idx = self
                 .orders
                 .iter()
-                .position(|o| o.id == order.id)
+                .position(|o| o.order_id == order.order_id)
                 .expect("Cannot update order: order not found");
             self.orders[idx] = order;
         }
     }
 
-    pub fn delete(&mut self, order: &Order) {
+    pub fn delete(&mut self, order: &BookOrder) {
         let index = self
             .orders
             .iter()
-            .position(|o| o.id == order.id)
+            .position(|o| o.order_id == order.order_id)
             .expect("Cannot delete order: order not found");
         self.orders.remove(index);
     }
@@ -160,7 +161,7 @@ mod tests {
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::BookPrice;
     use crate::orderbook::level::Level;
-    use crate::orderbook::order::Order;
+    use crate::orderbook::order::BookOrder;
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
 
@@ -183,7 +184,7 @@ mod tests {
     #[test]
     fn test_level_add_one_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order = Order::new(
+        let order = BookOrder::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
             OrderSide::Buy,
@@ -199,13 +200,13 @@ mod tests {
     #[test]
     fn test_level_add_multiple_orders() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
-        let order1 = Order::new(
+        let order1 = BookOrder::new(
             Price::new(2.00, 2),
             Quantity::new(10.0, 0),
             OrderSide::Buy,
             0,
         );
-        let order2 = Order::new(
+        let order2 = BookOrder::new(
             Price::new(2.00, 2),
             Quantity::new(20.0, 0),
             OrderSide::Buy,
@@ -222,13 +223,13 @@ mod tests {
     #[test]
     fn test_level_update_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order1 = Order::new(
+        let order1 = BookOrder::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
             OrderSide::Buy,
             0,
         );
-        let order2 = Order::new(
+        let order2 = BookOrder::new(
             Price::new(1.00, 2),
             Quantity::new(20.0, 0),
             OrderSide::Buy,
@@ -245,13 +246,13 @@ mod tests {
     #[test]
     fn test_level_update_order_with_zero_size_deletes() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order1 = Order::new(
+        let order1 = BookOrder::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
             OrderSide::Buy,
             0,
         );
-        let order2 = Order::new(
+        let order2 = BookOrder::new(
             Price::new(1.00, 2),
             Quantity::new(0.0, 0),
             OrderSide::Buy,

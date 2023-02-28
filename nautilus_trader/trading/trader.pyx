@@ -190,7 +190,7 @@ cdef class Trader(Component):
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
-    cpdef void _start(self) except *:
+    cpdef void _start(self):
         if not self._strategies:
             self._log.warning(f"No strategies loaded.")
 
@@ -202,7 +202,7 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.start()
 
-    cpdef void _stop(self) except *:
+    cpdef void _stop(self):
         cdef Actor actor
         for actor in self._actors:
             if actor.is_running:
@@ -217,7 +217,7 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         cdef Actor actor
         for actor in self._actors:
             actor.reset()
@@ -228,7 +228,7 @@ cdef class Trader(Component):
 
         self._portfolio.reset()
 
-    cpdef void _dispose(self) except *:
+    cpdef void _dispose(self):
         cdef Actor actor
         for actor in self._actors:
             actor.dispose()
@@ -239,7 +239,7 @@ cdef class Trader(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void add_strategy(self, Strategy strategy) except *:
+    cpdef void add_strategy(self, Strategy strategy):
         """
         Add the given trading strategy to the trader.
 
@@ -286,7 +286,7 @@ cdef class Trader(Component):
         # Check for duplicate `order_id_tag`
         if strategy.order_id_tag in order_id_tags:
             raise RuntimeError(
-                f"strategy `order_id_tag` conflict for '{strategy.order_id_tag}', please "
+                f"strategy `order_id_tag` conflict for '{strategy.order_id_tag}', "
                 f"explicitly define all `order_id_tag` values in your strategy configs",
             )
 
@@ -305,7 +305,7 @@ cdef class Trader(Component):
 
         self._log.info(f"Registered Strategy {strategy}.")
 
-    cpdef void add_strategies(self, list strategies: [Strategy]) except *:
+    cpdef void add_strategies(self, list strategies: [Strategy]):
         """
         Add the given trading strategies to the trader.
 
@@ -326,7 +326,7 @@ cdef class Trader(Component):
         for strategy in strategies:
             self.add_strategy(strategy)
 
-    cpdef void add_actor(self, Actor actor) except *:
+    cpdef void add_actor(self, Actor actor):
         """
         Add the given custom component to the trader.
 
@@ -363,7 +363,6 @@ cdef class Trader(Component):
 
         # Wire component into trader
         actor.register_base(
-            trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per component
@@ -374,7 +373,7 @@ cdef class Trader(Component):
 
         self._log.info(f"Registered Component {actor}.")
 
-    cpdef void add_actors(self, list actors: [Actor]) except *:
+    cpdef void add_actors(self, list actors: [Actor]):
         """
         Add the given actors to the trader.
 
@@ -395,7 +394,7 @@ cdef class Trader(Component):
         for actor in actors:
             self.add_actor(actor)
 
-    cpdef void clear_strategies(self) except *:
+    cpdef void clear_strategies(self):
         """
         Dispose and clear all strategies held by the trader.
 
@@ -414,7 +413,7 @@ cdef class Trader(Component):
 
         self._strategies.clear()
 
-    cpdef void clear_actors(self) except *:
+    cpdef void clear_actors(self):
         """
         Dispose and clear all actors held by the trader.
 
@@ -433,7 +432,7 @@ cdef class Trader(Component):
 
         self._actors.clear()
 
-    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
+    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]):
         """
         Subscribe to the given message topic with the given callback handler.
 
@@ -447,7 +446,7 @@ cdef class Trader(Component):
         """
         self._msgbus.subscribe(topic=topic, handler=handler)
 
-    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]):
         """
         Unsubscribe the given handler from the given message topic.
 
@@ -461,21 +460,31 @@ cdef class Trader(Component):
         """
         self._msgbus.unsubscribe(topic=topic, handler=handler)
 
-    cpdef void save(self) except *:
+    cpdef void save(self):
         """
-        Save all strategy states to the execution cache.
+        Save all actor and strategy states to the cache.
         """
+        cdef Actor actor
+        for actor in self._actors:
+            self._cache.update_actor(actor)
+
+        cdef Strategy strategy
         for strategy in self._strategies:
             self._cache.update_strategy(strategy)
 
-    cpdef void load(self) except *:
+    cpdef void load(self):
         """
-        Load all strategy states from the execution cache.
+        Load all actor and strategy states from the cache.
         """
+        cdef Actor actor
+        for actor in self._actors:
+            self._cache.load_actor(actor)
+
+        cdef Strategy strategy
         for strategy in self._strategies:
             self._cache.load_strategy(strategy)
 
-    cpdef void check_residuals(self) except *:
+    cpdef void check_residuals(self):
         """
         Check for residual open state such as open orders or open positions.
         """

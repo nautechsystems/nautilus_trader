@@ -15,9 +15,9 @@
 
 | Platform          | Rust      | Python |
 |:------------------|:----------|:-------|
-| Linux (x86\_64)   | `1.66.0+` | `3.9+` |
-| macOS (x86\_64)   | `1.66.0+` | `3.9+` |
-| Windows (x86\_64) | `1.66.0+` | `3.9+` |
+| Linux (x86\_64)   | `1.67.1+` | `3.9+` |
+| macOS (x86\_64)   | `1.67.1+` | `3.9+` |
+| Windows (x86\_64) | `1.67.1+` | `3.9+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -97,7 +97,7 @@ optional C-inspired syntax.
 
 The project heavily utilizes Cython to provide static type safety and increased performance
 for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
-written in Cython, however the libraries can be accessed from both pure Python and Cython.
+written in Cython, however the libraries can be accessed from both Python and Cython.
 
 ## What is Rust?
 
@@ -112,7 +112,7 @@ eliminating many classes of bugs at compile-time.
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
 Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
-[PyO3](https://pyo3.rs/v0.15.1/) will be leveraged for easier Python bindings.
+[PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
 
 ## Architecture (data flow)
 
@@ -161,7 +161,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 
     PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
 
-See https://pyo3.rs/v0.17.3/getting_started#virtualenvs.
+See https://pyo3.rs/latest/getting_started#virtualenvs.
 
 It's possible to install from source using `pip` if you first install the build dependencies
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
@@ -242,9 +242,21 @@ The container images can be pulled as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag>
 
-**NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
-The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
-The cause of this is still being determined.**
+You can launch the backtest example container by running:
+
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop
+    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+
+| :warning: WARNING                                                               |
+|:--------------------------------------------------------------------------------|
+
+**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
+this is why `log_level` in the examples is set to "ERROR". If you lower this level to see more
+logging then the notebook will hang during cell execution. A fix is currently
+being investigated which involves either raising the configured rate limits for
+Jupyter, or throttling the log flushing from Nautilus.**
+https://github.com/jupyterlab/jupyterlab/issues/12845
+https://github.com/deshaw/jupyterlab-limit-output
 
 ## Minimal Strategy
 
@@ -264,7 +276,7 @@ class EMACross(Strategy):
     Cancels all orders and closes all positions on stop.
     """
 
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config: EMACrossConfig) -> None:
         super().__init__(config)
 
         # Configuration
@@ -278,7 +290,7 @@ class EMACross(Strategy):
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         # Get instrument
         self.instrument = self.cache.instrument(self.instrument_id)
@@ -293,7 +305,7 @@ class EMACross(Strategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """Actions to be performed when the strategy receives a bar."""
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
@@ -310,7 +322,7 @@ class EMACross(Strategy):
                 self.close_all_positions(self.instrument_id)
                 self.sell()
 
-    def buy(self):
+    def buy(self) -> None:
         """Users simple buy method (example)."""
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
@@ -320,7 +332,7 @@ class EMACross(Strategy):
 
         self.submit_order(order)
 
-    def sell(self):
+    def sell(self) -> None:
         """Users simple sell method (example)."""
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
@@ -330,7 +342,7 @@ class EMACross(Strategy):
 
         self.submit_order(order)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """Actions to be performed when the strategy is stopped."""
         # Cleanup orders and positions
         self.cancel_all_orders(self.instrument_id)
@@ -339,7 +351,7 @@ class EMACross(Strategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         """Actions to be performed when the strategy is reset."""
         # Reset indicators here
         self.fast_ema.reset()
@@ -350,7 +362,7 @@ class EMACross(Strategy):
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
-Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
+Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
 
 ## Contributing
 
@@ -359,11 +371,11 @@ the project. If you have an idea for an enhancement or a bug fix, the first step
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be 
 well-aligned with the goals of the project and avoids duplication of effort.
 
-Once you're ready to start working on your contribution, please make sure to follow the guidelines 
+Once you're ready to start working on your contribution, make sure to follow the guidelines 
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA) 
 to ensure that your contributions can be included in the project.
 
-Please note that all pull requests should be made to the `develop` branch. This is where new features 
+Note that all pull requests should be made to the `develop` branch. This is where new features 
 and improvements are integrated before being released to the public.
 
 Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.

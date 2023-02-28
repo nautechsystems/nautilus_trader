@@ -21,7 +21,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class BetfairInstrumentFilter(InstrumentFilter, frozen=True):  # type: ignore
+class BetfairInstrumentFilter(InstrumentFilter, frozen=True):
     """Betfair instrument filter"""
 
     event_type_id: Optional[str] = None
@@ -54,7 +54,7 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    filters: Optional[list[InstrumentFilter]] = None
+    filters: Optional[list[BetfairInstrumentFilter]] = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True):
@@ -78,4 +78,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    filters: Optional[list[InstrumentFilter]] = None
+    filters: Optional[list[BetfairInstrumentFilter]] = None

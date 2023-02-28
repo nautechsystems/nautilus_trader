@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.165.0"
+version = "1.170.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -35,9 +35,9 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.4.0",
-    "numpy>=1.24.1",
-    "Cython==3.0.0a11",
+    "poetry-core>=1.5.1",
+    "numpy>=1.24.2",
+    "Cython==3.0.0b1",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -47,27 +47,27 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.0a11"
+cython = "==3.0.0b1"
 aiodns = "^3.0.0"
-aiohttp = "^3.8.3"
+aiohttp = "^3.8.4"
 click = "^8.1.3"
-frozendict = "^2.3.4"
-fsspec = "^2022.11.0"
-msgspec = "^0.12.0"
-numpy = "^1.24.1"
-pandas = "^1.5.2"
+frozendict = "^2.3.5"
+fsspec = ">=2023.1.0"
+msgspec = "^0.13.1"
+numpy = "^1.24.2"
+pandas = "^1.5.3"
 psutil = "^5.9.4"
 pyarrow = "^10.0.1"
-pytz = "^2022.2.7"
+pytz = "^2022.7.1"
 tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.64.1"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
-hiredis = {version = "^2.1.0", optional = true}
+hiredis = {version = "^2.2.2", optional = true}
 ib_insync = {version = "^0.9.81", optional = true}
-redis = {version = "^4.4.0", optional = true}
+redis = {version = "^4.5.1", optional = true}
 docker = {version = "^6.0.1", optional = true}
-betfair_parser = {version = "^0.1.9", optional = true}
+betfair_parser = {version = "==0.1.11", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
@@ -79,14 +79,14 @@ redis = ["hiredis", "redis"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^22.12.0"
+black = "^23.1.0"
 flake8 = "^6.0.0"
-isort = "^5.11.4"
-mypy = "^0.991"
-pre-commit = "^2.21.0"
+isort = "^5.12.0"
+mypy = "^1.0.1"
+pre-commit = "^3.1.0"
 pyproject-flake8 = "^6.0.0"
 types-pytz = "^2022.6.0"
-types-redis = "^4.3.21"
+types-redis = "^4.5.1"
 types-requests = "^2.28.11"
 types-toml = "^0.10.8"
 
@@ -94,13 +94,13 @@ types-toml = "^0.10.8"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^6.5.0"
-pytest = "^7.2.0"
+coverage = "^7.2.0"
+pytest = "^7.2.1"
 pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
-pytest-xdist = { version = "^3.1.0", extras = ["psutil"] }
+pytest-xdist = { version = "^3.2.0", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
 optional = true

@@ -48,7 +48,7 @@ cdef class AroonOscillator(Indicator):
         self.aroon_down = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -69,7 +69,7 @@ cdef class AroonOscillator(Indicator):
         self,
         double high,
         double low,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -94,14 +94,14 @@ cdef class AroonOscillator(Indicator):
 
         self._check_initialized()
 
-    cdef void _check_initialized(self) except *:
+    cdef void _check_initialized(self):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
             if len(self._high_inputs) >= self.period + 1:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._high_inputs.clear()
         self._low_inputs.clear()
         self.aroon_up = 0

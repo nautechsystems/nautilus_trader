@@ -34,7 +34,7 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
+# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -69,10 +69,10 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
-    timeout_connection=5.0,
-    timeout_reconciliation=5.0,
-    timeout_portfolio=5.0,
-    timeout_disconnection=5.0,
+    timeout_connection=10.0,
+    timeout_reconciliation=10.0,
+    timeout_portfolio=10.0,
+    timeout_disconnection=10.0,
     timeout_post_stop=2.0,
 )
 # Instantiate the node with a configuration
@@ -102,6 +102,6 @@ node.build()
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
     try:
-        node.start()
+        node.run()
     finally:
         node.dispose()

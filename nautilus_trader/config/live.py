@@ -28,7 +28,7 @@ from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 
 
-class LiveDataEngineConfig(DataEngineConfig):
+class LiveDataEngineConfig(DataEngineConfig, frozen=True):
     """
     Configuration for ``LiveDataEngine`` instances.
 
@@ -41,7 +41,7 @@ class LiveDataEngineConfig(DataEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class LiveRiskEngineConfig(RiskEngineConfig):
+class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
     """
     Configuration for ``LiveRiskEngine`` instances.
 
@@ -54,7 +54,7 @@ class LiveRiskEngineConfig(RiskEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class LiveExecEngineConfig(ExecEngineConfig):
+class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     """
     Configuration for ``LiveExecEngine`` instances.
 
@@ -82,7 +82,7 @@ class LiveExecEngineConfig(ExecEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class RoutingConfig(NautilusConfig):
+class RoutingConfig(NautilusConfig, frozen=True):
     """
     Configuration for live client message routing.
 
@@ -99,23 +99,26 @@ class RoutingConfig(NautilusConfig):
     venues: Optional[frozenset[str]] = None
 
 
-class LiveDataClientConfig(NautilusConfig):
+class LiveDataClientConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``LiveDataClient`` instances.
 
     Parameters
     ----------
+    handle_revised_bars : bool
+        If DataClient will emit bar updates as soon new bar opens.
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
     """
 
+    handle_revised_bars: bool = False
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
 
 
-class LiveExecClientConfig(NautilusConfig):
+class LiveExecClientConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``LiveExecutionClient`` instances.
 
@@ -131,7 +134,7 @@ class LiveExecClientConfig(NautilusConfig):
     routing: RoutingConfig = RoutingConfig()
 
 
-class TradingNodeConfig(NautilusKernelConfig):
+class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     """
     Configuration for ``TradingNode`` instances.
 
@@ -151,9 +154,9 @@ class TradingNodeConfig(NautilusKernelConfig):
         The live execution engine configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    data_clients : dict[str, ImportableConfig], optional
+    data_clients : dict[str, ImportableConfig | LiveDataClientConfig], optional
         The data client configurations.
-    exec_clients : dict[str, ImportableConfig], optional
+    exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
@@ -175,7 +178,6 @@ class TradingNodeConfig(NautilusKernelConfig):
         The timeout for all engine clients to disconnect.
     timeout_post_stop : PositiveFloat (seconds)
         The timeout after stopping the node to await residual events before final shutdown.
-
     """
 
     environment: Environment = Environment.LIVE

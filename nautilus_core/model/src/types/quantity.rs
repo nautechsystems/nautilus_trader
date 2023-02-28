@@ -16,7 +16,7 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
 
 use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
@@ -34,17 +34,18 @@ pub struct Quantity {
 }
 
 impl Quantity {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
-        Self {
+        Quantity {
             raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        Self { raw, precision }
+        Quantity { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -52,6 +53,18 @@ impl Quantity {
     }
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
+    }
+}
+
+impl From<Quantity> for f64 {
+    fn from(value: Quantity) -> f64 {
+        value.as_f64()
+    }
+}
+
+impl From<&Quantity> for f64 {
+    fn from(value: &Quantity) -> f64 {
+        value.as_f64()
     }
 }
 
@@ -63,6 +76,12 @@ impl From<&str> for Quantity {
             Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
         };
         Quantity::new(float_res, precision_from_str(input))
+    }
+}
+
+impl From<i64> for Quantity {
+    fn from(input: i64) -> Self {
+        Quantity::new(input as f64, 0)
     }
 }
 
@@ -103,6 +122,14 @@ impl PartialOrd for Quantity {
 impl Ord for Quantity {
     fn cmp(&self, other: &Self) -> Ordering {
         self.raw.cmp(&other.raw)
+    }
+}
+
+impl Deref for Quantity {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.raw
     }
 }
 
@@ -192,11 +219,6 @@ pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
 }
 
 #[no_mangle]
-pub extern "C" fn quantity_free(qty: Quantity) {
-    drop(qty); // Memory freed here
-}
-
-#[no_mangle]
 pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
     qty.as_f64()
 }
@@ -232,10 +254,18 @@ mod tests {
     fn test_qty_new() {
         let qty = Quantity::new(0.00812, 8);
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8120000);
+        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_qty_from_i64() {
+        let qty = Quantity::from(100_000);
+        assert_eq!(qty, qty);
+        assert_eq!(qty.raw, 100_000_000_000_000);
+        assert_eq!(qty.precision, 0);
     }
 
     #[test]
@@ -259,7 +289,7 @@ mod tests {
     #[test]
     fn test_qty_precision() {
         let qty = Quantity::new(1.001, 2);
-        assert_eq!(qty.raw, 1000000000);
+        assert_eq!(qty.raw, 1_000_000_000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -267,7 +297,7 @@ mod tests {
     fn test_qty_new_from_str() {
         let qty = Quantity::from("0.00812000");
         assert_eq!(qty, qty);
-        assert_eq!(qty.raw, 8120000);
+        assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");

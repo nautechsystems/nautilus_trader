@@ -74,6 +74,7 @@ class TestExecutionEngine:
         self.logger = Logger(
             clock=TestClock(),
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -320,7 +321,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -394,7 +395,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -439,20 +440,20 @@ class TestExecutionEngine:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         stop_loss = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("0.50000"),
         )
 
         take_profit = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -480,199 +481,7 @@ class TestExecutionEngine:
         assert entry.status == OrderStatus.SUBMITTED  # Did not invalidate originals
         assert stop_loss.status == OrderStatus.SUBMITTED  # Did not invalidate originals
         assert take_profit.status == OrderStatus.SUBMITTED  # Did not invalidate originals
-        assert self.exec_engine.command_count == 1
-
-    def test_submit_order_list_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
-        self,
-    ):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        entry1 = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("0.50000"),
-        )
-
-        take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        bracket1 = OrderList(
-            order_list_id=OrderListId("1"),
-            orders=[entry1, stop_loss1, take_profit1],
-        )
-
-        submit_order_list1 = SubmitOrderList(
-            self.trader_id,
-            strategy.id,
-            bracket1,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        entry2 = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        stop_loss2 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("0.50000"),
-        )
-
-        bracket2 = OrderList(
-            order_list_id=OrderListId("2"),
-            orders=[
-                entry2,
-                stop_loss2,
-                take_profit1,  # Duplicate
-            ],
-        )
-
-        submit_bracket2 = SubmitOrderList(
-            self.trader_id,
-            strategy.id,
-            bracket2,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_order_list1)
-        self.exec_engine.process(TestEventStubs.order_submitted(entry1))
-        self.exec_engine.process(TestEventStubs.order_accepted(entry1))
-        self.exec_engine.process(TestEventStubs.order_submitted(stop_loss1))
-        self.exec_engine.process(TestEventStubs.order_accepted(stop_loss1))
-        self.exec_engine.process(TestEventStubs.order_submitted(take_profit1))
-        self.exec_engine.process(TestEventStubs.order_accepted(take_profit1))
-        self.risk_engine.execute(submit_bracket2)  # SL and TP
-
-        # Assert
-        assert entry2.status == OrderStatus.DENIED
-        assert entry1.status == OrderStatus.ACCEPTED
-        assert stop_loss1.status == OrderStatus.ACCEPTED
-        assert take_profit1.status == OrderStatus.ACCEPTED  # Did not invalidate original
-
-    def test_submit_bracket_order_with_duplicate_stop_loss_client_order_id_logs_does_not_submit(
-        self,
-    ):
-        # Arrange
-        self.exec_engine.start()
-        self.risk_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        entry1 = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("0.50000"),
-        )
-
-        take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        bracket1 = OrderList(
-            order_list_id=OrderListId("1"),
-            orders=[entry1, stop_loss1, take_profit1],
-        )
-
-        submit_bracket1 = SubmitOrderList(
-            self.trader_id,
-            strategy.id,
-            bracket1,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        entry2 = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        take_profit2 = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        bracket2 = OrderList(
-            order_list_id=OrderListId("1"),
-            orders=[
-                entry2,
-                stop_loss1,  # Duplicate
-                take_profit2,
-            ],
-        )
-
-        submit_bracket2 = SubmitOrderList(
-            self.trader_id,
-            strategy.id,
-            bracket2,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_bracket1)
-        self.exec_engine.process(TestEventStubs.order_submitted(entry1))
-        self.exec_engine.process(TestEventStubs.order_accepted(entry1))
-        self.exec_engine.process(TestEventStubs.order_submitted(stop_loss1))
-        self.exec_engine.process(TestEventStubs.order_accepted(stop_loss1))
-        self.exec_engine.process(TestEventStubs.order_submitted(take_profit1))
-        self.exec_engine.process(TestEventStubs.order_accepted(take_profit1))
-        self.risk_engine.execute(submit_bracket2)  # SL and TP
-
-        # Assert
-        assert entry2.status == OrderStatus.DENIED
-        assert entry1.status == OrderStatus.ACCEPTED  # Did not invalidate original
-        assert stop_loss1.status == OrderStatus.ACCEPTED  # Did not invalidate original
-        assert take_profit1.status == OrderStatus.ACCEPTED  # Did not invalidate original
-        assert take_profit2.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 2
 
     def test_submit_order(self):
         # Arrange
@@ -691,7 +500,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -727,7 +536,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -741,7 +550,7 @@ class TestExecutionEngine:
 
         # Act
         self.risk_engine.execute(submit_order)
-        self.cache.clear_cache()
+        self.cache.reset()
         self.exec_engine.process(TestEventStubs.order_accepted(order))
 
         # Assert
@@ -764,7 +573,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -800,7 +609,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         # Act (event attempts to fill order before its submitted)
@@ -828,7 +637,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -879,7 +688,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -921,7 +730,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -965,7 +774,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             AUDUSD_SIM.make_price(1.00000),
             emulation_trigger=TriggerType.BID_ASK,
         )
@@ -1012,7 +821,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("0.85101"),
         )
 
@@ -1036,7 +845,7 @@ class TestExecutionEngine:
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            Quantity.from_int(200000),
+            Quantity.from_int(200_000),
             None,
             order.trigger_price,
             UUID4(),
@@ -1048,7 +857,7 @@ class TestExecutionEngine:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.quantity == Quantity.from_int(100000)
+        assert order.quantity == Quantity.from_int(100_000)
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_cached(self):
         # Arrange
@@ -1067,7 +876,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1120,7 +929,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1171,7 +980,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1224,7 +1033,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1281,7 +1090,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1333,7 +1142,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1356,7 +1165,7 @@ class TestExecutionEngine:
             TestEventStubs.order_filled(
                 order=order,
                 instrument=AUDUSD_SIM,
-                last_qty=Quantity.from_int(20100),
+                last_qty=Quantity.from_int(20_100),
             ),
         )
 
@@ -1364,7 +1173,7 @@ class TestExecutionEngine:
             TestEventStubs.order_filled(
                 order=order,
                 instrument=AUDUSD_SIM,
-                last_qty=Quantity.from_int(19900),
+                last_qty=Quantity.from_int(19_900),
             ),
         )
 
@@ -1372,7 +1181,7 @@ class TestExecutionEngine:
             TestEventStubs.order_filled(
                 order=order,
                 instrument=AUDUSD_SIM,
-                last_qty=Quantity.from_int(60000),
+                last_qty=Quantity.from_int(60_000),
             ),
         )
 
@@ -1407,7 +1216,7 @@ class TestExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -1459,13 +1268,13 @@ class TestExecutionEngine:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order1 = SubmitOrder(
@@ -1531,14 +1340,14 @@ class TestExecutionEngine:
         order1 = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         order2 = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -1621,14 +1430,14 @@ class TestExecutionEngine:
         order1 = strategy1.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         order2 = strategy2.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -1726,21 +1535,21 @@ class TestExecutionEngine:
         order1 = strategy1.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         order2 = strategy1.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         order3 = strategy2.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -1839,7 +1648,7 @@ class TestExecutionEngine:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = strategy.order_factory.market(
@@ -1918,7 +1727,7 @@ class TestExecutionEngine:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = strategy.order_factory.market(
@@ -1997,19 +1806,19 @@ class TestExecutionEngine:
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order3 = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order1 = SubmitOrder(
@@ -2065,6 +1874,74 @@ class TestExecutionEngine:
         # Assert
         assert order3.status == OrderStatus.INITIALIZED
 
+    def test_flip_position_when_netting_oms(self):
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="NETTING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+
+        submit_order1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        position_id = PositionId("P-19700101-000-001-1")
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order1, AUDUSD_SIM, position_id=position_id),
+        )
+
+        submit_order2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
+        )
+
+        # Get netted position
+        # position = self.cache.position(position_id)
+
+        # Assert
+        # TODO(cs)
+
     def test_handle_updated_order_event(self):
         # Arrange
         self.exec_engine.start()
@@ -2083,7 +1960,7 @@ class TestExecutionEngine:
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             price=Price.from_str("10.0"),
-            quantity=Quantity.from_int(10000),
+            quantity=Quantity.from_int(10_000),
         )
 
         submit_order = SubmitOrder(

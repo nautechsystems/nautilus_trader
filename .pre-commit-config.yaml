@@ -33,6 +33,39 @@ repos:
         args: ["-L", "ot,zar,warmup"]
 
   ##############################################################################
+  #  Rust formatting and linting
+  ##############################################################################
+  - repo: local
+    hooks:
+      - id: fmt
+        name: cargo fmt
+        description: Format files with cargo fmt.
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all", "--", "--check"]
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml", "--", "-D", "warnings"]
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-check
+        name: cargo check
+        description: Check the package for errors.
+        entry: cargo check
+        language: system
+        types: [rust]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
+        files: \.rs$
+        pass_filenames: false
+
+  ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/pyupgrade
@@ -43,7 +76,7 @@ repos:
         args: ["--py39-plus"]
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v2.1.2
+    rev: v2.1.3
     hooks:
       - id: pycln
         name: pycln (remove unused imports)
@@ -56,7 +89,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.11.4
+    rev: 5.12.0
     hooks:
       - id: isort
         types_or: [python, cython]
@@ -64,7 +97,7 @@ repos:
         args: ["--settings-file", "pyproject.toml", "."]
 
   - repo: https://github.com/psf/black
-    rev: 22.12.0
+    rev: 23.1.0
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -73,7 +106,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.991
+    rev: v1.0.1
     hooks:
       - id: mypy
         args: [
@@ -101,13 +134,13 @@ repos:
           - Flake8-pyproject
 
   - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.2.2
+    rev: 6.3.0
     hooks:
       - id: pydocstyle
         files: ^nautilus_trader/
         exclude: "nautilus_trader/test_kit"
         args:
-        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415"
+        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415,D416"
         additional_dependencies:
           - toml
 
@@ -129,3 +162,4 @@ repos:
 # D400: First line should end with a period (not always a first line)
 # D413: Missing blank line after last section ('Parameters')
 # D415: First line should end with a period, question mark, or exclamation point (not always a first line)
+# D416: Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)

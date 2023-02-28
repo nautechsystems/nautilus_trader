@@ -71,7 +71,7 @@ class TestPortfolio:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -830,7 +830,7 @@ class TestPortfolio:
         order = self.order_factory.market(
             ETHUSD_BITMEX.id,
             OrderSide.BUY,
-            Quantity.from_int(10000),
+            Quantity.from_int(10_000),
         )
 
         fill = TestEventStubs.order_filled(
@@ -1044,13 +1044,13 @@ class TestPortfolio:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = self.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.cache.add_order(order1, position_id=None)
@@ -1148,7 +1148,7 @@ class TestPortfolio:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -1167,7 +1167,7 @@ class TestPortfolio:
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(50000),
+            Quantity.from_int(50_000),
         )
 
         order2_filled = TestEventStubs.order_filled(
@@ -1227,7 +1227,7 @@ class TestPortfolio:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -1246,7 +1246,7 @@ class TestPortfolio:
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2_filled = TestEventStubs.order_filled(
@@ -1303,25 +1303,25 @@ class TestPortfolio:
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order3 = self.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order4 = self.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         fill1 = TestEventStubs.order_filled(

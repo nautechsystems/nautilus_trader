@@ -156,7 +156,7 @@ class TestFixedRiskSizer:
         )
 
         # Assert
-        assert result == Quantity.from_int(500000)
+        assert result == Quantity.from_int(500_000)
 
     def test_calculate_multiple_unit_size(self):
         # Arrange

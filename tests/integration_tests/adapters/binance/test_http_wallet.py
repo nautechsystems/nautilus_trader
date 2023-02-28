@@ -21,7 +21,7 @@ from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
-from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
+from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -39,7 +39,7 @@ class TestBinanceUserHttpAPI:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.api = BinanceSpotWalletHttpAPI(self.client)
+        self.api = BinanceSpotWalletHttpAPI(self.client, clock)
 
     @pytest.mark.asyncio
     async def test_trade_fee(self, mocker):
@@ -58,7 +58,7 @@ class TestBinanceUserHttpAPI:
         )
 
         # Act
-        response: BinanceSpotTradeFees = await self.api.trade_fee(symbol="BTCUSDT")
+        response = await self.api.query_spot_trade_fees(symbol="BTCUSDT")
 
         # Assert
         name, args, kwargs = mock_request.call_args[0]
@@ -67,7 +67,8 @@ class TestBinanceUserHttpAPI:
         assert kwargs["symbol"] == "BTCUSDT"
         assert "signature" in kwargs
         assert "timestamp" in kwargs
-        assert isinstance(response, BinanceSpotTradeFees)
+        assert len(response) == 1
+        assert isinstance(response[0], BinanceSpotTradeFee)
 
     @pytest.mark.asyncio
     async def test_trade_fees(self, mocker):
@@ -86,7 +87,7 @@ class TestBinanceUserHttpAPI:
         )
 
         # Act
-        response: list[BinanceSpotTradeFees] = await self.api.trade_fees()
+        response = await self.api.query_spot_trade_fees()
 
         # Assert
         name, args, kwargs = mock_request.call_args[0]
@@ -95,5 +96,5 @@ class TestBinanceUserHttpAPI:
         assert "signature" in kwargs
         assert "timestamp" in kwargs
         assert len(response) == 2
-        assert isinstance(response[0], BinanceSpotTradeFees)
-        assert isinstance(response[1], BinanceSpotTradeFees)
+        assert isinstance(response[0], BinanceSpotTradeFee)
+        assert isinstance(response[1], BinanceSpotTradeFee)

@@ -19,7 +19,10 @@ import msgspec
 import pytest
 from click.testing import CliRunner
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.modules import FXRolloverInterestConfig
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -27,6 +30,7 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
+from nautilus_trader.config.common import ImportableActorConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -82,6 +86,8 @@ class _TestBacktestConfig:
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,
+            "use_rust": False,
+            "metadata": None,
         }
 
     def test_backtest_data_config_generic_data(self):
@@ -207,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (766, 770)  # unix, windows sizes
+        assert result in (854, 858)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -217,7 +223,7 @@ class TestBacktestConfigParsing:
                 BacktestVenueConfig(
                     name="SIM",
                     oms_type="HEDGING",
-                    account_type="MARGIN",
+                    account_type="MARG  IN",
                     starting_balances=["1_000_000 USD"],
                 ),
             ],
@@ -227,7 +233,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (572, 574)  # unix, windows sizes
+        assert len(raw) in (641, 643)  # unix, windows sizes
 
     def test_backtest_data_config_to_dict(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -247,7 +253,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1490, 1498)  # unix, windows
+        assert result in (1718, 1726)  # unix, windows
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
@@ -255,9 +261,8 @@ class TestBacktestConfigParsing:
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
         assert token in (
-            "c03780b356757c46d515f7602220026859750e4ca729c123cdb89bed87f52c47",  # unix
-            "d5d7365f9b9fe4cc2c8a70c1107a1ba53f65c01fee6d82a42df04e70fbcd6c75",  # windows
-            "24ce696a013a89432f16b5c3a05ba77a77f803ebfa4d7677b08dada06144b16b",  # windows v2
+            "f36364e423ae67307b08a68feb7cf18353d2983fc8a2f1b9683c44bd707007b3",  # unix
+            "4b985813f597118e367ccc462bcd19a4752fbeff7b73c71ff518dbdef8ef2a47",  # windows
         )
 
     @pytest.mark.skip(reason="fix after merge")
@@ -345,3 +350,38 @@ class TestBacktestConfigParsing:
         # Assert
         assert result.exception is None
         assert result.exit_code == 0
+
+    def test_simulation_modules(self):
+        # Arrange
+        interest_rate_data = TestDataProvider().read_csv("short-term-interest.csv")
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            instrument_ids=[self.instrument.id.value],
+            venues=[
+                BacktestVenueConfig(
+                    name="SIM",
+                    oms_type="HEDGING",
+                    account_type="MARGIN",
+                    starting_balances=["1_000_000 USD"],
+                    modules=[
+                        ImportableActorConfig(
+                            actor_path=FXRolloverInterestModule.fully_qualified_name(),
+                            config_path=FXRolloverInterestConfig.fully_qualified_name(),
+                            config={"rate_data": interest_rate_data},
+                        ),
+                    ],
+                ),
+            ],
+        )
+        node = BacktestNode([run_config])
+
+        # Act
+        engine = node._create_engine(
+            run_config_id=run_config.id,
+            config=run_config.engine,
+            venue_configs=run_config.venues,
+            data_configs=run_config.data,
+        )
+
+        # Assert
+        assert engine

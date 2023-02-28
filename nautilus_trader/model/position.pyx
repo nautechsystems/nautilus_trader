@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cython
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
-from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -27,7 +25,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-@cython.auto_pickle(True)
 cdef class Position:
     """
     Represents a position in a financial market.
@@ -95,7 +92,7 @@ cdef class Position:
         self.cost_currency = instrument.get_settlement_currency()
 
         self.realized_return = 0.0
-        self.realized_pnl = Money(0, self.cost_currency)
+        self.realized_pnl = None
 
         self.apply(fill)
 
@@ -175,19 +172,19 @@ cdef class Position:
     cdef TradeId last_trade_id_c(self):
         return self._events[-1].trade_id
 
-    cdef int event_count_c(self) except *:
+    cdef int event_count_c(self):
         return len(self._events)
 
-    cdef bint is_open_c(self) except *:
+    cdef bint is_open_c(self):
         return self.side != PositionSide.FLAT
 
-    cdef bint is_closed_c(self) except *:
+    cdef bint is_closed_c(self):
         return self.side == PositionSide.FLAT
 
-    cdef bint is_long_c(self) except *:
+    cdef bint is_long_c(self):
         return self.side == PositionSide.LONG
 
-    cdef bint is_short_c(self) except *:
+    cdef bint is_short_c(self):
         return self.side == PositionSide.SHORT
 
     @property
@@ -355,7 +352,7 @@ cdef class Position:
         return self.is_short_c()
 
     @staticmethod
-    cdef PositionSide side_from_order_side_c(OrderSide side) except *:
+    cdef PositionSide side_from_order_side_c(OrderSide side):
         if side == OrderSide.BUY:
             return PositionSide.LONG
         elif side == OrderSide.SELL:
@@ -382,7 +379,7 @@ cdef class Position:
         """
         return Position.side_from_order_side_c(side)
 
-    cpdef bint is_opposite_side(self, OrderSide side) except *:
+    cpdef bint is_opposite_side(self, OrderSide side):
         """
         Return a value indicating whether the given order side is opposite to
         the current position side.
@@ -399,7 +396,7 @@ cdef class Position:
         """
         return self.side != Position.side_from_order_side_c(side)
 
-    cpdef void apply(self, OrderFilled fill) except *:
+    cpdef void apply(self, OrderFilled fill):
         """
         Applies the given order fill event to the position.
 
@@ -425,13 +422,16 @@ cdef class Position:
             self._sell_qty = Quantity.zero_c(precision=self.size_precision)
             self._commissions = {}
             self.opening_order_id = fill.client_order_id
+            self.closing_order_id = None
+            self.peak_qty = Quantity.zero_c(precision=self.size_precision)
             self.ts_init = fill.ts_init
             self.ts_opened = fill.ts_event
-            self.ts_last = fill.ts_event
             self.ts_closed = 0
             self.duration_ns = 0
             self.avg_px_open = fill.last_px.as_f64_c()
             self.avg_px_close = 0.0
+            self.realized_return = 0.0
+            self.realized_pnl = None
 
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)
@@ -577,8 +577,8 @@ cdef class Position:
         """
         Condition.not_none(last, "last")
 
-        cdef double pnl = self.realized_pnl.as_f64_c() + self.unrealized_pnl(last).as_f64_c()
-        return Money(pnl, self.cost_currency)
+        cdef double realized_pnl = self.realized_pnl.as_f64_c() if self.realized_pnl is not None else 0.0
+        return Money(realized_pnl + self.unrealized_pnl(last).as_f64_c(), self.cost_currency)
 
     cpdef list commissions(self):
         """
@@ -591,8 +591,9 @@ cdef class Position:
         """
         return list(self._commissions.values())
 
-    cdef void _handle_buy_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_buy_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
+        cdef double realized_pnl
         if fill.commission.currency == self.cost_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
@@ -614,14 +615,18 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
+        if self.realized_pnl is None:
+            self.realized_pnl = Money(realized_pnl, self.cost_currency)
+        else:
+            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
         self._buy_qty.add_assign(last_qty_obj)
         self.net_qty += last_qty
         self.net_qty = round(self.net_qty, self.size_precision)
 
-    cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_sell_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
+        cdef double realized_pnl
         if fill.commission.currency == self.cost_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
@@ -643,7 +648,10 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
+        if self.realized_pnl is None:
+            self.realized_pnl = Money(realized_pnl, self.cost_currency)
+        else:
+            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
         self._sell_qty.add_assign(last_qty_obj)
         self.net_qty -= last_qty

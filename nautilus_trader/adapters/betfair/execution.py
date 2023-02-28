@@ -178,9 +178,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def watch_stream(self):
         """Ensure socket stream is connected"""
-        while self.stream.is_running:
+        while not self.stream.is_stopping:
             if not self.stream.is_connected:
-                self.stream.connect()
+                await self.stream.connect()
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
@@ -349,14 +349,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
         existing_order = self._cache.order(client_order_id)  # type: Order
 
-        self.generate_order_pending_update(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
         if existing_order is None:
             self._log.warning(
                 f"Attempting to update order that does not exist in the cache: {command}",
@@ -455,14 +447,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Received cancel order: {command}")
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
         instrument = self._cache.instrument(command.instrument_id)
         PyCondition.not_none(instrument, "instrument")
 
@@ -635,16 +619,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug("Base currency matches client details")
 
     # -- DEBUGGING --------------------------------------------------------------------------------
-
-    def create_task(self, coro):
-        self._loop.create_task(self._check_task(coro))
-
-    async def _check_task(self, coro):
-        try:
-            awaitable = await coro
-            return awaitable
-        except Exception as e:
-            self._log.exception("Unhandled exception", e)
 
     def client(self) -> BetfairClient:
         return self._client

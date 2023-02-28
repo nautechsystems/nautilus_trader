@@ -26,6 +26,22 @@ cdef class Pressure(Indicator):
     """
     An indicator which calculates the relative volume (multiple of average volume)
     to move the market across a relative range (multiple of ATR).
+
+    Parameters
+    ----------
+    period : int
+        The period for the indicator (> 0).
+    ma_type : MovingAverageType
+        The moving average type for the calculations.
+    atr_floor : double
+        The ATR floor (minimum) output value for the indicator (>= 0.).
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
+    ValueError
+        If `atr_floor` is negative (< 0).
     """
 
     def __init__(
@@ -34,26 +50,6 @@ cdef class Pressure(Indicator):
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
         double atr_floor=0,
     ):
-        """
-        Initialize a new instance of the ``Pressure`` class.
-
-        Parameters
-        ----------
-        period : int
-            The period for the indicator (> 0).
-        ma_type : MovingAverageType
-            The moving average type for the calculations.
-        atr_floor : double
-            The ATR floor (minimum) output value for the indicator (>= 0.).
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-        ValueError
-            If `atr_floor` is negative (< 0).
-
-        """
         Condition.positive_int(period, "period")
         Condition.not_negative(atr_floor, "atr_floor")
 
@@ -70,7 +66,7 @@ cdef class Pressure(Indicator):
         self.value = 0
         self.value_cumulative = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -95,7 +91,7 @@ cdef class Pressure(Indicator):
         double low,
         double close,
         double volume,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -132,7 +128,7 @@ cdef class Pressure(Indicator):
         self.value = buy_pressure - sell_pressure
         self.value_cumulative += self.value
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._atr.reset()
         self._average_volume.reset()
         self.value = 0

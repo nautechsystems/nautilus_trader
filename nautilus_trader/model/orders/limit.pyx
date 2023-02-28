@@ -181,10 +181,27 @@ cdef class LimitOrder(Order):
         self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
-    cdef bint has_price_c(self) except *:
+    cdef void _updated(self, OrderUpdated event):
+        if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
+
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+
+        if event.price is not None:
+            self.price = event.price
+
+    cdef void _set_slippage(self):
+        if self.side == OrderSide.BUY:
+            self.slippage = self.avg_px - self.price.as_f64_c()
+        elif self.side == OrderSide.SELL:
+            self.slippage = self.price.as_f64_c() - self.avg_px
+    cdef bint has_price_c(self):
         return True
 
-    cdef bint has_trigger_price_c(self) except *:
+    cdef bint has_trigger_price_c(self):
         return False
 
     @property
@@ -308,20 +325,58 @@ cdef class LimitOrder(Order):
             tags=init.tags,
         )
 
-    cdef void _updated(self, OrderUpdated event) except *:
-        if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
-            self._venue_order_ids.append(self.venue_order_id)
-            self.venue_order_id = event.venue_order_id
+    @staticmethod
+    cdef LimitOrder transform(Order order, uint64_t ts_init):
+        """
+        Transform the given order to a `limit` order.
 
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+        All existing events will be prepended to the orders internal events
+        prior to the new `OrderInitialized` event.
 
-        if event.price is not None:
-            self.price = event.price
+        Parameters
+        ----------
+        order : Order
+            The order to transform from.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
-    cdef void _set_slippage(self) except *:
-        if self.side == OrderSide.BUY:
-            self.slippage = self.avg_px - self.price.as_f64_c()
-        elif self.side == OrderSide.SELL:
-            self.slippage = self.price.as_f64_c() - self.avg_px
+        Returns
+        -------
+        LimitOrder
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef LimitOrder transformed = LimitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            order_side=order.side,
+            quantity=order.quantity,
+            price=order.price,
+            time_in_force=order.time_in_force,
+            expire_time_ns=order.expire_time_ns,
+            init_id=UUID4(),
+            ts_init=ts_init,
+            post_only=order.is_post_only,
+            reduce_only=order.is_reduce_only,
+            display_qty=order.display_qty,
+            contingency_type=order.contingency_type,
+            order_list_id=order.order_list_id,
+            linked_order_ids=order.linked_order_ids,
+            parent_order_id=order.parent_order_id,
+            tags=order.tags,
+        )
+        transformed.liquidity_side = order.liquidity_side
+        cdef Price triggered_price = order.get_triggered_price_c()
+        if triggered_price:
+            transformed.set_triggered_price_c(triggered_price)
+
+        Order._hydrate_initial_events(original=order, transformed=transformed)
+
+        return transformed
+
+    @staticmethod
+    def transform_py(Order order, uint64_t ts_init) -> LimitOrder:
+        return LimitOrder.transform(order, ts_init)

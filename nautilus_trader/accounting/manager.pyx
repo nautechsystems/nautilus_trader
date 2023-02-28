@@ -200,9 +200,6 @@ cdef class AccountsManager:
             assert order.is_open_c()
 
             if not order.has_price_c() and not order.has_trigger_price_c():
-                self._log.warning(
-                    "Cannot update account without initial trigger price.",
-                )
                 continue
 
             # Calculate balance locked
@@ -299,9 +296,6 @@ cdef class AccountsManager:
             assert order.is_open_c()
 
             if not order.has_price_c() and not order.has_trigger_price_c():
-                self._log.warning(
-                    "Cannot update account without initial trigger price.",
-                )
                 continue
 
             # Calculate initial margin
@@ -442,7 +436,7 @@ cdef class AccountsManager:
         Account account,
         OrderFilled fill,
         Money pnl,
-    ) except *:
+    ):
         cdef Money commission = fill.commission
         cdef list balances = []
         cdef double xrate
@@ -508,7 +502,7 @@ cdef class AccountsManager:
         Account account,
         OrderFilled fill,
         list pnls,
-    ) except *:
+    ):
         cdef list balances = []
 
         cdef Money commission = fill.commission
@@ -628,7 +622,7 @@ cdef class AccountsManager:
         Account account,
         Instrument instrument,
         OrderSide side,
-    ) except *:
+    ):
         if account.base_currency is None:
             return 1.0  # No conversion needed
         else:

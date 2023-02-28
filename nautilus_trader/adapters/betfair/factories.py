@@ -28,7 +28,6 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -108,7 +107,7 @@ def get_cached_betfair_client(
 def get_cached_betfair_instrument_provider(
     client: BetfairClient,
     logger: Logger,
-    filters: Optional[list[BetfairInstrumentFilter]],
+    filters: Optional[tuple[BetfairInstrumentFilter]],
 ) -> BetfairInstrumentProvider:
     """
     Cache and return a BetfairInstrumentProvider.
@@ -157,7 +156,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ):
         """
         Create a new Betfair data client.
@@ -176,7 +175,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -184,7 +183,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
-        market_filter: tuple = config.market_filter or ()
+        filters: tuple[BetfairInstrumentFilter, ...] = tuple(config.filters or [])
 
         # Create client
         client = get_cached_betfair_client(
@@ -198,7 +197,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,
-            market_filter=market_filter,
+            filters=filters,
         )
 
         data_client = BetfairDataClient(
@@ -208,7 +207,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=dict(market_filter),
             instrument_provider=provider,
         )
         return data_client
@@ -227,7 +225,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        logger: LiveLogger,
+        logger: Logger,
     ):
         """
         Create a new Betfair execution client.
@@ -246,7 +244,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             The cache for the client.
         clock : LiveClock
             The clock for the client.
-        logger : LiveLogger
+        logger : Logger
             The logger for the client.
 
         Returns
@@ -265,7 +263,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,
-            filters=config.filters,  # type: ignore
+            filters=tuple(config.filters or []),
         )
 
         # Create client

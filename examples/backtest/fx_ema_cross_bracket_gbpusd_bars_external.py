@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 from decimal import Decimal
 
 import pandas as pd
@@ -24,6 +25,7 @@ from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
@@ -53,7 +55,8 @@ if __name__ == "__main__":
     # the data is coming from packaged test data.
     provider = TestDataProvider()
     interest_rate_data = provider.read_csv("short-term-interest.csv")
-    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+    config = FXRolloverInterestConfig(interest_rate_data)
+    fx_rollover_interest = FXRolloverInterestModule(config=config)
 
     # Create a fill model (optional)
     fill_model = FillModel(
@@ -112,6 +115,7 @@ if __name__ == "__main__":
     strategy = EMACrossBracket(config=config)
     engine.add_strategy(strategy=strategy)
 
+    time.sleep(0.1)
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)

@@ -30,9 +30,11 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
-    cdef object _run_queue_task
+    cdef object _cmd_queue_task
+    cdef object _evt_queue_task
     cdef object _inflight_check_task
-    cdef Queue _queue
+    cdef Queue _cmd_queue
+    cdef Queue _evt_queue
     cdef uint64_t _inflight_check_threshold_ns
 
     cdef readonly bint is_running
@@ -46,34 +48,29 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef readonly int inflight_check_threshold_ms
     """The in-flight check threshold (milliseconds).\n\n:returns: `int`"""
 
-    cpdef int qsize(self) except *
-
-    cpdef void kill(self) except *
-    cdef void _enqueue_sentinel(self) except *
-
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void reconcile_report(self, ExecutionReport report) except *
-    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *
+    cpdef void reconcile_report(self, ExecutionReport report)
+    cpdef void reconcile_mass_status(self, ExecutionMassStatus report)
 
 # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    cdef bint _reconcile_report(self, ExecutionReport report) except *
-    cdef bint _reconcile_mass_status(self, ExecutionMassStatus report) except *
-    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *
-    cdef bint _reconcile_trade_report_single(self, TradeReport report) except *
-    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *
-    cdef bint _reconcile_position_report(self, PositionStatusReport report) except *
-    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report) except *
-    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report) except *
+    cdef bint _reconcile_report(self, ExecutionReport report)
+    cdef bint _reconcile_mass_status(self, ExecutionMassStatus report)
+    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades)
+    cdef bint _reconcile_trade_report_single(self, TradeReport report)
+    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument)
+    cdef bint _reconcile_position_report(self, PositionStatusReport report)
+    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report)
+    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report)
     cdef ClientOrderId _generate_client_order_id(self)
     cdef OrderFilled _generate_inferred_fill(self, Order order, OrderStatusReport report, Instrument instrument)
     cdef Order _generate_external_order(self, OrderStatusReport report)
-    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_updated(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_expired(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *
-    cdef bint _should_update(self, Order order, OrderStatusReport report) except *
+    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report)
+    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report)
+    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report)
+    cdef void _generate_order_updated(self, Order order, OrderStatusReport report)
+    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report)
+    cdef void _generate_order_expired(self, Order order, OrderStatusReport report)
+    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument)
+    cdef bint _should_update(self, Order order, OrderStatusReport report)

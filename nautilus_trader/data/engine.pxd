@@ -32,7 +32,8 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport StatusUpdate
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -42,38 +43,41 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 cdef class DataEngine(Component):
     cdef Cache _cache
     cdef DataClient _default_client
+    cdef object _catalog
 
     cdef dict _clients
     cdef dict _routing_map
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
-    cdef bint _build_time_bars_with_no_updates
+    cdef bint _time_bars_build_with_no_updates
+    cdef bint _time_bars_timestamp_on_close
+    cdef bint _validate_data_sequence
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of data commands received by the engine.\n\n:returns: `int`"""
-    cdef readonly int data_count
-    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
     cdef readonly int request_count
     """The total count of data requests received by the engine.\n\n:returns: `int`"""
     cdef readonly int response_count
     """The total count of data responses received by the engine.\n\n:returns: `int`"""
+    cdef readonly int data_count
+    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
 
-    cpdef bint check_connected(self) except *
-    cpdef bint check_disconnected(self) except *
+    cpdef bint check_connected(self)
+    cpdef bint check_disconnected(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef void register_client(self, DataClient client) except *
-    cpdef void register_default_client(self, DataClient client) except *
-    cpdef void register_venue_routing(self, DataClient client, Venue venue) except *
-    cpdef void deregister_client(self, DataClient client) except *
+    cpdef void register_client(self, DataClient client)
+    cpdef void register_default_client(self, DataClient client)
+    cpdef void register_venue_routing(self, DataClient client, Venue venue)
+    cpdef void deregister_client(self, DataClient client)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *
-    cpdef void _on_stop(self) except *
+    cpdef void _on_start(self)
+    cpdef void _on_stop(self)
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -90,61 +94,63 @@ cdef class DataEngine(Component):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void execute(self, DataCommand command) except *
-    cpdef void process(self, Data data) except *
-    cpdef void request(self, DataRequest request) except *
-    cpdef void response(self, DataResponse response) except *
+    cpdef void execute(self, DataCommand command)
+    cpdef void process(self, Data data)
+    cpdef void request(self, DataRequest request)
+    cpdef void response(self, DataResponse response)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, DataCommand command) except *
-    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *
-    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
-    cdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
-    cdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
-    cdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type) except *
-    cdef void _handle_subscribe_data(self, DataClient client, DataType data_type) except *
-    cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
-    cdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
-    cdef void _handle_unsubscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type) except *
-    cdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type) except *
-    cdef void _handle_request(self, DataRequest request) except *
+    cdef void _execute_command(self, DataCommand command)
+    cdef void _handle_subscribe(self, DataClient client, Subscribe command)
+    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command)
+    cdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type)
+    cdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
+    cdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue)
+    cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cdef void _handle_unsubscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)
+    cdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
+    cdef void _handle_request(self, DataRequest request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, Data data) except *
-    cdef void _handle_instrument(self, Instrument instrument) except *
-    cdef void _handle_order_book_data(self, OrderBookData data) except *
-    cdef void _handle_ticker(self, Ticker ticker) except *
-    cdef void _handle_quote_tick(self, QuoteTick tick) except *
-    cdef void _handle_trade_tick(self, TradeTick tick) except *
-    cdef void _handle_bar(self, Bar bar) except *
-    cdef void _handle_generic_data(self, GenericData data) except *
-    cdef void _handle_status_update(self, StatusUpdate data) except *
-    cdef void _handle_close_price(self, InstrumentClose data) except *
+    cdef void _handle_data(self, Data data)
+    cdef void _handle_instrument(self, Instrument instrument)
+    cdef void _handle_order_book_data(self, OrderBookData data)
+    cdef void _handle_ticker(self, Ticker ticker)
+    cdef void _handle_quote_tick(self, QuoteTick tick)
+    cdef void _handle_trade_tick(self, TradeTick tick)
+    cdef void _handle_bar(self, Bar bar)
+    cdef void _handle_generic_data(self, GenericData data)
+    cdef void _handle_venue_status_update(self, VenueStatusUpdate data)
+    cdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data)
+    cdef void _handle_close_price(self, InstrumentClose data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
-    cdef void _handle_response(self, DataResponse response) except *
-    cdef void _handle_instruments(self, list instruments) except *
-    cdef void _handle_quote_ticks(self, list ticks) except *
-    cdef void _handle_trade_ticks(self, list ticks) except *
-    cdef void _handle_bars(self, list bars, Bar partial) except *
+    cdef void _handle_response(self, DataResponse response)
+    cdef void _handle_instruments(self, list instruments)
+    cdef void _handle_quote_ticks(self, list ticks)
+    cdef void _handle_trade_ticks(self, list ticks)
+    cdef void _handle_bars(self, list bars, Bar partial)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cpdef void _internal_update_instruments(self, list instruments) except *
-    cpdef void _maintain_order_book(self, OrderBookData data) except *
-    cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *
-    cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
-    cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
+    cpdef void _internal_update_instruments(self, list instruments)
+    cpdef void _maintain_order_book(self, OrderBookData data)
+    cpdef void _snapshot_order_book(self, TimeEvent snap_event)
+    cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type)
+    cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)

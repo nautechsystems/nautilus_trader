@@ -53,7 +53,7 @@ cdef class DirectionalMovement(Indicator):
         self.pos = 0
         self.neg = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -73,7 +73,7 @@ cdef class DirectionalMovement(Indicator):
         self,
         double high,
         double low,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -106,7 +106,7 @@ cdef class DirectionalMovement(Indicator):
             if self._neg_ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         """
         Reset the indicator.
 

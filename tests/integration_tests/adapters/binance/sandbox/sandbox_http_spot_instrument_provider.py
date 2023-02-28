@@ -26,7 +26,7 @@ from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_spot_market_http_client():
+async def test_binance_spot_instrument_provider():
     clock = LiveClock()
 
     client = get_cached_binance_http_client(

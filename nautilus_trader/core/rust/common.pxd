@@ -2,7 +2,7 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.core cimport UUID4_t, MessageCategory
+from nautilus_trader.core.rust.core cimport UUID4_t
 
 cdef extern from "../includes/common.h":
 
@@ -72,8 +72,6 @@ cdef extern from "../includes/common.h":
         # The event name.
         Rc_String *name;
         # The event ID.
-        MessageCategory category;
-        # The UNIX timestamp (nanoseconds) when the time event occurred.
         UUID4_t event_id;
         # The message category
         uint64_t ts_event;
@@ -174,11 +172,12 @@ cdef extern from "../includes/common.h":
                        const char *machine_id_ptr,
                        const char *instance_id_ptr,
                        LogLevel level_stdout,
+                       LogLevel level_file,
+                       const char *file_path_ptr,
+                       uintptr_t rate_limit,
                        uint8_t is_bypassed);
 
     void logger_free(CLogger logger);
-
-    void flush(CLogger *logger);
 
     const char *logger_get_trader_id_cstr(const CLogger *logger);
 

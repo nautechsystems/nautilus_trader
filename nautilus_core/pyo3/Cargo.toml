@@ -1,0 +1,26 @@
+[package]
+name = "nautilus_pyo3"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_pyo3"
+crate-type = ["cdylib"]
+
+[dependencies]
+nautilus_indicators = { path = "../indicators" }
+nautilus_model = { path = "../model" }
+nautilus_persistence = { path = "../persistence" }
+pyo3.workspace = true
+
+[features]
+extension-module = [
+    "pyo3/extension-module",
+    "nautilus_indicators/extension-module",
+    "nautilus_model/extension-module",
+    "nautilus_persistence/extension-module",
+]
+default = []

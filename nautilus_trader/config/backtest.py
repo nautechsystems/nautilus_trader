@@ -25,14 +25,16 @@ import pandas as pd
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
+from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.identifiers import ClientId
 
 
-class BacktestVenueConfig(NautilusConfig):
+class BacktestVenueConfig(NautilusConfig, frozen=True):
     """
     Represents a venue configuration for one specific backtest engine.
     """
@@ -49,10 +51,10 @@ class BacktestVenueConfig(NautilusConfig):
     frozen_account: bool = False
     reject_stop_orders: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
-    # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
+    modules: Optional[list[ImportableConfig]] = None
 
 
-class BacktestDataConfig(NautilusConfig):
+class BacktestDataConfig(NautilusConfig, frozen=True):
     """
     Represents the data configuration for one specific backtest run.
     """
@@ -67,6 +69,9 @@ class BacktestDataConfig(NautilusConfig):
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
     metadata: Optional[dict] = None
+    bar_spec: Optional[str] = None
+    use_rust: Optional[bool] = False
+    batch_size: Optional[int] = 10_000
 
     @property
     def data_type(self):
@@ -79,13 +84,21 @@ class BacktestDataConfig(NautilusConfig):
 
     @property
     def query(self):
+        if self.data_cls is Bar and self.bar_spec:
+            bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
+            filter_expr = f'field("bar_type") == "{bar_type}"'
+        else:
+            filter_expr = self.filter_expr
+
         return dict(
             cls=self.data_type,
             instrument_ids=[self.instrument_id] if self.instrument_id else None,
             start=self.start_time,
             end=self.end_time,
-            filter_expr=self.filter_expr,
+            filter_expr=parse_filters_expr(filter_expr),
             as_nautilus=True,
+            metadata=self.metadata,
+            use_rust=self.use_rust,
         )
 
     @property
@@ -113,19 +126,22 @@ class BacktestDataConfig(NautilusConfig):
         self,
         start_time: Optional[pd.Timestamp] = None,
         end_time: Optional[pd.Timestamp] = None,
+        as_nautilus: bool = True,
     ):
         query = self.query
         query.update(
             {
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
-                "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
-                "metadata": self.metadata,
+                "as_nautilus": as_nautilus,
             },
         )
 
         catalog = self.catalog()
-        instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
+        instruments = catalog.instruments(
+            instrument_ids=[self.instrument_id] if self.instrument_id else None,
+            as_nautilus=True,
+        )
         if not instruments:
             return {"data": [], "instrument": None}
         data = catalog.query(**query)
@@ -137,7 +153,7 @@ class BacktestDataConfig(NautilusConfig):
         }
 
 
-class BacktestEngineConfig(NautilusKernelConfig):
+class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     """
     Configuration for ``BacktestEngine`` instances.
 
@@ -184,7 +200,7 @@ class BacktestEngineConfig(NautilusKernelConfig):
     run_analysis: bool = True
 
 
-class BacktestRunConfig(NautilusConfig):
+class BacktestRunConfig(NautilusConfig, frozen=True):
     """
     Represents the configuration for one specific backtest run.
 
@@ -213,7 +229,7 @@ class BacktestRunConfig(NautilusConfig):
         return tokenize_config(self.dict())
 
 
-def parse_filters_expr(s: str):
+def parse_filters_expr(s: Optional[str]):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
     """
     Parse a pyarrow.dataset filter expression from a string.
@@ -244,7 +260,9 @@ def parse_filters_expr(s: str):
     return safer_eval(s)  # Only allow use of the field object
 
 
-CUSTOM_ENCODINGS: dict[type, Callable] = {}
+CUSTOM_ENCODINGS: dict[type, Callable] = {
+    pd.DataFrame: lambda x: x.to_json(),
+}
 
 
 def json_encoder(x):
@@ -252,8 +270,8 @@ def json_encoder(x):
         return str(x)
     elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
         return x.fully_qualified_name()
-    elif x in CUSTOM_ENCODINGS:
-        func = CUSTOM_ENCODINGS[x]
+    elif type(x) in CUSTOM_ENCODINGS:
+        func = CUSTOM_ENCODINGS[type(x)]
         return func(x)
     raise TypeError(f"Objects of type {type(x)} are not supported")
 

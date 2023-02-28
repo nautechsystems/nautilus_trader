@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import copy
 from enum import Enum
 
@@ -24,7 +25,6 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -70,8 +70,6 @@ class BSPOrderBookDeltas(OrderBookDeltas):
     Represents a batch of Betfair BSP order book delta.
     """
 
-    pass
-
 
 class BSPOrderBookDelta(OrderBookDelta):
     """
@@ -85,10 +83,10 @@ class BSPOrderBookDelta(OrderBookDelta):
         order: BookOrder = (
             BookOrder.from_dict(
                 {
-                    "price": values["order_price"],
-                    "size": values["order_size"],
-                    "side": values["order_side"],
-                    "id": values["order_id"],
+                    "price": values["price"],
+                    "size": values["size"],
+                    "side": values["side"],
+                    "order_id": values["order_id"],
                 },
             )
             if values["action"] != "CLEAR"
@@ -209,7 +207,7 @@ class BetfairStartingPrice(Data):
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            bsp=Price.from_str(values["bsp"]) if values["bsp"] else None,
+            bsp=values["bsp"] if values["bsp"] else None,
         )
 
     def to_dict(self):
@@ -236,8 +234,7 @@ register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
 
 # Register serialization/parquet BSPOrderBookDeltas
 BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookData])
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.remove_metadata()
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.add_metadata({"type": "BSPOrderBookDelta"})
+BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
 
 register_serializable_object(
     BSPOrderBookDeltas,

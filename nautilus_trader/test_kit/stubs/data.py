@@ -28,12 +28,14 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -52,7 +54,6 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests import TEST_DATA_DIR
 
 
 class TestDataStubs:
@@ -137,7 +138,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
             price=price or Price.from_str("1.001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -154,7 +155,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100000),
+            size=quantity or Quantity.from_int(100_000),
             aggressor_side=aggressor_side or AggressorSide.BUYER,
             trade_id=TradeId("123456"),
             ts_event=0,
@@ -245,6 +246,18 @@ class TestDataStubs:
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
+        )
+
+    @staticmethod
+    def instrument_close() -> InstrumentClose:
+        from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+
+        return InstrumentClose(
+            TestIdStubs.betting_instrument_id(),
+            Price(1.0, BETFAIR_PRICE_PRECISION),
+            InstrumentCloseType.CONTRACT_EXPIRED,
+            0,
+            0,
         )
 
     @staticmethod
@@ -395,7 +408,7 @@ class TestDataStubs:
         return updates
 
     @staticmethod
-    def l2_feed() -> list:
+    def l2_feed(filename: str) -> list:
         def parse_line(d):
             if "status" in d:
                 return {}
@@ -430,16 +443,14 @@ class TestDataStubs:
                     size=Quantity(abs(order_like["volume"]), precision=4),
                     # Betting sides are reversed
                     side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
-                    id=str(order_like["order_id"]),
+                    order_id=str(order_like["order_id"]),
                 ),
             }
 
-        return [
-            parse_line(line) for line in json.loads(open(TEST_DATA_DIR + "/L2_feed.json").read())
-        ]
+        return [parse_line(line) for line in json.loads(open(filename).read())]
 
     @staticmethod
-    def l3_feed():
+    def l3_feed(filename: str):
         def parser(data):
             parsed = data
             if not isinstance(parsed, list):
@@ -465,7 +476,7 @@ class TestDataStubs:
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
-                            id=str(data["order_id"]),
+                            order_id=str(data["order_id"]),
                         ),
                     )
                 else:
@@ -475,12 +486,8 @@ class TestDataStubs:
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
-                            id=str(data["order_id"]),
+                            order_id=str(data["order_id"]),
                         ),
                     )
 
-        return [
-            msg
-            for data in json.loads(open(TEST_DATA_DIR + "/L3_feed.json").read())
-            for msg in parser(data)
-        ]
+        return [msg for data in json.loads(open(filename).read()) for msg in parser(data)]

@@ -37,7 +37,7 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
+# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 instrument_filters = [
     {
@@ -60,6 +60,7 @@ config_node = TradingNodeConfig(
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=provider_config,
             read_only_api=False,
+            start_gateway=False,
         ),
     },
     exec_clients={
@@ -67,6 +68,7 @@ config_node = TradingNodeConfig(
             routing=RoutingConfig(default=True, venues={"IDEALPRO"}),
             instrument_provider=provider_config,
             read_only_api=False,
+            start_gateway=False,
         ),
     },
     timeout_connection=90.0,
@@ -100,6 +102,6 @@ node.build()
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
     try:
-        node.start()
+        node.run()
     finally:
         node.dispose()

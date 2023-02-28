@@ -79,10 +79,6 @@ typedef struct TimeEvent_t {
     /**
      * The event ID.
      */
-    MessageCategory category;
-    /**
-     * The UNIX timestamp (nanoseconds) when the time event occurred.
-     */
     UUID4_t event_id;
     /**
      * The message category
@@ -214,11 +210,12 @@ struct CLogger logger_new(const char *trader_id_ptr,
                           const char *machine_id_ptr,
                           const char *instance_id_ptr,
                           enum LogLevel level_stdout,
+                          enum LogLevel level_file,
+                          const char *file_path_ptr,
+                          uintptr_t rate_limit,
                           uint8_t is_bypassed);
 
 void logger_free(struct CLogger logger);
-
-void flush(struct CLogger *logger);
 
 const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 

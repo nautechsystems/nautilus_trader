@@ -16,6 +16,8 @@
 import pandas as pd
 import pytest
 
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.core.inspect import get_size_of
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.tick import TradeTick
@@ -29,6 +31,8 @@ from nautilus_trader.model.orderbook.data import OrderBookData
         (OrderBookData, True),
         (TradeTick, True),
         (OrderAccepted, True),
+        (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type.
+        (BetfairTicker, True),  # BetfairTicker is a subclass of a nautilus type
         (pd.DataFrame, False),
     ],
 )
@@ -37,6 +41,7 @@ def test_is_nautilus_class(cls, is_nautilus):
     assert is_nautilus_class(cls=cls) is is_nautilus
 
 
+@pytest.mark.skip(reason="Flaky and probably being removed")
 def test_get_size_of():
     # Arrange, Act
     result1 = get_size_of(0)

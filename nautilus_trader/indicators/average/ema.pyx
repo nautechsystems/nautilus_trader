@@ -47,7 +47,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         self.alpha = 2.0 / (period + 1.0)
         self.value = 0
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Update the indicator with the given quote tick.
 
@@ -62,7 +62,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         cdef Price price = tick.extract_price(self.price_type)
         self.update_raw(Price.raw_to_f64_c(price._mem.raw))
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Update the indicator with the given trade tick.
 
@@ -76,7 +76,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
 
         self.update_raw(Price.raw_to_f64_c(tick._mem.price.raw))
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -90,7 +90,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double value) except *:
+    cpdef void update_raw(self, double value):
         """
         Update the indicator with the given raw value.
 

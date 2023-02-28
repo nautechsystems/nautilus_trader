@@ -46,10 +46,8 @@ from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
 from nautilus_trader.core.rust.model cimport money_new
-from nautilus_trader.core.rust.model cimport price_free
 from nautilus_trader.core.rust.model cimport price_from_raw
 from nautilus_trader.core.rust.model cimport price_new
-from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -67,6 +65,7 @@ MONEY_MAX = RUST_MONEY_MAX
 MONEY_MIN = RUST_MONEY_MIN
 
 FIXED_SCALAR = RUST_FIXED_SCALAR
+
 
 @cython.auto_pickle(True)
 cdef class Quantity:
@@ -119,10 +118,6 @@ cdef class Quantity:
             )
 
         self._mem = quantity_new(value, precision)
-
-    def __del__(self) -> None:
-        # Never allocating heap memory
-        quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
@@ -244,31 +239,31 @@ cdef class Quantity:
         """
         return self._mem.precision
 
-    cdef bint eq(self, Quantity other) except *:
+    cdef bint eq(self, Quantity other):
         return self._mem.raw == other._mem.raw
 
-    cdef bint ne(self, Quantity other) except *:
+    cdef bint ne(self, Quantity other):
         return self._mem.raw != other._mem.raw
 
-    cdef bint lt(self, Quantity other) except *:
+    cdef bint lt(self, Quantity other):
         return self._mem.raw < other._mem.raw
 
-    cdef bint le(self, Quantity other) except *:
+    cdef bint le(self, Quantity other):
         return self._mem.raw <= other._mem.raw
 
-    cdef bint gt(self, Quantity other) except *:
+    cdef bint gt(self, Quantity other):
         return self._mem.raw > other._mem.raw
 
-    cdef bint ge(self, Quantity other) except *:
+    cdef bint ge(self, Quantity other):
         return self._mem.raw >= other._mem.raw
 
-    cdef bint is_zero(self) except *:
+    cdef bint is_zero(self):
         return self._mem.raw == 0
 
-    cdef bint is_negative(self) except *:
+    cdef bint is_negative(self):
         return self._mem.raw < 0
 
-    cdef bint is_positive(self) except *:
+    cdef bint is_positive(self):
         return self._mem.raw > 0
 
     cdef Quantity add(self, Quantity other):
@@ -277,24 +272,24 @@ cdef class Quantity:
     cdef Quantity sub(self, Quantity other):
         return Quantity.from_raw_c(self._mem.raw - other._mem.raw, self._mem.precision)
 
-    cdef void add_assign(self, Quantity other) except *:
+    cdef void add_assign(self, Quantity other):
         self._mem.raw += other._mem.raw
         if self._mem.precision == 0:
             self._mem.precision = other.precision
 
-    cdef void sub_assign(self, Quantity other) except *:
+    cdef void sub_assign(self, Quantity other):
         self._mem.raw -= other._mem.raw
         if self._mem.precision == 0:
             self._mem.precision = other.precision
 
-    cdef uint64_t raw_uint64_c(self) except *:
+    cdef uint64_t raw_uint64_c(self):
         return self._mem.raw
 
-    cdef double as_f64_c(self) except *:
+    cdef double as_f64_c(self):
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw) except *:
+    cdef double raw_to_f64_c(uint64_t raw):
         return raw / RUST_FIXED_SCALAR
 
     @staticmethod
@@ -316,7 +311,7 @@ cdef class Quantity:
             return decimal.Decimal(obj)
 
     @staticmethod
-    cdef bint _compare(a, b, int op) except *:
+    cdef bint _compare(a, b, int op):
         if isinstance(a, Quantity):
             a = <Quantity>a.as_decimal()
         elif isinstance(a, Price):
@@ -447,7 +442,7 @@ cdef class Quantity:
         """
         return decimal.Decimal(f"{self.as_f64_c():.{self._mem.precision}f}")
 
-    cpdef double as_double(self) except *:
+    cpdef double as_double(self):
         """
         Return the value as a `double`.
 
@@ -509,10 +504,6 @@ cdef class Price:
             )
 
         self._mem = price_new(value, precision)
-
-    def __del__(self) -> None:
-        # Never allocating heap memory
-        price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
@@ -634,31 +625,31 @@ cdef class Price:
         """
         return self._mem.precision
 
-    cdef bint eq(self, Price other) except *:
+    cdef bint eq(self, Price other):
         return self._mem.raw == other._mem.raw
 
-    cdef bint ne(self, Price other) except *:
+    cdef bint ne(self, Price other):
         return self._mem.raw != other._mem.raw
 
-    cdef bint lt(self, Price other) except *:
+    cdef bint lt(self, Price other):
         return self._mem.raw < other._mem.raw
 
-    cdef bint le(self, Price other) except *:
+    cdef bint le(self, Price other):
         return self._mem.raw <= other._mem.raw
 
-    cdef bint gt(self, Price other) except *:
+    cdef bint gt(self, Price other):
         return self._mem.raw > other._mem.raw
 
-    cdef bint ge(self, Price other) except *:
+    cdef bint ge(self, Price other):
         return self._mem.raw >= other._mem.raw
 
-    cdef bint is_zero(self) except *:
+    cdef bint is_zero(self):
         return self._mem.raw == 0
 
-    cdef bint is_negative(self) except *:
+    cdef bint is_negative(self):
         return self._mem.raw < 0
 
-    cdef bint is_positive(self) except *:
+    cdef bint is_positive(self):
         return self._mem.raw > 0
 
     cdef Price add(self, Price other):
@@ -667,10 +658,10 @@ cdef class Price:
     cdef Price sub(self, Price other):
         return Price.from_raw_c(self._mem.raw - other._mem.raw, self._mem.precision)
 
-    cdef void add_assign(self, Price other) except *:
+    cdef void add_assign(self, Price other):
         self._mem.raw += other._mem.raw
 
-    cdef void sub_assign(self, Price other) except *:
+    cdef void sub_assign(self, Price other):
         self._mem.raw -= other._mem.raw
 
     @staticmethod
@@ -683,10 +674,10 @@ cdef class Price:
         price._mem = price_from_raw(raw, precision)
         return price
 
-    cdef int64_t raw_int64_c(self) except *:
+    cdef int64_t raw_int64_c(self):
         return self._mem.raw
 
-    cdef double as_f64_c(self) except *:
+    cdef double as_f64_c(self):
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
@@ -698,7 +689,7 @@ cdef class Price:
             return decimal.Decimal(obj)
 
     @staticmethod
-    cdef bint _compare(a, b, int op) except *:
+    cdef bint _compare(a, b, int op):
         if isinstance(a, Quantity):
             a = <Quantity>a.as_decimal()
         elif isinstance(a, Price):
@@ -712,7 +703,7 @@ cdef class Price:
         return PyObject_RichCompareBool(a, b, op)
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw) except *:
+    cdef double raw_to_f64_c(uint64_t raw):
         return raw / RUST_FIXED_SCALAR
 
     @staticmethod
@@ -792,7 +783,7 @@ cdef class Price:
         """
         return decimal.Decimal(f"{self.as_f64_c():.{self._mem.precision}f}")
 
-    cpdef double as_double(self) except *:
+    cpdef double as_double(self):
         """
         Return the value as a `double`.
 
@@ -967,13 +958,13 @@ cdef class Money:
     cdef str currency_code_c(self):
         return cstr_to_pystr(currency_code_to_cstr(&self._mem.currency))
 
-    cdef bint is_zero(self) except *:
+    cdef bint is_zero(self):
         return self._mem.raw == 0
 
-    cdef bint is_negative(self) except *:
+    cdef bint is_negative(self):
         return self._mem.raw < 0
 
-    cdef bint is_positive(self) except *:
+    cdef bint is_positive(self):
         return self._mem.raw > 0
 
     cdef Money add(self, Money other):
@@ -984,11 +975,11 @@ cdef class Money:
         assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
         return Money.from_raw_c(self._mem.raw - other._mem.raw, self.currency)
 
-    cdef void add_assign(self, Money other) except *:
+    cdef void add_assign(self, Money other):
         assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
         self._mem.raw += other._mem.raw
 
-    cdef void sub_assign(self, Money other) except *:
+    cdef void sub_assign(self, Money other):
         assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
         self._mem.raw -= other._mem.raw
 
@@ -999,7 +990,7 @@ cdef class Money:
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw) except *:
+    cdef double raw_to_f64_c(uint64_t raw):
         return raw / RUST_FIXED_SCALAR
 
     @staticmethod
@@ -1077,7 +1068,7 @@ cdef class Money:
         """
         return decimal.Decimal(f"{self.as_f64_c():.{self._mem.currency.precision}f}")
 
-    cpdef double as_double(self) except *:
+    cpdef double as_double(self):
         """
         Return the value as a `double`.
 

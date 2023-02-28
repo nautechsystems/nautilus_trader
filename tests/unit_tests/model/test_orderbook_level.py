@@ -25,7 +25,7 @@ def test_init():
 
 def test_add():
     level = Level(price=10.0)
-    order = BookOrder(price=10.0, size=100.0, side=OrderSide.BUY, id="1")
+    order = BookOrder(price=10.0, size=100.0, side=OrderSide.BUY, order_id="1")
     level.add(order=order)
     assert len(level.orders) == 1
 
@@ -43,8 +43,8 @@ def test_update():
 def test_delete_order():
     level = Level(price=100.0)
     orders = [
-        BookOrder(price=100.0, size=50.0, side=OrderSide.BUY, id="1"),
-        BookOrder(price=100.0, size=50.0, side=OrderSide.BUY, id="2"),
+        BookOrder(price=100.0, size=50.0, side=OrderSide.BUY, order_id="1"),
+        BookOrder(price=100.0, size=50.0, side=OrderSide.BUY, order_id="2"),
     ]
     level.bulk_add(orders=orders)
     level.delete(order=orders[1])
@@ -71,7 +71,7 @@ def test_level_comparison():
 
 def test_level_repr():
     level = Level(price=10.0)
-    level.add(BookOrder(price=10.0, size=0.0, side=OrderSide.BUY, id="1"))
+    level.add(BookOrder(price=10.0, size=0.0, side=OrderSide.BUY, order_id="1"))
 
     expected = "Level(price=10.0, orders=[BookOrder(10.0, 0.0, BUY, 1)])"
     assert str(level) == expected

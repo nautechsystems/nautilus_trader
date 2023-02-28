@@ -63,6 +63,7 @@ class TestSimulatedExchange:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -160,7 +161,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             trailing_offset=Decimal("1.0"),
             trigger_type=TriggerType.BID_ASK,
@@ -176,7 +177,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
             trigger_type=TriggerType.BID_ASK,
@@ -192,7 +193,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
             trigger_type=TriggerType.LAST_TRADE,
@@ -208,7 +209,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
             trigger_type=TriggerType.LAST_OR_BID_ASK,
@@ -264,7 +265,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=order_side,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=trailing_offset_type,
             trailing_offset=trailing_offset,
             trigger_type=trigger_type,
@@ -346,7 +347,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=order_side,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=trailing_offset_type,
             trailing_offset=trailing_offset,
             trigger_type=trigger_type,
@@ -375,7 +376,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
@@ -430,7 +431,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
@@ -529,7 +530,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=order_side,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=trailing_offset_type,
             trailing_offset=trailing_offset,
             limit_offset=trailing_offset,
@@ -650,7 +651,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=order_side,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             trailing_offset_type=trailing_offset_type,
             trailing_offset=trailing_offset,
             limit_offset=trailing_offset,
@@ -681,7 +682,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("15.000"),
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.PRICE,
@@ -739,7 +740,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("12.000"),
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.PRICE,
@@ -797,7 +798,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("15.000"),
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
@@ -855,7 +856,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("12.000"),
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
@@ -925,7 +926,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("15.000"),
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
@@ -995,7 +996,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("12.000"),
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
@@ -1053,7 +1054,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("15.000"),
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
@@ -1111,7 +1112,7 @@ class TestSimulatedExchange:
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(200000),
+            quantity=Quantity.from_int(200_000),
             price=Price.from_str("12.000"),
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,

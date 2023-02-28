@@ -1,0 +1,24 @@
+[package]
+name = "nautilus_indicators"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_indicators"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+nautilus_core = { path = "../core" }
+nautilus_model = { path = "../model" }
+pyo3.workspace = true
+pyo3-macros.workspace = true
+
+[features]
+extension-module = [
+    "pyo3/extension-module",
+    "nautilus_core/extension-module",
+    "nautilus_model/extension-module",
+]

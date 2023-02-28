@@ -55,14 +55,14 @@ cdef class FuzzyCandlesticks(Indicator):
     cdef readonly FuzzyCandle value
     """The last fuzzy candle.\n\n:returns: `FuzzyCandle`"""
 
-    cpdef void handle_bar(self, Bar bar) except *
+    cpdef void handle_bar(self, Bar bar)
     cpdef void update_raw(
         self,
         double open,
         double high,
         double low,
         double close,
-    ) except *
+    )
 
     cdef CandleDirection _fuzzify_direction(self, double open, double close)
     cdef CandleSize _fuzzify_size(self, double length, double mean_length, double sd_lengths)

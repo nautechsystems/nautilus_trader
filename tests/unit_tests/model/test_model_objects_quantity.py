@@ -370,7 +370,7 @@ class TestQuantity:
         result = value1 / value2
 
         # Assert
-        assert type(result) == expected_type
+        assert isinstance(result, expected_type)
         assert result == expected_value
 
     @pytest.mark.parametrize(
@@ -576,7 +576,7 @@ class TestQuantity:
 
     def test_from_int_returns_expected_value(self):
         # Arrange, Act
-        qty = Quantity.from_int(1000)
+        qty = Quantity.from_int(1_000)
 
         # Assert
         assert qty == 1000

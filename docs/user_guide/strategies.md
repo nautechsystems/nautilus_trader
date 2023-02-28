@@ -4,11 +4,11 @@ The heart of the NautilusTrader user experience is in writing and working with
 trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
 and implementing the methods required by the strategy.
 
-Using the basic building blocks of data ingest and order management (which we will discuss
+Using the basic building blocks of data ingest, event handling, and order management (which we will discuss
 below), it's possible to implement any type of trading strategy including directional, momentum, re-balancing,
 pairs, market making etc.
 
-Please refer to the `Strategy` in the [API Reference](../api_reference/trading.md) for a complete description
+Refer to the `Strategy` in the [API Reference](../api_reference/trading.md) for a complete description
 of all the possible functionality.
 
 There are two main parts of a Nautilus trading strategy:
@@ -25,7 +25,7 @@ a constructor where you can handle initialization. Minimally the base/super clas
 
 ```python
 class MyStrategy(Strategy):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
 
@@ -61,7 +61,7 @@ class MyStrategyConfig(StrategyConfig):
 # parameterize the instrument the strategy will trade.
 
 class MyStrategy(Strategy):
-    def __init__(self, config: MyStrategyConfig):
+    def __init__(self, config: MyStrategyConfig) -> None:
         super().__init__(config)
 
         # Configuration

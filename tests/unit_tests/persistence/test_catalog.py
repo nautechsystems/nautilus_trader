@@ -16,6 +16,7 @@
 import datetime
 import itertools
 import os
+import sys
 import tempfile
 from decimal import Decimal
 
@@ -27,6 +28,12 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -41,14 +48,13 @@ from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
-from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.external.readers import ParquetReader as ParquetByteReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -62,6 +68,7 @@ class TestPersistenceCatalogRust:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+        self.instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("SIM"))
 
     def teardown(self):
         # Cleanup
@@ -70,80 +77,273 @@ class TestPersistenceCatalogRust:
         if fs.exists(path):
             fs.rm(path, recursive=True)
 
-    def _load_quote_ticks_into_catalog_rust(self):
-        """Write quote ticks to catalog"""
-
+    def _load_quote_ticks_into_catalog_rust(self) -> list[QuoteTick]:
         parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
-        reader = ParquetFileReader(QuoteTick, parquet_data_path)
-        quotes = list(itertools.chain(*list(reader)))
 
-        # Use rust writer
-        metadata = {
-            "instrument_id": "USD/JPY.SIM",
-            "price_precision": "5",
-            "size_precision": "0",
-        }
-        writer = ParquetWriter(QuoteTick, metadata)
-        writer.write(quotes)
-        data: bytes = writer.flush()
-
-        fn = os.path.join(
-            self.catalog.path,
-            "data",
-            "quote_tick.parquet",
-            "instrument_id=USD-JPY.SIM",
-            "0-0-0.parquet",
+        reader = ParquetReader(
+            parquet_data_path,
+            1000,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
         )
 
-        os.makedirs(os.path.dirname(fn), exist_ok=True)
-        with open(fn, "wb") as f:
-            f.write(data)
+        mapped_chunk = map(QuoteTick.list_from_capsule, reader)
+        quotes = list(itertools.chain(*mapped_chunk))
+
+        min_timestamp = str(quotes[0].ts_init).rjust(19, "0")
+        max_timestamp = str(quotes[-1].ts_init).rjust(19, "0")
+
+        # Write EUR/USD and USD/JPY rust quotes
+        for instrument_id in ("EUR/USD.SIM", "USD/JPY.SIM"):
+            # Reset reader
+            reader = ParquetReader(
+                parquet_data_path,
+                1000,
+                ParquetType.QuoteTick,
+                ParquetReaderType.File,
+            )
+
+            metadata = {
+                "instrument_id": instrument_id,
+                "price_precision": "5",
+                "size_precision": "0",
+            }
+            writer = ParquetWriter(
+                ParquetType.QuoteTick,
+                metadata,
+            )
+
+            file_path = os.path.join(
+                self.catalog.path,
+                "data",
+                "quote_tick.parquet",
+                f"instrument_id={instrument_id.replace('/', '-')}",  # EUR-USD.SIM, USD-JPY.SIM
+                f"{min_timestamp}-{max_timestamp}-0.parquet",
+            )
+
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "wb") as f:
+                for chunk in reader:
+                    writer.write(chunk)
+                data: bytes = writer.flush_bytes()
+                f.write(data)
 
         return quotes
 
-    def _load_trade_ticks_into_catalog_rust(self) -> list:
-        """Write quote ticks to catalog"""
+    def _load_trade_ticks_into_catalog_rust(self) -> list[TradeTick]:
         parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
-        reader = ParquetFileReader(TradeTick, parquet_data_path)
-        trades = list(itertools.chain(*list(reader)))
+        reader = ParquetReader(
+            parquet_data_path,
+            100,
+            ParquetType.TradeTick,
+            ParquetReaderType.File,
+        )
 
-        # Use rust writer
+        mapped_chunk = map(TradeTick.list_from_capsule, reader)
+        trades = list(itertools.chain(*mapped_chunk))
+
+        min_timestamp = str(trades[0].ts_init).rjust(19, "0")
+        max_timestamp = str(trades[-1].ts_init).rjust(19, "0")
+
+        # Reset reader
+        reader = ParquetReader(
+            parquet_data_path,
+            100,
+            ParquetType.TradeTick,
+            ParquetReaderType.File,
+        )
+
         metadata = {
             "instrument_id": "EUR/USD.SIM",
             "price_precision": "5",
             "size_precision": "0",
         }
-        writer = ParquetWriter(TradeTick, metadata)
-        writer.write(trades)
-        data: bytes = writer.flush()
+        writer = ParquetWriter(
+            ParquetType.TradeTick,
+            metadata,
+        )
 
-        fn = os.path.join(
+        file_path = os.path.join(
             self.catalog.path,
             "data",
             "trade_tick.parquet",
             "instrument_id=EUR-USD.SIM",
-            "0-0-0.parquet",
+            f"{min_timestamp}-{max_timestamp}-0.parquet",
         )
-        os.makedirs(os.path.dirname(fn), exist_ok=True)
-        with open(fn, "wb") as f:
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as f:
+            for chunk in reader:
+                writer.write(chunk)
+            data: bytes = writer.flush_bytes()
             f.write(data)
 
         return trades
 
-    def test_data_catalog_quote_ticks_as_nautilus_use_rust(self):
-        """Write quote ticks to catalog"""
-
+    def test_get_files_for_expected_instrument_id(self):
         # Arrange
         self._load_quote_ticks_into_catalog_rust()
 
         # Act
-        quote_ticks = self.catalog.quote_ticks(as_nautilus=True, use_rust=True)
+        files1 = self.catalog.get_files(cls=QuoteTick, instrument_id="USD/JPY.SIM")
+        files2 = self.catalog.get_files(cls=QuoteTick, instrument_id="EUR/USD.SIM")
+        files3 = self.catalog.get_files(cls=QuoteTick, instrument_id="USD/CHF.SIM")
+
+        # Assert
+        assert files1 == [
+            f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=USD-JPY.SIM/1577898000000000065-1577919652000000125-0.parquet",
+        ]
+        assert files2 == [
+            f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/1577898000000000065-1577919652000000125-0.parquet",
+        ]
+        assert files3 == []
+
+    def test_get_files_for_no_instrument_id(self):
+        # Arrange
+        self._load_quote_ticks_into_catalog_rust()
+
+        # Act
+        files = self.catalog.get_files(cls=QuoteTick)
+
+        # Assert
+        assert files == [
+            f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/1577898000000000065-1577919652000000125-0.parquet",
+            f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=USD-JPY.SIM/1577898000000000065-1577919652000000125-0.parquet",
+        ]
+
+    def test_get_files_for_timestamp_range(self):
+        # Arrange
+        self._load_quote_ticks_into_catalog_rust()
+        start = 1577898000000000065
+        end = 1577919652000000125
+
+        # Act
+        files1 = self.catalog.get_files(
+            cls=QuoteTick,
+            instrument_id="EUR/USD.SIM",
+            start_nanos=start,
+            end_nanos=start,
+        )
+
+        files2 = self.catalog.get_files(
+            cls=QuoteTick,
+            instrument_id="EUR/USD.SIM",
+            start_nanos=0,
+            end_nanos=start - 1,
+        )
+
+        files3 = self.catalog.get_files(
+            cls=QuoteTick,
+            instrument_id="EUR/USD.SIM",
+            start_nanos=end + 1,
+            end_nanos=sys.maxsize,
+        )
+
+        # Assert
+        assert files1 == [
+            f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/1577898000000000065-1577919652000000125-0.parquet",
+        ]
+        assert files2 == []
+        assert files3 == []
+
+    def test_data_catalog_quote_ticks_as_nautilus_use_rust(self):
+        # Arrange
+        self._load_quote_ticks_into_catalog_rust()
+
+        # Act
+        quote_ticks = self.catalog.quote_ticks(
+            as_nautilus=True,
+            use_rust=True,
+            instrument_ids=["EUR/USD.SIM"],
+        )
+
+        # Assert
+        assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
+        assert len(quote_ticks) == 9500
+
+    def test_data_catalog_quote_ticks_as_nautilus_use_rust_with_date_range(self):
+        # Arrange
+        self._load_quote_ticks_into_catalog_rust()
+
+        start_timestamp = 1577898181000000440  # index 44
+        end_timestamp = 1577898572000000953  # index 99
+
+        # Act
+        quote_ticks = self.catalog.quote_ticks(
+            as_nautilus=True,
+            use_rust=True,
+            instrument_ids=["EUR/USD.SIM"],
+            start=start_timestamp,
+            end=end_timestamp,
+        )
+
+        # Assert
+        assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
+        assert len(quote_ticks) == 54
+        assert quote_ticks[0].ts_init == start_timestamp
+        assert quote_ticks[-1].ts_init == end_timestamp
+
+    def test_data_catalog_quote_ticks_as_nautilus_use_rust_with_date_range_with_multiple_instrument_ids(
+        self,
+    ):
+        # Arrange
+        self._load_quote_ticks_into_catalog_rust()
+
+        start_timestamp = 1577898181000000440  # EUR/USD.SIM index 44
+        end_timestamp = 1577898572000000953  # EUR/USD.SIM index 99
+
+        # Act
+        quote_ticks = self.catalog.quote_ticks(
+            as_nautilus=True,
+            use_rust=True,
+            instrument_ids=["EUR/USD.SIM", "USD/JPY.SIM"],
+            start=start_timestamp,
+            end=end_timestamp,
+        )
 
         # Assert
         assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
 
+        instrument1_quote_ticks = [t for t in quote_ticks if str(t.instrument_id) == "EUR/USD.SIM"]
+        assert len(instrument1_quote_ticks) == 54
+
+        instrument2_quote_ticks = [t for t in quote_ticks if str(t.instrument_id) == "USD/JPY.SIM"]
+        assert len(instrument2_quote_ticks) == 54
+
+        assert quote_ticks[0].ts_init == start_timestamp
+        assert quote_ticks[-1].ts_init == end_timestamp
+
+    def test_data_catalog_use_rust_quote_ticks_round_trip(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+
+        parquet_data_glob_path = TEST_DATA_DIR + "/quote_tick_data.parquet"
+        assert os.path.exists(parquet_data_glob_path)
+
+        def block_parser(df):
+            df = df.set_index("ts_event")
+            df.index = df.ts_init.apply(unix_nanos_to_dt)
+            objs = QuoteTickDataWrangler(instrument=instrument).process(df)
+            yield from objs
+
+        # Act
+        process_files(
+            glob_path=parquet_data_glob_path,
+            reader=ParquetByteReader(parser=block_parser),
+            use_rust=True,
+            catalog=self.catalog,
+            instrument=instrument,
+        )
+
+        quote_ticks = self.catalog.quote_ticks(
+            as_nautilus=True,
+            use_rust=True,
+            instrument_ids=["EUR/USD.SIM"],
+        )
+
+        assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
         assert len(quote_ticks) == 9500
 
     def test_data_catalog_quote_ticks_use_rust(self):
@@ -151,22 +351,27 @@ class TestPersistenceCatalogRust:
         quotes = self._load_quote_ticks_into_catalog_rust()
 
         # Act
-        qdf = self.catalog.quote_ticks(use_rust=True)
+        qdf = self.catalog.quote_ticks(use_rust=True, instrument_ids=["EUR/USD.SIM"])
 
         # Assert
         assert isinstance(qdf, pd.DataFrame)
         assert len(qdf) == 9500
-        # assert qdf.bid.equals(pd.Series([float(q.bid) for q in quotes]))
-        # assert qdf.ask.equals(pd.Series([float(q.ask) for q in quotes]))
+        assert qdf.bid.equals(pd.Series([float(q.bid) for q in quotes]))
+        assert qdf.ask.equals(pd.Series([float(q.ask) for q in quotes]))
         assert qdf.bid_size.equals(pd.Series([float(q.bid_size) for q in quotes]))
         assert qdf.ask_size.equals(pd.Series([float(q.ask_size) for q in quotes]))
+        assert (qdf.instrument_id == "EUR/USD.SIM").all
 
     def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
         # Arrange
         self._load_trade_ticks_into_catalog_rust()
 
         # Act
-        trade_ticks = self.catalog.trade_ticks(as_nautilus=True, use_rust=True)
+        trade_ticks = self.catalog.trade_ticks(
+            as_nautilus=True,
+            use_rust=True,
+            instrument_ids=["EUR/USD.SIM"],
+        )
 
         # Assert
         assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
@@ -265,7 +470,6 @@ class _TestPersistenceCatalog:
         assert parts == {"instrument_id": ["AUD-USD.SIM"]}
 
     def test_data_catalog_query_filtered(self):
-
         ticks = self.catalog.trade_ticks()
         assert len(ticks) == 312
 
@@ -285,18 +489,15 @@ class _TestPersistenceCatalog:
         assert len(filtered_deltas) == 351
 
     def test_data_catalog_trade_ticks_as_nautilus(self):
-
         trade_ticks = self.catalog.trade_ticks(as_nautilus=True)
         assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
         assert len(trade_ticks) == 312
 
     def test_data_catalog_instruments_df(self):
-
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 
     def test_writing_instruments_doesnt_overwrite(self):
-
         instruments = self.catalog.instruments(as_nautilus=True)
         write_objects(catalog=self.catalog, chunk=[instruments[0]])
         write_objects(catalog=self.catalog, chunk=[instruments[1]])
@@ -304,7 +505,6 @@ class _TestPersistenceCatalog:
         assert len(instruments) == 2
 
     def test_data_catalog_instruments_filtered_df(self):
-
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
         assert len(instruments) == 1
@@ -358,20 +558,26 @@ class _TestPersistenceCatalog:
         assert len(filtered_deltas) == 351
 
     def test_data_catalog_generic_data(self):
-
+        # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
             reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
+
+        # Act
         df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
-        assert len(df) == 22925
         data = self.catalog.generic_data(
             cls=NewsEventData,
             filter_expr=ds.field("currency") == "CHF",
             as_nautilus=True,
         )
+
+        # Assert
+        assert df is not None
+        assert data is not None
+        assert len(df) == 22925
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 
     def test_data_catalog_bars(self):
@@ -427,7 +633,6 @@ class _TestPersistenceCatalog:
         assert "instrument_id" in data.columns
 
     def test_catalog_projections(self):
-
         projections = {"tid": ds.field("trade_id")}
         trades = self.catalog.trade_ticks(projections=projections)
         assert "tid" in trades.columns

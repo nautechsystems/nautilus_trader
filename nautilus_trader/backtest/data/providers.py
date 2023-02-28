@@ -20,7 +20,6 @@ from typing import Optional
 
 import fsspec
 import pandas as pd
-from fsspec.implementations.github import GithubFileSystem
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -80,7 +79,7 @@ class TestInstrumentProvider:
             price_increment=Price(1e-08, precision=8),
             size_increment=Quantity(1e-08, precision=8),
             lot_size=None,
-            max_quantity=Quantity.from_int(90000000),
+            max_quantity=Quantity.from_int(90_000_000),
             min_quantity=Quantity.from_int(1),
             max_notional=None,
             min_notional=Money(0.00010000, BTC),
@@ -313,7 +312,7 @@ class TestInstrumentProvider:
             size_precision=0,
             price_increment=Price.from_str("0.05"),
             size_increment=Quantity.from_int(1),
-            max_quantity=Quantity.from_int(10000000),
+            max_quantity=Quantity.from_int(10_000_000),
             min_quantity=Quantity.from_int(1),
             max_notional=None,
             min_notional=None,
@@ -538,6 +537,9 @@ class TestDataProvider:
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
     def _make_uri(self, path: str):
+        # Moved here from top level import because GithubFileSystem has extra deps we may not have installed.
+        from fsspec.implementations.github import GithubFileSystem
+
         if isinstance(self.fs, LocalFileSystem):
             return f"file://{self.root}/{path}"
         elif isinstance(self.fs, GithubFileSystem):

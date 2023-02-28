@@ -21,7 +21,7 @@ class MyDataPoint(Data):
         z: int,
         ts_event: int,
         ts_init: int,
-    ):
+    ) -> None:
         super().__init__(ts_event, ts_init)
 
         self.label = label
@@ -57,7 +57,7 @@ objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom/generic data.
 
 ```python
-def on_data(self, data: Data):
+def on_data(self, data: Data) -> None:
     # First check the type of data
     if isinstance(data, MyDataPoint):
         # Do something with the data

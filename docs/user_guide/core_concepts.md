@@ -1,52 +1,62 @@
 # Core Concepts
 
-There are two main use cases for this software package:
+There are three main use cases for this software package:
 
-- Backtesting trading systems on historical data
-- Deploying trading systems live in real-time
+- Backtesting trading systems with historical data (`backtest`)
+- Testing trading systems with real-time data and simulated execution (`sandbox`)
+- Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`)
 
-The projects codebase provides a framework for implementing systems to achieve the above. You will find
-the default `backtest` and `live` system implementations in their respectively named subpackages. All examples
-will also either utilize the default backtest or live system implementations.
+The projects codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
+the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
+be built using the sandbox adapter.
 
 ```{note}
-We consider trading strategies to be subcomponents of end-to-end trading systems, which
+All examples will utilize these default system implementations.
+```
+
+```{note}
+We consider trading strategies to be subcomponents of end-to-end trading systems, these systems
 include the application and infrastructure layers.
 ```
 
 ## Distributed
-The platform is also able to be become part of an even larger distributed system, and so you will find that 
-nearly every configuration and domain object can be serialized over the wire using either JSON, MessagePack, or Apache arrow (feather).
+The platform is designed to be easily integrated into a larger distributed system. 
+To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
 ## Common core
-Both backtest, sandbox and live trading nodes use a common system core. Registering user defined `Actor` and `Strategy` 
-components are then managed in the same way across these environment contexts.
+The common system core is utilized by both the backtest, sandbox, and live trading nodes. 
+User-defined Actor and Strategy components are managed consistently across these environment contexts.
 
 ## Backtesting
 Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
-a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the system across this data with nanosecond resolution.
+a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the data through the system with nanosecond resolution.
 
 ## Live trading
 A `TradingNode` can ingest data and events from multiple data and execution clients. 
 Live deployments can use both demo/paper trading accounts, or real accounts.
 
-For live trading, extremely high performance (benchmarks pending) can be achieved running asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
-especially leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS only).
+For live trading, a `TradingNode` can ingest data and events from multiple data and execution clients. 
+The system supports both demo/paper trading accounts and real accounts. High performance can be achieved by running 
+asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
+with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
 ## Domain model
-A rich trading domain model has been defined, which expresses value types such as
-`Price` and `Quantity`, up to more complex entities such as `Order` objects - which aggregate
-many events to determine state.
+The platform features a comprehensive trading domain model that includes various value types such as 
+`Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects, 
+which are used to aggregate multiple events to determine state.
 
 ### Data Types
 The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.
 - `OrderBookDelta`
 - `OrderBookDeltas` (L1/L2/L3)
 - `OrderBookSnapshot` (L1/L2/L3)
+- `Ticker`
 - `QuoteTick`
 - `TradeTick`
 - `Bar`
 - `Instrument`
+- `VenueStatusUpdate`
+- `InstrumentStatusUpdate`
 
 The following PriceType options can be used for bar aggregations;
 - `BID`
@@ -82,6 +92,7 @@ The following account types are available for both live and backtest environment
 - `Cash` multi-currency
 - `Margin` single-currency (base currency)
 - `Margin` multi-currency
+- `Betting` single-currency
 
 ### Order Types
 The following order types are available (when possible on an exchange);

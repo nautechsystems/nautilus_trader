@@ -56,7 +56,7 @@ cdef class VerticalHorizontalFilter(Indicator):
         self._previous_close = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -72,7 +72,7 @@ cdef class VerticalHorizontalFilter(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(self, double close) except *:
+    cpdef void update_raw(self, double close):
         """
         Update the indicator with the given raw value.
 
@@ -98,13 +98,13 @@ cdef class VerticalHorizontalFilter(Indicator):
 
         self._check_initialized()
 
-    cdef void _check_initialized(self) except *:
+    cdef void _check_initialized(self):
         if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized and len(self._prices) >= self.period:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._prices.clear()
         self._ma.reset()
         self._previous_close = 0

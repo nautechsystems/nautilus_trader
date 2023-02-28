@@ -29,6 +29,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.engine import ExecEngineConfig
 from nautilus_trader.backtest.engine import RiskEngineConfig
+from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -70,7 +71,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         self.venue = Venue("SIM")
         interest_rate_data = pd.read_csv(os.path.join(TEST_DATA_DIR, "short-term-interest.csv"))
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -114,7 +116,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(996798.21, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
+            996_798.21,
+            USD,
+        )
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -174,7 +179,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1023449.90,
+            1_023_449.90,
             USD,
         )
 
@@ -193,7 +198,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         interest_rate_data = pd.read_csv(
             os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
         )
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -237,7 +243,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(961323.91, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
+            961_323.91,
+            GBP,
+        )
 
     def test_run_ema_cross_stop_entry_trail_strategy(self):
         # Arrange
@@ -263,7 +272,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            1009220.90,
+            1_009_220.90,
             GBP,
         )
 
@@ -290,14 +299,17 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 41761
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(963946.75, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
+            963_946.75,
+            GBP,
+        )
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=False,
+            bypass_logging=True,
             run_analysis=False,
             risk_engine=RiskEngineConfig(
                 bypass=True,  # Example of bypassing pre-trade risk checks for backtests
@@ -310,7 +322,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         interest_rate_data = pd.read_csv(
             os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
         )
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -370,7 +383,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(1088115.65, USD)
+        assert ending_balance == Money(1_088_115.65, USD)
 
 
 class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
@@ -432,12 +445,12 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
         self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 10000
-        assert self.engine.iteration == 10000
+        assert strategy.fast_ema.count == 10_000
+        assert self.engine.iteration == 10_000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
         assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10017571.74970600, USDT)
+        assert usdt_ending_balance == Money(10_017_571.74970600, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -467,13 +480,13 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
         self.engine.run()
 
         # Assert
-        assert len(ticks) == 40000
-        assert strategy.fast_ema.count == 10000
-        assert self.engine.iteration == 40000
+        assert len(ticks) == 40_000
+        assert strategy.fast_ema.count == 10_000
+        assert self.engine.iteration == 40_000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
         assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10017571.72928400, USDT)
+        assert usdt_ending_balance == Money(10_017_571.72928400, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -489,7 +502,8 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Setup venue
         provider = TestDataProvider()
         interest_rate_data = provider.read_csv("short-term-interest.csv")
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        config = FXRolloverInterestConfig(interest_rate_data)
+        fx_rollover_interest = FXRolloverInterestModule(config)
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -527,8 +541,11 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         # Assert
         assert strategy.fast_ema.count == 1771
-        assert self.engine.iteration == 100000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(991360.15, AUD)
+        assert self.engine.iteration == 100_000
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
+            991_360.15,
+            AUD,
+        )
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
@@ -546,9 +563,12 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 1000
-        assert self.engine.iteration == 100000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(996361.60, AUD)
+        assert strategy.fast_ema.count == 1_000
+        assert self.engine.iteration == 100_000
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
+            996_361.60,
+            AUD,
+        )
 
 
 class TestBacktestAcceptanceTestsETHUSDT:
@@ -602,7 +622,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
         expected_commission = Money(127.56763570, USDT)
-        expected_usdt = Money(998869.96375810, USDT)
+        expected_usdt = Money(998_869.96375810, USDT)
         assert self.engine.portfolio.account(self.venue).commission(USDT) == expected_commission
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == expected_usdt
 

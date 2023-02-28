@@ -37,7 +37,8 @@ impl Display for OrderListId {
 }
 
 impl OrderListId {
-    pub fn new(s: &str) -> OrderListId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`OrderListId` value");
 
         OrderListId {

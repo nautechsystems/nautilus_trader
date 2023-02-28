@@ -23,10 +23,10 @@ import pytest
 from betfair_parser.spec.streaming import STREAM_DECODER
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.config import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -35,11 +35,12 @@ from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
@@ -78,20 +79,15 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     global INSTRUMENTS
 
     # Setup
-    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.ERROR)
+    logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
-    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger)
 
     # Load instruments
     market_ids = BetfairDataProvider.market_ids()
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
     mock_load_markets_metadata.return_value = [c for c in catalog if c.marketId in market_ids]
-    t = loop.create_task(
-        instrument_provider.load_all_async(
-            filters=[BetfairInstrumentProviderConfig(market_id=market_ids)],
-        ),
-    )
+    t = loop.create_task(instrument_provider.load_all_async())
     loop.run_until_complete(t)
 
     # Fill INSTRUMENTS global cache
@@ -112,7 +108,7 @@ class TestBetfairDataClient:
         self.venue = BETFAIR_VENUE
 
         # Setup logging
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.ERROR)
+        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.ERROR)
         self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
 
         self.msgbus = MessageBus(
@@ -120,9 +116,9 @@ class TestBetfairDataClient:
             clock=self.clock,
             logger=self.logger,
         )
-
+        self.instrument_id = TestInstrumentProvider.betting_instrument()
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(TestInstrumentProvider.betting_instrument())
+        self.cache.add_instrument(self.instrument_id)
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -216,16 +212,16 @@ class TestBetfairDataClient:
         await self.client._connect()
 
     def test_subscriptions(self):
-        self.client.subscribe_trade_ticks(TestIdStubs.betting_instrument_id())
-        self.client.subscribe_instrument_status_updates(TestIdStubs.betting_instrument_id())
-        self.client.subscribe_instrument_close(TestIdStubs.betting_instrument_id())
+        self.client.subscribe_trade_ticks(self.instrument_id)
+        self.client.subscribe_instrument_status_updates(self.instrument_id)
+        self.client.subscribe_instrument_close(self.instrument_id)
 
     def test_market_heartbeat(self):
         self.client.on_market_update(BetfairStreaming.mcm_HEARTBEAT())
 
+    @pytest.mark.skip(reason="Log sinks removed")
     def test_stream_latency(self):
         logs = []
-        self.logger.register_sink(logs.append)
         self.client.start()
         self.client.on_market_update(BetfairStreaming.mcm_latency())
         warning, degrading, degraded = logs[2:]
@@ -282,7 +278,7 @@ class TestBetfairDataClient:
         expected = (
             ["OrderBookDeltas"] * 272
             + ["InstrumentStatusUpdate"] * 12
-            + ["BetfairStartingPrice"] * 12
+            + ["GenericData"] * 12
             + ["OrderBookDeltas"] * 12
         )
         assert result == expected
@@ -337,7 +333,7 @@ class TestBetfairDataClient:
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
             "BetfairTicker": 8,
-            "BSPOrderBookDeltas": 8,
+            "GenericData": 8,
             "OrderBookDeltas": 2,
             "InstrumentClose": 1,
         }
@@ -345,8 +341,8 @@ class TestBetfairDataClient:
         sp_deltas = [
             d
             for deltas in self.messages
-            if isinstance(deltas, BSPOrderBookDeltas)
-            for d in deltas.deltas
+            if isinstance(deltas, GenericData)
+            for d in deltas.data.deltas
         ]
         assert len(sp_deltas) == 30
 
@@ -495,6 +491,22 @@ class TestBetfairDataClient:
         assert len(starting_prices_near) == 1739
         assert len(starting_prices_far) == 1182
 
+    def test_betfair_starting_price(self):
+        # Arrange
+        lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+
+        # Act
+        for line in lines[-100:]:
+            self.client.on_market_update(line)
+
+        # Assert
+        starting_prices = [
+            t
+            for t in self.messages
+            if isinstance(t, GenericData) and isinstance(t.data, BetfairStartingPrice)
+        ]
+        assert len(starting_prices) == 36
+
     def test_betfair_orderbook(self):
         book = L2OrderBook(
             instrument_id=TestIdStubs.betting_instrument_id(),
@@ -541,9 +553,9 @@ class TestBetfairDataClient:
                             "instrument_id": self.instrument.id.value,
                             "book_type": "L2_MBP",
                             "action": "UPDATE",
-                            "order_price": 0.990099,
-                            "order_size": 2.0,
-                            "order_side": "BUY",
+                            "price": 0.990099,
+                            "size": 2.0,
+                            "side": "BUY",
                             "order_id": "ef93694d-64c7-4b26-b03b-48c0bc2afea7",
                             "update_id": 0,
                             "ts_event": 1667288437852999936,

@@ -24,7 +24,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -51,11 +51,11 @@ class TestComponentStubs:
         return LiveClock()
 
     @staticmethod
-    def logger(level="INFO") -> LiveLogger:
-        return LiveLogger(
-            loop=asyncio.get_event_loop(),
+    def logger(level="INFO") -> Logger:
+        return Logger(
             clock=TestComponentStubs.clock(),
             level_stdout=log_level_from_str(level),
+            bypass=True,
         )
 
     @staticmethod

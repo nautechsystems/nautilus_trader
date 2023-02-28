@@ -24,10 +24,10 @@ from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import Future
 
-from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentFilter
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.common.functions import one
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
@@ -39,6 +39,21 @@ from nautilus_trader.model.instruments.base import Instrument
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Interactive Brokers.
+
+    Parameters
+    ----------
+    client : ib_insync.IB
+        The Interactive Brokers client.
+    config : InstrumentProviderConfig
+        The instrument provider config
+    logger : Logger
+        The logger for the instrument provider.
+    host : str
+        The client host name or IP address.
+    port : str
+        The client port number.
+    client_id : int
+        The unique client ID number for the connection.
     """
 
     def __init__(
@@ -49,26 +64,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
-    ):
-        """
-        Initialize a new instance of the ``InteractiveBrokersInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : ib_insync.IB
-            The Interactive Brokers client.
-        config : InstrumentProviderConfig
-            The instrument provider config
-        logger : Logger
-            The logger for the instrument provider.
-        host : str
-            The client host name or IP address.
-        port : str
-            The client port number.
-        client_id : int
-            The unique client ID number for the connection.
-
-        """
+    ) -> None:
         super().__init__(
             venue=IB_VENUE,
             logger=logger,
@@ -83,24 +79,26 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_details: dict[str, ContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
-    async def load_all_async(
+    async def load_all_async(  # type: ignore
         self,
         filters: Optional[list[InteractiveBrokersInstrumentFilter]] = None,
     ) -> None:
-        for filt in filters or self.config.filters or []:
-            contract = filt.to_contract()
+        if filters is None:
+            return
+        for filter_ in filters:
+            contract = filter_.to_contract()
             self._log.debug(f"Parsed {contract=}")
             qualified = await self._client.qualifyContractsAsync(contract)
             qualified = one(qualified)
             self._log.debug(f"Qualified {contract=}")
             contract_details: list[ContractDetails] = await self.get_contract_details(
                 qualified,
-                build_futures_chain=filt.load_futures,
-                build_options_chain=filt.load_options,
-                option_kwargs=filt.option_kwargs or {},
+                build_futures_chain=filter_.load_futures,
+                build_options_chain=filter_.load_options,
+                option_kwargs=filter_.option_kwargs or {},
             )
             if not contract_details:
-                raise ValueError(f"No contract details found for the given filter ({filt})")
+                raise ValueError(f"No contract details found for the given filter ({filter_})")
             self._log.debug(f"Got {contract_details=}")
 
             for details in contract_details:

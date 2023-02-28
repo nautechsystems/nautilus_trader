@@ -58,6 +58,7 @@ class TestSimulatedExchange:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -164,7 +165,7 @@ class TestSimulatedExchange:
         order = self.strategy.order_factory.stop_limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             price=Price.from_str("90.100"),  # <-- immediately filled
             trigger_price=Price.from_str("90.000"),  # <-- immediately triggered
             post_only=False,  # <-- Can be liquidity TAKER
@@ -193,7 +194,7 @@ class TestSimulatedExchange:
         order = self.strategy.order_factory.stop_limit(
             USDJPY_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             price=Price.from_str("90.000"),  # <-- immediately filled
             trigger_price=Price.from_str("90.010"),  # <-- immediately triggered
             post_only=False,  # <-- Can be liquidity TAKER
@@ -222,7 +223,7 @@ class TestSimulatedExchange:
         order = self.strategy.order_factory.stop_limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             price=Price.from_str("90.100"),
             trigger_price=Price.from_str("90.010"),
         )
@@ -235,8 +236,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.010"),
             ask=Price.from_str("90.011"),
-            bid_size=Quantity.from_int(100000),
-            ask_size=Quantity.from_int(100000),
+            bid_size=Quantity.from_int(100_000),
+            ask_size=Quantity.from_int(100_000),
             ts_event=0,
             ts_init=0,
         )
@@ -262,7 +263,7 @@ class TestSimulatedExchange:
         order = self.strategy.order_factory.stop_limit(
             USDJPY_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             price=Price.from_str("89.900"),
             trigger_price=Price.from_str("90.000"),
         )
@@ -275,8 +276,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("89.998"),
             ask=Price.from_str("89.999"),
-            bid_size=Quantity.from_int(100000),
-            ask_size=Quantity.from_int(100000),
+            bid_size=Quantity.from_int(100_000),
+            ask_size=Quantity.from_int(100_000),
             ts_event=0,
             ts_init=0,
         )

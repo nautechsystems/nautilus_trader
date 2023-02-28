@@ -27,8 +27,8 @@ cdef class CashAccount(Account):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *
-    cpdef void clear_balance_locked(self, InstrumentId instrument_id) except *
+    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked)
+    cpdef void clear_balance_locked(self, InstrumentId instrument_id)
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 

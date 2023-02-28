@@ -83,6 +83,7 @@ class TestLiveExecutionEngine:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -250,7 +251,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -268,7 +269,7 @@ class TestLiveExecutionEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.exec_engine.qsize() == 1
+        assert self.exec_engine.cmd_qsize() == 1
         assert self.exec_engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -314,7 +315,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -334,7 +335,7 @@ class TestLiveExecutionEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.exec_engine.qsize() == 1
+        assert self.exec_engine.cmd_qsize() == 1
         assert self.exec_engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -365,7 +366,8 @@ class TestLiveExecutionEngine:
         self.exec_engine.kill()
 
         # Assert
-        assert self.exec_engine.qsize() == 0
+        assert self.exec_engine.cmd_qsize() == 0
+        assert self.exec_engine.evt_qsize() == 0
 
     @pytest.mark.asyncio
     async def test_execute_command_places_command_on_queue(self):
@@ -385,7 +387,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         submit_order = SubmitOrder(
@@ -402,7 +404,7 @@ class TestLiveExecutionEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.exec_engine.qsize() == 0
+        assert self.exec_engine.evt_qsize() == 0
         assert self.exec_engine.command_count == 1
 
         # Tear Down

@@ -24,8 +24,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
@@ -80,10 +79,16 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
+        self._cmd_queue = Queue(maxsize=config.qsize)
+        self._req_queue = Queue(maxsize=config.qsize)
+        self._res_queue = Queue(maxsize=config.qsize)
         self._data_queue = Queue(maxsize=config.qsize)
-        self._message_queue = Queue(maxsize=config.qsize)
 
-        self._run_queues_task = None
+        # Async tasks
+        self._cmd_queue_task = None
+        self._req_queue_task = None
+        self._res_queue_task = None
+        self._data_queue_task = None
         self.is_running = False
 
     def connect(self):
@@ -102,31 +107,86 @@ cdef class LiveDataEngine(DataEngine):
         for client in self._clients.values():
             client.disconnect()
 
-    def get_event_loop(self) -> asyncio.AbstractEventLoop:
+    def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
         """
-        Return the internal event loop for the engine.
+        Return the internal command queue task for the engine.
 
         Returns
         -------
-        asyncio.AbstractEventLoop
+        asyncio.Task or ``None``
 
         """
-        return self._loop
+        return self._cmd_queue_task
 
-    def get_run_queue_task(self) -> asyncio.Task:
+    def get_req_queue_task(self) -> Optional[asyncio.Task]:
         """
-        Return the internal run queue task for the engine.
+        Return the internal request queue task for the engine.
 
         Returns
         -------
-        asyncio.Task
+        asyncio.Task or ``None``
 
         """
-        return self._run_queues_task
+        return self._req_queue_task
 
-    cpdef int data_qsize(self) except *:
+    def get_res_queue_task(self) -> Optional[asyncio.Task]:
         """
-        Return the number of objects buffered on the internal data queue.
+        Return the internal response queue task for the engine.
+
+        Returns
+        -------
+        asyncio.Task or ``None``
+
+        """
+        return self._res_queue_task
+
+    def get_data_queue_task(self) -> Optional[asyncio.Task]:
+        """
+        Return the internal data queue task for the engine.
+
+        Returns
+        -------
+        asyncio.Task or ``None``
+
+        """
+        return self._data_queue_task
+
+    def cmd_qsize(self) -> int:
+        """
+        Return the number of `DataCommand` objects buffered on the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._cmd_queue.qsize()
+
+    def req_qsize(self) -> int:
+        """
+        Return the number of `DataRequest` objects buffered on the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._req_queue.qsize()
+
+    def res_qsize(self) -> int:
+        """
+        Return the number of `DataResponse` objects buffered on the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._res_queue.qsize()
+
+    def data_qsize(self) -> int:
+        """
+        Return the number of `Data` objects buffered on the internal queue.
 
         Returns
         -------
@@ -135,30 +195,32 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._data_queue.qsize()
 
-    cpdef int message_qsize(self) except *:
+    def kill(self) -> None:
         """
-        Return the number of objects buffered on the internal message queue.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._message_queue.qsize()
-
-    cpdef void kill(self) except *:
-        """
-        Kill the engine by abruptly cancelling the queue tasks and calling stop.
+        Kill the engine by abruptly canceling the queue tasks and calling stop.
         """
         self._log.warning("Killing engine...")
-        if self._run_queues_task:
-            self._log.debug("Canceling run_queues_task...")
-            self._run_queues_task.cancel()
+        if self._cmd_queue_task:
+            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
+            self._cmd_queue_task.cancel()
+            self._cmd_queue_task.done()
+        if self._req_queue_task:
+            self._log.debug(f"Canceling {self._req_queue_task.get_name()}...")
+            self._req_queue_task.cancel()
+            self._req_queue_task.done()
+        if self._res_queue_task:
+            self._log.debug(f"Canceling {self._res_queue_task.get_name()}...")
+            self._res_queue_task.cancel()
+            self._res_queue_task.done()
+        if self._data_queue_task:
+            self._log.debug(f"Canceling {self._data_queue_task.get_name()}...")
+            self._data_queue_task.cancel()
+            self._data_queue_task.done()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, DataCommand command) except *:
+    cpdef void execute(self, DataCommand command):
         """
         Execute the given data command.
 
@@ -180,15 +242,74 @@ cdef class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._message_queue.put_nowait(command)
+            self._cmd_queue.put_nowait(command)
         except asyncio.QueueFull:
             self._log.warning(
-                f"Blocking on `_message_queue.put` as message_queue full at "
-                f"{self._message_queue.qsize()} items.",
+                f"Blocking on `_cmd_queue.put` as queue full at "
+                f"{self._cmd_queue.qsize()} items.",
             )
-            self._loop.create_task(self._message_queue.put(command))  # Blocking until qsize reduces
+            self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
 
-    cpdef void process(self, Data data) except *:
+    cpdef void request(self, DataRequest request):
+        """
+        Handle the given request.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
+
+        Parameters
+        ----------
+        request : DataRequest
+            The request to handle.
+
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
+        """
+        Condition.not_none(request, "request")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        try:
+            self._req_queue.put_nowait(request)
+        except asyncio.QueueFull:
+            self._log.warning(
+                f"Blocking on `_req_queue.put` as queue full at "
+                f"{self._req_queue.qsize()} items.",
+            )
+            self._loop.create_task(self._req_queue.put(request))  # Blocking until qsize reduces
+
+    cpdef void response(self, DataResponse response):
+        """
+        Handle the given response.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
+
+        Parameters
+        ----------
+        response : DataResponse
+            The response to handle.
+
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
+        """
+        Condition.not_none(response, "response")
+
+        try:
+            self._res_queue.put_nowait(response)
+        except asyncio.QueueFull:
+            self._log.warning(
+                f"Blocking on `_res_queue.put` as queue full at "
+                f"{self._res_queue.qsize()} items.",
+            )
+            self._loop.create_task(self._res_queue.put(response))  # Blocking until qsize reduces
+
+    cpdef void process(self, Data data):
         """
         Process the given data.
 
@@ -213,88 +334,99 @@ cdef class LiveDataEngine(DataEngine):
             self._data_queue.put_nowait(data)
         except asyncio.QueueFull:
             self._log.warning(
-                f"Blocking on `_data_queue.put` as data_queue full at "
+                f"Blocking on `_data_queue.put` as queue full at "
                 f"{self._data_queue.qsize()} items.",
             )
             self._loop.create_task(self._data_queue.put(data))  # Blocking until qsize reduces
 
-    cpdef void request(self, DataRequest request) except *:
-        """
-        Handle the given request.
+# -- INTERNAL -------------------------------------------------------------------------------------
 
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
+    def _enqueue_sentinels(self) -> None:
+        self._cmd_queue.put_nowait(self._sentinel)
+        self._req_queue.put_nowait(self._sentinel)
+        self._res_queue.put_nowait(self._sentinel)
+        self._data_queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel messages placed on queues.")
 
-        Parameters
-        ----------
-        request : DataRequest
-            The request to handle.
-
-        Warnings
-        --------
-        This method should only be called from the same thread the event loop is
-        running on.
-
-        """
-        Condition.not_none(request, "request")
-        # Do not allow None through (None is a sentinel value which stops the queue)
-
-        try:
-            self._message_queue.put_nowait(request)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_message_queue.put` as message_queue full at "
-                f"{self._message_queue.qsize()} items.",
-            )
-            self._loop.create_task(self._message_queue.put(request))  # Blocking until qsize reduces
-
-    cpdef void response(self, DataResponse response) except *:
-        """
-        Handle the given response.
-
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
-
-        Parameters
-        ----------
-        response : DataResponse
-            The response to handle.
-
-        Warnings
-        --------
-        This method should only be called from the same thread the event loop is
-        running on.
-
-        """
-        Condition.not_none(response, "response")
-
-        try:
-            self._message_queue.put_nowait(response)
-        except asyncio.QueueFull:
-            self._log.warning(
-                f"Blocking on `_message_queue.put` as message_queue full at "
-                f"{self._message_queue.qsize()} items.",
-            )
-            self._loop.create_task(self._message_queue.put(response))  # Blocking until qsize reduces
-
-    cpdef void _on_start(self) except *:
+    cpdef void _on_start(self):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
         self.is_running = True  # Queues will continue to process
+        self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
+        self._res_queue_task = self._loop.create_task(self._run_req_queue(), name="req_queue")
+        self._req_queue_task = self._loop.create_task(self._run_res_queue(), name="res_queue")
+        self._data_queue_task = self._loop.create_task(self._run_data_queue(), name="data_queue")
 
-        # Run queues
-        self._run_queues_task = asyncio.gather(
-            self._loop.create_task(self._run_data_queue()),
-            self._loop.create_task(self._run_message_queue()),
-        )
+        self._log.debug(f"Scheduled {self._cmd_queue_task}")
+        self._log.debug(f"Scheduled {self._res_queue_task}")
+        self._log.debug(f"Scheduled {self._req_queue_task}")
+        self._log.debug(f"Scheduled {self._data_queue_task}")
 
-        self._log.debug(f"Scheduled {self._run_queues_task}")
-
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinels()
+
+    async def _run_cmd_queue(self):
+        self._log.debug(
+            f"DataCommand message queue processing starting (qsize={self.cmd_qsize()})...",
+        )
+        cdef Command command
+        try:
+            while self.is_running:
+                command = await self._cmd_queue.get()
+                if command is None:  # Sentinel message (fast C-level check)
+                    continue         # Returns to the top to check `self.is_running`
+                self._execute_command(command)
+        except asyncio.CancelledError:
+            if not self._cmd_queue.empty():
+                self._log.warning(
+                    f"DataCommand message queue processing stopped "
+                    f"with {self.cmd_qsize()} message(s) on queue.",
+                )
+            else:
+                self._log.debug("DataCommand message queue processing stopped.")
+
+    async def _run_req_queue(self):
+        self._log.debug(
+            f"DataRequest message queue processing starting (qsize={self.req_qsize()})...",
+        )
+        cdef DataRequest request
+        try:
+            while self.is_running:
+                request = await self._req_queue.get()
+                if request is None:  # Sentinel message (fast C-level check)
+                    continue         # Returns to the top to check `self.is_running`
+                self._handle_request(request)
+        except asyncio.CancelledError:
+            if not self._req_queue.empty():
+                self._log.warning(
+                    f"DataRequest message queue processing stopped "
+                    f"with {self.req_qsize()} message(s) on queue.",
+                )
+            else:
+                self._log.debug("DataRequest message queue processing stopped.")
+
+    async def _run_res_queue(self):
+        self._log.debug(
+            f"DataResponse message queue processing starting (qsize={self.req_qsize()})...",
+        )
+        cdef DataResponse response
+        try:
+            while self.is_running:
+                response = await self._res_queue.get()
+                if response is None:  # Sentinel message (fast C-level check)
+                    continue          # Returns to the top to check `self.is_running`
+                self._handle_response(response)
+        except asyncio.CancelledError:
+            if not self._res_queue.empty():
+                self._log.warning(
+                    f"DataResponse message queue processing stopped "
+                    f"with {self.res_qsize()} message(s) on queue.",
+                )
+            else:
+                self._log.debug("DataResponse message queue processing stopped.")
 
     async def _run_data_queue(self):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
@@ -308,43 +440,8 @@ cdef class LiveDataEngine(DataEngine):
         except asyncio.CancelledError:
             if not self._data_queue.empty():
                 self._log.warning(
-                    f"Running canceled with {self.data_qsize()} data item(s) on queue.",
+                    f"Data queue processing stopped "
+                    f"with {self.data_qsize()} item(s) on queue.",
                 )
             else:
-                self._log.debug(
-                    f"Data queue processing stopped (qsize={self.data_qsize()}).",
-                )
-
-    async def _run_message_queue(self):
-        self._log.debug(
-            f"Message queue processing starting (qsize={self.message_qsize()})...",
-        )
-        cdef Message message
-        try:
-            while self.is_running:
-                message = await self._message_queue.get()
-                if message is None:  # Sentinel message (fast C-level check)
-                    continue         # Returns to the top to check `self.is_running`
-                if message.category == MessageCategory.COMMAND:
-                    self._execute_command(message)
-                elif message.category == MessageCategory.REQUEST:
-                    self._handle_request(message)
-                elif message.category == MessageCategory.RESPONSE:
-                    self._handle_response(message)
-                else:
-                    self._log.error(f"Cannot handle message: unrecognized {message}.")
-        except asyncio.CancelledError:
-            if not self._message_queue.empty():
-                self._log.warning(
-                    f"Running canceled with {self.message_qsize()} message(s) on queue.",
-                )
-            else:
-                self._log.debug(
-                    f"Message queue processing stopped (qsize={self.message_qsize()}).",
-                )
-
-    cdef void _enqueue_sentinels(self) except *:
-        self._data_queue.put_nowait(self._sentinel)
-        self._message_queue.put_nowait(self._sentinel)
-        self._log.debug(f"Sentinel message placed on data queue.")
-        self._log.debug(f"Sentinel message placed on message queue.")
+                self._log.debug("Data queue processing stopped.")

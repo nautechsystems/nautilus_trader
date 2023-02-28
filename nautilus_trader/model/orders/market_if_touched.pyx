@@ -180,10 +180,26 @@ cdef class MarketIfTouchedOrder(Order):
         self.trigger_type = trigger_type
         self.expire_time_ns = expire_time_ns
 
-    cdef bint has_price_c(self) except *:
+    cdef void _updated(self, OrderUpdated event):
+        if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+        if event.trigger_price is not None:
+            self.trigger_price = event.trigger_price
+
+    cdef void _set_slippage(self):
+        if self.side == OrderSide.BUY:
+            self.slippage = self.avg_px - self.trigger_price.as_f64_c()
+        elif self.side == OrderSide.SELL:
+            self.slippage = self.trigger_price.as_f64_c() - self.avg_px
+
+    cdef bint has_price_c(self):
         return False
 
-    cdef bint has_trigger_price_c(self) except *:
+    cdef bint has_trigger_price_c(self):
         return True
 
     @property
@@ -303,19 +319,3 @@ cdef class MarketIfTouchedOrder(Order):
             parent_order_id=init.parent_order_id,
             tags=init.tags,
         )
-
-    cdef void _updated(self, OrderUpdated event) except *:
-        if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
-            self._venue_order_ids.append(self.venue_order_id)
-            self.venue_order_id = event.venue_order_id
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
-        if event.trigger_price is not None:
-            self.trigger_price = event.trigger_price
-
-    cdef void _set_slippage(self) except *:
-        if self.side == OrderSide.BUY:
-            self.slippage = self.avg_px - self.trigger_price.as_f64_c()
-        elif self.side == OrderSide.SELL:
-            self.slippage = self.trigger_price.as_f64_c() - self.avg_px

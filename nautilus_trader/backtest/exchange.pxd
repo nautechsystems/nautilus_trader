@@ -17,6 +17,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
+from nautilus_trader.backtest.matching_engine cimport OrderMatchingEngine
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.cache.cache cimport Cache
@@ -92,17 +93,18 @@ cdef class SimulatedExchange:
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef void register_client(self, BacktestExecClient client) except *
-    cpdef void set_fill_model(self, FillModel fill_model) except *
-    cpdef void set_latency_model(self, LatencyModel latency_model) except *
-    cpdef void initialize_account(self) except *
-    cpdef void add_instrument(self, Instrument instrument) except *
+    cpdef void register_client(self, BacktestExecClient client)
+    cpdef void set_fill_model(self, FillModel fill_model)
+    cpdef void set_latency_model(self, LatencyModel latency_model)
+    cpdef void initialize_account(self)
+    cpdef void add_instrument(self, Instrument instrument)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
+    cpdef OrderMatchingEngine get_matching_engine(self, InstrumentId instrument_id)
     cpdef dict get_matching_engines(self)
     cpdef dict get_books(self)
     cpdef list get_open_orders(self, InstrumentId instrument_id=*)
@@ -112,18 +114,18 @@ cdef class SimulatedExchange:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void adjust_account(self, Money adjustment) except *
+    cpdef void adjust_account(self, Money adjustment)
     cdef tuple generate_inflight_command(self, TradingCommand command)
-    cpdef void send(self, TradingCommand command) except *
-    cpdef void process_order_book(self, OrderBookData data) except *
-    cpdef void process_quote_tick(self, QuoteTick tick) except *
-    cpdef void process_trade_tick(self, TradeTick tick) except *
-    cpdef void process_bar(self, Bar bar) except *
-    cpdef void process_venue_status(self, VenueStatusUpdate update) except *
-    cpdef void process_instrument_status(self, InstrumentStatusUpdate update) except *
-    cpdef void process(self, uint64_t now_ns) except *
-    cpdef void reset(self) except *
+    cpdef void send(self, TradingCommand command)
+    cpdef void process_order_book(self, OrderBookData data)
+    cpdef void process_quote_tick(self, QuoteTick tick)
+    cpdef void process_trade_tick(self, TradeTick tick)
+    cpdef void process_bar(self, Bar bar)
+    cpdef void process_venue_status(self, VenueStatusUpdate update)
+    cpdef void process_instrument_status(self, InstrumentStatusUpdate update)
+    cpdef void process(self, uint64_t now_ns)
+    cpdef void reset(self)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_fresh_account_state(self) except *
+    cdef void _generate_fresh_account_state(self)

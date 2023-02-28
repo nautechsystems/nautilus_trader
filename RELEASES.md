@@ -1,6 +1,128 @@
-# NautilusTrader 1.165.0 Beta
+# NautilusTrader 1.170.0 Beta
 
 Released on TBD (UTC).
+
+### Breaking Changes
+- Renamed `from_datetime` to `start` across data request methods and properties
+- Renamed `to_datetime` to `end` across data request methods and properties
+- Change parquet catalog schema dictionary integer key widths/types
+- Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
+- Removed redundant log sink machinery
+- All pickled data due Cython 3.0.0b1
+
+### Enhancements
+- Added logging to file at core Rust level
+- Added `DataCatalogConfig` for more cohesive data catalog configuration
+- Added `DataEngine.register_catalog` to support historical data requests
+- Added `catalog_config` field to base `NautilusKernelConfig`
+- Now immediately caching orders and order lists in `Strategy`
+- Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
+- Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
+- Upgrade Cython to `3.0.0b1`
+
+### Fixes
+- Fixed Binance Futures trigger type parsing
+- Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
+
+---
+
+# NautilusTrader 1.169.0 Beta
+
+Released on 18th February 2023 (UTC).
+
+### Breaking Changes
+- `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
+- Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
+- Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
+- Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
+- Renamed `OrderFactory.set_order_count()` -> `set_client_order_id_count()` (clarity)
+- Renamed `TradingNode.start()` to `TradingNode.run()`
+
+### Enhancements
+- Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
+- Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
+- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
+- Added `OrderFactory.generate_client_order_id()` (calls internal generator)
+- Added `OrderFactory.generate_order_list_id()` (calls internal generator)
+- Added `OrderFactory.create_list(...)` as easier method for creating order lists
+- Added `__len__` implementation for `OrderList` (returns length of orders)
+- Implemented optimized logger using Rust MPSC channel and separate thread
+- Expose and improve `MatchingEngine` public API for custom functionality
+- Exposed `TradingNode.run_async()` for easier running from async context
+- Exposed `TradingNode.stop_async()` for easier stopping from async context
+
+### Fixes
+- Fixed registration of `SimulationModule` (and refine `Actor` base registration)
+- Fixed loading of previously emulated and transformed orders (handles transforming `OrderInitialized` event)
+- Fixed handling of `MARKET_TO_LIMIT` orders in matching and risk engines, thanks for reporting @martinsaip
+
+---
+
+# NautilusTrader 1.168.0 Beta
+
+Released on 29th January 2023 (UTC).
+
+### Breaking Changes
+- Removed `Cache.clear_cache()` (redundant with the `.reset()` method)
+
+### Enhancements
+- Added `Cache` `.add(...)` and `.get(...)` for general 'user/custom' objects (as bytes)
+- Added `CacheDatabase` `.add(...)` and `.load()` for general cache objects (as bytes)
+- Added `RedisCacheDatabase` `.add(...) `and `.load()` for general Redis persisted bytes objects (as bytes)
+- Added `Cache.actor_ids()`
+- Added `Actor` cached state saving and loading functionality
+- Improved logging for called action handlers when not overridden
+
+### Fixes
+- Fixed configuration of loading and saving actor and strategy state
+
+---
+
+# NautilusTrader 1.167.0 Beta
+
+Released on 28th January 2023 (UTC).
+
+### Breaking Changes
+- Renamed `OrderBookData.update_id` to `sequence`
+- Renamed `BookOrder.id` to `order_id`
+
+### Enhancements
+- Introduced Rust pyo3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
+- Added `msgbus.is_subscribed` (to check if topic and handler already subscribed)
+- Simplified message type model and introduce CQRS-ish live messaging architecture
+
+### Fixes
+- Fixed Binance data clients order book startup buffer handling
+- Fixed `NautilusKernel` redundant initialization of event loop for backtesting, thanks @limx0
+- Fixed `BacktestNode` disposal sequence
+- Fixed quick start docs and notebook
+
+---
+
+# NautilusTrader 1.166.0 Beta
+
+Released on 17th January 2023 (UTC).
+
+### Breaking Changes
+- `Position.unrealized_pnl` now `None` until any realized PnL is generated (to reduce ambiguity)
+
+### Enhancements
+- Added instrument status update subscription handlers, thanks @limx0
+- Improvements to InteractiveBrokers `DataClient`, thanks @rsmb7z
+- Improvements to async task handling for live clients
+- Various improvements to Betfair adapter, thanks @limx0
+
+### Fixes
+- Fixed netted `Position` `realized_pnl` and `realized_return` fields, which were incorrectly cumulative
+- Fixed netted `Position` flip logic (now correctly 'resets' position)
+- Various fixes for Betfair adapter, thanks @limx0
+- InteractiveBrokers integration docs fixes
+
+---
+
+# NautilusTrader 1.165.0 Beta
+
+Released on 14th January 2023 (UTC).
 
 A number of enum variant names have been changed in favour of explicitness, 
 and also to avoid C naming collisions.
@@ -29,16 +151,22 @@ and also to avoid C naming collisions.
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
 - Added `DataEngineConfig.build_time_bars_with_no_updates` option
 - Added `OrderFactory.bracket(post_only_tp)` param
-- Added `OrderListIdGenerator` and integrate with `OrderFactory`.
+- Added `OrderListIdGenerator` and integrate with `OrderFactory`
 - Added `Cache.add_order_list(...)`
 - Added `Cache.order_list(...)`
 - Added `Cache.order_lists(...)`
 - Added `Cache.order_list_exists(...)`
 - Added `Cache.order_list_ids(...)`
-- Improved generation of `OrderListId` from factory to ensure uniqueness.
+- Improved generation of `OrderListId` from factory to ensure uniqueness
+- Added auction matches for backtests, thanks @limx0
+- Added `.timedelta` property to `BarSpecification`, thanks @rsmb7z
+- Numerous improvements to the Betfair adapter, thanks @limx0
+- Improvements to Interactive Brokers data subscriptions, thanks @rsmb7z
+- Added `DataEngineConfig.validate_data_sequence` (False by default and currently only for `Bar` data), thanks @rsmb7z
 
 ### Fixes
 - Added `TRD_GRP_*` enum variants for Binance spot permissions
+- Fixed `PARTIALLY_FILLED` -> `EXPIRED` order state transition, thanks @bb01100100
 
 ---
 
@@ -183,7 +311,7 @@ Released on 3rd November 2022 (UTC).
 ### Breaking Changes
 - Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
 - Removed `LiveExecEngineConfig.reconciliation_auto` (unclear naming and concept)
-- All Redis keys have changed to a lowercase convention (please either migrate or flush your Redis)
+- All Redis keys have changed to a lowercase convention (either migrate or flush your Redis)
 - Removed `BidAskMinMax` indicator (to reduce total package size)
 - Removed `HilbertPeriod` indicator (to reduce total package size)
 - Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
@@ -1172,7 +1300,7 @@ Released on 18th July 2021.
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
 Pub/Sub messaging pattern. The next release will see all data being handled by 
-the message bus, please see the related issue for further details on this enhancement.
+the message bus, see the related issue for further details on this enhancement.
 
 Another notable feature is the introduction of the order 'in-flight' concept, 
 which is a submitted order which has not yet been acknowledged by the 
@@ -1354,7 +1482,7 @@ https://cython.readthedocs.io/en/latest/src/userguide/pyrex_differences.html?hig
 
 It has been found that adding `inline` to method signatures makes no difference
 to the performance of the system - and so they have been removed to reduce 
-'noise' and simplify the codebase. Please note that the use of `inline` for 
+'noise' and simplify the codebase. Note that the use of `inline` for 
 module level functions will be passed to the C compiler with the expected 
 result of inlining the function.
 

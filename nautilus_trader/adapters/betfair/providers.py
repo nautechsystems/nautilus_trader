@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import time
 from typing import Optional, Union
 
@@ -25,7 +26,6 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.config import BetfairInstrumentFilter
-from nautilus_trader.adapters.betfair.config import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
@@ -99,7 +99,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         instance.add_bulk(instruments)
         return instance
 
-    async def load_all_async(self, filters: Optional[list[BetfairInstrumentProviderConfig]] = None):
+    async def load_all_async(self, filters: Optional[list[BetfairInstrumentFilter]] = None):  # type: ignore
         currency = await self.get_account_currency()
 
         self._log.info(f"Loading markets with filter={filters}")
@@ -119,7 +119,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
         self._log.info(f"{len(instruments)} Instruments created")
 
-    def load_markets(self, filters: list[InstrumentFilter] = None):
+    def load_markets(self, filters: list[BetfairInstrumentFilter] = None):
         """Search for betfair markets. Useful for debugging / interactive use"""
         return load_markets(client=self._client, filters=filters)
 
@@ -224,8 +224,8 @@ def market_definition_to_instruments(
             betting_type=market_definition.bettingType,
             market_id=market_definition.marketId,
             market_name=market_definition.marketName,
-            market_start_time=pd.Timestamp(market_definition.marketStartTime)
-            if market_definition.marketStartTime
+            market_start_time=pd.Timestamp(market_definition.marketTime)
+            if market_definition.marketTime
             else pd.Timestamp(0, tz="UTC"),
             market_type=market_definition.marketType,
             selection_id=str(runner.selectionId or runner.id),

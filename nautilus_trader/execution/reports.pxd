@@ -154,6 +154,6 @@ cdef class ExecutionMassStatus(Document):
     cpdef dict trade_reports(self)
     cpdef dict position_reports(self)
 
-    cpdef void add_order_reports(self, list reports) except *
-    cpdef void add_trade_reports(self, list reports) except *
-    cpdef void add_position_reports(self, list reports) except *
+    cpdef void add_order_reports(self, list reports)
+    cpdef void add_trade_reports(self, list reports)
+    cpdef void add_position_reports(self, list reports)

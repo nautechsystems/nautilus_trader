@@ -44,17 +44,18 @@ cdef class MessageBus:
     cpdef list topics(self)
     cpdef list subscriptions(self, str pattern=*)
     cpdef bint has_subscribers(self, str pattern=*)
+    cpdef bint is_subscribed(self, str topic, handler)
 
-    cpdef void register(self, str endpoint, handler) except *
-    cpdef void deregister(self, str endpoint, handler) except *
-    cpdef void send(self, str endpoint, msg) except *
-    cpdef void request(self, str endpoint, Request request) except *
-    cpdef void response(self, Response response) except *
-    cpdef void subscribe(self, str topic, handler, int priority=*) except *
-    cpdef void unsubscribe(self, str topic, handler) except *
-    cpdef void publish(self, str topic, msg) except *
-    cdef void publish_c(self, str topic, msg) except *
+    cpdef void register(self, str endpoint, handler)
+    cpdef void deregister(self, str endpoint, handler)
+    cpdef void send(self, str endpoint, msg)
+    cpdef void request(self, str endpoint, Request request)
+    cpdef void response(self, Response response)
+    cpdef void subscribe(self, str topic, handler, int priority=*)
+    cpdef void unsubscribe(self, str topic, handler)
+    cpdef void publish(self, str topic, msg)
+    cdef void publish_c(self, str topic, msg)
     cdef Subscription[:] _resolve_subscriptions(self, str topic)
 
 
-cdef bint is_matching(str topic, str pattern) except *
+cdef bint is_matching(str topic, str pattern)

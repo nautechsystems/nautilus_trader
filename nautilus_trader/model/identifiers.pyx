@@ -707,7 +707,7 @@ cdef class PositionId(Identifier):
     cdef str to_str(self):
         return cstr_to_pystr(position_id_to_cstr(&self._mem))
 
-    cdef bint is_virtual_c(self) except *:
+    cdef bint is_virtual_c(self):
         return self.to_str().startswith("P-")
 
     @staticmethod
@@ -733,7 +733,7 @@ cdef class TradeId(Identifier):
 
     Warnings
     --------
-    - Panics at runtime if `value` is not a valid string containing a hyphen.
+    - Panics at runtime if `value` is not a valid string.
 
     References
     ----------

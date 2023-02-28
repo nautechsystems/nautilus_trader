@@ -51,7 +51,7 @@ cdef class ChandeMomentumOscillator(Indicator):
         self._previous_close = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -65,7 +65,7 @@ cdef class ChandeMomentumOscillator(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double close) except *:
+    cpdef void update_raw(self, double close):
         """
         Update the indicator with the given value.
 
@@ -102,7 +102,7 @@ cdef class ChandeMomentumOscillator(Indicator):
 
         self._previous_close = close
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._average_gain.reset()
         self._average_loss.reset()
         self._previous_close = 0

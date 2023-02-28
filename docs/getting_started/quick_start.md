@@ -7,7 +7,7 @@ format (Parquet) for this guide.
 For more details on how to load data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
 
 ## Running in docker
-~~A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
+A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
 installation. This is the fastest way to get up and running to try out Nautilus. Bear in mind that any data will be 
 deleted when the container is deleted. 
 
@@ -15,14 +15,20 @@ deleted when the container is deleted.
   - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions 
 - From a terminal, download the latest image
   - `docker pull ghcr.io/nautechsystems/jupyterlab:develop`
-- Run the docker container, exposing the jupyter port (recommended 8889 in case another jupyter server is running): 
-  - `docker run -p 8889:8888 ghcr.io/nautechsystems/jupyterlab:develop`
+- Run the docker container, exposing the jupyter port: 
+  - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop`
 - Open your web browser to `localhost:{port}`
-  - https://localhost:8889~~
+  - https://localhost:8888
 
-**NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
-The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
-The cause of this is still being determined.**
+```{warning}
+NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
+this is why `log_level` in the examples is set to "ERROR". If you lower this level to see
+more logging then the notebook will hang during cell execution. A fix is currently
+being investigated which involves either raising the configured rate limits for
+Jupyter, or throttling the log flushing from Nautilus.
+https://github.com/jupyterlab/jupyterlab/issues/12845
+https://github.com/deshaw/jupyterlab-limit-output
+```
 
 ## Getting the sample data
 
@@ -41,7 +47,9 @@ If everything worked correctly, you should be able to see a single EUR/USD instr
 ```python
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
-catalog = ParquetDataCatalog("./")
+# You can also use `ParquetDataCatalog.from_env()` which will use the `NAUTILUS_PATH` environment variable 
+# catalog = ParquetDataCatalog.from_env()
+catalog = ParquetDataCatalog("./catalog")
 catalog.instruments()
 ```
 
@@ -49,6 +57,7 @@ catalog.instruments()
 
 NautilusTrader includes a handful of indicators built-in, in this example we will use a MACD indicator to 
 build a simple trading strategy. 
+
 You can read more about [MACD here](https://www.investopedia.com/terms/m/macd.asp), so this 
 indicator merely serves as an example without any expected alpha. There is also a way of
 registering indicators to receive certain data types, however in this example we manually pass the received
@@ -56,6 +65,7 @@ registering indicators to receive certain data types, however in this example we
 
 ```python
 from typing import Optional
+from nautilus_trader.core.message import Event
 from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 from nautilus_trader.model.data.tick import QuoteTick
@@ -76,7 +86,7 @@ class MACDConfig(StrategyConfig):
 
 
 class MACDStrategy(Strategy):
-    def __init__(self, config: MACDConfig):
+    def __init__(self, config: MACDConfig) -> None:
         super().__init__(config=config)
         # Our "trading signal"
         self.macd = MovingAverageConvergenceDivergence(
@@ -90,10 +100,13 @@ class MACDStrategy(Strategy):
         # Convenience
         self.position: Optional[Position] = None
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_stop(self) -> None:
+        self.unsubscribe_quote_ticks(instrument_id=self.instrument_id)
+
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         # Update our MACD
         self.macd.handle_quote_tick(tick)
         if self.macd.value:
@@ -103,11 +116,11 @@ class MACDStrategy(Strategy):
         if self.position:
             assert self.position.quantity <= 1000
 
-    def on_event(self, event):
+    def on_event(self, event: Event) -> None:
         if isinstance(event, PositionEvent):
             self.position = self.cache.position(event.position_id)
 
-    def check_for_entry(self):
+    def check_for_entry(self) -> None:
         if self.cache.positions():
             # If we have a position, do not enter again
             return
@@ -124,7 +137,7 @@ class MACDStrategy(Strategy):
             )
             self.submit_order(order)
 
-    def check_for_exit(self):
+    def check_for_exit(self) -> None:
         if not self.cache.positions():
             # If we don't have a position, return early
             return
@@ -141,6 +154,9 @@ class MACDStrategy(Strategy):
                 quantity=self.position.quantity,
             )
             self.submit_order(order)
+
+    def on_dispose(self) -> None:
+        pass  # Do nothing else
 ```
 
 ## Configuring Backtests
@@ -254,10 +270,13 @@ config = BacktestRunConfig(
 
 The `BacktestNode` class will orchestrate the backtest run. The reason for this separation between 
 configuration and execution is the `BacktestNode` allows running multiple configurations (different 
-parameters or batches of data). We are now ready to run some backtests!
+parameters or batches of data). 
+
+We are now ready to run some backtests!
 
 ```python
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.results import BacktestResult
 
 
 node = BacktestNode(configs=[config])
@@ -267,7 +286,9 @@ results: list[BacktestResult] = node.run()
 ```
 
 Now that the run is complete, we can also directly query for the `BacktestEngine`(s) used internally by the `BacktestNode`
-by using the run configs ID. The engine(s) can provide additional reports and information.
+by using the run configs ID. 
+
+The engine(s) can provide additional reports and information.
 
 ```python
 from nautilus_trader.backtest.engine import BacktestEngine

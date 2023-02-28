@@ -18,7 +18,7 @@ The `core` subpackage groups core constants, functions and low-level components 
 
 The main focus here is on efficiency and re-usability as this forms the base
 layer of the entire framework. Message passing is a core design philosophy and
-the message base types are contained here.
+the base massage types are contained here.
 
 A generic `FiniteStateMachine` operates with C-level enums, ensuring correct
 state transitions for both domain entities and more complex components.

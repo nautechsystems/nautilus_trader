@@ -13,15 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint8_t
-from libc.stdint cimport uint64_t
-
 from operator import itemgetter
 
 import pandas as pd
 from tabulate import tabulate
 
 from nautilus_trader.model.orderbook.error import BookIntegrityError
+
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -72,7 +72,7 @@ cdef class OrderBook:
             price_precision=price_precision,
             size_precision=size_precision,
         )
-        self.last_update_id = 0
+        self.sequence = 0
         self.count = 0
         self.ts_last = 0
 
@@ -142,7 +142,7 @@ cdef class OrderBook:
                     size_precision=instrument.size_precision,
                 )
 
-    cpdef void add(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void add(self, BookOrder order, uint64_t sequence=0):
         """
         Add the given order to the book.
 
@@ -150,15 +150,15 @@ cdef class OrderBook:
         ----------
         order : BookOrder
             The order to add.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        self._add(order=order, update_id=update_id)
+        self._add(order=order, sequence=sequence)
 
-    cpdef void update(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void update(self, BookOrder order, uint64_t sequence=0):
         """
         Update the given order in the book.
 
@@ -166,15 +166,15 @@ cdef class OrderBook:
         ----------
         order : Order
             The order to update.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        self._update(order=order, update_id=update_id)
+        self._update(order=order, sequence=sequence)
 
-    cpdef void delete(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void delete(self, BookOrder order, uint64_t sequence=0):
         """
         Delete the given order in the book.
 
@@ -182,15 +182,15 @@ cdef class OrderBook:
         ----------
         order : Order
             The order to delete.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        self._delete(order=order, update_id=update_id)
+        self._delete(order=order, sequence=sequence)
 
-    cpdef void apply_delta(self, OrderBookDelta delta) except *:
+    cpdef void apply_delta(self, OrderBookDelta delta):
         """
         Apply the order book delta.
 
@@ -210,7 +210,7 @@ cdef class OrderBook:
 
         self._apply_delta(delta)
 
-    cpdef void apply_deltas(self, OrderBookDeltas deltas) except *:
+    cpdef void apply_deltas(self, OrderBookDeltas deltas):
         """
         Apply the bulk deltas to the order book.
 
@@ -232,7 +232,7 @@ cdef class OrderBook:
         for delta in deltas.deltas:
             self._apply_delta(delta)
 
-    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
+    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot):
         """
         Apply the bulk snapshot to the order book.
 
@@ -260,18 +260,18 @@ cdef class OrderBook:
                 size=bid[1],
                 side=OrderSide.BUY
             )
-            self.update(order=order, update_id=snapshot.update_id)
+            self.update(order=order, sequence=snapshot.sequence)
         for ask in snapshot.asks:
             order = BookOrder(
                 price=ask[0],
                 size=ask[1],
                 side=OrderSide.SELL
             )
-            self.update(order=order, update_id=snapshot.update_id)
+            self.update(order=order, sequence=snapshot.sequence)
 
         self.ts_last = snapshot.ts_init
 
-    cpdef void apply(self, OrderBookData data) except *:
+    cpdef void apply(self, OrderBookData data):
         """
         Apply the data to the order book.
 
@@ -295,7 +295,7 @@ cdef class OrderBook:
         elif isinstance(data, OrderBookDelta):
             self._apply_delta(delta=data)
 
-    cpdef void check_integrity(self) except *:
+    cpdef void check_integrity(self):
         """
         Check order book integrity.
 
@@ -310,7 +310,7 @@ cdef class OrderBook:
         """
         self._check_integrity()
 
-    cpdef void clear_bids(self) except *:
+    cpdef void clear_bids(self):
         """
         Clear the bids from the order book.
         """
@@ -320,7 +320,7 @@ cdef class OrderBook:
             size_precision=self.size_precision,
         )
 
-    cpdef void clear_asks(self) except *:
+    cpdef void clear_asks(self):
         """
         Clear the asks from the order book.
         """
@@ -330,53 +330,53 @@ cdef class OrderBook:
             size_precision=self.size_precision,
         )
 
-    cpdef void clear(self) except *:
+    cpdef void clear(self):
         """
         Clear the entire order book.
         """
         self.clear_bids()
         self.clear_asks()
 
-    cdef void _add(self, BookOrder order, int update_id) except *:
+    cdef void _add(self, BookOrder order, uint64_t sequence):
         if order.side == OrderSide.BUY:
             self.bids.add(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.add(order=order)
-        self._apply_update_id(update_id)
+        self._apply_sequence(sequence)
 
-    cdef void _update(self, BookOrder order, int update_id) except *:
+    cdef void _update(self, BookOrder order, uint64_t sequence):
         if order.side == OrderSide.BUY:
             self.bids.update(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
-        self._apply_update_id(update_id)
+        self._apply_sequence(sequence)
 
-    cdef void _delete(self, BookOrder order, int update_id) except *:
+    cdef void _delete(self, BookOrder order, uint64_t sequence):
         if order.side == OrderSide.BUY:
             self.bids.delete(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
-        self._apply_update_id(update_id)
+        self._apply_sequence(sequence)
 
-    cdef void _apply_delta(self, OrderBookDelta delta) except *:
+    cdef void _apply_delta(self, OrderBookDelta delta):
         if delta.action == BookAction.ADD:
-            self.add(order=delta.order, update_id=delta.update_id)
+            self.add(order=delta.order, sequence=delta.sequence)
         elif delta.action == BookAction.UPDATE:
-            self.update(order=delta.order, update_id=delta.update_id)
+            self.update(order=delta.order, sequence=delta.sequence)
         elif delta.action == BookAction.DELETE:
-            self.delete(order=delta.order, update_id=delta.update_id)
+            self.delete(order=delta.order, sequence=delta.sequence)
 
         self.ts_last = delta.ts_init
 
-    cdef void _apply_update_id(self, int update_id) except *:
-        if update_id == 0:
-            self.last_update_id += 1
+    cdef void _apply_sequence(self, uint64_t sequence):
+        if sequence == 0:
+            self.sequence += 1
         else:
-            self.last_update_id = update_id
+            self.sequence = sequence
 
         self.count += 1
 
-    cdef void _check_integrity(self) except *:
+    cdef void _check_integrity(self):
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level is None or top_ask_level is None:
@@ -389,10 +389,10 @@ cdef class OrderBook:
         if best_bid >= best_ask:
             raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
-    cdef void update_quote_tick(self, QuoteTick tick) except *:
+    cdef void update_quote_tick(self, QuoteTick tick):
         raise NotImplementedError()
 
-    cdef void update_trade_tick(self, TradeTick tick) except *:
+    cdef void update_trade_tick(self, TradeTick tick):
         raise NotImplementedError()
 
     cpdef int trade_side(self, TradeTick trade):
@@ -773,7 +773,7 @@ cdef class L2OrderBook(OrderBook):
             size_precision=size_precision,
         )
 
-    cpdef void add(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void add(self, BookOrder order, uint64_t sequence=0):
         """
         Add the given order to the book.
 
@@ -781,16 +781,16 @@ cdef class L2OrderBook(OrderBook):
         ----------
         order : BookOrder
             The order to add.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
         self._process_order(order=order)
-        self._add(order=order, update_id=update_id)
+        self._add(order=order, sequence=sequence)
 
-    cpdef void update(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void update(self, BookOrder order, uint64_t sequence=0):
         """
         Update the given order in the book.
 
@@ -798,17 +798,17 @@ cdef class L2OrderBook(OrderBook):
         ----------
         order : BookOrder
             The order to update.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
         self._process_order(order=order)
-        self._remove_if_exists(order, update_id=update_id)
-        self._update(order=order, update_id=update_id)
+        self._remove_if_exists(order, sequence=sequence)
+        self._update(order=order, sequence=sequence)
 
-    cpdef void delete(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void delete(self, BookOrder order, uint64_t sequence=0):
         """
         Delete the given order in the book.
 
@@ -816,16 +816,16 @@ cdef class L2OrderBook(OrderBook):
         ----------
         order : BookOrder
             The order to delete.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
         self._process_order(order=order)
-        self._delete(order=order, update_id=update_id)
+        self._delete(order=order, sequence=sequence)
 
-    cpdef void check_integrity(self) except *:
+    cpdef void check_integrity(self):
         """
         Check order book integrity.
 
@@ -847,19 +847,19 @@ cdef class L2OrderBook(OrderBook):
             if num_orders != 1:
                 raise BookIntegrityError(f"Number of orders on {level} != 1, was {num_orders}")
 
-    cdef void _process_order(self, BookOrder order) except *:
+    cdef void _process_order(self, BookOrder order):
         # Because a L2OrderBook only has one order per level, we replace the
-        # order.id with a price level, which will let us easily process the
+        # order.order_id with a price level, which will let us easily process the
         # order in the base class.
-        order.id = f"{order.price:.{self.price_precision}f}"
+        order.order_id = f"{order.price:.{self.price_precision}f}"
 
-    cdef void _remove_if_exists(self, BookOrder order, int update_id) except *:
+    cdef void _remove_if_exists(self, BookOrder order, uint64_t sequence):
         # For a L2OrderBook, an order update means a whole level update. If this
         # level exists, remove it so that we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
-            self._delete(order, update_id=update_id)
+            self._delete(order, sequence=sequence)
         elif order.side == OrderSide.SELL and order.price in self.asks.prices():
-            self._delete(order, update_id=update_id)
+            self._delete(order, sequence=sequence)
 
 
 cdef class L1OrderBook(OrderBook):
@@ -898,13 +898,13 @@ cdef class L1OrderBook(OrderBook):
             size_precision=size_precision,
         )
 
-    cpdef void add(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void add(self, BookOrder order, uint64_t sequence=0):
         """
         NotImplemented (Use `update(order)` for L1OrderBook).
         """
         raise NotImplementedError("Use `update(order)` for L1OrderBook")  # pragma: no cover
 
-    cpdef void update(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void update(self, BookOrder order, uint64_t sequence=0):
         """
         Update the given order in the book.
 
@@ -912,8 +912,8 @@ cdef class L1OrderBook(OrderBook):
         ----------
         order : Order
             The order to update.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
@@ -935,9 +935,9 @@ cdef class L1OrderBook(OrderBook):
             and order.price <= self.best_bid_price()
         ):
             self.clear_bids()
-        self._update(order=self._process_order(order=order), update_id=update_id)
+        self._update(order=self._process_order(order=order), sequence=sequence)
 
-    cpdef void delete(self, BookOrder order, uint64_t update_id=0) except *:
+    cpdef void delete(self, BookOrder order, uint64_t sequence=0):
         """
         Delete the given order in the book.
 
@@ -945,15 +945,15 @@ cdef class L1OrderBook(OrderBook):
         ----------
         order : BookOrder
             The order to delete.
-        update_id : uint64, default 0
-            The unique ID for the update. If default 0 then will increment the `last_update_id`.
+        sequence : uint64, default 0
+            The unique sequence number for the update. If default 0 then will increment the `sequence`.
 
         """
         Condition.not_none(order, "order")
 
-        self._delete(order=self._process_order(order=order), update_id=update_id)
+        self._delete(order=self._process_order(order=order), sequence=sequence)
 
-    cpdef void check_integrity(self) except *:
+    cpdef void check_integrity(self):
         """
         Check order book integrity.
 
@@ -979,7 +979,7 @@ cdef class L1OrderBook(OrderBook):
 
     cdef BookOrder _process_order(self, BookOrder order):
         # Because an `L1OrderBook` only has one level per side, we replace the
-        # `order.id` with the name of the side, which will let us easily process
+        # `order.order_id` with the name of the side, which will let us easily process
         # the order.
-        order.id = order_side_to_str(order.side)
+        order.order_id = order_side_to_str(order.side)
         return order

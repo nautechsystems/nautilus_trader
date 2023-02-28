@@ -24,6 +24,8 @@ from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
@@ -39,6 +41,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -80,7 +83,6 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
         instrument_provider: Optional[BetfairInstrumentProvider] = None,
         strict_handling: bool = False,
     ):
@@ -232,34 +234,31 @@ class BetfairDataClient(LiveMarketDataClient):
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId):
+    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
-    def subscribe_instrument(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument(self, instrument_id: InstrumentId):
         for instrument in self._instrument_provider.list_all():
             self._handle_data(data=instrument)
 
-    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    def subscribe_instrument_close(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument_close(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
+    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
 
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
+    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
     # -- INTERNAL ---------------------------------------------------------------------------------
-
-    def _log_betfair_error(self, ex: Exception, method_name: str):
-        self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
     def handle_data(self, data: Data):
         self._handle_data(data=data)
@@ -281,7 +280,14 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
-            if isinstance(data, Data):
+            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDeltas)):
+                # Not a regular data type
+                generic_data = GenericData(
+                    DataType(data.__class__, metadata={"instrument_id": data.instrument_id}),
+                    data,
+                )
+                self._handle_data(generic_data)
+            elif isinstance(data, Data):
                 if self._strict_handling:
                     if (
                         hasattr(data, "instrument_id")
@@ -290,11 +296,13 @@ class BetfairDataClient(LiveMarketDataClient):
                         # We receive data for multiple instruments within a subscription, don't emit data if we're not
                         # subscribed to this particular instrument as this will trigger a bunch of error logs
                         continue
-                self._handle_data(data=data)
+                self._handle_data(data)
             elif isinstance(data, Event):
                 self._log.warning(
                     f"Received event: {data}, DataEngine not yet setup to send events",
                 )
+            else:
+                raise RuntimeError()
 
     def _check_stream_unhealthy(self, update: MCM):
         if update.stream_unreliable:

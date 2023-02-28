@@ -54,7 +54,7 @@ class TestLiveDataEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -124,7 +124,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.message_qsize() == 1
+        assert self.engine.cmd_qsize() == 1
         assert self.engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -152,8 +152,8 @@ class TestLiveDataEngine:
                 QuoteTick,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
@@ -168,7 +168,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.message_qsize() == 1
+        assert self.engine.req_qsize() == 1
         assert self.engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -204,7 +204,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.message_qsize() == 1
+        assert self.engine.res_qsize() == 1
         assert self.engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -234,13 +234,6 @@ class TestLiveDataEngine:
         # Assert
         assert self.engine.data_qsize() == 1
         assert self.engine.data_count == 0
-
-    def test_get_event_loop_returns_expected_loop(self):
-        # Arrange, Act
-        loop = self.engine.get_event_loop()
-
-        # Assert
-        assert loop == self.loop
 
     @pytest.mark.asyncio
     async def test_start(self):
@@ -290,7 +283,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.message_qsize() == 0
+        assert self.engine.cmd_qsize() == 0
         assert self.engine.command_count == 1
 
         # Tear Down
@@ -309,8 +302,8 @@ class TestLiveDataEngine:
                 QuoteTick,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
@@ -324,7 +317,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.message_qsize() == 0
+        assert self.engine.req_qsize() == 0
         assert self.engine.request_count == 1
 
         # Tear Down
@@ -350,7 +343,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.message_qsize() == 0
+        assert self.engine.res_qsize() == 0
         assert self.engine.response_count == 1
 
         # Tear Down

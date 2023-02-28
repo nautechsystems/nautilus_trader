@@ -5,13 +5,15 @@ name: build
 on:
   push:
     branches: [master, develop]
+  pull_request:
+    branches: [develop]
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, ARM64]
+        arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
@@ -23,15 +25,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Cargo setup
-      - name: Set up Cargo cache
-        uses: actions/cache@v3
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust tool-chain (Liux/Windows)
+        if: runner.os != 'macOS'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/nautilus_core/Cargo.lock') }}
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Set up Rust tool-chain (macOS)
+        if: runner.os == 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
 
       # Python setup
       - name: Set up Python environment
@@ -51,21 +59,29 @@ jobs:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      # Run pre-commit
-      - name: Run pre-commit
-        run: pre-commit run --all-files
-
       # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: cached-poetry-dir
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Set output (Linux)
+        if: runner.os == 'Linux'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (macOS)
+        if: runner.os == 'macOS'
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Set output (Windows)
+        if: runner.os == 'Windows'
+        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry-dir.outputs.dir }}
+          path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+
+      # Run pre-commit
+      - name: Run pre-commit
+        run: pre-commit run --all-files
 
       # Install and run database dependencies
       - name: Install Redis (macOS)
@@ -85,13 +101,6 @@ jobs:
         run: |
           choco install memurai-developer.install
 
-      # Run nautilus_core checks (Linux & macOS)
-      - name: Run nautilus_core cargo checks
-        if: runner.os != 'Windows'
-        run: |
-          (cd nautilus_core && cargo fmt --all -- --check)
-          (cd nautilus_core && cargo clippy -- -D warnings)
-
       # Run nautilus_core tests (Linux & macOS)
       - name: Run nautilus_core cargo tests
         if: runner.os != 'Windows'
@@ -100,12 +109,16 @@ jobs:
       # Run tests (Linux)
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
-        run: make pytest
+        run: |
+          make pytest
+          # make test-examples // TODO(cs): Pending accounting investigation
 
       # Run tests (macOS)
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
-        run: make pytest
+        run: |
+          make pytest
+          # make test-examples // TODO(cs): Pending accounting investigation
 
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)

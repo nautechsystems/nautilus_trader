@@ -32,7 +32,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.persistence.streaming import generate_signal_class
+from nautilus_trader.persistence.streaming.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
@@ -71,12 +71,16 @@ class TestPersistenceStreaming:
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
+
+        catalog_path = "/.nautilus/catalog"
+
         run_config = BetfairTestStubs.betfair_backtest_run_config(
-            catalog_path="/.nautilus/catalog",
+            catalog_path=catalog_path,
             catalog_fs_protocol="memory",
             instrument_id=instrument.id.value,
+            flush_interval_ms=5000,
         )
-        run_config.engine.streaming.flush_interval_ms = 5000
+
         node = BacktestNode(configs=[run_config])
 
         # Act
@@ -99,8 +103,9 @@ class TestPersistenceStreaming:
             "OrderFilled": 324,
             "OrderInitialized": 325,
             "OrderSubmitted": 324,
-            "PositionOpened": 1,
-            "PositionChanged": 323,
+            "PositionOpened": 3,
+            "PositionClosed": 2,
+            "PositionChanged": 321,
             "OrderDenied": 1,
             "BettingInstrument": 1,
         }
@@ -108,7 +113,6 @@ class TestPersistenceStreaming:
         assert result == expected
 
     def test_feather_writer_generic_data(self):
-
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
 
@@ -154,9 +158,7 @@ class TestPersistenceStreaming:
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
 
-    @pytest.mark.skip(reason="fix after merge")
     def test_feather_writer_signal_data(self):
-
         # Arrange
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         data_config = BacktestDataConfig(
@@ -194,7 +196,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])
-        assert result["SignalCounter"] == 114
+        assert result["SignalCounter"] == 198
 
     def test_generate_signal_class(self):
         # Arrange

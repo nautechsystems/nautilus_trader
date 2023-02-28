@@ -26,7 +26,6 @@ from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_new_from_raw
 from nautilus_trader.core.rust.model cimport bar_specification_eq
-from nautilus_trader.core.rust.model cimport bar_specification_free
 from nautilus_trader.core.rust.model cimport bar_specification_ge
 from nautilus_trader.core.rust.model cimport bar_specification_gt
 from nautilus_trader.core.rust.model cimport bar_specification_hash
@@ -108,10 +107,6 @@ cdef class BarSpecification:
             state[1],
             state[2]
         )
-
-    def __del__(self) -> None:
-        # Never allocation heap memory
-        bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_specification_to_cstr(&self._mem))
@@ -401,7 +396,7 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_information_aggregated_c(aggregation)
 
-    cpdef bint is_time_aggregated(self) except *:
+    cpdef bint is_time_aggregated(self):
         """
         Return a value indicating whether the aggregation method is time-driven.
 
@@ -419,7 +414,7 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_time_aggregated_c(self.aggregation)
 
-    cpdef bint is_threshold_aggregated(self) except *:
+    cpdef bint is_threshold_aggregated(self):
         """
         Return a value indicating whether the bar aggregation method is
         threshold-driven.
@@ -438,7 +433,7 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_threshold_aggregated_c(self.aggregation)
 
-    cpdef bint is_information_aggregated(self) except *:
+    cpdef bint is_information_aggregated(self):
         """
         Return a value indicating whether the aggregation method is
         information-driven.
@@ -630,7 +625,7 @@ cdef class BarType:
         """
         return BarType.from_str_c(value)
 
-    cpdef bint is_externally_aggregated(self) except *:
+    cpdef bint is_externally_aggregated(self):
         """
         Return a value indicating whether the bar aggregation source is ``EXTERNAL``.
 
@@ -641,7 +636,7 @@ cdef class BarType:
         """
         return self.aggregation_source == AggregationSource.EXTERNAL
 
-    cpdef bint is_internally_aggregated(self) except *:
+    cpdef bint is_internally_aggregated(self):
         """
         Return a value indicating whether the bar aggregation source is ``INTERNAL``.
 
@@ -675,6 +670,8 @@ cdef class Bar(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    is_revision : bool, default False
+        If this bar is a revision of a previous bar with the same `ts_event`.
 
     Raises
     ------
@@ -696,6 +693,7 @@ cdef class Bar(Data):
         Quantity volume not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        bint is_revision = False,
     ):
         Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
         Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
@@ -714,6 +712,8 @@ cdef class Bar(Data):
             ts_event,
             ts_init,
         )
+        self.is_revision = is_revision
+
     def __getstate__(self):
         return (
             self.bar_type.instrument_id.value,

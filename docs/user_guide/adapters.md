@@ -3,8 +3,10 @@
 The NautilusTrader design allows for integrating data publishers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage. 
 
-A full integration adapter is typically comprised of the following main components:
+An integrations adapter is _typically_ comprised of the following main components:
 
+- `HttpClient`
+- `WebSocketClient`
 - `InstrumentProvider`
 - `DataClient`
 - `ExecutionClient`
@@ -89,7 +91,7 @@ On the actor/strategy:
 ```cython
 # nautilus_trader/common/actor.pyx
 
-cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None):
     """
     Request `Instrument` data for the given instrument ID.
 

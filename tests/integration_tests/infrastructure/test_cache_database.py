@@ -43,6 +43,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
@@ -52,11 +53,14 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -80,6 +84,7 @@ class TestRedisCacheDatabase:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -143,6 +148,24 @@ class TestRedisCacheDatabase:
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
 
+    def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
+        # Arrange, Act
+        result = self.database.load()
+
+        # Assert
+        assert result == {}
+
+    def test_add_general_object_adds_to_cache(self):
+        # Arrange
+        bar = TestDataStubs.bar_5decimal()
+        key = str(bar.bar_type) + "-" + str(bar.ts_event)
+
+        # Act
+        self.database.add(key, str(bar).encode())
+
+        # Assert
+        assert self.database.load() == {key: str(bar).encode()}
+
     def test_add_currency(self):
         # Arrange
         currency = Currency(
@@ -181,7 +204,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         # Act
@@ -195,7 +218,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_instrument(AUDUSD_SIM)
@@ -222,7 +245,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -259,7 +282,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -274,7 +297,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -296,7 +319,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order)
@@ -328,7 +351,7 @@ class TestRedisCacheDatabase:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         position_id = PositionId("P-1")
@@ -357,7 +380,7 @@ class TestRedisCacheDatabase:
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order2)
@@ -391,7 +414,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order)
@@ -411,6 +434,23 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert True  # No exception raised
+
+    def test_update_actor(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        self.database.update_actor(actor)
+        result = self.database.load_actor(actor.id)
+
+        # Assert
+        assert result == {"A": b"1"}
 
     def test_update_strategy(self):
         # Arrange
@@ -513,7 +553,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         # Act
@@ -527,7 +567,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order)
@@ -543,7 +583,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -555,12 +595,53 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == order
 
+    def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        order = MarketOrder.transform_py(order, 0)
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.order_type == OrderType.MARKET
+
+    def test_load_order_when_transformed_to_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+        )
+
+        order = LimitOrder.transform_py(order, 0)
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.order_type == OrderType.LIMIT
+
     def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -577,7 +658,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.stop_limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             price=Price.from_str("1.00000"),
             trigger_price=Price.from_str("1.00010"),
         )
@@ -607,7 +688,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order)
@@ -636,7 +717,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order)
@@ -688,7 +769,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order)
@@ -713,7 +794,7 @@ class TestRedisCacheDatabase:
         order1 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -740,8 +821,40 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == {position.id: position}
 
+    def test_delete_actor(self):
+        # Arrange, Act
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.database.update_actor(actor)
+
+        # Act
+        self.database.delete_actor(actor.id)
+        result = self.database.load_actor(actor.id)
+
+        # Assert
+        assert result == {}
+
     def test_delete_strategy(self):
         # Arrange, Act
+        strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.database.update_strategy(strategy)
+
+        # Act
         self.database.delete_strategy(self.strategy.id)
         result = self.database.load_strategy(self.strategy.id)
 
@@ -767,7 +880,7 @@ class TestRedisCacheDatabase:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -799,7 +912,7 @@ class TestRedisCacheDatabase:
         bracket = order_factory.bracket(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
         )
@@ -836,7 +949,7 @@ class TestRedisCacheDatabase:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         self.database.add_order(order1)
@@ -856,7 +969,7 @@ class TestRedisCacheDatabase:
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
@@ -880,7 +993,7 @@ class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=False,
+            bypass_logging=True,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
         )

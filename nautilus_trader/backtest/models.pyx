@@ -68,7 +68,7 @@ cdef class FillModel:
         self.prob_fill_on_stop = prob_fill_on_stop
         self.prob_slippage = prob_slippage
 
-    cpdef bint is_limit_filled(self) except *:
+    cpdef bint is_limit_filled(self):
         """
         Return a value indicating whether a ``LIMIT`` order filled.
 
@@ -79,7 +79,7 @@ cdef class FillModel:
         """
         return self._event_success(self.prob_fill_on_limit)
 
-    cpdef bint is_stop_filled(self) except *:
+    cpdef bint is_stop_filled(self):
         """
         Return a value indicating whether a ``STOP-MARKET`` order filled.
 
@@ -90,7 +90,7 @@ cdef class FillModel:
         """
         return self._event_success(self.prob_fill_on_stop)
 
-    cpdef bint is_slipped(self) except *:
+    cpdef bint is_slipped(self):
         """
         Return a value indicating whether an order fill slipped.
 
@@ -101,7 +101,7 @@ cdef class FillModel:
         """
         return self._event_success(self.prob_slippage)
 
-    cdef bint _event_success(self, double probability) except *:
+    cdef bint _event_success(self, double probability):
         # Return a result indicating whether an event occurred based on the
         # given probability of the event occurring [0, 1].
         if probability == 0:

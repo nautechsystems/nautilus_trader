@@ -2,12 +2,12 @@
 
 At NautilusTrader, we take security seriously and appreciate your efforts in 
 helping us identify and fix any vulnerabilities. If you have discovered a 
-security vulnerability, please follow the guidelines outlined below.
+security vulnerability, follow the guidelines outlined below.
 
 ## Responsible Disclosure
 We encourage responsible disclosure of any security vulnerabilities you may 
 discover. If you believe you have found a security vulnerability in our platform, 
-please email us at info@nautechsystems.io. We ask that you provide us with a 
+email us at info@nautechsystems.io. We ask that you provide us with a 
 reasonable amount of time (at least one week) to fix the issue before 
 disclosing it publicly.
 

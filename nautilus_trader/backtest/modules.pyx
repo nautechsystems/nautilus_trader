@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
-
 import pandas as pd
 import pytz
+
+from nautilus_trader.config import ActorConfig
+
+from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -33,7 +35,11 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.position cimport Position
 
 
-cdef class SimulationModule:
+class SimulationModuleConfig(ActorConfig):
+    pass
+
+
+cdef class SimulationModule(Actor):
     """
     The base class for all simulation modules.
 
@@ -42,13 +48,14 @@ cdef class SimulationModule:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self):
+    def __init__(self, config: SimulationModuleConfig):
+        super().__init__(config)
         self.exchange = None  # Must be registered
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
 
-    cpdef void register_exchange(self, SimulatedExchange exchange) except *:
+    cpdef void register_venue(self, SimulatedExchange exchange):
         """
         Register the given simulated exchange with the module.
 
@@ -62,22 +69,23 @@ cdef class SimulationModule:
 
         self.exchange = exchange
 
-    cpdef void process(self, uint64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void log_diagnostics(self, LoggerAdapter log) except *:
+    cpdef void log_diagnostics(self, LoggerAdapter log):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
-cdef class FXRolloverInterestModule(SimulationModule):
+
+class FXRolloverInterestConfig(ActorConfig):
     """
     Provides an FX rollover interest simulation module.
 
@@ -85,18 +93,30 @@ cdef class FXRolloverInterestModule(SimulationModule):
     ----------
     rate_data : pd.DataFrame
         The interest rate data for the internal rollover interest calculator.
+
+    """
+    rate_data: pd.DataFrame
+
+
+cdef class FXRolloverInterestModule(SimulationModule):
+    """
+    Provides an FX rollover interest simulation module.
+
+    Parameters
+    ----------
+    config  : FXRolloverInterestConfig
     """
 
-    def __init__(self, rate_data not None: pd.DataFrame):
-        super().__init__()
+    def __init__(self, config: FXRolloverInterestConfig):
+        super().__init__(config)
 
-        self._calculator = RolloverInterestCalculator(data=rate_data)
+        self._calculator = RolloverInterestCalculator(data=config.rate_data)
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, uint64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns):
         """
         Process the given tick through the module.
 
@@ -126,7 +146,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             self._apply_rollover_interest(now, self._rollover_time.isoweekday())
             self._rollover_applied = True
 
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day):
         cdef list open_positions = self.exchange.cache.positions_open()
 
         cdef Position position
@@ -184,7 +204,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             self.exchange.adjust_account(Money(-rollover, currency))
 
-    cpdef void log_diagnostics(self, LoggerAdapter log) except *:
+    cpdef void log_diagnostics(self, LoggerAdapter log):
         """
         Log diagnostics out to the `BacktestEngine` logger.
 
@@ -199,7 +219,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
         log.info(f"Rollover interest (totals): {rollover_totals}")
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
         self._rollover_totals = {}

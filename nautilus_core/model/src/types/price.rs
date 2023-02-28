@@ -16,7 +16,7 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
@@ -34,17 +34,18 @@ pub struct Price {
 }
 
 impl Price {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
 
-        Self {
+        Price {
             raw: f64_to_fixed_i64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        Self { raw, precision }
+        Price { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -64,6 +65,18 @@ impl From<&str> for Price {
             Err(err) => panic!("Cannot parse `input` string '{input}' as f64, {err}"),
         };
         Price::new(float_res, precision_from_str(input))
+    }
+}
+
+impl From<Price> for f64 {
+    fn from(value: Price) -> f64 {
+        value.as_f64()
+    }
+}
+
+impl From<&Price> for f64 {
+    fn from(value: &Price) -> f64 {
+        value.as_f64()
     }
 }
 
@@ -104,6 +117,14 @@ impl PartialOrd for Price {
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
         self.raw.cmp(&other.raw)
+    }
+}
+
+impl Deref for Price {
+    type Target = i64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.raw
     }
 }
 
@@ -209,11 +230,6 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
     Price::from_raw(raw, precision)
-}
-
-#[no_mangle]
-pub extern "C" fn price_free(price: Price) {
-    drop(price); // Memory freed here
 }
 
 #[no_mangle]

@@ -16,10 +16,12 @@
 import fsspec
 import pytest
 
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
+from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -40,26 +42,74 @@ class TestBetfairPersistence:
                 "instrument_id": self.instrument.id.value,
                 "book_type": "L2_MBP",
                 "action": "UPDATE",
-                "order_price": 0.990099,
-                "order_size": 60.07,
-                "order_side": "BUY",
+                "price": 0.990099,
+                "size": 60.07,
+                "side": "BUY",
                 "order_id": "f7ed1f20-8c1d-40c6-9d63-bd45f7cc0a86",
                 "ts_event": 1635313844283000000,
                 "ts_init": 1635313844283000000,
             },
         )
+
+        # Act
         values = bsp_delta.to_dict(bsp_delta)
+
+        # Assert
         assert bsp_delta.from_dict(values) == bsp_delta
         assert values["type"] == "BSPOrderBookDelta"
 
+    def test_betfair_starting_price_to_from_dict(self):
+        # Arrange
+        bsp = BetfairStartingPrice.from_dict(
+            {
+                "type": "BetfairStartingPrice",
+                "instrument_id": self.instrument.id.value,
+                "bsp": 1.20,
+                "ts_event": 1635313844283000000,
+                "ts_init": 1635313844283000000,
+            },
+        )
+
+        # Act
+        values = bsp.to_dict()
+        result = bsp.from_dict(values)
+
+        # Assert
+        assert values["type"] == "BetfairStartingPrice"
+        assert result.bsp == bsp.bsp
+
+    def test_betfair_starting_price_serialization(self):
+        # Arrange
+        bsp = BetfairStartingPrice.from_dict(
+            {
+                "type": "BetfairStartingPrice",
+                "instrument_id": self.instrument.id.value,
+                "bsp": 1.20,
+                "ts_event": 1635313844283000000,
+                "ts_init": 1635313844283000000,
+            },
+        )
+
+        # Act
+        serialized = ParquetSerializer.serialize(bsp)
+        [result] = ParquetSerializer.deserialize(BetfairStartingPrice, [serialized])
+
+        # Assert
+        assert result.bsp == bsp.bsp
+
     @pytest.mark.skip("compression broken in github ci")
     def test_bsp_deltas(self):
+        # Arrange
         rf = RawFile(
             open_file=fsspec.open(
                 f"{TEST_DATA_DIR}/betfair/1.170258150.bz2",
                 compression="infer",
             ),
         )
+
+        # Act
         process_raw_file(catalog=self.catalog, raw_file=rf, reader=self.reader)
         data = self.catalog.query(BSPOrderBookDelta)
+
+        # Assert
         assert len(data) == 443

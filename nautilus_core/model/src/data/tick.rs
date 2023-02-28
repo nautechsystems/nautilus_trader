@@ -13,16 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::cmp;
 use std::ffi::c_char;
 use std::fmt::{Display, Formatter, Result};
 
 use nautilus_core::correctness;
 use nautilus_core::string::string_to_cstr;
-use nautilus_core::time::Timestamp;
+use nautilus_core::time::UnixNanos;
 
-use crate::enums::AggressorSide;
+use crate::enums::{AggressorSide, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
+use crate::types::fixed::FIXED_PRECISION;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 
@@ -35,20 +37,21 @@ pub struct QuoteTick {
     pub ask: Price,
     pub bid_size: Quantity,
     pub ask_size: Quantity,
-    pub ts_event: Timestamp,
-    pub ts_init: Timestamp,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl QuoteTick {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         bid: Price,
         ask: Price,
         bid_size: Quantity,
         ask_size: Quantity,
-        ts_event: Timestamp,
-        ts_init: Timestamp,
-    ) -> QuoteTick {
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
         correctness::u8_equal(
             bid.precision,
             ask.precision,
@@ -69,6 +72,18 @@ impl QuoteTick {
             ask_size,
             ts_event,
             ts_init,
+        }
+    }
+
+    pub fn extract_price(&self, price_type: PriceType) -> Price {
+        match price_type {
+            PriceType::Bid => self.bid.clone(),
+            PriceType::Ask => self.ask.clone(),
+            PriceType::Mid => Price::from_raw(
+                (self.bid.raw + self.ask.raw) / 2,
+                cmp::min(self.bid.precision + 1, FIXED_PRECISION),
+            ),
+            _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
 }
@@ -92,20 +107,21 @@ pub struct TradeTick {
     pub size: Quantity,
     pub aggressor_side: AggressorSide,
     pub trade_id: TradeId,
-    pub ts_event: Timestamp,
-    pub ts_init: Timestamp,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl TradeTick {
+    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         price: Price,
         size: Quantity,
         aggressor_side: AggressorSide,
         trade_id: TradeId,
-        ts_event: Timestamp,
-        ts_init: Timestamp,
-    ) -> TradeTick {
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
         TradeTick {
             instrument_id,
             price,
@@ -153,8 +169,8 @@ pub extern "C" fn quote_tick_new(
     ask: Price,
     bid_size: Quantity,
     ask_size: Quantity,
-    ts_event: Timestamp,
-    ts_init: Timestamp,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
@@ -178,8 +194,8 @@ pub extern "C" fn quote_tick_from_raw(
     ask_size: u64,
     bid_size_prec: u8,
     ask_size_prec: u8,
-    ts_event: Timestamp,
-    ts_init: Timestamp,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
@@ -242,8 +258,10 @@ pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::data::tick::{QuoteTick, TradeTick};
-    use crate::enums::AggressorSide;
+    use crate::enums::{AggressorSide, PriceType};
     use crate::identifiers::instrument_id::InstrumentId;
     use crate::identifiers::trade_id::TradeId;
     use crate::types::price::Price;
@@ -264,6 +282,28 @@ mod tests {
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
         );
+    }
+
+    #[rstest(
+        input,
+        expected,
+        case(PriceType::Bid, 10000000000000),
+        case(PriceType::Ask, 10001000000000),
+        case(PriceType::Mid, 10000500000000)
+    )]
+    fn test_quote_tick_extract_price(input: PriceType, expected: i64) {
+        let tick = QuoteTick {
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            bid: Price::new(10000.0, 4),
+            ask: Price::new(10001.0, 4),
+            bid_size: Quantity::new(1.0, 8),
+            ask_size: Quantity::new(1.0, 8),
+            ts_event: 0,
+            ts_init: 0,
+        };
+
+        let result = tick.extract_price(input).raw;
+        assert_eq!(result, expected);
     }
 
     #[test]

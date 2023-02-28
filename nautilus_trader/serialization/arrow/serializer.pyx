@@ -153,7 +153,7 @@ cdef class ParquetSerializer:
             delegate = _OBJECT_TO_DICT_MAP.get(cls.__name__)
         if delegate is None:
             raise TypeError(
-                f"Cannot serialize object `{cls}`. Please register a "
+                f"Cannot serialize object `{cls}`. Register a "
                 f"serialization method via `arrow.serializer.register_parquet()`"
             )
 
@@ -186,7 +186,7 @@ cdef class ParquetSerializer:
             delegate = _OBJECT_FROM_DICT_MAP.get(cls.__name__)
         if delegate is None:
             raise TypeError(
-                f"Cannot deserialize object `{cls}`. Please register a "
+                f"Cannot deserialize object `{cls}`. Register a "
                 f"deserialization method via `arrow.serializer.register_parquet()`"
             )
 

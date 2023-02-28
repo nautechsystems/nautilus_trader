@@ -13,18 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import socket
-
 import pytest
 
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.enums import log_level_to_str
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 
@@ -73,7 +68,11 @@ class TestLogLevel:
 class TestLoggerTests:
     def test_log_debug_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.DEBUG)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -84,7 +83,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -95,7 +98,11 @@ class TestLoggerTests:
 
     def test_log_info_with_annotation_sends_to_stdout(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         annotations = {"my_tag": "something"}
@@ -108,7 +115,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -119,7 +130,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -130,7 +145,11 @@ class TestLoggerTests:
 
     def test_log_warning_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.WARNING)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.WARNING,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -141,7 +160,11 @@ class TestLoggerTests:
 
     def test_log_error_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.ERROR)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.ERROR,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -152,7 +175,11 @@ class TestLoggerTests:
 
     def test_log_critical_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -163,7 +190,11 @@ class TestLoggerTests:
 
     def test_log_exception_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -171,101 +202,3 @@ class TestLoggerTests:
 
         # Assert
         assert True  # No exceptions raised
-
-    def test_register_sink_sends_records_to_sink(self):
-        # Arrange
-        sink = []
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
-
-        # Act
-        logger.register_sink(sink.append)
-        logger_adapter.info("A log event", annotations={"tag": "risk"})
-
-        # Assert
-        assert sink[0] == {
-            "component": "TEST_LOGGER",
-            "machine_id": socket.gethostname(),
-            "level": "INF",
-            "msg": "A log event",
-            "instance_id": f"{logger.instance_id.value}",
-            "tag": "risk",
-            "timestamp": 0,
-            "trader_id": "TRADER-000",
-        }
-
-
-class TestLiveLogger:
-    def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
-        self.logger = LiveLogger(
-            loop=self.loop,
-            clock=LiveClock(),
-            level_stdout=LogLevel.DEBUG,
-        )
-
-        self.logger_adapter = LoggerAdapter(component_name="LIVER_LOGGER", logger=self.logger)
-
-    def test_log_when_not_running_on_event_loop_successfully_logs(self):
-        # Arrange, Act
-        self.logger_adapter.info("test message")
-
-        # Assert
-        assert True  # No exceptions raised
-
-    @pytest.mark.asyncio
-    async def test_start_runs_on_event_loop(self):
-        # Arrange
-        self.logger.start()
-
-        self.logger_adapter.info("A log message.")
-        await asyncio.sleep(0)
-
-        # Act, Assert
-        assert self.logger.is_running
-        self.logger.stop()
-
-    @pytest.mark.asyncio
-    async def test_stop_when_running_stops_logger(self):
-        # Arrange
-        self.logger.start()
-
-        self.logger_adapter.info("A log message.")
-        await asyncio.sleep(0)
-
-        # Act
-        self.logger.stop()
-        self.logger_adapter.info("A log message.")
-
-        # Assert
-        assert not self.logger.is_running
-
-    @pytest.mark.asyncio
-    async def test_log_when_queue_over_maxsize_blocks(self):
-        # Arrange
-        logger = LiveLogger(
-            loop=self.loop,
-            clock=LiveClock(),
-            maxsize=5,
-        )
-
-        logger_adapter = LoggerAdapter(component_name="LIVE_LOGGER", logger=logger)
-        logger.start()
-
-        # Act
-        logger_adapter.info("A log message.")
-        logger_adapter.info("A log message.")  # <-- blocks
-        logger_adapter.info("A different log message.")  # <-- blocks
-        logger_adapter.info("A log message.")  # <-- blocks
-        logger_adapter.info("A different log message.")  # <-- blocks
-        logger_adapter.info("A log message.")  # <-- blocks
-
-        await asyncio.sleep(0.3)  # <-- processes all log messages
-        logger.stop()
-        await asyncio.sleep(0.3)
-
-        # Assert
-        assert not logger.is_running

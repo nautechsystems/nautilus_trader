@@ -34,4 +34,4 @@ cdef class ArcherMovingAveragesTrends(Indicator):
     cdef readonly int short_run
     """The current short run value.\n\n:returns: `int`"""
 
-    cpdef void update_raw(self, double close) except *
+    cpdef void update_raw(self, double close)

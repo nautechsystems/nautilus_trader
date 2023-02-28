@@ -13,19 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
+from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport quote_tick_copy
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
+from nautilus_trader.core.rust.model cimport trade_tick_copy
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
@@ -39,6 +47,12 @@ from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+cdef void capsule_destructor(object capsule):
+    cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+    PyMem_Free(cvec[0].ptr) # de-allocate buffer
+    PyMem_Free(cvec) # de-allocate cvec
 
 
 cdef class QuoteTick(Data):
@@ -153,39 +167,6 @@ cdef class QuoteTick(Data):
     cdef str to_str(self):
         return cstr_to_pystr(quote_tick_to_cstr(&self._mem))
 
-    @staticmethod
-    cdef QuoteTick from_raw_c(
-        InstrumentId instrument_id,
-        int64_t raw_bid,
-        int64_t raw_ask,
-        uint8_t bid_price_prec,
-        uint8_t ask_price_prec,
-        uint64_t raw_bid_size,
-        uint64_t raw_ask_size,
-        uint8_t bid_size_prec,
-        uint8_t ask_size_prec,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ):
-        cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
-        tick.ts_event = ts_event
-        tick.ts_init = ts_init
-        tick._mem = quote_tick_from_raw(
-            instrument_id_clone(&instrument_id._mem),
-            raw_bid,
-            raw_ask,
-            bid_price_prec,
-            ask_price_prec,
-            raw_bid_size,
-            raw_ask_size,
-            bid_size_prec,
-            ask_size_prec,
-            ts_event,
-            ts_init,
-        )
-
-        return tick
-
     @property
     def instrument_id(self) -> InstrumentId:
         """
@@ -272,6 +253,91 @@ cdef class QuoteTick(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
+
+    @staticmethod
+    cdef QuoteTick from_raw_c(
+        InstrumentId instrument_id,
+        int64_t raw_bid,
+        int64_t raw_ask,
+        uint8_t bid_price_prec,
+        uint8_t ask_price_prec,
+        uint64_t raw_bid_size,
+        uint64_t raw_ask_size,
+        uint8_t bid_size_prec,
+        uint8_t ask_size_prec,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
+        tick.ts_event = ts_event
+        tick.ts_init = ts_init
+        tick._mem = quote_tick_from_raw(
+            instrument_id_clone(&instrument_id._mem),
+            raw_bid,
+            raw_ask,
+            bid_price_prec,
+            ask_price_prec,
+            raw_bid_size,
+            raw_ask_size,
+            bid_size_prec,
+            ask_size_prec,
+            ts_event,
+            ts_init,
+        )
+
+        return tick
+
+    @staticmethod
+    cdef QuoteTick from_mem_c(QuoteTick_t mem):
+        cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
+        quote_tick._mem = quote_tick_copy(&mem)
+        quote_tick.ts_event = mem.ts_event
+        quote_tick.ts_init = mem.ts_init
+
+        return quote_tick
+
+    # Safety: Do NOT deallocate the capsule here
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_quote_tick_list(object capsule):
+        cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+        cdef QuoteTick_t* ptr = <QuoteTick_t*>data.ptr
+        cdef list ticks = []
+
+        cdef uint64_t i
+        for i in range(0, data.len):
+            ticks.append(QuoteTick.from_mem_c(ptr[i]))
+
+        return ticks
+
+    @staticmethod
+    cdef inline quote_tick_list_to_capsule(list items):
+
+        # create a C struct buffer
+        cdef uint64_t len_ = len(items)
+        cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len_ * sizeof(QuoteTick_t))
+        cdef uint64_t i
+        for i in range(len_):
+            data[i] = (<QuoteTick> items[i])._mem
+        if not data:
+            raise MemoryError()
+
+        # create CVec
+        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # create PyCapsule
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
+
+    @staticmethod
+    def list_from_capsule(capsule) -> list[QuoteTick]:
+        return QuoteTick.capsule_to_quote_tick_list(capsule)
+
+    @staticmethod
+    def capsule_from_list(items):
+        return QuoteTick.quote_tick_list_to_capsule(items)
 
     @staticmethod
     def from_raw(
@@ -596,8 +662,6 @@ cdef class TradeTick(Data):
         uint64_t ts_init,
     ):
         cdef TradeTick tick = TradeTick.__new__(TradeTick)
-        tick.ts_event = ts_event
-        tick.ts_init = ts_init
         tick._mem = trade_tick_from_raw(
             instrument_id_clone(&instrument_id._mem),
             raw_price,
@@ -609,8 +673,63 @@ cdef class TradeTick(Data):
             ts_event,
             ts_init,
         )
+        tick.ts_event = ts_event
+        tick.ts_init = ts_init
 
         return tick
+
+    @staticmethod
+    cdef TradeTick from_mem_c(TradeTick_t mem):
+        cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
+        trade_tick._mem = trade_tick_copy(&mem)
+
+        trade_tick.ts_event = mem.ts_event
+        trade_tick.ts_init = mem.ts_init
+
+        return trade_tick
+
+    # Safety: Do NOT deallocate the capsule here
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_trade_tick_list(object capsule):
+        cdef CVec* data = <CVec *>PyCapsule_GetPointer(capsule, NULL)
+        cdef TradeTick_t* ptr = <TradeTick_t *>data.ptr
+        cdef list ticks = []
+
+        cdef uint64_t i
+        for i in range(0, data.len):
+            ticks.append(TradeTick.from_mem_c(ptr[i]))
+
+        return ticks
+
+    @staticmethod
+    cdef inline trade_tick_list_to_capsule(list items):
+
+        # create a C struct buffer
+        cdef uint64_t len_ = len(items)
+        cdef TradeTick_t * data = <TradeTick_t *> PyMem_Malloc(len_ * sizeof(TradeTick_t))
+        cdef uint64_t i
+        for i in range(len_):
+            data[i] = (<TradeTick> items[i])._mem
+        if not data:
+            raise MemoryError()
+
+        # create CVec
+        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # create PyCapsule
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
+
+    @staticmethod
+    def list_from_capsule(capsule) -> list[TradeTick]:
+        return TradeTick.capsule_to_trade_tick_list(capsule)
+
+    @staticmethod
+    def capsule_from_list(items):
+        return TradeTick.trade_tick_list_to_capsule(items)
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values):

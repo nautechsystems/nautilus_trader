@@ -21,6 +21,7 @@ import pandas as pd
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
@@ -36,10 +37,9 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.batching import batch_files
-from nautilus_trader.persistence.batching import extract_generic_data_client_ids
-from nautilus_trader.persistence.batching import groupby_datatype
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.streaming.engine import StreamingEngine
+from nautilus_trader.persistence.streaming.engine import extract_generic_data_client_ids
+from nautilus_trader.persistence.streaming.engine import groupby_datatype
 
 
 class BacktestNode:
@@ -62,8 +62,10 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        # TODO (bm) Breaking with `TypeError: Expected type, got ModelMetaclass`
-        # PyCondition.list_type(configs, BacktestRunConfig, "configs")
+        PyCondition.true(
+            all([isinstance(config, BacktestRunConfig) for config in configs]),
+            "configs",
+        )
 
         self._validate_configs(configs)
 
@@ -164,6 +166,12 @@ class BacktestNode:
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
+            if config.leverages:
+                leverages = {
+                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
+                }
+            else:
+                leverages = {}
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],
@@ -171,13 +179,10 @@ class BacktestNode:
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 default_leverage=Decimal(config.default_leverage),
-                leverages={
-                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
-                }
-                if config.leverages
-                else {},
+                leverages=leverages,
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
+                modules=[ActorFactory.create(module) for module in (config.modules or [])],
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
             )
@@ -247,16 +252,14 @@ class BacktestNode:
         data_configs: list[BacktestDataConfig],
         batch_size_bytes: int,
     ) -> None:
-        config = data_configs[0]
-        catalog: ParquetDataCatalog = config.catalog()
-
         data_client_ids = extract_generic_data_client_ids(data_configs=data_configs)
 
-        for batch in batch_files(
-            catalog=catalog,
+        streaming_engine = StreamingEngine(
             data_configs=data_configs,
             target_batch_size_bytes=batch_size_bytes,
-        ):
+        )
+
+        for batch in streaming_engine:
             engine.clear_data()
             grouped = groupby_datatype(batch)
             for data in grouped:
@@ -267,9 +270,9 @@ class BacktestNode:
                         GenericData(data_type=DataType(data["type"]), data=d) for d in data["data"]
                     ]
                 self._load_engine_data(engine=engine, data=data)
-            engine.run_streaming(run_config_id=run_config_id)
+            engine.run(run_config_id=run_config_id, streaming=True)
 
-        engine.end_streaming()
+        engine.end()
         engine.dispose()
 
     def _run_oneshot(
@@ -286,12 +289,12 @@ class BacktestNode:
             )
             d = config.load()
             if config.instrument_id and d["instrument"] is None:
-                print(
-                    f"Requested instrument_id={d['instrument']} from data_config not found catalog",
+                engine._log.warning(
+                    f"Requested instrument_id={d['instrument']} from data_config not found in catalog",
                 )
                 continue
             if not d["data"]:
-                print(f"No data found for {config}")
+                engine._log.warning(f"No data found for {config}")
                 continue
 
             t1 = pd.Timestamp.now()

@@ -105,8 +105,8 @@ cdef class OrderMatchingEngine:
     cdef int _order_count
     cdef int _execution_count
 
-    cpdef void reset(self) except *
-    cpdef void set_fill_model(self, FillModel fill_model) except *
+    cpdef void reset(self)
+    cpdef void set_fill_model(self, FillModel fill_model)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -116,67 +116,69 @@ cdef class OrderMatchingEngine:
     cpdef list get_open_orders(self)
     cpdef list get_open_bid_orders(self)
     cpdef list get_open_ask_orders(self)
-    cpdef bint order_exists(self, ClientOrderId client_order_id) except *
+    cpdef bint order_exists(self, ClientOrderId client_order_id)
 
 # -- DATA PROCESSING ------------------------------------------------------------------------------
 
-    cpdef void process_order_book(self, OrderBookData data) except *
-    cpdef void process_quote_tick(self, QuoteTick tick) except *
-    cpdef void process_trade_tick(self, TradeTick tick) except *
-    cpdef void process_bar(self, Bar bar) except *
-    cpdef void process_status(self, MarketStatus status) except *
-    cpdef void process_auction_book(self, OrderBook book) except *
-    cdef void _process_trade_ticks_from_bar(self, Bar bar) except *
-    cdef void _process_quote_ticks_from_bar(self) except *
+    cpdef void process_order_book(self, OrderBookData data)
+    cpdef void process_quote_tick(self, QuoteTick tick)
+    cpdef void process_trade_tick(self, TradeTick tick)
+    cpdef void process_bar(self, Bar bar)
+    cpdef void process_status(self, MarketStatus status)
+    cpdef void process_auction_book(self, OrderBook book)
+    cdef void _process_trade_ticks_from_bar(self, Bar bar)
+    cdef void _process_quote_ticks_from_bar(self)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
-    cpdef void process_order(self, Order order, AccountId account_id) except *
-    cpdef void process_modify(self, ModifyOrder command, AccountId account_id) except *
-    cpdef void process_cancel(self, CancelOrder command, AccountId account_id) except *
-    cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id) except *
-    cdef void _process_market_order(self, MarketOrder order) except *
-    cdef void _process_market_to_limit_order(self, MarketToLimitOrder order) except *
-    cdef void _process_limit_order(self, LimitOrder order) except *
-    cdef void _process_stop_market_order(self, StopMarketOrder order) except *
-    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
-    cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order) except *
-    cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order) except *
-    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *
-    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *
-    cdef void _process_auction_market_order(self, MarketOrder order) except *
-    cdef void _process_auction_limit_order(self, LimitOrder order) except *
-    cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force) except *
-    cdef void _update_limit_order(self, Order order, Quantity qty, Price price) except *
-    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price) except *
-    cdef void _update_market_if_touched_order(self, MarketIfTouchedOrder order, Quantity qty, Price trigger_price) except *
-    cdef void _update_limit_if_touched_order(self, LimitIfTouchedOrder order, Quantity qty, Price price, Price trigger_price) except *
-    cdef void _update_trailing_stop_order(self, Order order) except *
+    cpdef void process_order(self, Order order, AccountId account_id)
+    cpdef void process_modify(self, ModifyOrder command, AccountId account_id)
+    cpdef void process_cancel(self, CancelOrder command, AccountId account_id)
+    cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id)
+    cdef void _process_market_order(self, MarketOrder order)
+    cdef void _process_market_to_limit_order(self, MarketToLimitOrder order)
+    cdef void _process_limit_order(self, LimitOrder order)
+    cdef void _process_stop_market_order(self, StopMarketOrder order)
+    cdef void _process_stop_limit_order(self, StopLimitOrder order)
+    cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order)
+    cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order)
+    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order)
+    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order)
+    cdef void _process_auction_market_order(self, MarketOrder order)
+    cdef void _process_auction_limit_order(self, LimitOrder order)
+    cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force)
+    cdef void _update_limit_order(self, Order order, Quantity qty, Price price)
+    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price)
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price)
+    cdef void _update_market_if_touched_order(self, MarketIfTouchedOrder order, Quantity qty, Price trigger_price)
+    cdef void _update_limit_if_touched_order(self, LimitIfTouchedOrder order, Quantity qty, Price price, Price trigger_price)
+    cdef void _update_trailing_stop_order(self, Order order)
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
-    cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cpdef list _determine_limit_price_and_volume(self, Order order)
-    cpdef list _determine_market_price_and_volume(self, Order order)
-    cpdef void _fill_market_order(self, Order order) except *
-    cpdef void _fill_limit_order(self, Order order) except *
+    cpdef void iterate(self, uint64_t timestamp_ns)
+    cpdef list determine_limit_price_and_volume(self, Order order)
+    cpdef list determine_market_price_and_volume(self, Order order)
+    cpdef void fill_market_order(self, Order order)
+    cpdef void fill_limit_order(self, Order order)
 
-    cpdef void _apply_fills(
+    cpdef void apply_fills(
         self,
         Order order,
         list fills,
-        PositionId venue_position_id,
-        Position position,
-    ) except *
-    cpdef void _fill_order(
+        LiquiditySide liquidity_side,
+        PositionId venue_position_id=*,
+        Position position=*,
+    )
+    cpdef void fill_order(
         self,
         Order order,
-        PositionId venue_position_id,
-        Position position,
-        Quantity last_qty,
         Price last_px,
-    ) except *
+        Quantity last_qty,
+        LiquiditySide liquidity_side,
+        PositionId venue_position_id=*,
+        Position position=*,
+    )
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
@@ -188,20 +190,18 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
-    cpdef void _accept_order(self, Order order) except *
-    cpdef void _expire_order(self, Order order) except *
-    cpdef void _cancel_order(self, Order order, bint cancel_contingencies=*) except *
-    cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*) except *
-    cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _cancel_contingent_orders(self, Order order) except *
-    cpdef void _update_contingent_orders(self, Order order) except *
+    cpdef void accept_order(self, Order order)
+    cpdef void expire_order(self, Order order)
+    cpdef void cancel_order(self, Order order, bint cancel_contingencies=*)
+    cpdef void update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*)
+    cpdef void trigger_stop_order(self, Order order)
+    cdef void _cancel_contingent_orders(self, Order order)
+    cdef void _update_contingent_orders(self, Order order)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_order_rejected(self, Order order, str reason) except *
-    cdef void _generate_order_accepted(self, Order order) except *
-    cdef void _generate_order_pending_update(self, Order order) except *
-    cdef void _generate_order_pending_cancel(self, Order order) except *
+    cdef void _generate_order_rejected(self, Order order, str reason)
+    cdef void _generate_order_accepted(self, Order order)
     cdef void _generate_order_modify_rejected(
         self,
         TraderId trader_id,
@@ -211,7 +211,7 @@ cdef class OrderMatchingEngine:
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         str reason,
-    ) except *
+    )
     cdef void _generate_order_cancel_rejected(
         self,
         TraderId trader_id,
@@ -221,11 +221,11 @@ cdef class OrderMatchingEngine:
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         str reason,
-    ) except *
-    cpdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
-    cdef void _generate_order_canceled(self, Order order) except *
-    cdef void _generate_order_triggered(self, Order order) except *
-    cdef void _generate_order_expired(self, Order order) except *
+    )
+    cpdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price)
+    cdef void _generate_order_canceled(self, Order order)
+    cdef void _generate_order_triggered(self, Order order)
+    cdef void _generate_order_expired(self, Order order)
     cdef void _generate_order_filled(
         self,
         Order order,
@@ -235,4 +235,4 @@ cdef class OrderMatchingEngine:
         Currency quote_currency,
         Money commission,
         LiquiditySide liquidity_side
-    ) except *
+    )

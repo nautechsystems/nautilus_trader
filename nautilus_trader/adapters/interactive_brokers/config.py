@@ -22,7 +22,7 @@ from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config.common import InstrumentFilter
 
 
-class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):  # type: ignore
+class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):
     """Interactive brokers instrument filter"""
 
     secType: Optional[str] = None
@@ -75,7 +75,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
         The Interactive Brokers account id.
         If ``None`` then will source the `TWS_ACCOUNT`.
     trading_mode: str
-        paper or live
+        paper or live.
     account_id : str, optional
         The account_id to use for Nautilus.
     gateway_host : str, optional

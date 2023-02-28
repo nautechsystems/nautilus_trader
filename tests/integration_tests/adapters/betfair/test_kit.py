@@ -214,10 +214,15 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def streaming_config(catalog_path: str, catalog_fs_protocol: str = "memory") -> StreamingConfig:
+    def streaming_config(
+        catalog_path: str,
+        catalog_fs_protocol: str = "memory",
+        flush_interval_ms: int = None,
+    ) -> StreamingConfig:
         return StreamingConfig(
             catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
+            flush_interval_ms=flush_interval_ms,
         )
 
     @staticmethod
@@ -228,12 +233,16 @@ class BetfairTestStubs:
         persist=True,
         add_strategy=True,
         bypass_risk=False,
+        flush_interval_ms: int = None,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             log_level="INFO",
             bypass_logging=True,
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
-            streaming=BetfairTestStubs.streaming_config(catalog_path=catalog_path)
+            streaming=BetfairTestStubs.streaming_config(
+                catalog_path=catalog_path,
+                flush_interval_ms=flush_interval_ms,
+            )
             if persist
             else None,
             strategies=[

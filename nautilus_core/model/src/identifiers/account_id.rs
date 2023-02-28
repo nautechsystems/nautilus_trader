@@ -37,7 +37,8 @@ impl Display for AccountId {
 }
 
 impl AccountId {
-    pub fn new(s: &str) -> AccountId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`AccountId` value");
         correctness::string_contains(s, "-", "`TraderId` value");
 
@@ -101,7 +102,6 @@ mod tests {
     fn test_account_id_new_invalid_string() {
         let s = "";
         let result = std::panic::catch_unwind(|| AccountId::new(s));
-
         assert!(result.is_err());
     }
 
@@ -116,7 +116,6 @@ mod tests {
     fn test_account_id_new() {
         let s = "IB-U123456789";
         let account_id = AccountId::new(s);
-
         assert_eq!(account_id.value.as_str(), s);
     }
 
@@ -143,14 +142,13 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_free() {
+    fn test_account_id_free_c() {
         let id = AccountId::new("IB-1234567890");
-
         account_id_free(id); // No panic
     }
 
     #[test]
-    fn test_c_api_account_id_new() {
+    fn test_account_id_new_c() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
@@ -159,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn test_c_api_account_id_clone() {
+    fn test_account_id_clone_c() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
@@ -169,16 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn test_c_api_account_id_free() {
-        let s = "IB-U123456789";
-        let c_string = CString::new(s).unwrap();
-        let ptr = c_string.as_ptr();
-        let account_id = unsafe { account_id_new(ptr) };
-        account_id_free(account_id);
-    }
-
-    #[test]
-    fn test_c_api_account_id_to_cstr() {
+    fn test_account_id_to_cstr_c() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
@@ -189,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_c_api_account_id_eq() {
+    fn test_account_id_eq_c() {
         let s1 = "IB-U123456789";
         let c_string1 = CString::new(s1).unwrap();
         let ptr1 = c_string1.as_ptr();
@@ -213,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn test_c_api_account_id_hash() {
+    fn test_account_id_hash_c() {
         let s1 = "IB-U123456789";
         let c_string1 = CString::new(s1).unwrap();
         let ptr1 = c_string1.as_ptr();

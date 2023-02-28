@@ -13,15 +13,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Cargo setup
-      - name: Set up Cargo cache
-        uses: actions/cache@v2
+      # Rust setup (ensures latest stable)
+      - name: Set up Rust tool-chain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/nautilus_core/Cargo.lock') }}
+          toolchain: stable
+          components: rustfmt, clippy
 
       # Python setup
       - name: Set up Python environment

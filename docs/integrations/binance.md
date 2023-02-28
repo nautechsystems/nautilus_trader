@@ -1,30 +1,30 @@
 # Binance
 
-Founded in 2017, Binance is one of the largest cryptocurrency exchanges in terms 
-of daily trading volume, and open interest of crypto assets and crypto 
+Founded in 2017, Binance is one of the largest cryptocurrency exchanges in terms
+of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
 ```{warning}
-This integration is still under construction. Please consider it to be in an
+This integration is still under construction. Consider it to be in an
 unstable beta phase and exercise caution.
 ```
 
 ## Overview
-The following documentation assumes a trader is setting up for both live market 
-data feeds, and trade execution. The full Binance integration consists of an assortment of components, 
+The following documentation assumes a trader is setting up for both live market
+data feeds, and trade execution. The full Binance integration consists of an assortment of components,
 which can be used together or separately depending on the users needs.
 
 - `BinanceHttpClient` provides low-level HTTP API connectivity
 - `BinanceWebSocketClient` provides low-level WebSocket API connectivity
 - `BinanceInstrumentProvider` provides instrument parsing and loading functionality
-- `BinanceDataClient` provides a market data feed manager
-- `BinanceExecutionClient` provides an account management and trade execution gateway
+- `BinanceSpotDataClient`/ `BinanceFuturesDataClient` provide a market data feed manager
+- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient` provide an account management and trade execution gateway
 - `BinanceLiveDataClientFactory` creation factory for Binance data clients (used by the trading node builder)
 - `BinanceLiveExecClientFactory` creation factory for Binance execution clients (used by the trading node builder)
 
 ```{note}
-Most users will simply define a configuration for a live trading node (as below), 
+Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components individually.
 ```
 
@@ -70,7 +70,7 @@ You must also have at least *one* of the following:
 - You have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
 
 ## Configuration
-The most common use case is to configure a live `TradingNode` to include Binance 
+The most common use case is to configure a live `TradingNode` to include Binance
 data and execution clients. To achieve this, add a `BINANCE` section to your client
 configuration(s):
 
@@ -117,9 +117,9 @@ node.build()
 ### API credentials
 There are two options for supplying your credentials to the Binance clients.
 Either pass the corresponding `api_key` and `api_secret` values to the configuration objects, or
-set the following environment variables: 
+set the following environment variables:
 
-For Binance Spot/Margin live clients, you can set: 
+For Binance Spot/Margin live clients, you can set:
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
 
@@ -142,13 +142,14 @@ credentials are valid and have trading permissions.
 All the Binance account types will be supported for live trading. Set the `account_type`
 using the `BinanceAccountType` enum. The account type options are:
 - `SPOT`
-- `MARGIN`
+- `MARGIN_CROSS` (Margin shared between open positions.)
+- `MARGIN_ISOLATED` (Margin assigned to a single position.)
 - `FUTURES_USDT` (USDT or BUSD stablecoins as collateral)
 - `FUTURES_COIN` (other cryptocurrency as collateral)
 
 ### Base URL overrides
 It's possible to override the default base URLs for both HTTP Rest and
-WebSocket APIs. This is useful for configuring API clusters for performance reasons, 
+WebSocket APIs. This is useful for configuring API clusters for performance reasons,
 or when Binance has provided you with specialized endpoints.
 
 ### Binance US
@@ -182,10 +183,18 @@ config = TradingNodeConfig(
 )
 ```
 
+### Aggregated Trades
+Binance provide aggregated trade data endpoints as an alternative source of trade ticks.
+In comparison to the default trade endpoints, aggregated trade data endpoints can return all
+ticks between a `start_time` and `end_time`.
+
+To use aggregated trades and the endpoint features, set the `use_agg_trade_ticks` option
+to `True` (this is `False` by default.)
+
 ### Parser warnings
-Some Binance instruments are unable to be parsed into Nautilus objects if they 
-contain enormous field values beyond what can be handled by the platform. 
-In these cases, a _warn and continue_ approach is taken (the instrument will not 
+Some Binance instruments are unable to be parsed into Nautilus objects if they
+contain enormous field values beyond what can be handled by the platform.
+In these cases, a _warn and continue_ approach is taken (the instrument will not
 be available).
 
 These warnings may cause unnecessary log noise, and so it's possible to
@@ -194,7 +203,7 @@ example below:
 
 ```python
 instrument_provider=InstrumentProviderConfig(
-    load_all=True, 
+    load_all=True,
     log_warnings=False,
 )
 ```
@@ -210,7 +219,7 @@ methods may eventually become first-class (not requiring custom/generic subscrip
 ```
 
 ### BinanceFuturesMarkPriceUpdate
-You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating info) 
+You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating info)
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
@@ -221,8 +230,8 @@ self.subscribe_data(
 )
 ```
 
-This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate` 
-objects to your `on_data` method. You will need to check the type, as this 
+This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate`
+objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom/generic data.
 
 ```python

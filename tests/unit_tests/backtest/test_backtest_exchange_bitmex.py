@@ -56,7 +56,7 @@ class TestBitmexExchange:
         self.strategies = [MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())]
 
         self.clock = TestClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -151,8 +151,8 @@ class TestBitmexExchange:
             instrument_id=XBTUSD_BITMEX.id,
             bid=Price.from_str("11493.0"),
             ask=Price.from_str("11493.5"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
+            bid_size=Quantity.from_int(1_500_000),
+            ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
             ts_init=0,
         )
@@ -163,13 +163,13 @@ class TestBitmexExchange:
         order_market = self.strategy.order_factory.market(
             XBTUSD_BITMEX.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
         )
 
         order_limit = self.strategy.order_factory.limit(
             XBTUSD_BITMEX.id,
             OrderSide.BUY,
-            Quantity.from_int(100000),
+            Quantity.from_int(100_000),
             Price.from_str("11492.5"),
         )
 
@@ -183,8 +183,8 @@ class TestBitmexExchange:
             instrument_id=XBTUSD_BITMEX.id,
             bid=Price.from_str("11491.0"),
             ask=Price.from_str("11491.5"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
+            bid_size=Quantity.from_int(1_500_000),
+            ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
             ts_init=0,
         )

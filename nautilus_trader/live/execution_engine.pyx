@@ -30,8 +30,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport QueryOrder
@@ -118,7 +118,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.qsize)
+        self._cmd_queue = Queue(maxsize=config.qsize)
+        self._evt_queue = Queue(maxsize=config.qsize)
 
         # Settings
         self.reconciliation = config.reconciliation
@@ -128,7 +129,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._inflight_check_threshold_ns = millis_to_nanos(self.inflight_check_threshold_ms)
 
         # Async tasks
-        self._run_queue_task = None
+        self._cmd_queue_task = None
+        self._evt_queue_task = None
         self._inflight_check_task = None
         self.is_running = False
 
@@ -152,54 +154,81 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for client in self._clients.values():
             client.disconnect()
 
-    def get_run_queue_task(self) -> asyncio.Task:
+    def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
         """
-        Return the internal run queue task for the engine.
+        Return the internal command queue task for the engine.
 
         Returns
         -------
-        asyncio.Task
+        asyncio.Task or ``None``
 
         """
-        return self._run_queue_task
+        return self._cmd_queue_task
 
-    def get_inflight_check_task(self) -> asyncio.Task:
+    def get_evt_queue_task(self) -> Optional[asyncio.Task]:
+        """
+        Return the internal event queue task for the engine.
+
+        Returns
+        -------
+        asyncio.Task or ``None``
+
+        """
+        return self._evt_queue_task
+
+    def get_inflight_check_task(self) -> Optional[asyncio.Task]:
         """
         Return the internal in-flight check task for the engine.
 
         Returns
         -------
-        asyncio.Task
+        asyncio.Task or ``None``
 
         """
         return self._inflight_check_task
 
-    cpdef int qsize(self) except *:
+    def cmd_qsize(self) -> int:
         """
-        Return the number of messages buffered on the internal queue.
+        Return the number of `Command` messages buffered on the internal queue.
 
         Returns
         -------
         int
 
         """
-        return self._queue.qsize()
+        return self._cmd_queue.qsize()
+
+    def evt_qsize(self) -> int:
+        """
+        Return the number of `Event` messages buffered on the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._evt_queue.qsize()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void kill(self) except *:
+    def kill(self) -> None:
         """
-        Kill the engine by abruptly cancelling the queue task and calling stop.
+        Kill the engine by abruptly canceling the queue task and calling stop.
         """
         self._log.warning("Killing engine...")
-        if self._run_queue_task:
-            self._log.debug("Canceling run_queue_task...")
-            self._run_queue_task.cancel()
+        if self._cmd_queue_task:
+            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
+            self._cmd_queue_task.cancel()
+            self._cmd_queue_task.done()
+        if self._evt_queue_task:
+            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
+            self._evt_queue_task.cancel()
+            self._evt_queue_task.done()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, TradingCommand command) except *:
+    cpdef void execute(self, TradingCommand command):
         """
         Execute the given command.
 
@@ -221,15 +250,15 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._queue.put_nowait(command)
+            self._cmd_queue.put_nowait(command)
         except asyncio.QueueFull:
             self._log.warning(
-                f"Blocking on `_queue.put` as queue full "
-                f"at {self._queue.qsize()} items.",
+                f"Blocking on `_cmd_queue.put` as queue full "
+                f"at {self._cmd_queue.qsize()} items.",
             )
-            self._loop.create_task(self._queue.put(command))  # Blocking until qsize reduces
+            self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
 
-    cpdef void process(self, OrderEvent event) except *:
+    cpdef void process(self, OrderEvent event):
         """
         Process the given event.
 
@@ -250,27 +279,36 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.not_none(event, "event")
 
         try:
-            self._queue.put_nowait(event)
+            self._evt_queue.put_nowait(event)
         except asyncio.QueueFull:
             self._log.warning(
-                f"Blocking on `_queue.put` as queue full "
-                f"at {self._queue.qsize()} items.",
+                f"Blocking on `_evt_queue.put` as queue full "
+                f"at {self._evt_queue.qsize()} items.",
             )
-            self._loop.create_task(self._queue.put(event))  # Blocking until qsize reduces
+            self._loop.create_task(self._evt_queue.put(event))  # Blocking until qsize reduces
 
-    cpdef void _on_start(self) except *:
+# -- INTERNAL -------------------------------------------------------------------------------------
+
+    def _enqueue_sentinel(self) -> None:
+        self._cmd_queue.put_nowait(self._sentinel)
+        self._evt_queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel messages placed on queues.")
+
+    cpdef void _on_start(self):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
         self.is_running = True  # Queue will continue to process
-        self._run_queue_task = self._loop.create_task(self._run())
-        self._log.debug(f"Scheduled {self._run_queue_task}.")
+        self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
+        self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
+        self._log.debug(f"Scheduled {self._cmd_queue_task}.")
+        self._log.debug(f"Scheduled {self._evt_queue_task}.")
 
         if self.inflight_check_interval_ms > 0:
             self._inflight_check_task = self._loop.create_task(self._inflight_check_loop())
             self._log.debug(f"Scheduled {self._inflight_check_task}.")
 
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinel()
@@ -278,35 +316,45 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if self._inflight_check_task:
             self._inflight_check_task.cancel()
 
-    async def _run(self):
+    async def _run_cmd_queue(self):
         self._log.debug(
-            f"Message queue processing starting (qsize={self.qsize()})...",
+            f"Command message queue processing starting (qsize={self.cmd_qsize()})...",
         )
-        cdef Message message
+        cdef Command command
         try:
             while self.is_running:
-                message = await self._queue.get()
-                if message is None:  # Sentinel message (fast C-level check)
+                command = await self._cmd_queue.get()
+                if command is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
-                if message.category == MessageCategory.EVENT:
-                    self._handle_event(message)
-                elif message.category == MessageCategory.COMMAND:
-                    self._execute_command(message)
-                else:
-                    self._log.error(f"Cannot handle message: unrecognized {message}.")
+                self._execute_command(command)
         except asyncio.CancelledError:
-            if not self._queue.empty():
+            if not self._cmd_queue.empty():
                 self._log.warning(
-                    f"Running canceled with {self.qsize()} message(s) on queue.",
+                    f"Command message queue processing canceled "
+                    f"with {self.cmd_qsize()} message(s) on queue.",
                 )
             else:
-                self._log.debug(
-                    f"Message queue processing stopped (qsize={self.qsize()}).",
-                )
+                self._log.debug("Command message queue processing stopped.")
 
-    cdef void _enqueue_sentinel(self) except *:
-        self._queue.put_nowait(self._sentinel)
-        self._log.debug(f"Sentinel message placed on message queue.")
+    async def _run_evt_queue(self):
+        self._log.debug(
+            f"Event message queue processing starting (qsize={self.evt_qsize()})...",
+        )
+        cdef Event event
+        try:
+            while self.is_running:
+                event = await self._evt_queue.get()
+                if event is None:  # Sentinel message (fast C-level check)
+                    continue       # Returns to the top to check `self.is_running`
+                self._handle_event(event)
+        except asyncio.CancelledError:
+            if not self._evt_queue.empty():
+                self._log.warning(
+                    f"Event message queue processing canceled "
+                    f"with {self.evt_qsize()} message(s) on queue.",
+                )
+            else:
+                self._log.debug("Event message queue processing stopped.")
 
     async def _inflight_check_loop(self) -> None:
         while True:
@@ -383,13 +431,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    cpdef void reconcile_report(self, ExecutionReport report) except *:
+    cpdef void reconcile_report(self, ExecutionReport report):
         """
         Check the given execution report.
 
         Parameters
         ----------
-        report : Document
+        report : ExecutionReport
             The execution report to check.
 
         """
@@ -397,13 +445,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._reconcile_report(report)
 
-    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *:
+    cpdef void reconcile_mass_status(self, ExecutionMassStatus report):
         """
         Reconcile the given execution mass status report.
 
         Parameters
         ----------
-        report : Document
+        report : ExecutionMassStatus
             The execution mass status report to reconcile.
 
         """
@@ -413,7 +461,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
 # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    cdef bint _reconcile_report(self, ExecutionReport report) except *:
+    cdef bint _reconcile_report(self, ExecutionReport report):
         self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
@@ -441,7 +489,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return result
 
-    cdef bint _reconcile_mass_status(self, ExecutionMassStatus mass_status) except *:
+    cdef bint _reconcile_mass_status(self, ExecutionMassStatus mass_status):
         self._log.debug(f"{RECV}{RPT} {mass_status}.")
         self.report_count += 1
 
@@ -482,7 +530,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *:
+    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades):
         cdef ClientOrderId client_order_id = report.client_order_id
         if client_order_id is None:
             client_order_id = self._cache.client_order_id(report.venue_order_id)
@@ -565,7 +613,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return True  # Reconciled
 
-    cdef bint _reconcile_trade_report_single(self, TradeReport report) except *:
+    cdef bint _reconcile_trade_report_single(self, TradeReport report):
         cdef ClientOrderId client_order_id = self._cache.client_order_id(report.venue_order_id)
         if client_order_id is None:
             self._log.error(
@@ -592,7 +640,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return self._reconcile_trade_report(order, report, instrument)
 
-    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *:
+    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument):
         if report.trade_id in order.trade_ids_c():
             return True  # Fill already applied (assumes consistent trades)
         try:
@@ -607,13 +655,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             )
         return True
 
-    cdef bint _reconcile_position_report(self, PositionStatusReport report) except *:
+    cdef bint _reconcile_position_report(self, PositionStatusReport report):
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
             return self._reconcile_position_report_netting(report)
 
-    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report) except *:
+    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report):
         cdef Position position = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
@@ -632,7 +680,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return True  # Reconciled
 
-    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report) except *:
+    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report):
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
@@ -760,7 +808,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         return order
 
-    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report):
         cdef OrderRejected rejected = OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -776,7 +824,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {rejected}.")
         self._handle_event(rejected)
 
-    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report):
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
@@ -792,7 +840,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {accepted}.")
         self._handle_event(accepted)
 
-    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report):
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
@@ -808,7 +856,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {triggered}.")
         self._handle_event(triggered)
 
-    cdef void _generate_order_updated(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_updated(self, Order order, OrderStatusReport report):
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
@@ -827,7 +875,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {updated}.")
         self._handle_event(updated)
 
-    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report):
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -843,7 +891,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {canceled}.")
         self._handle_event(canceled)
 
-    cdef void _generate_order_expired(self, Order order, OrderStatusReport report) except *:
+    cdef void _generate_order_expired(self, Order order, OrderStatusReport report):
         cdef OrderExpired expired = OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -859,7 +907,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {expired}.")
         self._handle_event(expired)
 
-    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *:
+    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument):
         cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -883,7 +931,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
         self._handle_event(filled)
 
-    cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
+    cdef bint _should_update(self, Order order, OrderStatusReport report):
         if report.quantity != order.quantity:
             return True
         elif order.order_type == OrderType.LIMIT:

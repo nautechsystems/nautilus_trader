@@ -31,7 +31,6 @@ from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
@@ -49,6 +48,7 @@ from nautilus_trader.config import OrderEmulatorConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import DataCatalogConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.uuid import UUID4
@@ -61,7 +61,8 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.streaming import StreamingFeatherWriter
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -106,6 +107,8 @@ class NautilusKernel:
         The order emulator configuration for the kernel.
     streaming_config : StreamingConfig, optional
         The configuration for streaming to feather files.
+    catalog_config : DataCatalogConfig, optional
+        The data catalog configuration.
     actor_configs : list[ImportableActorConfig], optional
         The list of importable actor configs.
     strategy_configs : list[ImportableStrategyConfig], optional
@@ -121,7 +124,13 @@ class NautilusKernel:
     save_state : bool, default False
         If strategy state should be saved on stop.
     log_level : LogLevel, default LogLevel.INFO
-        The log level for the kernels logger.
+        The minimum log level for write to stdout.
+    log_level_file : LogLevel, default LogLevel.DEBUG
+        The minimum log level to write to a log file.
+    log_file_path : str, optional
+        The optional log file path. If ``None`` then will not log to a file.
+    log_rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
         If logging to stdout should be bypassed.
 
@@ -133,7 +142,6 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
-
     """
 
     def __init__(  # noqa (too complex)
@@ -149,6 +157,7 @@ class NautilusKernel:
         instance_id: Optional[UUID4] = None,
         emulator_config: Optional[OrderEmulatorConfig] = None,
         streaming_config: Optional[StreamingConfig] = None,
+        catalog_config: Optional[DataCatalogConfig] = None,
         actor_configs: Optional[list[ImportableActorConfig]] = None,
         strategy_configs: Optional[list[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
@@ -157,6 +166,9 @@ class NautilusKernel:
         load_state: bool = False,
         save_state: bool = False,
         log_level: LogLevel = LogLevel.INFO,
+        log_level_file: LogLevel = LogLevel.DEBUG,
+        log_file_path: Optional[str] = None,
+        log_rate_limit: int = 100_000,
         bypass_logging: bool = False,
     ):
         PyCondition.not_none(environment, "environment")
@@ -175,24 +187,19 @@ class NautilusKernel:
         PyCondition.valid_string(name, "name")
         PyCondition.type(cache_config, CacheConfig, "cache_config")
         PyCondition.type(cache_database_config, CacheDatabaseConfig, "cache_database_config")
-        PyCondition.true(
-            isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)),
-            "data_config was unrecognized type",
-            ex_type=TypeError,
-        )
-        PyCondition.true(
-            isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)),
-            "risk_config was unrecognized type",
-            ex_type=TypeError,
-        )
-        PyCondition.true(
-            isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)),
-            "exec_config was unrecognized type",
-            ex_type=TypeError,
-        )
+        if environment == Environment.BACKTEST:
+            PyCondition.type(data_config, DataEngineConfig, "data_config")
+            PyCondition.type(risk_config, RiskEngineConfig, "risk_config")
+            PyCondition.type(exec_config, ExecEngineConfig, "exec_config")
+        else:
+            PyCondition.type(data_config, LiveDataEngineConfig, "data_config")
+            PyCondition.type(risk_config, LiveRiskEngineConfig, "risk_config")
+            PyCondition.type(exec_config, LiveExecEngineConfig, "exec_config")
         PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self._environment = environment
+        self._load_state = load_state
+        self._save_state = save_state
 
         # Identifiers
         self._name = name
@@ -204,28 +211,25 @@ class NautilusKernel:
         # Components
         if self._environment == Environment.BACKTEST:
             self._clock = TestClock()
-            self._logger = Logger(
-                clock=LiveClock(loop=loop),
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level,
-                bypass=bypass_logging,
-            )
         elif self.environment in (Environment.SANDBOX, Environment.LIVE):
             self._clock = LiveClock(loop=loop)
-            self._logger = LiveLogger(
-                loop=loop,
-                clock=self._clock,
-                trader_id=self._trader_id,
-                machine_id=self._machine_id,
-                instance_id=self._instance_id,
-                level_stdout=log_level,
-            )
+            bypass_logging = False  # Safety measure so live logging is visible
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
                 f"environment {environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        self._logger = Logger(
+            clock=self._clock,
+            trader_id=self._trader_id,
+            machine_id=self._machine_id,
+            instance_id=self._instance_id,
+            level_stdout=log_level,
+            level_file=log_level_file,
+            file_path=log_file_path,
+            rate_limit=log_rate_limit,
+            bypass=bypass_logging,
+        )
 
         # Setup logging
         self._log = LoggerAdapter(
@@ -236,17 +240,19 @@ class NautilusKernel:
         nautilus_header(self._log)
         self.log.info("Building system kernel...")
 
-        # Setup loop
-        self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
-        if loop is not None:
-            self._executor = concurrent.futures.ThreadPoolExecutor()
-            self._loop.set_default_executor(self.executor)
-            self._loop.set_debug(loop_debug)
-            self._loop_sig_callback = loop_sig_callback
-            if platform.system() != "Windows":
-                # Windows does not support signal handling
-                # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
-                self._setup_loop()
+        # Setup loop (if sandbox live)
+        self._loop: Optional[AbstractEventLoop] = None
+        if environment != Environment.BACKTEST:
+            self._loop = loop or asyncio.get_event_loop()
+            if loop is not None:
+                self._executor = concurrent.futures.ThreadPoolExecutor()
+                self._loop.set_default_executor(self.executor)
+                self._loop.set_debug(loop_debug)
+                self._loop_sig_callback = loop_sig_callback
+                if platform.system() != "Windows":
+                    # Windows does not support signal handling
+                    # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
+                    self._setup_loop()
 
         if cache_database_config is None or cache_database_config.type == "in-memory":
             cache_db = None
@@ -260,7 +266,7 @@ class NautilusKernel:
         else:
             raise ValueError(
                 "The `cache_db_config.type` is unrecognized. "
-                "Please use one of {{'in-memory', 'redis'}}.",
+                "Use one of {{'in-memory', 'redis'}}.",
             )
 
         ########################################################################
@@ -378,13 +384,23 @@ class NautilusKernel:
             loop=self._loop,
         )
 
-        if load_state:
+        if self._load_state:
             self._trader.load()
 
-        # Setup writer
+        # Setup stream writer
         self._writer: Optional[StreamingFeatherWriter] = None
         if streaming_config:
             self._setup_streaming(config=streaming_config)
+
+        # Setup data catalog
+        self._catalog: Optional[ParquetDataCatalog] = None
+        if catalog_config:
+            self._catalog = ParquetDataCatalog(
+                path=catalog_config.path,
+                fs_protocol=catalog_config.fs_protocol,
+                fs_storage_options=catalog_config.fs_storage_options,
+            )
+            self._data_engine.register_catalog(self._catalog)
 
         # Create importable actors
         for actor_config in actor_configs:
@@ -543,6 +559,30 @@ class NautilusKernel:
         return self._ts_created
 
     @property
+    def load_state(self) -> bool:
+        """
+        If the kernel has been configured to load actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._load_state
+
+    @property
+    def save_state(self) -> bool:
+        """
+        If the kernel has been configured to save actor and strategy state.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._save_state
+
+    @property
     def clock(self) -> Clock:
         """
         Return the kernels clock.
@@ -686,6 +726,18 @@ class NautilusKernel:
         """
         return self._writer
 
+    @property
+    def catalog(self) -> Optional[ParquetDataCatalog]:
+        """
+        Return the kernels data catalog.
+
+        Returns
+        -------
+        ParquetDataCatalog or ``None``
+
+        """
+        return self._catalog
+
     def dispose(self) -> None:
         """
         Dispose of the kernel releasing system resources.
@@ -694,8 +746,7 @@ class NautilusKernel:
         called after disposal.
 
         """
-        self.trader.dispose()
-
+        # Stop all engines
         if self.data_engine.is_running:
             self.data_engine.stop()
         if self.risk_engine.is_running:
@@ -703,29 +754,19 @@ class NautilusKernel:
         if self.exec_engine.is_running:
             self.exec_engine.stop()
 
-        self.data_engine.dispose()
-        self.risk_engine.dispose()
-        self.exec_engine.dispose()
+        # Dispose all engines
+        if not self.data_engine.is_disposed:
+            self.data_engine.dispose()
+        if not self.risk_engine.is_disposed:
+            self.risk_engine.dispose()
+        if not self.exec_engine.is_disposed:
+            self.exec_engine.dispose()
+
+        if not self.trader.is_disposed:
+            self.trader.dispose()
 
         if self._writer:
             self._writer.close()
-
-    def add_log_sink(self, handler: Callable[[dict], None]):
-        """
-        Register the given sink handler with the nodes logger.
-
-        Parameters
-        ----------
-        handler : Callable[[dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        self.logger.register_sink(handler=handler)
 
     def cancel_all_tasks(self) -> None:
         PyCondition.not_none(self.loop, "self.loop")

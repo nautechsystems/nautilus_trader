@@ -21,17 +21,22 @@ from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport currency_type_from_str
 from nautilus_trader.model.enums_c cimport currency_type_to_str
+from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -39,6 +44,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
@@ -52,12 +59,14 @@ except ImportError:  # pragma: no cover
 
 
 cdef str _UTF8 = "utf-8"
+cdef str _GENERAL = "general"
 cdef str _CURRENCIES = "currencies"
 cdef str _INSTRUMENTS = "instruments"
 cdef str _ACCOUNTS = "accounts"
 cdef str _TRADER = "trader"
 cdef str _ORDERS = "orders"
 cdef str _POSITIONS = "positions"
+cdef str _ACTORS = "actors"
 cdef str _STRATEGIES = "strategies"
 cdef str _COMMANDS = "commands"
 
@@ -110,11 +119,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
+        self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
         self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
         self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
         self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
         self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
+        self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
         self._key_commands    = f"{self._key_trader}:{_COMMANDS}:"    # noqa
 
@@ -122,11 +133,18 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._serializer = serializer
 
         # Redis client
-        self._redis = redis.Redis(host=config.host, port=config.port, db=0)
+        self._redis = redis.Redis(
+            host=config.host,
+            port=config.port or 6379,
+            db=0,
+            username=config.username,
+            password=config.password,
+            ssl=config.ssl,
+        )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void flush(self) except *:
+    cpdef void flush(self):
         """
         Flush the database which clears all data.
 
@@ -134,6 +152,32 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._log.debug("Flushing database....")
         self._redis.flushdb()
         self._log.info("Flushed database.")
+
+    cpdef dict load(self):
+        """
+        Load all general objects from the database.
+
+        Returns
+        -------
+        dict[str, bytes]
+
+        """
+        cdef dict general = {}
+
+        cdef list general_keys = self._redis.keys(f"{self._key_general}*")
+        if not general_keys:
+            return general
+
+        cdef bytes key_bytes
+        cdef bytes value_bytes
+        cdef str key
+        for key_bytes in general_keys:
+            value_bytes = self._redis.get(name=key_bytes)
+            if value_bytes is not None:
+                key = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+                general[key] = value_bytes
+
+        return general
 
     cpdef dict load_currencies(self):
         """
@@ -495,9 +539,23 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef OrderInitialized init = self._serializer.deserialize(events.pop(0))
         cdef Order order = OrderUnpacker.from_init_c(init)
 
+        cdef int event_count = 0
         cdef bytes event_bytes
+        cdef OrderEvent event
         for event_bytes in events:
-            order.apply(self._serializer.deserialize(event_bytes))
+            event = self._serializer.deserialize(event_bytes)
+            if event_count > 0 and isinstance(event, OrderInitialized):
+                if event.order_type == OrderType.MARKET:
+                    order = MarketOrder.transform(order, event.ts_init)
+                elif event.order_type == OrderType.LIMIT:
+                    order = LimitOrder.transform(order, event.ts_init)
+                else:
+                    raise RuntimeError(  # pragma: no cover (design-time error)
+                        f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
+                    )
+            else:
+                order.apply(event)
+            event_count += 1
 
         return order
 
@@ -544,6 +602,43 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return position
 
+    cpdef dict load_actor(self, ComponentId component_id):
+        """
+        Load the state for the given actor.
+
+        Parameters
+        ----------
+        component_id : ComponentId
+            The ID of the actor state dictionary to load.
+
+        Returns
+        -------
+        dict[str, bytes]
+
+        """
+        Condition.not_none(component_id, "component_id")
+
+        cdef dict user_state = self._redis.hgetall(
+            name=self._key_actors + component_id.to_str() + ":state",
+        )
+        return {k.decode('utf-8'): v for k, v in user_state.items()}
+
+    cpdef void delete_actor(self, ComponentId component_id):
+        """
+        Delete the given actor from the database.
+
+        Parameters
+        ----------
+        component_id : ComponentId
+            The ID of the actor state dictionary to delete.
+
+        """
+        Condition.not_none(component_id, "component_id")
+
+        self._redis.delete(self._key_actors + component_id.to_str() + ":state")
+
+        self._log.info(f"Deleted {repr(component_id)}.")
+
     cpdef dict load_strategy(self, StrategyId strategy_id):
         """
         Load the state for the given strategy.
@@ -561,11 +656,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(strategy_id, "strategy_id")
 
         cdef dict user_state = self._redis.hgetall(
-            name=self._key_strategies + strategy_id.to_str() + ":State",
+            name=self._key_strategies + strategy_id.to_str() + ":state",
         )
         return {k.decode('utf-8'): v for k, v in user_state.items()}
 
-    cpdef void delete_strategy(self, StrategyId strategy_id) except *:
+    cpdef void delete_strategy(self, StrategyId strategy_id):
         """
         Delete the given strategy from the database.
 
@@ -577,11 +672,29 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        self._redis.delete(self._key_strategies + strategy_id.to_str())
+        self._redis.delete(self._key_strategies + strategy_id.to_str() + ":state")
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
 
-    cpdef void add_currency(self, Currency currency) except *:
+    cpdef void add(self, str key, bytes value):
+        """
+        Add the given general object value to the database.
+
+        Parameters
+        ----------
+        key : str
+            The key to write to.
+        value : bytes
+            The object value.
+
+        """
+        Condition.not_none(key, "key")
+        Condition.not_none(value, "value")
+
+        self._redis.set(name=self._key_general + key, value=value)
+        self._log.debug(f"Added general object {key}.")
+
+    cpdef void add_currency(self, Currency currency):
         """
         Add the given currency to the database.
 
@@ -608,7 +721,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added currency {currency.code}.")
 
-    cpdef void add_instrument(self, Instrument instrument) except *:
+    cpdef void add_instrument(self, Instrument instrument):
         """
         Add the given instrument to the database.
 
@@ -625,7 +738,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added instrument {instrument.id}.")
 
-    cpdef void add_account(self, Account account) except *:
+    cpdef void add_account(self, Account account):
         """
         Add the given account to the database.
 
@@ -650,7 +763,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {account}).")
 
-    cpdef void add_order(self, Order order) except *:
+    cpdef void add_order(self, Order order):
         """
         Add the given order to the database.
 
@@ -673,7 +786,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added Order(id={order.client_order_id.to_str()}).")
 
-    cpdef void add_position(self, Position position) except *:
+    cpdef void add_position(self, Position position):
         """
         Add the given position associated with the given strategy ID.
 
@@ -696,7 +809,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added Position(id={position.id.to_str()}).")
 
-    cpdef void add_submit_order_command(self, SubmitOrder command) except *:
+    cpdef void add_submit_order_command(self, SubmitOrder command):
         """
         Add the given submit order command to the database.
 
@@ -720,7 +833,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {command}.")
 
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
         """
         Add the given submit order list command to the database.
 
@@ -744,7 +857,34 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {command}.")
 
-    cpdef void update_strategy(self, Strategy strategy) except *:
+    cpdef void update_actor(self, Actor actor):
+        """
+        Update the given actor state in the database.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to update.
+
+        """
+        Condition.not_none(actor, "actor")
+
+        cdef dict state = actor.save()  # Extract state dictionary from strategy
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        for key, value in state.items():
+            pipe.hset(
+                name=self._key_actors + actor.id.value + ":state",
+                key=key,
+                value=value,
+            )
+            self._log.debug(f"Saving {actor.id} state {{ {key}: {value} }}")
+        pipe.execute()
+
+        self._log.debug(f"Saved actor state for {actor.id.value}.")
+
+    cpdef void update_strategy(self, Strategy strategy):
         """
         Update the given strategy state in the database.
 
@@ -762,7 +902,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         pipe = self._redis.pipeline()
         for key, value in state.items():
             pipe.hset(
-                name=self._key_strategies + strategy.id.value + ":State",
+                name=self._key_strategies + strategy.id.value + ":state",
                 key=key,
                 value=value,
             )
@@ -771,7 +911,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Saved strategy state for {strategy.id.value}.")
 
-    cpdef void update_account(self, Account account) except *:
+    cpdef void update_account(self, Account account):
         """
         Update the given account in the database.
 
@@ -787,7 +927,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Updated {account}.")
 
-    cpdef void update_order(self, Order order) except *:
+    cpdef void update_order(self, Order order):
         """
         Update the given order in the database.
 
@@ -808,7 +948,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Updated {order}.")
 
-    cpdef void update_position(self, Position position) except *:
+    cpdef void update_position(self, Position position):
         """
         Update the given position in the database.
 

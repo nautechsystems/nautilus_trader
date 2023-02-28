@@ -173,7 +173,7 @@ cdef class ExecutionEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
-    cpdef int position_id_count(self, StrategyId strategy_id) except *:
+    cpdef int position_id_count(self, StrategyId strategy_id):
         """
         The position ID count for the given strategy ID.
 
@@ -189,7 +189,7 @@ cdef class ExecutionEngine(Component):
         """
         return self._pos_id_generator.get_count(strategy_id)
 
-    cpdef bint check_integrity(self) except *:
+    cpdef bint check_integrity(self):
         """
         Check integrity of data within the cache and clients.
 
@@ -200,7 +200,7 @@ cdef class ExecutionEngine(Component):
         """
         return self._cache.check_integrity()
 
-    cpdef bint check_connected(self) except *:
+    cpdef bint check_connected(self):
         """
         Check all of the engines clients are connected.
 
@@ -216,7 +216,7 @@ cdef class ExecutionEngine(Component):
                 return False
         return True
 
-    cpdef bint check_disconnected(self) except *:
+    cpdef bint check_disconnected(self):
         """
         Check all of the engines clients are disconnected.
 
@@ -232,7 +232,7 @@ cdef class ExecutionEngine(Component):
                 return False
         return True
 
-    cpdef bint check_residuals(self) except *:
+    cpdef bint check_residuals(self):
         """
         Check for any residual open state and log warnings if found.
 
@@ -248,7 +248,7 @@ cdef class ExecutionEngine(Component):
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef void register_client(self, ExecutionClient client) except *:
+    cpdef void register_client(self, ExecutionClient client):
         """
         Register the given execution client with the execution engine.
 
@@ -281,7 +281,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Registered ExecutionClient-{client}{routing_log}.")
 
-    cpdef void register_default_client(self, ExecutionClient client) except *:
+    cpdef void register_default_client(self, ExecutionClient client):
         """
         Register the given client as the default routing client (when a specific
         venue routing cannot be found).
@@ -300,7 +300,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Registered {client} for default routing.")
 
-    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
+    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue):
         """
         Register the given client to route orders to the given venue.
 
@@ -325,7 +325,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
-    cpdef void register_oms_type(self, Strategy strategy) except *:
+    cpdef void register_oms_type(self, Strategy strategy):
         """
         Register the given trading strategies OMS (Order Management System) type.
 
@@ -344,7 +344,7 @@ cdef class ExecutionEngine(Component):
             f"for Strategy {strategy}.",
         )
 
-    cpdef void deregister_client(self, ExecutionClient client) except *:
+    cpdef void deregister_client(self, ExecutionClient client):
         """
         Deregister the given execution client from the execution engine.
 
@@ -374,29 +374,29 @@ cdef class ExecutionEngine(Component):
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *:
+    cpdef void _on_start(self):
         pass  # Optionally override in subclass
 
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         pass  # Optionally override in subclass
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
-    cpdef void _start(self) except *:
+    cpdef void _start(self):
         cdef ExecutionClient client
         for client in self._clients.values():
             client.start()
 
         self._on_start()
 
-    cpdef void _stop(self) except *:
+    cpdef void _stop(self):
         cdef ExecutionClient client
         for client in self._clients.values():
             client.stop()
 
         self._on_stop()
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         for client in self._clients.values():
             client.reset()
 
@@ -407,21 +407,23 @@ cdef class ExecutionEngine(Component):
         self.event_count = 0
         self.report_count = 0
 
-    cpdef void _dispose(self) except *:
+    cpdef void _dispose(self):
         cdef ExecutionClient client
         for client in self._clients.values():
             client.dispose()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void load_cache(self) except *:
+    cpdef void load_cache(self):
         """
         Load the cache up from the execution database.
         """
         cdef uint64_t ts = unix_timestamp_ms()
 
-        # Cache commands first so that `SubmitOrder` commands don't revert orders
-        # back to their initialized state.
+        # ***** WARNING *****
+        # Cache commands early so that `SubmitOrder` commands don't revert
+        # orders back to their initialized state.
+        self._cache.cache_general()
         self._cache.cache_commands()
         self._cache.cache_currencies()
         self._cache.cache_instruments()
@@ -435,7 +437,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
 
-    cpdef void execute(self, TradingCommand command) except *:
+    cpdef void execute(self, TradingCommand command):
         """
         Execute the given command.
 
@@ -449,7 +451,7 @@ cdef class ExecutionEngine(Component):
 
         self._execute_command(command)
 
-    cpdef void process(self, OrderEvent event) except *:
+    cpdef void process(self, OrderEvent event):
         """
         Process the given order event.
 
@@ -463,7 +465,7 @@ cdef class ExecutionEngine(Component):
 
         self._handle_event(event)
 
-    cpdef void flush_db(self) except *:
+    cpdef void flush_db(self):
         """
         Flush the execution database which permanently removes all persisted data.
 
@@ -476,7 +478,7 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef void _set_position_id_counts(self) except *:
+    cdef void _set_position_id_counts(self):
         # For the internal position ID generator
         cdef list positions = self._cache.positions()
 
@@ -500,7 +502,7 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, TradingCommand command) except *:
+    cdef void _execute_command(self, TradingCommand command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
@@ -535,7 +537,7 @@ cdef class ExecutionEngine(Component):
                 f"Cannot handle command: unrecognized {command}.",  # pragma: no cover (design-time error)
             )
 
-    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
+    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
         if not self._cache.order_exists(command.order.client_order_id):
             # Cache order
             self._cache.add_order(command.order, command.position_id)
@@ -543,7 +545,7 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_order(command)
 
-    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *:
+    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
         cdef Order order
         for order in command.order_list.orders:
             if not self._cache.order_exists(order.client_order_id):
@@ -553,21 +555,21 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_order_list(command)
 
-    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
+    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)
 
-    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
+    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command):
         client.cancel_order(command)
 
-    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *:
+    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command):
         client.cancel_all_orders(command)
 
-    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *:
+    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command):
         client.query_order(command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, OrderEvent event) except *:
+    cdef void _handle_event(self, OrderEvent event):
         if self.debug:
             self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
@@ -625,7 +627,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
-    cdef OmsType _determine_oms_type(self, OrderFilled fill) except *:
+    cdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
         # Check for strategy OMS override
         cdef OmsType oms_type = self._oms_overrides.get(fill.strategy_id, OmsType.UNSPECIFIED)
@@ -639,7 +641,7 @@ cdef class ExecutionEngine(Component):
 
         return oms_type
 
-    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type) except *:
+    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type):
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if self.debug:
@@ -672,7 +674,7 @@ cdef class ExecutionEngine(Component):
                 f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
             )
 
-    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
+    cdef void _apply_event_to_order(self, Order order, OrderEvent event):
         try:
             order.apply(event)
         except InvalidStateTrigger as e:
@@ -690,7 +692,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type) except *:
+    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -714,12 +716,12 @@ cdef class ExecutionEngine(Component):
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
             self._open_position(instrument, position, fill, oms_type)
-        elif self._will_flip_position(position, fill, oms_type):
+        elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
 
-    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *:
+    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
@@ -745,7 +747,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *:
+    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         try:
             position.apply(fill)
         except KeyError as e:
@@ -776,15 +778,14 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OmsType oms_type) except *:
+    cdef bint _will_flip_position(self, Position position, OrderFilled fill):
         return (
             # Check for flip (last_qty guaranteed to be positive)
-            oms_type == OmsType.HEDGING
-            and position.is_opposite_side(fill.order_side)
+            position.is_opposite_side(fill.order_side)
             and fill.last_qty._mem.raw > position.quantity._mem.raw
         )
 
-    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *:
+    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)

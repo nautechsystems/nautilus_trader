@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import platform
 import socket
 import sys
 import traceback
-from asyncio import Task
-from collections import defaultdict
 from platform import python_version
 from typing import Optional
 
@@ -33,13 +30,10 @@ import pytz
 
 from nautilus_trader import __version__
 
-from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
@@ -53,7 +47,6 @@ from nautilus_trader.core.rust.common cimport logger_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.enums_c cimport log_level_to_str
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -81,10 +74,16 @@ cdef class Logger:
         The machine ID.
     instance_id : UUID4, optional
         The instance ID.
-    level_stdout : LogLevel
-        The minimum log level for logging messages to stdout.
+    level_stdout : LogLevel, default ``INFO``
+        The minimum log level to write to stdout.
+    level_file : LogLevel, default ``DEBUG``
+        The minimum log level to write to a file.
+    file_path : str, optional
+        The optional log file path. If ``None`` will not log to a file.
+    rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
-        If the logger should be bypassed.
+        If the log output is bypassed.
     """
 
     def __init__(
@@ -94,6 +93,9 @@ cdef class Logger:
         str machine_id = None,
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
+        LogLevel level_file = LogLevel.DEBUG,
+        str file_path = None,
+        int rate_limit = 100_000,
         bint bypass = False,
     ):
         if trader_id is None:
@@ -112,9 +114,12 @@ cdef class Logger:
             pystr_to_cstr(machine_id),
             pystr_to_cstr(instance_id_str),
             level_stdout,
+            level_file,
+            pystr_to_cstr(file_path) if file_path else NULL,
+            rate_limit,
             bypass,
         )
-        self._sinks = []
+        self._file_path = file_path
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
@@ -157,6 +162,18 @@ cdef class Logger:
         return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
 
     @property
+    def file_path(self) -> Optional[str]:
+        """
+        Return the optional file path for logging.
+
+        Returns
+        -------
+        str or ``None``
+
+        """
+        return self._file_path
+
+    @property
     def is_bypassed(self) -> bool:
         """
         Return whether the logger is in bypass mode.
@@ -168,27 +185,7 @@ cdef class Logger:
         """
         return logger_is_bypassed(&self._mem)
 
-    cpdef void register_sink(self, handler: Callable[[dict], None]) except *:
-        """
-        Register the given sink handler with the logger.
-
-        Parameters
-        ----------
-        handler : Callable[[dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        Condition.not_none(handler, "handler")
-        Condition.not_in(handler, self._sinks, "handler", "_sinks")
-
-        self._sinks.append(handler)
-
-    cpdef void change_clock(self, Clock clock) except *:
+    cpdef void change_clock(self, Clock clock):
         """
         Change the loggers internal clock to the given clock.
 
@@ -201,28 +198,6 @@ cdef class Logger:
 
         self._clock = clock
 
-    cdef dict create_record(
-        self,
-        LogLevel level,
-        str component,
-        str msg,
-        dict annotations = None,
-    ):
-        cdef dict record = {
-            "timestamp": self._clock.timestamp_ns(),
-            "level": log_level_to_str(level),
-            "trader_id": str(self.trader_id),
-            "machine_id": self.machine_id,
-            "instance_id": str(self.instance_id),
-            "component": component,
-            "msg": msg,
-        }
-
-        if annotations is not None:
-            record = {**record, **annotations}
-
-        return record
-
     cdef void log(
         self,
         uint64_t timestamp_ns,
@@ -231,7 +206,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations = None,
-    ) except *:
+    ):
         self._log(
             timestamp_ns,
             level,
@@ -249,7 +224,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations,
-    ) except *:
+    ):
         logger_log(
             &self._mem,
             timestamp_ns,
@@ -258,19 +233,6 @@ cdef class Logger:
             pystr_to_cstr(component),
             pystr_to_cstr(msg),
         )
-
-        if not self._sinks:
-            return
-
-        cdef dict record = self.create_record(
-            level=level,
-            component=component,
-            msg=msg,
-            annotations=annotations,
-        )
-
-        for handler in self._sinks:
-            handler(record)
 
 
 cdef class LoggerAdapter:
@@ -372,7 +334,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given debug message with the logger.
 
@@ -404,7 +366,7 @@ cdef class LoggerAdapter:
         self, str msg,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given information message with the logger.
 
@@ -437,7 +399,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.YELLOW,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given warning message with the logger.
 
@@ -470,7 +432,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.RED,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given error message with the logger.
 
@@ -503,7 +465,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.RED,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given critical message with the logger.
 
@@ -536,7 +498,7 @@ cdef class LoggerAdapter:
         str msg,
         ex,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given exception including stack trace information.
 
@@ -564,13 +526,13 @@ cdef class LoggerAdapter:
         self.error(f"{msg}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
 
 
-cpdef void nautilus_header(LoggerAdapter logger) except *:
+cpdef void nautilus_header(LoggerAdapter logger):
     Condition.not_none(logger, "logger")
     print("")  # New line to begin
     logger.info("\033[36m=================================================================")
     logger.info(f"\033[36m NAUTILUS TRADER - Automated Algorithmic Trading Platform")
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
-    logger.info(f"\033[36m Copyright (C) 2015-2022. All rights reserved.")
+    logger.info(f"\033[36m Copyright (C) 2015-2023. All rights reserved.")
     logger.info("\033[36m=================================================================")
     logger.info("")
     logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
@@ -634,7 +596,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
 
     logger.info("\033[36m=================================================================")
 
-cpdef void log_memory(LoggerAdapter logger) except *:
+cpdef void log_memory(LoggerAdapter logger):
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m MEMORY USAGE")
     logger.info("\033[36m=================================================================")
@@ -648,221 +610,3 @@ cpdef void log_memory(LoggerAdapter logger) except *:
         logger.warning(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
     else:
         logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
-
-
-cdef class LiveLogger(Logger):
-    """
-    Provides a high-performance logger which runs on the event loop.
-
-    Parameters
-    ----------
-    loop : asyncio.AbstractEventLoop
-        The event loop to run the logger on.
-    clock : LiveClock
-        The clock for the logger.
-    trader_id : TraderId, optional
-        The trader ID for the logger.
-    machine_id : str, optional
-        The machine ID for the logger.
-    instance_id : UUID4, optional
-        The systems unique instantiation ID.
-    level_stdout : LogLevel
-        The minimum log level for logging messages to stdout.
-    bypass : bool
-        If the logger should be bypassed.
-    maxsize : int, optional
-        The maximum capacity for the log queue.
-    """
-    _sentinel = None
-
-    def __init__(
-        self,
-        loop not None,
-        LiveClock clock not None,
-        TraderId trader_id = None,
-        str machine_id = None,
-        UUID4 instance_id = None,
-        LogLevel level_stdout = LogLevel.INFO,
-        bint bypass = False,
-        int maxsize = 10000,
-    ):
-        super().__init__(
-            clock=clock,
-            trader_id=trader_id,
-            machine_id=machine_id,
-            instance_id=instance_id,
-            level_stdout=level_stdout,
-            bypass=bypass,
-        )
-
-        self._loop = loop
-        self._queue = Queue(maxsize=maxsize)
-        self._run_task: Optional[Task] = None
-        self._blocked_log_interval = timedelta(seconds=1)
-
-        self._is_running = False
-        self._last_blocked: Optional[datetime] = None
-
-    @property
-    def is_running(self) -> bool:
-        """
-        Return whether the logger is running.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_running
-
-    @property
-    def last_blocked(self) -> Optional[datetime]:
-        """
-        Return the timestamp (UTC) the logger last blocked.
-
-        Returns
-        -------
-        datetime or ``None``
-
-        """
-        return self._last_blocked
-
-    def get_run_task(self) -> asyncio.Task:
-        """
-        Return the internal run queue task for the engine.
-
-        Returns
-        -------
-        asyncio.Task
-
-        """
-        return self._run_task
-
-    cdef void log(
-        self,
-        uint64_t timestamp_ns,
-        LogLevel level,
-        LogColor color,
-        str component,
-        str msg,
-        dict annotations = None,
-    ) except *:
-        """
-        Log the given message.
-
-        If the internal queue is already full then will log a warning and block
-        until queue size reduces.
-
-        If the event loop is not running then messages will be passed directly
-        to the `Logger` base class for logging.
-
-        """
-        Condition.not_none(component, "component")
-        Condition.not_none(msg, "msg")
-
-        if self._is_running:
-            try:
-                self._queue.put_nowait((timestamp_ns, level, color, component, msg, annotations))
-            except asyncio.QueueFull:
-                now = self._clock.utc_now()
-                next_msg = self._queue.peek_front()[4]
-
-                # Log blocking message once a second
-                if (
-                    self._last_blocked is None
-                    or now >= self._last_blocked + self._blocked_log_interval
-                ):
-                    self._last_blocked = now
-
-                    messages = [r[4] for r in self._queue.to_list()]
-                    message_types = defaultdict(lambda: 0)
-                    for msg in messages:
-                        message_types[msg] += 1
-                    sorted_types = sorted(
-                        message_types.items(),
-                        key=lambda kv: kv[1],
-                        reverse=True,
-                    )
-
-                    blocked_msg = '\n'.join([f"'{kv[0]}' [x{kv[1]}]" for kv in sorted_types])
-                    log_msg = (f"Blocking full log queue at "
-                               f"{self._queue.qsize()} items. "
-                               f"\nNext msg = '{next_msg}'.\n{blocked_msg}")
-
-                    self._log(
-                        timestamp_ns,
-                        LogLevel.WARNING,
-                        LogColor.YELLOW,
-                        type(self).__name__,
-                        log_msg,
-                        annotations,
-                    )
-
-                # If not spamming then add record to event loop
-                if next_msg != msg:
-                    self._loop.create_task(self._queue.put((timestamp_ns, level, color, component, msg, annotations)))  # Blocking until qsize reduces
-        else:
-            # If event loop is not running then pass message directly to the
-            # base class to log.
-            self._log(
-                timestamp_ns,
-                level,
-                color,
-                component,
-                msg,
-                annotations,
-            )
-
-    cpdef void start(self) except *:
-        """
-        Start the logger on a running event loop.
-        """
-        if not self._is_running:
-            self._run_task = self._loop.create_task(self._consume_messages())
-        self._is_running = True
-
-    cpdef void stop(self) except *:
-        """
-        Stop the logger by cancelling the internal event loop task.
-
-        Future messages sent to the logger will be passed directly to the
-        `Logger` base class for logging.
-
-        """
-        if self._run_task:
-            self._is_running = False
-            self._enqueue_sentinel()
-
-    async def _consume_messages(self):
-        cdef tuple record
-        try:
-            while self._is_running:
-                record = await self._queue.get()
-                if record is None:  # Sentinel message (fast C-level check)
-                    continue        # Returns to the top to check `self._is_running`
-                self._log(
-                    record[0],
-                    record[1],
-                    record[2],
-                    record[3],
-                    record[4],
-                    record[5],
-                )
-        except asyncio.CancelledError:
-            pass
-        finally:
-            # Pass remaining messages directly to the base class
-            while not self._queue.empty():
-                record = self._queue.get_nowait()
-                if record:
-                    self._log(
-                        record[0],
-                        record[1],
-                        record[2],
-                        record[3],
-                        record[4],
-                        record[5],
-                    )
-
-    cdef void _enqueue_sentinel(self) except *:
-        self._queue.put_nowait(self._sentinel)

@@ -37,26 +37,26 @@ cdef class DataClient(Component):
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
-    cpdef void _set_connected(self, bint value=*) except *
+    cpdef void _set_connected(self, bint value=*)
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self)
 
-    cpdef void subscribe(self, DataType data_type) except *
-    cpdef void unsubscribe(self, DataType data_type) except *
+    cpdef void subscribe(self, DataType data_type)
+    cpdef void unsubscribe(self, DataType data_type)
 
-    cpdef void _add_subscription(self, DataType data_type) except *
-    cpdef void _remove_subscription(self, DataType data_type) except *
+    cpdef void _add_subscription(self, DataType data_type)
+    cpdef void _remove_subscription(self, DataType data_type)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *
+    cpdef void request(self, DataType data_type, UUID4 correlation_id)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_data(self, Data data) except *
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id) except *
+    cpdef void _handle_data(self, Data data)
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id)
 
 
 cdef class MarketDataClient(DataClient):
@@ -66,6 +66,7 @@ cdef class MarketDataClient(DataClient):
     cdef set _subscriptions_quote_tick
     cdef set _subscriptions_trade_tick
     cdef set _subscriptions_bar
+    cdef set _subscriptions_venue_status_update
     cdef set _subscriptions_instrument_status_update
     cdef set _subscriptions_instrument_close
     cdef set _subscriptions_instrument
@@ -81,82 +82,87 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
+    cpdef list subscribed_venue_status_updates(self)
     cpdef list subscribed_instrument_status_updates(self)
     cpdef list subscribed_instrument_close(self)
 
-    cpdef void subscribe_instruments(self) except *
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*) except *
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*) except *
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_instruments(self) except *
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_instruments(self)
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id)
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*)
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*)
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id)
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id)
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id)
+    cpdef void subscribe_bars(self, BarType bar_type)
+    cpdef void subscribe_venue_status_updates(self, Venue venue)
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id)
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_instruments(self)
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_bars(self, BarType bar_type)
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue)
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id)
 
-    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_bars(self, BarType bar_type) except *
-    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_bars(self, BarType bar_type) except *
-    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_bars(self, BarType bar_type)
+    cpdef void _add_subscription_venue_status_updates(self, Venue venue)
+    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id)
+    cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_bars(self, BarType bar_type)
+    cpdef void _remove_subscription_venue_status_updates(self, Venue venue)
+    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id)
+    cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *
-    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id) except *
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id)
+    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id)
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
-    ) except *
+        datetime start=*,
+        datetime end=*,
+    )
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
-    ) except *
+        datetime start=*,
+        datetime end=*,
+    )
     cpdef void request_bars(
         self,
         BarType bar_type,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime=*,
-        datetime to_datetime=*,
-    ) except *
+        datetime start=*,
+        datetime end=*,
+    )
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id) except *
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id) except *
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id)
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id)
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id)
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id)
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id)

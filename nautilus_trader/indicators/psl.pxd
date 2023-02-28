@@ -29,4 +29,4 @@ cdef class PsychologicalLine(Indicator):
     cdef readonly double value
     """The current  value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double close) except *
+    cpdef void update_raw(self, double close)

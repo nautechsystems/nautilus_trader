@@ -15,13 +15,10 @@
 
 from typing import Callable
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.rust.common cimport CLogger
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
@@ -40,11 +37,9 @@ cdef str RES
 cdef class Logger:
     cdef CLogger _mem
     cdef Clock _clock
-    cdef list _sinks
+    cdef str _file_path
 
-    cpdef void register_sink(self, handler: Callable[[dict], None]) except *
-    cpdef void change_clock(self, Clock clock) except *
-    cdef dict create_record(self, LogLevel level, str component, str msg, dict annotations=*)
+    cpdef void change_clock(self, Clock clock)
     cdef void log(
         self,
         uint64_t timestamp_ns,
@@ -53,7 +48,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations=*,
-    ) except *
+    )
     cdef void _log(
         self,
         uint64_t timestamp_ns,
@@ -62,7 +57,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations,
-    ) except *
+    )
 
 
 cdef class LoggerAdapter:
@@ -71,26 +66,13 @@ cdef class LoggerAdapter:
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void info(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void error(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void exception(self, str msg, ex, dict annotations=*) except *
+    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void info(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void error(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void exception(self, str msg, ex, dict annotations=*)
 
 
-cpdef void nautilus_header(LoggerAdapter logger) except *
-cpdef void log_memory(LoggerAdapter logger) except *
-
-
-cdef class LiveLogger(Logger):
-    cdef object _loop
-    cdef object _run_task
-    cdef timedelta _blocked_log_interval
-    cdef Queue _queue
-    cdef bint _is_running
-    cdef datetime _last_blocked
-
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cdef void _enqueue_sentinel(self) except *
+cpdef void nautilus_header(LoggerAdapter logger)
+cpdef void log_memory(LoggerAdapter logger)

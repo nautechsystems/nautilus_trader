@@ -240,6 +240,8 @@ cdef class InstrumentClose(Data):
 
     Parameters
     ----------
+    instrument_id : InstrumentId
+        The instrument ID.
     close_price : Price
         The closing price for the instrument.
     close_type : InstrumentCloseType

@@ -25,12 +25,12 @@ def test_init():
 
 
 def test_order_id():
-    order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, id="1")
-    assert order.id == "1"
+    order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, order_id="1")
+    assert order.order_id == "1"
 
     order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY)
-    print(order.id)
-    assert len(order.id) == 36
+    print(order.order_id)
+    assert len(order.order_id) == 36
 
 
 def test_update_price():
@@ -45,10 +45,10 @@ def test_update_volume():
     assert order.size == 5.0
 
 
-def test_update_id():
-    order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, id="1")
-    order.update_id(value="2")
-    assert order.id == "2"
+def test_update_order_id():
+    order = BookOrder(price=100.0, size=10.0, side=OrderSide.BUY, order_id="1")
+    order.update_order_id(value="2")
+    assert order.order_id == "2"
 
 
 def test_signed_volume():
@@ -73,21 +73,21 @@ def test_hash_str_and_repr():
 
     # Act, Assert
     assert isinstance(hash(order), int)
-    assert str(order) == f"BookOrder(10.0, 5.0, BUY, {order.id})"
-    assert repr(order) == f"BookOrder(10.0, 5.0, BUY, {order.id})"
+    assert str(order) == f"BookOrder(10.0, 5.0, BUY, {order.order_id})"
+    assert repr(order) == f"BookOrder(10.0, 5.0, BUY, {order.order_id})"
 
 
 def test_to_dict_returns_expected_dict():
     # Arrange
-    order = BookOrder(price=10, size=5, side=OrderSide.BUY, id="1")
+    order = BookOrder(price=10, size=5, side=OrderSide.BUY, order_id="1")
 
     # Act
     result = BookOrder.to_dict(order)
 
     # Assert
     assert result == {
-        "type": "Order",
-        "id": "1",
+        "type": "BookOrder",
+        "order_id": "1",
         "price": 10.0,
         "side": "BUY",
         "size": 5.0,

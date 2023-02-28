@@ -22,18 +22,18 @@ cdef class Queue:
     cdef readonly int count
     """The current count of items on the queue.\n\n:returns: `int`"""
 
-    cpdef int qsize(self) except *
-    cpdef bint empty(self) except *
-    cpdef bint full(self) except *
-    cpdef void put_nowait(self, item) except *
+    cpdef int qsize(self)
+    cpdef bint empty(self)
+    cpdef bint full(self)
+    cpdef void put_nowait(self, item)
     cpdef object get_nowait(self)
     cpdef object peek_back(self)
     cpdef object peek_front(self)
     cpdef object peek_index(self, int index)
     cpdef list to_list(self)
 
-    cdef int _qsize(self) except *
-    cdef bint _empty(self) except *
-    cdef bint _full(self) except *
-    cdef void _put_nowait(self, item) except *
+    cdef int _qsize(self)
+    cdef bint _empty(self)
+    cdef bint _full(self)
+    cdef void _put_nowait(self, item)
     cdef object _get_nowait(self)

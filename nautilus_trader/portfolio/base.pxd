@@ -41,7 +41,7 @@ cdef class PortfolioFacade:
     cpdef Money net_exposure(self, InstrumentId instrument_id)
     cpdef object net_position(self, InstrumentId instrument_id)
 
-    cpdef bint is_net_long(self, InstrumentId instrument_id) except *
-    cpdef bint is_net_short(self, InstrumentId instrument_id) except *
-    cpdef bint is_flat(self, InstrumentId instrument_id) except *
-    cpdef bint is_completely_flat(self) except *
+    cpdef bint is_net_long(self, InstrumentId instrument_id)
+    cpdef bint is_net_short(self, InstrumentId instrument_id)
+    cpdef bint is_flat(self, InstrumentId instrument_id)
+    cpdef bint is_completely_flat(self)

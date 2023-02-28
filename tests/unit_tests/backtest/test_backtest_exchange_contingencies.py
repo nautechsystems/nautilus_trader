@@ -56,6 +56,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.INFO,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -374,7 +375,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),  # <-- in the market
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3000.0),
-            post_only_entry=True,  # <-- will reject placed into the market
+            entry_post_only=True,  # <-- will reject placed into the market
             entry_order_type=OrderType.LIMIT,
         )
 

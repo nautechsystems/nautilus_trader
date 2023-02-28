@@ -67,7 +67,7 @@ cdef class RelativeVolatilityIndex(Indicator):
         self._std = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -81,7 +81,7 @@ cdef class RelativeVolatilityIndex(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double close) except *:
+    cpdef void update_raw(self, double close):
         """
         Update the indicator with the given raw values.
 
@@ -124,7 +124,7 @@ cdef class RelativeVolatilityIndex(Indicator):
             if  self._pos_ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         """
         Reset the indicator.
 

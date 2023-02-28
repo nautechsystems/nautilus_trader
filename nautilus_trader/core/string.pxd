@@ -46,5 +46,5 @@ cdef inline str cstr_to_pystr(const char* ptr):
     return obj
 
 
-cdef inline const char* pystr_to_cstr(str value) except *:
+cdef inline const char* pystr_to_cstr(str value):
     return PyUnicode_AsUTF8AndSize(value, NULL)
