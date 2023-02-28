@@ -47,6 +47,7 @@ from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -123,6 +124,7 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
         self._catalog: Optional[ParquetDataCatalog] = None
+        self._use_ruse = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
 
@@ -168,7 +170,7 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
-    def register_catalog(self, catalog: ParquetDataCatalog) -> None:
+    def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
         """
         Register the given data catalog with the engine.
 
@@ -181,6 +183,7 @@ cdef class DataEngine(Component):
         Condition.not_none(catalog, "catalog")
 
         self._catalog = catalog
+        self._use_rust = use_rust
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
@@ -1070,6 +1073,12 @@ cdef class DataEngine(Component):
             self._log.debug(f"{RECV}{REQ} {request}.", LogColor.MAGENTA)
         self.request_count += 1
 
+        # Query data catalog
+        if self._catalog:
+            self._query_data_catalog(request)
+            return
+
+        # Query data client
         cdef DataClient client = self._clients.get(request.client_id)
         if client is None:
             client = self._routing_map.get(
@@ -1121,6 +1130,74 @@ cdef class DataEngine(Component):
                 client.request(request.data_type, request.id)
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
+
+    cdef void _query_data_catalog(self, DataRequest request):
+        if request.data_type.type == Instrument:
+            instrument_id = request.data_type.metadata.get("instrument_id")
+            if instrument_id is None:
+                instruments = self._catalog.instruments(as_nautilus=True)
+                response = DataResponse(
+                    client_id=request.client_id,
+                    venue=request.venue,
+                    data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
+                    data=instruments,
+                    correlation_id=request.correlation_id,
+                    response_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._handle_response(response)
+            else:
+                instrument = self._catalog.instruments(
+                    instrument_ids=[instrument_id],
+                    as_nautilus=True,
+                )
+                response = DataResponse(
+                    client_id=request.client_id,
+                    venue=request.venue,
+                    data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
+                    data=instrument,
+                    correlation_id=request.correlation_id,
+                    response_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._handle_response(response)
+        elif request.data_type.type == QuoteTick:
+            instrument_id = request.data_type.metadata.get("instrument_id")
+            ticks = self._catalog.quote_ticks(
+                instrument_ids=[request.data_type.metadata.get("instrument_id")],
+                start=request.data_type.metadata.get("start"),
+                end=request.data_type.metadata.get("end"),
+                as_nautilus=True,
+                use_rust=self._use_rust,
+            )
+            response = DataResponse(
+                client_id=request.client_id,
+                venue=request.venue,
+                data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
+                data=ticks,
+                correlation_id=request.correlation_id,
+                response_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._handle_response(response)
+        elif request.data_type.type == TradeTick:
+            instrument_id = request.data_type.metadata.get("instrument_id")
+            # client.request_trade_ticks(
+            #     request.data_type.metadata.get("instrument_id"),
+            #     request.data_type.metadata.get("limit", 0),
+            #     request.id,
+            #     request.data_type.metadata.get("start"),
+            #     request.data_type.metadata.get("end"),
+            # )
+        elif request.data_type.type == Bar:
+            instrument_id = request.data_type.metadata.get("instrument_id")
+            # client.request_bars(
+            #     request.data_type.metadata.get("bar_type"),
+            #     request.data_type.metadata.get("limit", 0),
+            #     request.id,
+            #     request.data_type.metadata.get("start"),
+            #     request.data_type.metadata.get("end"),
+            # )
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
