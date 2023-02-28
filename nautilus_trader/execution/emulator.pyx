@@ -180,15 +180,13 @@ cdef class OrderEmulator(Actor):
             Order order
             TradingCommand command
         for order in emulated_orders:
-            if order.order_list_id is not None:
+            if order.order_list_id is not None and order.order_list_id not in self._commands_submit_order_list:
                 command = self.cache.load_submit_order_list_command(order.order_list_id)
                 if command is None:
                     self._log.error(
                         f"Cannot load `SubmitOrderList` command for {repr(order.order_list_id)}: not found in cache."
                     )
                     continue
-                if command in self._commands_submit_order_list:
-                    continue  # Already loaded
                 self._log.info(f"Loaded {command}.", LogColor.BLUE)
                 self._handle_submit_order_list(command)
             else:
