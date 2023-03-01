@@ -111,12 +111,19 @@ impl Logger {
         rate_limit: usize,
         rx: Receiver<LogMessage>,
     ) {
-        // Setup buffers
+        // Setup std I/O buffers
         let mut out_buf = BufWriter::new(io::stdout());
         let mut err_buf = BufWriter::new(io::stderr());
 
-        let mut file_buf =
-            file_path.map(|path| BufWriter::new(File::create(path).expect("Error creating file")));
+        // Setup log file
+        let file = file_path.map(|path| {
+            File::options()
+                .create(true)
+                .append(true)
+                .open(path)
+                .expect("Error creating log file")
+        });
+        let mut file_buf = file.map(BufWriter::new);
 
         // Setup templates
         let template_console = String::from(
