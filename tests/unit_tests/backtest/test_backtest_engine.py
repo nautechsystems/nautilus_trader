@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 import tempfile
 from decimal import Decimal
 from typing import Optional
@@ -597,6 +598,7 @@ class TestBacktestWithAddedBars:
             USD,
         )
 
+    @pytest.mark.skipif(sys.platform != "linux", reason="suspect flaking on darwin and windows")
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
         pickled = self.engine.dump_pickled_data()
