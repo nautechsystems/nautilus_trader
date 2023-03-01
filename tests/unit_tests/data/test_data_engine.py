@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
@@ -51,12 +54,16 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.filters import NewsEvent
+from tests import TEST_DATA_DIR
 from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 
@@ -1820,6 +1827,71 @@ class TestDataEngine:
                 Instrument,
                 metadata={  # str data type is invalid
                     "venue": BINANCE,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
+
+    @pytest.mark.skip(reason="WIP")
+    def test_request_bars_when_catalog_registered(self):
+        # Arrange
+        catalog = data_catalog_setup(protocol="file")
+
+        bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
+        instrument = TestInstrumentProvider.adabtc_binance()
+        wrangler = BarDataWrangler(bar_type, instrument)
+
+        def parser(data):
+            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+            bars = wrangler.process(data.set_index("timestamp"))
+            return bars
+
+        binance_spot_header = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        reader = CSVReader(block_parser=parser, header=binance_spot_header)
+
+        _ = process_files(
+            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
+            reader=reader,
+            catalog=catalog,
+        )
+
+        self.data_engine.register_catalog(catalog)
+
+        # Act
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(
+                Bar,
+                metadata={  # str data type is invalid
+                    "bar_type": BarType(
+                        InstrumentId(Symbol("ADABTC"), BINANCE),
+                        BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+                    ),
                 },
             ),
             callback=handler.append,
