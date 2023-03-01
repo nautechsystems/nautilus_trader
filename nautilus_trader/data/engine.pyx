@@ -124,7 +124,7 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
         self._catalog: Optional[ParquetDataCatalog] = None
-        self._use_ruse = False
+        self._use_rust: bool = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
 
