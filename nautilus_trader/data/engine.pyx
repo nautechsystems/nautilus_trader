@@ -1075,6 +1075,7 @@ cdef class DataEngine(Component):
 
         # Query data catalog
         if self._catalog:
+            # For now we'll just query the catalog if its present (as very likely this is a backtest)
             self._query_data_catalog(request)
             return
 
@@ -1135,69 +1136,52 @@ cdef class DataEngine(Component):
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
-                instruments = self._catalog.instruments(as_nautilus=True)
-                response = DataResponse(
-                    client_id=request.client_id,
-                    venue=request.venue,
-                    data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-                    data=instruments,
-                    correlation_id=request.correlation_id,
-                    response_id=UUID4(),
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                self._handle_response(response)
+                data = self._catalog.instruments(as_nautilus=True)
             else:
-                instrument = self._catalog.instruments(
+                data = self._catalog.instruments(
                     instrument_ids=[instrument_id],
                     as_nautilus=True,
                 )
-                response = DataResponse(
-                    client_id=request.client_id,
-                    venue=request.venue,
-                    data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-                    data=instrument,
-                    correlation_id=request.correlation_id,
-                    response_id=UUID4(),
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                self._handle_response(response)
         elif request.data_type.type == QuoteTick:
-            instrument_id = request.data_type.metadata.get("instrument_id")
-            ticks = self._catalog.quote_ticks(
+            data = self._catalog.quote_ticks(
                 instrument_ids=[request.data_type.metadata.get("instrument_id")],
                 start=request.data_type.metadata.get("start"),
                 end=request.data_type.metadata.get("end"),
                 as_nautilus=True,
                 use_rust=self._use_rust,
             )
-            response = DataResponse(
-                client_id=request.client_id,
-                venue=request.venue,
-                data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-                data=ticks,
-                correlation_id=request.correlation_id,
-                response_id=UUID4(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._handle_response(response)
         elif request.data_type.type == TradeTick:
-            instrument_id = request.data_type.metadata.get("instrument_id")
-            # client.request_trade_ticks(
-            #     request.data_type.metadata.get("instrument_id"),
-            #     request.data_type.metadata.get("limit", 0),
-            #     request.id,
-            #     request.data_type.metadata.get("start"),
-            #     request.data_type.metadata.get("end"),
-            # )
+            data = self._catalog.quote_ticks(
+                instrument_ids=[request.data_type.metadata.get("instrument_id")],
+                start=request.data_type.metadata.get("start"),
+                end=request.data_type.metadata.get("end"),
+                as_nautilus=True,
+                use_rust=self._use_rust,
+            )
         elif request.data_type.type == Bar:
-            instrument_id = request.data_type.metadata.get("instrument_id")
-            # client.request_bars(
-            #     request.data_type.metadata.get("bar_type"),
-            #     request.data_type.metadata.get("limit", 0),
-            #     request.id,
-            #     request.data_type.metadata.get("start"),
-            #     request.data_type.metadata.get("end"),
-            # )
+            data = self._catalog.bars(
+                instrument_ids=[request.data_type.metadata.get("instrument_id")],
+                bar_type=str(request.data_type.metadata.get("bar_type")),
+                as_nautilus=True,
+                use_rust=False,  # Until implemented
+            )
+        else:
+            data = self._catalog.generic_data(
+                cls=request.data_type.type,
+                metadata=request.data_type.metadata,
+                as_nautilus=True,
+            )
+
+        response = DataResponse(
+            client_id=request.client_id,
+            venue=request.venue,
+            data_type=request.data_type,
+            data=data,
+            correlation_id=request.correlation_id,
+            response_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_response(response)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
