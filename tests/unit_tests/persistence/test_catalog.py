@@ -400,9 +400,12 @@ class _TestPersistenceCatalog:
             catalog=self.catalog,
         )
 
+    # @pytest.mark.skipif(sys.platform == "win32", reason="windows  only")
     def test_from_env(self):
-        path = tempfile.mktemp()
-        os.environ["NAUTILUS_PATH"] = f"{self.fs_protocol}://{path}"
+        path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
+        uri = f"{self.fs_protocol}://{path}"
+        catalog = ParquetDataCatalog.from_uri(uri)
+        os.environ["NAUTILUS_PATH"] = uri
         catalog = ParquetDataCatalog.from_env()
         assert catalog.fs_protocol == self.fs_protocol
 
