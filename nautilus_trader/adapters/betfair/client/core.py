@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import asyncio
 import datetime
 import pathlib
@@ -22,6 +21,7 @@ from typing import Optional
 import msgspec
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
+from betfair_parser.spec.api.navigation import Navigation
 
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.client.enums import MarketSort
@@ -145,12 +145,12 @@ class BetfairClient(HttpClient):
         else:
             raise BetfairError(f"Login failed: {resp.data}")
 
-    async def list_navigation(self):
+    async def list_navigation(self) -> Navigation:
         """
         List the tree (navigation) of all betfair markets.
         """
         resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers)
-        return msgspec.json.decode(resp.data)
+        return msgspec.json.decode(resp.data, type=Navigation)
 
     async def list_market_catalogue(
         self,
