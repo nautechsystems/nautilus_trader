@@ -23,6 +23,7 @@ from decimal import Decimal
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -400,7 +401,7 @@ class _TestPersistenceCatalog:
             catalog=self.catalog,
         )
 
-    # @pytest.mark.skipif(sys.platform == "win32", reason="windows  only")
+    @pytest.mark.skipif(sys.platform == "win32", reason="windows paths broken")
     def test_from_env(self):
         path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
         uri = f"{self.fs_protocol}://{path}"
