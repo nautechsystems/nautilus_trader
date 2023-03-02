@@ -410,29 +410,25 @@ class TestInstrument:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "instrument, tick_scheme_name, value, n, expected",
+        "instrument, value, n, expected",
         [
-            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.727771, 0, "0.72777"),
-            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.9999, 0, "1.00000"),
+            (AUDUSD_SIM, 0.720006, 0, "0.72001"),
+            (AUDUSD_SIM, 0.900001, 0, "0.90001"),
         ],
     )
-    @pytest.mark.skip("Not implemented")
-    def test_next_ask_price(self, instrument, tick_scheme_name, value, n, expected):
-        instrument.tick_scheme_name = tick_scheme_name
+    def test_next_ask_price(self, instrument, value, n, expected):
         result = instrument.next_ask_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
 
     @pytest.mark.parametrize(
-        "instrument, tick_scheme_name, value, n, expected",
+        "instrument, value, n, expected",
         [
-            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.727771, 0, "0.72777"),
-            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.9999, 0, "1.00000"),
+            (AUDUSD_SIM, 0.7200006, 0, "0.72000"),
+            (AUDUSD_SIM, 0.9000001, 0, "0.90000"),
         ],
     )
-    @pytest.mark.skip("Not implemented")
-    def test_next_bid_price(self, instrument, tick_scheme_name, value, n, expected):
-        instrument.tick_scheme_name = tick_scheme_name
+    def test_next_bid_price(self, instrument, value, n, expected):
         result = instrument.next_bid_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
@@ -458,7 +454,7 @@ class TestBettingInstrument:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (0.001, 0, "0.0010000"),
+            (101, 0, "110"),
         ],
     )
     def test_next_ask_price(self, value, n, expected):
@@ -469,7 +465,7 @@ class TestBettingInstrument:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (0.501, 0, "0.5000000"),
+            (1.999, 0, "1.99"),
         ],
     )
     def test_next_bid_price(self, value, n, expected):
@@ -478,5 +474,5 @@ class TestBettingInstrument:
         assert result == expected
 
     def test_min_max_price(self):
-        assert self.instrument.min_price == Price.from_str("0.0010000")
-        assert self.instrument.max_price == Price.from_str("0.9900990")
+        assert self.instrument.min_price == Price.from_str("1.01")
+        assert self.instrument.max_price == Price.from_str("1000")

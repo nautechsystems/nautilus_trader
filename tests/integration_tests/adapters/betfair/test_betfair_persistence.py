@@ -12,26 +12,24 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import fsspec
-import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from tests import TEST_DATA_DIR
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestBetfairPersistence:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs = self.catalog.fs
-        self.reader = BetfairTestStubs.betfair_reader()
         self.instrument = TestInstrumentProvider.betting_instrument()
 
     def test_bsp_delta_serialize(self):
@@ -97,19 +95,18 @@ class TestBetfairPersistence:
         # Assert
         assert result.bsp == bsp.bsp
 
-    @pytest.mark.skip("compression broken in github ci")
     def test_bsp_deltas(self):
         # Arrange
         rf = RawFile(
-            open_file=fsspec.open(
-                f"{TEST_DATA_DIR}/betfair/1.170258150.bz2",
-                compression="infer",
-            ),
+            open_file=fsspec.open(f"{TEST_DATA_DIR}/betfair/1.206064380.bz2", compression="infer"),
+            block_size=None,
         )
 
         # Act
-        process_raw_file(catalog=self.catalog, raw_file=rf, reader=self.reader)
-        data = self.catalog.query(BSPOrderBookDelta)
+        process_raw_file(catalog=self.catalog, reader=make_betfair_reader(), raw_file=rf)
+
+        # Act
+        data = self.catalog.query(BSPOrderBookDeltas)
 
         # Assert
-        assert len(data) == 443
+        assert len(data) == 2824

@@ -93,7 +93,7 @@ cdef class BettingInstrument(Instrument):
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
         instrument_id = betfair_instrument_id(
-            market_id=market_id, runner_id=selection_id, runner_handicap=selection_handicap
+            market_id=market_id, selection_id=selection_id, selection_handicap=selection_handicap
         )
 
         super().__init__(
