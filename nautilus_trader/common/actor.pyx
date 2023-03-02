@@ -2082,7 +2082,7 @@ cdef class Actor(Component):
         cdef Bar last = bars[length - 1] if length > 0 else None
 
         if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.type}.")
+            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}.")
         else:
             self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
             return
