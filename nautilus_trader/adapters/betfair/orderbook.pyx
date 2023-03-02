@@ -12,17 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.model.orderbook.book import L2OrderBook
-
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_FLOAT_TO_PRICE
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
+from nautilus_trader.model.orderbook.book import L2OrderBook
+
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cpdef inline L2OrderBook create_betfair_order_book(InstrumentId instrument_id):
