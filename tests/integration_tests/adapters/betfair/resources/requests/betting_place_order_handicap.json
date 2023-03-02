@@ -8,8 +8,8 @@
         "handicap": "-5.5",
         "customerOrderRef": "O-20210811-112151-000",
         "limitOrder": {
-          "size": "10.0",
-          "price": "2.0",
+          "size": 10.0,
+          "price": 2.0,
           "persistenceType": "PERSIST"
         },
         "orderType": "LIMIT",

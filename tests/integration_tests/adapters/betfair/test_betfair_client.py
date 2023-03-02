@@ -27,6 +27,8 @@ from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
 from nautilus_trader.adapters.betfair.client.spec import ClearedOrdersResponse
 from nautilus_trader.adapters.betfair.client.spec import OrderType
 from nautilus_trader.adapters.betfair.client.spec import PersistenceType
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
@@ -40,8 +42,6 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -91,7 +91,7 @@ class TestBetfairClient:
             response=BetfairResponses.navigation_list_navigation_response(),
         ) as mock_request:
             nav = await self.client.list_navigation()
-            assert len(nav["children"]) == 28
+            assert len(nav.children) == 28
 
         result = mock_request.call_args.kwargs
         expected = BetfairRequests.navigation_list_navigation_request()
@@ -139,8 +139,8 @@ class TestBetfairClient:
         limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
-            price=Price.from_str("0.50"),
-            quantity=Quantity.from_int(10),
+            price=betfair_float_to_price(2.0),
+            quantity=betfair_float_to_quantity(10.0),
         )
         command = TestCommandStubs.submit_order_command(order=limit_order)
         place_orders = order_submit_to_betfair(command=command, instrument=instrument)
@@ -158,8 +158,8 @@ class TestBetfairClient:
         limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
-            price=Price.from_str("0.50"),
-            quantity=Quantity.from_int(10),
+            price=betfair_float_to_price(2.0),
+            quantity=betfair_float_to_quantity(10),
         )
         command = TestCommandStubs.submit_order_command(order=limit_order)
         place_orders = order_submit_to_betfair(command=command, instrument=instrument)
@@ -177,7 +177,7 @@ class TestBetfairClient:
         market_on_close_order = TestExecStubs.market_order(
             order_side=OrderSide.BUY,
             time_in_force=TimeInForce.AT_THE_OPEN,
-            quantity=Quantity.from_str("10.0"),
+            quantity=betfair_float_to_quantity(10.0),
         )
         submit_order_command = SubmitOrder(
             trader_id=TestIdStubs.trader_id(),
@@ -202,7 +202,7 @@ class TestBetfairClient:
         update_order_command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
             client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
-            price=Price.from_str("0.50"),
+            price=betfair_float_to_price(2.0),
         )
         replace_order = order_update_to_betfair(
             command=update_order_command,
@@ -223,7 +223,7 @@ class TestBetfairClient:
         instrument = TestInstrumentProvider.betting_instrument()
         update_order_command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
-            price=Price.from_str("0.50"),
+            price=betfair_float_to_price(2.0),
             client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
         )
         replace_order = order_update_to_betfair(

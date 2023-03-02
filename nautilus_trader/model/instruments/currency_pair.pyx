@@ -177,6 +177,7 @@ cdef class CurrencyPair(Instrument):
             margin_maint=margin_maint,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
+            tick_scheme_name=tick_scheme_name,
             ts_event=ts_event,
             ts_init=ts_init,
             info=info,

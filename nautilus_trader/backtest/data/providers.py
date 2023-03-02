@@ -364,8 +364,10 @@ class TestInstrumentProvider:
         # Check tick precision of quote currency
         if quote_currency == "JPY":
             price_precision = 3
+            tick_scheme_name = "FOREX_3DECIMAL"
         else:
             price_precision = 5
+            tick_scheme_name = "FOREX_5DECIMAL"
 
         return CurrencyPair(
             instrument_id=instrument_id,
@@ -387,6 +389,7 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
+            tick_scheme_name=tick_scheme_name,
             ts_event=0,
             ts_init=0,
         )
@@ -446,7 +449,7 @@ class TestInstrumentProvider:
     def betting_instrument(
         market_id: str = "1.179082386",
         selection_id: str = "50214",
-        handicap: Optional[str] = None,
+        selection_handicap: Optional[str] = None,
     ) -> BettingInstrument:
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
@@ -463,7 +466,7 @@ class TestInstrumentProvider:
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap=handicap,
+            selection_handicap=selection_handicap,
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
