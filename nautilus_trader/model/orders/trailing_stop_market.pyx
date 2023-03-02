@@ -202,6 +202,9 @@ cdef class TrailingStopMarketOrder(Order):
             self.trigger_price = event.trigger_price
 
     cdef void _set_slippage(self):
+        if self.trigger_price is None:
+            return  # Prevents an attribute error below
+
         if self.side == OrderSide.BUY:
             self.slippage = self.avg_px - self.trigger_price.as_f64_c()
         elif self.side == OrderSide.SELL:
