@@ -15,7 +15,7 @@
 
 use std::{ffi::c_void, ptr::null};
 
-/// CVec is a C compatible struct that stores an opaque pointer to a block of
+/// `CVec` is a C compatible struct that stores an opaque pointer to a block of
 /// memory, it's length and the capacity of the vector it was allocated from.
 ///
 /// NOTE: Changing the values here may lead to undefined behaviour when the
@@ -57,12 +57,12 @@ impl CVec {
 impl<T> From<Vec<T>> for CVec {
     fn from(data: Vec<T>) -> Self {
         if data.is_empty() {
-            CVec::empty()
+            Self::empty()
         } else {
             let len = data.len();
             let cap = data.capacity();
-            CVec {
-                ptr: &mut data.leak()[0] as *mut T as *mut c_void,
+            Self {
+                ptr: (&mut data.leak()[0] as *mut T).cast::<c_void>(),
                 len,
                 cap,
             }
@@ -77,7 +77,7 @@ impl<T> From<Vec<T>> for CVec {
 pub extern "C" fn cvec_drop(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
     let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), len, cap) };
-    drop(data) // Memory freed here
+    drop(data); // Memory freed here
 }
 
 #[no_mangle]

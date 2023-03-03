@@ -90,7 +90,6 @@ cdef class OrderEmulator(Actor):
         super().__init__()
 
         self.register_base(
-            trader_id=trader_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -168,7 +167,7 @@ cdef class OrderEmulator(Actor):
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
-    cpdef void on_start(self) except *:
+    cpdef void on_start(self):
         cdef list emulated_orders = self.cache.orders_emulated()
         if not emulated_orders:
             self._log.info("No emulated orders to reactivate.")
@@ -181,7 +180,7 @@ cdef class OrderEmulator(Actor):
             Order order
             TradingCommand command
         for order in emulated_orders:
-            if order.order_list_id is not None:
+            if order.order_list_id is not None and order.order_list_id not in self._commands_submit_order_list:
                 command = self.cache.load_submit_order_list_command(order.order_list_id)
                 if command is None:
                     self._log.error(
@@ -200,7 +199,7 @@ cdef class OrderEmulator(Actor):
                 self._log.info(f"Loaded {command}.", LogColor.BLUE)
                 self._handle_submit_order(command)
 
-    cpdef void on_event(self, Event event) except *:
+    cpdef void on_event(self, Event event):
         self._log.info(f"Received {event}", LogColor.MAGENTA)
         if isinstance(event, OrderRejected):
             self._handle_order_rejected(event)
@@ -213,20 +212,20 @@ cdef class OrderEmulator(Actor):
         elif isinstance(event, OrderFilled):
             self._handle_order_filled(event)
 
-    cpdef void on_stop(self) except *:
+    cpdef void on_stop(self):
         pass
 
-    cpdef void on_reset(self) except *:
+    cpdef void on_reset(self):
         self._commands_submit_order.clear()
         self._commands_submit_order_list.clear()
         self._matching_cores.clear()
 
-    cpdef void on_dispose(self) except *:
+    cpdef void on_dispose(self):
         pass
 
 # -------------------------------------------------------------------------------------------------
 
-    cpdef void execute(self, TradingCommand command) except *:
+    cpdef void execute(self, TradingCommand command):
         """
         Execute the given command.
 
@@ -287,7 +286,7 @@ cdef class OrderEmulator(Actor):
 
         return matching_core
 
-    cdef void _handle_submit_order(self, SubmitOrder command) except *:
+    cdef void _handle_submit_order(self, SubmitOrder command):
         cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
         Condition.not_equal(emulation_trigger, TriggerType.NO_TRIGGER, "command.order.emulation_trigger", "TriggerType.NO_TRIGGER")
@@ -350,7 +349,7 @@ cdef class OrderEmulator(Actor):
 
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
-    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
+    cdef void _handle_submit_order_list(self, SubmitOrderList command):
         Condition.not_in(command.order_list.id, self._commands_submit_order_list, "command.order_list.id", "self._commands_submit_order_list")
 
         # Cache command
@@ -386,7 +385,7 @@ cdef class OrderEmulator(Actor):
                 client_id=command.client_id,
             )
 
-    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+    cdef void _handle_modify_order(self, ModifyOrder command):
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:
             self._log.error(
@@ -430,7 +429,7 @@ cdef class OrderEmulator(Actor):
         elif order.side == OrderSide.SELL:
             matching_core.sort_ask_orders()
 
-    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+    cdef void _handle_cancel_order(self, CancelOrder command):
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
             raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
@@ -443,7 +442,7 @@ cdef class OrderEmulator(Actor):
         else:
             self._cancel_order(matching_core, order)
 
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command):
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
             # No orders to cancel
@@ -471,7 +470,7 @@ cdef class OrderEmulator(Actor):
         PositionId position_id,
         ExecAlgorithmSpecification exec_algorithm_spec,
         ClientId client_id,
-    ) except *:
+    ):
         cdef SubmitOrder submit = SubmitOrder(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -489,7 +488,7 @@ cdef class OrderEmulator(Actor):
             # Emulate
             self._handle_submit_order(submit)
 
-    cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
+    cdef void _cancel_order(self, MatchingCore matching_core, Order order):
         if order is None:
             self._log.error(
                 f"Cannot cancel order: order for {repr(order.client_order_id)} not found.",
@@ -523,7 +522,7 @@ cdef class OrderEmulator(Actor):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _handle_order_rejected(self, OrderRejected rejected) except *:
+    cdef void _handle_order_rejected(self, OrderRejected rejected):
         cdef Order order = self.cache.order(rejected.client_order_id)
         if order is None:
             self._log.error(
@@ -535,7 +534,7 @@ cdef class OrderEmulator(Actor):
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
-    cdef void _handle_order_canceled(self, OrderCanceled canceled) except *:
+    cdef void _handle_order_canceled(self, OrderCanceled canceled):
         cdef Order order = self.cache.order(canceled.client_order_id)
         if order is None:
             self._log.error(
@@ -547,7 +546,7 @@ cdef class OrderEmulator(Actor):
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
-    cdef void _handle_order_expired(self, OrderExpired expired) except *:
+    cdef void _handle_order_expired(self, OrderExpired expired):
         cdef Order order = self.cache.order(expired.client_order_id)
         if order is None:
             self._log.error(
@@ -559,7 +558,7 @@ cdef class OrderEmulator(Actor):
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
-    cdef void _handle_order_updated(self, OrderUpdated updated) except *:
+    cdef void _handle_order_updated(self, OrderUpdated updated):
         cdef Order order = self.cache.order(updated.client_order_id)
         if order is None:
             self._log.error(
@@ -571,7 +570,7 @@ cdef class OrderEmulator(Actor):
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
-    cdef void _handle_order_filled(self, OrderFilled filled) except *:
+    cdef void _handle_order_filled(self, OrderFilled filled):
         cdef Order order = self.cache.order(filled.client_order_id)
         if order is None:
             self._log.error(
@@ -617,7 +616,7 @@ cdef class OrderEmulator(Actor):
         elif order.contingency_type == ContingencyType.OUO:
             self._handle_contingencies(order)
 
-    cdef void _handle_contingencies(self, Order order) except *:
+    cdef void _handle_contingencies(self, Order order):
         assert order.linked_order_ids
 
         cdef MatchingCore matching_core = None
@@ -644,7 +643,7 @@ cdef class OrderEmulator(Actor):
             elif order.leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
                 self._update_order_quantity(contingent_order, order.leaves_qty)
 
-    cdef void _update_order_quantity(self, Order order, Quantity new_quantity) except *:
+    cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
@@ -667,7 +666,7 @@ cdef class OrderEmulator(Actor):
 
 # -------------------------------------------------------------------------------------------------
 
-    cpdef void _trigger_stop_order(self, Order order) except *:
+    cpdef void _trigger_stop_order(self, Order order):
         cdef OrderTriggered event
         if (
             order.order_type == OrderType.STOP_LIMIT
@@ -699,7 +698,7 @@ cdef class OrderEmulator(Actor):
         else:
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
-    cpdef void _fill_market_order(self, Order order) except *:
+    cpdef void _fill_market_order(self, Order order):
         # Fetch command
         cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
@@ -733,7 +732,7 @@ cdef class OrderEmulator(Actor):
 
         self._send_exec_command(command)
 
-    cpdef void _fill_limit_order(self, Order order) except *:
+    cpdef void _fill_limit_order(self, Order order):
         if order.order_type == OrderType.LIMIT:
             self._fill_market_order(order)
             return
@@ -771,7 +770,7 @@ cdef class OrderEmulator(Actor):
 
         self._send_exec_command(command)
 
-    cpdef void on_quote_tick(self, QuoteTick tick) except *:
+    cpdef void on_quote_tick(self, QuoteTick tick):
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(tick)}...", LogColor.CYAN)
 
@@ -785,7 +784,7 @@ cdef class OrderEmulator(Actor):
 
         self._iterate_orders(matching_core)
 
-    cpdef void on_trade_tick(self, TradeTick tick) except *:
+    cpdef void on_trade_tick(self, TradeTick tick):
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(tick)}...", LogColor.CYAN)
 
@@ -801,7 +800,7 @@ cdef class OrderEmulator(Actor):
 
         self._iterate_orders(matching_core)
 
-    cdef void _iterate_orders(self, MatchingCore matching_core) except *:
+    cdef void _iterate_orders(self, MatchingCore matching_core):
         matching_core.iterate(self._clock.timestamp_ns())
 
         cdef list orders = matching_core.get_orders()
@@ -814,7 +813,7 @@ cdef class OrderEmulator(Actor):
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._update_trailing_stop_order(matching_core, order)
 
-    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order) except *:
+    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order):
         cdef Instrument instrument = self.cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
@@ -883,22 +882,22 @@ cdef class OrderEmulator(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_command(self, TradingCommand command) except *:
+    cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
-    cdef void _send_exec_command(self, TradingCommand command) except *:
+    cdef void _send_exec_command(self, TradingCommand command):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
-    cdef void _send_risk_event(self, OrderEvent event) except *:
+    cdef void _send_risk_event(self, OrderEvent event):
         if not self.log.is_bypassed:
             self.log.info(f"{EVT}{SENT} {event}.")
         self._msgbus.send(endpoint="RiskEngine.process", msg=event)
 
-    cdef void _send_exec_event(self, OrderEvent event) except *:
+    cdef void _send_exec_event(self, OrderEvent event):
         if not self.log.is_bypassed:
             self.log.info(f"{EVT}{SENT} {event}.")
         self._msgbus.send(endpoint="ExecEngine.process", msg=event)

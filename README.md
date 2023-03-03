@@ -15,9 +15,9 @@
 
 | Platform          | Rust      | Python |
 |:------------------|:----------|:-------|
-| Linux (x86\_64)   | `1.67.0+` | `3.9+` |
-| macOS (x86\_64)   | `1.67.0+` | `3.9+` |
-| Windows (x86\_64) | `1.67.0+` | `3.9+` |
+| Linux (x86\_64)   | `1.67.1+` | `3.9+` |
+| macOS (x86\_64)   | `1.67.1+` | `3.9+` |
+| Windows (x86\_64) | `1.67.1+` | `3.9+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -112,7 +112,7 @@ eliminating many classes of bugs at compile-time.
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
 Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
-[PyO3](https://pyo3.rs/latest/) will be leveraged for easier Python bindings.
+[PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
 
 ## Architecture (data flow)
 

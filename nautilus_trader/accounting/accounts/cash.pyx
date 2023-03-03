@@ -62,7 +62,7 @@ cdef class CashAccount(Account):
 
         self._balances_locked: dict[InstrumentId, Money] = {}
 
-    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *:
+    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked):
         """
         Update the balance locked for the given instrument ID.
 
@@ -90,7 +90,7 @@ cdef class CashAccount(Account):
         self._balances_locked[instrument_id] = locked
         self._recalculate_balance(locked.currency)
 
-    cpdef void clear_balance_locked(self, InstrumentId instrument_id) except *:
+    cpdef void clear_balance_locked(self, InstrumentId instrument_id):
         """
         Clear the balance locked for the given instrument ID.
 
@@ -108,10 +108,10 @@ cdef class CashAccount(Account):
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
-    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id):
         return True
 
-    cdef void _recalculate_balance(self, Currency currency) except *:
+    cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
             # TODO(cs): Temporary pending reimplementation of accounting

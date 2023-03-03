@@ -2,13 +2,14 @@
 members = [
     "common",
     "core",
+    "indicators",
     "model",
     "persistence",
     "pyo3"
 ]
 
 [workspace.package]
-rust-version = "1.67.0"
+rust-version = "1.67.1"
 version = "0.2.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
@@ -17,7 +18,8 @@ documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
 chrono = "0.4.22"
-pyo3 = "0.18.0"
+pyo3 = "0.18.1"
+pyo3-macros = "0.18.1"
 rand = "0.8.5"
 rust-fsm = "0.6.1"
 strum = { version = "0.24.1", features = ["derive"] }

@@ -86,6 +86,8 @@ class _TestBacktestConfig:
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,
+            "use_rust": False,
+            "metadata": None,
         }
 
     def test_backtest_data_config_generic_data(self):
@@ -133,7 +135,7 @@ class _TestBacktestConfig:
 
     def test_backtest_data_config_status_updates(self):
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(),
             catalog=self.catalog,
         )
@@ -211,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (786, 790)  # unix, windows sizes
+        assert result in (854, 858)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -221,7 +223,7 @@ class TestBacktestConfigParsing:
                 BacktestVenueConfig(
                     name="SIM",
                     oms_type="HEDGING",
-                    account_type="MARGIN",
+                    account_type="MARG  IN",
                     starting_balances=["1_000_000 USD"],
                 ),
             ],
@@ -231,7 +233,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (587, 589)  # unix, windows sizes
+        assert len(raw) in (641, 643)  # unix, windows sizes
 
     def test_backtest_data_config_to_dict(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -251,7 +253,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1510, 1518)  # unix, windows
+        assert result in (1718, 1726)  # unix, windows
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
@@ -259,8 +261,8 @@ class TestBacktestConfigParsing:
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
         assert token in (
-            "025fddcf56215cdd9be2a7b1ccc0e48abfd76fc44839d793fa07d326655b70a9",  # unix
-            "585913bbdf353d7e00b74c8f0a00f0eb8771da901faefeecf3fb9df1f3d48854",  # windows
+            "f36364e423ae67307b08a68feb7cf18353d2983fc8a2f1b9683c44bd707007b3",  # unix
+            "4b985813f597118e367ccc462bcd19a4752fbeff7b73c71ff518dbdef8ef2a47",  # windows
         )
 
     @pytest.mark.skip(reason="fix after merge")

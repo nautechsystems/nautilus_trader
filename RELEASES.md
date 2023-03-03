@@ -1,3 +1,63 @@
+# NautilusTrader 1.170.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Renamed `from_datetime` to `start` across data request methods and properties
+- Renamed `to_datetime` to `end` across data request methods and properties
+- Change parquet catalog schema dictionary integer key widths/types
+- Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
+- Removed redundant log sink machinery
+- All pickled data due Cython 3.0.0b1
+
+### Enhancements
+- Added logging to file at core Rust level
+- Added `DataCatalogConfig` for more cohesive data catalog configuration
+- Added `DataEngine.register_catalog` to support historical data requests
+- Added `catalog_config` field to base `NautilusKernelConfig`
+- Now immediately caching orders and order lists in `Strategy`
+- Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
+- Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
+- Upgrade Cython to `3.0.0b1`
+
+### Fixes
+- Fixed Binance Futures trigger type parsing
+- Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
+
+---
+
+# NautilusTrader 1.169.0 Beta
+
+Released on 18th February 2023 (UTC).
+
+### Breaking Changes
+- `NautilusConfig` objects now _pseudo-immutable_ from new msgspec 0.13.0
+- Renamed `OrderFactory.bracket` param `post_only_entry` -> `entry_post_only` (consistency with other params)
+- Renamed `OrderFactory.bracket` param `post_only_tp` -> `tp_post_only` (consistency with other params)
+- Renamed `build_time_bars_with_no_updates` -> `time_bars_build_with_no_updates` (consistency with new param) 
+- Renamed `OrderFactory.set_order_count()` -> `set_client_order_id_count()` (clarity)
+- Renamed `TradingNode.start()` to `TradingNode.run()`
+
+### Enhancements
+- Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
+- Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
+- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
+- Added `OrderFactory.generate_client_order_id()` (calls internal generator)
+- Added `OrderFactory.generate_order_list_id()` (calls internal generator)
+- Added `OrderFactory.create_list(...)` as easier method for creating order lists
+- Added `__len__` implementation for `OrderList` (returns length of orders)
+- Implemented optimized logger using Rust MPSC channel and separate thread
+- Expose and improve `MatchingEngine` public API for custom functionality
+- Exposed `TradingNode.run_async()` for easier running from async context
+- Exposed `TradingNode.stop_async()` for easier stopping from async context
+
+### Fixes
+- Fixed registration of `SimulationModule` (and refine `Actor` base registration)
+- Fixed loading of previously emulated and transformed orders (handles transforming `OrderInitialized` event)
+- Fixed handling of `MARKET_TO_LIMIT` orders in matching and risk engines, thanks for reporting @martinsaip
+
+---
+
 # NautilusTrader 1.168.0 Beta
 
 Released on 29th January 2023 (UTC).

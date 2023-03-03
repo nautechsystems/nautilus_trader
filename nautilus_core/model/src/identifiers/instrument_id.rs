@@ -48,7 +48,8 @@ impl Display for InstrumentId {
 }
 
 impl InstrumentId {
-    pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
+    #[must_use]
+    pub fn new(symbol: Symbol, venue: Venue) -> Self {
         InstrumentId { symbol, venue }
     }
 }

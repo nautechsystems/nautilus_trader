@@ -84,6 +84,7 @@ class TestRedisCacheDatabase:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -438,7 +439,6 @@ class TestRedisCacheDatabase:
         # Arrange
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -825,7 +825,6 @@ class TestRedisCacheDatabase:
         # Arrange, Act
         actor = MockActor()
         actor.register_base(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -994,7 +993,7 @@ class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=False,
+            bypass_logging=True,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
         )

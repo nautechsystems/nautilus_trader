@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from functools import lru_cache
 from typing import Optional
 
@@ -20,6 +19,10 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+
+
+def hash_market_trade(timestamp: int, price: float, volume: float):
+    return f"{str(timestamp)[:-6]}{price}{str(volume)}"
 
 
 def make_symbol(
@@ -47,8 +50,8 @@ def make_symbol(
 @lru_cache
 def betfair_instrument_id(
     market_id: str,
-    runner_id: str,
-    runner_handicap: Optional[str],
+    selection_id: str,
+    selection_handicap: Optional[str],
 ) -> InstrumentId:
     """
     Create an instrument ID from betfair fields
@@ -58,5 +61,13 @@ def betfair_instrument_id(
 
     """
     PyCondition.not_empty(market_id, "market_id")
-    symbol = make_symbol(market_id, runner_id, runner_handicap)
+    symbol = make_symbol(market_id, selection_id, selection_handicap)
     return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)
+
+
+def chunk(list_like, n):
+    """
+    Yield successive n-sized chunks from l.
+    """
+    for i in range(0, len(list_like), n):
+        yield list_like[i : i + n]

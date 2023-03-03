@@ -102,19 +102,24 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
 
+        self._log.warning(
+            "Currently not requesting actual trade fees. All instruments will have zero fees.",
+        )
         for symbol_info in exchange_info.symbols:
-            if self._client.base_url.__contains__("testnet.binancefuture.com"):
-                fee = None
-            else:
-                try:
-                    # Get current commission rates for the symbol
-                    fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
-                except BinanceClientError as e:
-                    self._log.error(
-                        "Cannot load instruments: API key authentication failed "
-                        f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                    )
-                    return
+            fee: Optional[BinanceFuturesCommissionRate] = None
+            # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
+            #  in some other way.
+            # if not self._client.base_url.__contains__("testnet.binancefuture.com"):
+            #     try:
+            #         # Get current commission rates for the symbol
+            #         fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
+            #         print(fee)
+            #     except BinanceClientError as e:
+            #         self._log.error(
+            #             "Cannot load instruments: API key authentication failed "
+            #             f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            #         )
+            #         return
 
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -139,7 +144,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         # Extract all symbol strings
-        symbols = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols = [
+            str(BinanceSymbol(instrument_id.symbol.value)) for instrument_id in instrument_ids
+        ]
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
@@ -147,18 +154,22 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             info.symbol: info for info in exchange_info.symbols
         }
 
+        self._log.warning(
+            "Currently not requesting actual trade fees. All instruments will have zero fees.",
+        )
         for symbol in symbols:
-            if self._client.base_url.__contains__("testnet.binancefuture.com"):
-                fee = None
-            else:
-                try:
-                    # Get current commission rates for the symbol
-                    fee = await self._http_wallet.query_futures_commission_rate(symbol)
-                except BinanceClientError as e:
-                    self._log.error(
-                        "Cannot load instruments: API key authentication failed "
-                        f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                    )
+            fee: Optional[BinanceFuturesCommissionRate] = None
+            # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
+            #  in some other way.
+            # if not self._client.base_url.__contains__("testnet.binancefuture.com"):
+            #     try:
+            #         # Get current commission rates for the symbol
+            #         fee = await self._http_wallet.query_futures_commission_rate(symbol)
+            #     except BinanceClientError as e:
+            #         self._log.error(
+            #             "Cannot load instruments: API key authentication failed "
+            #             f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            #         )
 
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
@@ -173,7 +184,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
@@ -181,9 +192,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             info.symbol: info for info in exchange_info.symbols
         }
 
-        if self._client.base_url.__contains__("testnet.binancefuture.com"):
-            fee = None
-        else:
+        fee: Optional[BinanceFuturesCommissionRate] = None
+        if not self._client.base_url.__contains__("testnet.binancefuture.com"):
             try:
                 # Get current commission rates for the symbol
                 fee = await self._http_wallet.query_futures_commission_rate(symbol)
@@ -241,8 +251,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
             PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
-            price_precision = abs(Decimal(tick_size).as_tuple().exponent)
-            size_precision = abs(Decimal(step_size).as_tuple().exponent)
+            price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
+            size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
             price_increment = Price.from_str(tick_size)
             size_increment = Quantity.from_str(step_size)
             max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
@@ -254,7 +264,6 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
             # Futures commissions
-
             maker_fee = Decimal(0)
             taker_fee = Decimal(0)
             if fee:

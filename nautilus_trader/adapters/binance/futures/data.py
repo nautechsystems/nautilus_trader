@@ -30,6 +30,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
@@ -63,6 +64,9 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
+    use_agg_trade_ticks : bool, default False
+        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
+        TradeId of ticks will be the Aggregate tradeId returned by Binance.
     """
 
     def __init__(
@@ -76,11 +80,12 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
+        use_agg_trade_ticks: bool = False,
     ):
-        if not account_type.is_futures:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
-            )
+        PyCondition.true(
+            account_type.is_futures,
+            "account_type was not FUTURES_USDT or FUTURES_COIN",
+        )
 
         # Futures HTTP API
         self._futures_http_market = BinanceFuturesMarketHttpAPI(client, account_type)
@@ -101,6 +106,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
+            use_agg_trade_ticks=use_agg_trade_ticks,
         )
 
         # Register additional futures websocket handlers

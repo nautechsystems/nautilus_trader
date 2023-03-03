@@ -30,7 +30,7 @@ import cython
 
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
-from nautilus_trader.persistence.streaming import generate_signal_class
+from nautilus_trader.persistence.streaming.writer import generate_signal_class
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -157,7 +157,7 @@ cdef class Actor(Component):
         """
         return {}  # Optionally override in subclass
 
-    cpdef void on_load(self, dict state) except *:
+    cpdef void on_load(self, dict state):
         """
         Actions to be performed when the actor state is loaded.
 
@@ -170,7 +170,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_start(self) except *:
+    cpdef void on_start(self):
         """
         Actions to be performed on start.
 
@@ -193,7 +193,7 @@ cdef class Actor(Component):
             "occur here, such as subscribing/requesting data.",
         )
 
-    cpdef void on_stop(self) except *:
+    cpdef void on_stop(self):
         """
         Actions to be performed on stop.
 
@@ -213,7 +213,7 @@ cdef class Actor(Component):
             "occur here, such as unsubscribing from data.",
         )
 
-    cpdef void on_resume(self) except *:
+    cpdef void on_resume(self):
         """
         Actions to be performed on resume.
 
@@ -229,7 +229,7 @@ cdef class Actor(Component):
             "following a stop occur here."
         )
 
-    cpdef void on_reset(self) except *:
+    cpdef void on_reset(self):
         """
         Actions to be performed on reset.
 
@@ -247,7 +247,7 @@ cdef class Actor(Component):
             "occur here, such as resetting indicators and other state."
         )
 
-    cpdef void on_dispose(self) except *:
+    cpdef void on_dispose(self):
         """
         Actions to be performed on dispose.
 
@@ -260,7 +260,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_degrade(self) except *:
+    cpdef void on_degrade(self):
         """
         Actions to be performed on degrade.
 
@@ -273,7 +273,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_fault(self) except *:
+    cpdef void on_fault(self):
         """
         Actions to be performed on fault.
 
@@ -288,7 +288,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *:
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update):
         """
         Actions to be performed when running and receives a venue status update.
 
@@ -304,7 +304,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *:
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update):
         """
         Actions to be performed when running and receives an instrument status
         update.
@@ -321,7 +321,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_close(self, InstrumentClose update) except *:
+    cpdef void on_instrument_close(self, InstrumentClose update):
         """
         Actions to be performed when running and receives an instrument close
         update.
@@ -338,7 +338,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument(self, Instrument instrument) except *:
+    cpdef void on_instrument(self, Instrument instrument):
         """
         Actions to be performed when running and receives an instrument.
 
@@ -354,7 +354,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_order_book(self, OrderBook order_book) except *:
+    cpdef void on_order_book(self, OrderBook order_book):
         """
         Actions to be performed when running and receives an order book snapshot.
 
@@ -370,7 +370,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_order_book_delta(self, OrderBookData delta) except *:
+    cpdef void on_order_book_delta(self, OrderBookData delta):
         """
         Actions to be performed when running and receives an order book delta.
 
@@ -386,7 +386,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_ticker(self, Ticker ticker) except *:
+    cpdef void on_ticker(self, Ticker ticker):
         """
         Actions to be performed when running and receives a ticker.
 
@@ -402,7 +402,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_quote_tick(self, QuoteTick tick) except *:
+    cpdef void on_quote_tick(self, QuoteTick tick):
         """
         Actions to be performed when running and receives a quote tick.
 
@@ -418,7 +418,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_trade_tick(self, TradeTick tick) except *:
+    cpdef void on_trade_tick(self, TradeTick tick):
         """
         Actions to be performed when running and receives a trade tick.
 
@@ -434,7 +434,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_bar(self, Bar bar) except *:
+    cpdef void on_bar(self, Bar bar):
         """
         Actions to be performed when running and receives a bar.
 
@@ -450,7 +450,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_data(self, Data data) except *:
+    cpdef void on_data(self, Data data):
         """
         Actions to be performed when running and receives generic data.
 
@@ -466,7 +466,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_historical_data(self, Data data) except *:
+    cpdef void on_historical_data(self, Data data):
         """
         Actions to be performed when running and receives historical data.
 
@@ -482,7 +482,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_event(self, Event event) except *:
+    cpdef void on_event(self, Event event):
         """
         Actions to be performed running and receives an event.
 
@@ -502,19 +502,16 @@ cdef class Actor(Component):
 
     cpdef void register_base(
         self,
-        TraderId trader_id,
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
         Logger logger,
-    ) except *:
+    ):
         """
         Register with a trader.
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader ID for the actor.
         msgbus : MessageBus
             The message bus for the actor.
         cache : CacheFacade
@@ -529,7 +526,6 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(trader_id, "trader_id")
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
@@ -538,15 +534,16 @@ cdef class Actor(Component):
         clock.register_default_handler(self.handle_event)
         self._change_clock(clock)
         self._change_logger(logger)
-        self._change_msgbus(msgbus)  # The trader ID is also assigned here
+        self._change_msgbus(msgbus)  # The trader ID is assigned here
 
-        self.trader_id = trader_id
         self.msgbus = msgbus
         self.cache = cache
         self.clock = self._clock
         self.log = self._log
 
-    cpdef void register_warning_event(self, type event) except *:
+        self.log.info(f"Registered {self.id}.")
+
+    cpdef void register_warning_event(self, type event):
         """
         Register the given event type for warning log levels.
 
@@ -562,7 +559,7 @@ cdef class Actor(Component):
 
         self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
 
-    cpdef void deregister_warning_event(self, type event) except *:
+    cpdef void deregister_warning_event(self, type event):
         """
         Deregister the given event type from warning log levels.
 
@@ -613,7 +610,7 @@ cdef class Actor(Component):
             self.log.exception("Error on save", e)
             raise  # Otherwise invalid state information could be saved
 
-    cpdef void load(self, dict state) except *:
+    cpdef void load(self, dict state):
         """
         Load the actor/strategy state from the give state dictionary.
 
@@ -650,10 +647,10 @@ cdef class Actor(Component):
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
-    cpdef void _start(self) except *:
+    cpdef void _start(self):
         self.on_start()
 
-    cpdef void _stop(self) except *:
+    cpdef void _stop(self):
         # Clean up clock
         cdef list timer_names = self._clock.timer_names
         self._clock.cancel_timers()
@@ -664,24 +661,24 @@ cdef class Actor(Component):
 
         self.on_stop()
 
-    cpdef void _resume(self) except *:
+    cpdef void _resume(self):
         self.on_resume()
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self.on_reset()
 
-    cpdef void _dispose(self) except *:
+    cpdef void _dispose(self):
         self.on_dispose()
 
-    cpdef void _degrade(self) except *:
+    cpdef void _degrade(self):
         self.on_degrade()
 
-    cpdef void _fault(self) except *:
+    cpdef void _fault(self):
         self.on_fault()
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, DataType data_type, ClientId client_id = None) except *:
+    cpdef void subscribe_data(self, DataType data_type, ClientId client_id = None):
         """
         Subscribe to data of the given data type.
 
@@ -715,7 +712,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to update `Instrument` data for the given instrument ID.
 
@@ -748,7 +745,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id = None) except *:
+    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id = None):
         """
         Subscribe to update `Instrument` data for the given venue.
 
@@ -786,7 +783,7 @@ cdef class Actor(Component):
         int depth = 0,
         dict kwargs = None,
         ClientId client_id = None,
-    ) except *:
+    ):
         """
         Subscribe to the order book deltas stream, being a snapshot then deltas
         `OrderBookData` for the given instrument ID.
@@ -839,7 +836,7 @@ cdef class Actor(Component):
         int interval_ms = 1000,
         dict kwargs = None,
         ClientId client_id = None,
-    ) except *:
+    ):
         """
         Subscribe to `OrderBook` snapshots for the given instrument ID.
 
@@ -907,7 +904,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to streaming `Ticker` data for the given instrument ID.
 
@@ -940,7 +937,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
 
@@ -973,7 +970,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to streaming `TradeTick` data for the given instrument ID.
 
@@ -1006,7 +1003,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id = None) except *:
+    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id = None):
         """
         Subscribe to streaming `Bar` data for the given bar type.
 
@@ -1037,7 +1034,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id = None) except *:
+    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id = None):
         """
         Subscribe to status updates for the given venue.
 
@@ -1068,7 +1065,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to status updates for the given instrument ID.
 
@@ -1100,7 +1097,7 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Subscribed to {instrument_id} InstrumentStatusUpdate.")
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to close updates for the given instrument ID.
 
@@ -1131,7 +1128,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id = None) except *:
+    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id = None):
         """
         Unsubscribe from data of the given data type.
 
@@ -1165,7 +1162,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id = None) except *:
+    cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id = None):
         """
         Unsubscribe from update `Instrument` data for the given venue.
 
@@ -1196,7 +1193,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe from update `Instrument` data for the given instrument ID.
 
@@ -1229,7 +1226,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe the order book deltas stream for the given instrument ID.
 
@@ -1267,7 +1264,7 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         int interval_ms = 1000,
         ClientId client_id = None,
-    ) except *:
+    ):
         """
         Unsubscribe from order book snapshots for the given instrument ID.
 
@@ -1308,7 +1305,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe from streaming `Ticker` data for the given instrument ID.
 
@@ -1341,7 +1338,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
 
@@ -1374,7 +1371,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe from streaming `TradeTick` data for the given instrument ID.
 
@@ -1407,7 +1404,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id = None) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id = None):
         """
         Unsubscribe from streaming `Bar` data for the given bar type.
 
@@ -1439,7 +1436,7 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id = None) except *:
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id = None):
         """
         Unsubscribe to status updates for the given venue.
 
@@ -1470,7 +1467,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe to status updates of the given venue.
 
@@ -1502,7 +1499,7 @@ cdef class Actor(Component):
         self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatusUpdate.")
 
 
-    cpdef void publish_data(self, DataType data_type, Data data) except *:
+    cpdef void publish_data(self, DataType data_type, Data data):
         """
         Publish the given data to the message bus.
 
@@ -1521,7 +1518,7 @@ cdef class Actor(Component):
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
-    cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0) except *:
+    cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0):
         """
         Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
 
@@ -1556,7 +1553,7 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, ClientId client_id, DataType data_type) except *:
+    cpdef void request_data(self, ClientId client_id, DataType data_type):
         """
         Request custom data for the given data type from the given data client.
 
@@ -1583,7 +1580,7 @@ cdef class Actor(Component):
 
         self._send_data_req(request)
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Request `Instrument` data for the given instrument ID.
 
@@ -1611,7 +1608,7 @@ cdef class Actor(Component):
 
         self._send_data_req(request)
 
-    cpdef void request_instruments(self, Venue venue, ClientId client_id = None) except *:
+    cpdef void request_instruments(self, Venue venue, ClientId client_id = None):
         """
         Request all `Instrument` data for the given venue.
 
@@ -1642,36 +1639,37 @@ cdef class Actor(Component):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
-    ) except *:
+    ):
         """
         Request historical `QuoteTick` data.
 
-        If `to_datetime` is ``None`` then will request up to the most recent data.
+        If `end` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        from_datetime : datetime, optional
-            The specified from datetime for the data.
-        to_datetime : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range (inclusive).
+            If ``None`` then will default to the current datetime (UTC).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
-        Notes
-        -----
-        Always limited to the tick capacity of the `DataEngine` cache.
+        Raises
+        ------
+        ValueError
+            If `start` is not less than `end`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
@@ -1679,8 +1677,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={
                 "instrument_id": instrument_id,
-                "from_datetime": from_datetime,
-                "to_datetime": to_datetime,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_quote_ticks_response,
             request_id=UUID4(),
@@ -1692,36 +1690,37 @@ cdef class Actor(Component):
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
-    ) except *:
+    ):
         """
         Request historical `TradeTick` data.
 
-        If `to_datetime` is ``None`` then will request up to the most recent data.
+        If `end` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
-        from_datetime : datetime, optional
-            The specified from datetime for the data.
-        to_datetime : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range (inclusive).
+            If ``None`` then will default to the current datetime (UTC).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
-        Notes
-        -----
-        Always limited to the tick capacity of the `DataEngine` cache.
+        Raises
+        ------
+        ValueError
+            If `start` is not less than `end`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
@@ -1729,8 +1728,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={
                 "instrument_id": instrument_id,
-                "from_datetime": from_datetime,
-                "to_datetime": to_datetime,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_trade_ticks_response,
             request_id=UUID4(),
@@ -1742,24 +1741,24 @@ cdef class Actor(Component):
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
-    ) except *:
+    ):
         """
         Request historical `Bar` data.
 
-        If `to_datetime` is ``None`` then will request up to the most recent data.
+        If `end` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
         bar_type : BarType
             The bar type for the request.
-        from_datetime : datetime, optional
-            The specified from datetime for the data.
-        to_datetime : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range (inclusive).
+            If ``None`` then will default to the current datetime (UTC).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -1767,16 +1766,12 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `from_datetime` is not less than `to_datetime`.
-
-        Notes
-        -----
-        Always limited to the bar capacity of the `DataEngine` cache.
+            If `start` is not less than `end`.
 
         """
         Condition.not_none(bar_type, "bar_type")
-        if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
@@ -1784,9 +1779,8 @@ cdef class Actor(Component):
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={
                 "bar_type": bar_type,
-                "from_datetime": from_datetime,
-                "to_datetime": to_datetime,
-                "limit": self.cache.bar_capacity,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_bars_response,
             request_id=UUID4(),
@@ -1797,7 +1791,7 @@ cdef class Actor(Component):
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
-    cpdef void handle_instrument(self, Instrument instrument) except *:
+    cpdef void handle_instrument(self, Instrument instrument):
         """
         Handle the given instrument.
 
@@ -1824,7 +1818,7 @@ cdef class Actor(Component):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_instruments(self, list instruments) except *:
+    cpdef void handle_instruments(self, list instruments):
         """
         Handle the given instruments data by handling each instrument individually.
 
@@ -1853,7 +1847,7 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_instrument(instruments[i])
 
-    cpdef void handle_order_book_delta(self, OrderBookData delta) except *:
+    cpdef void handle_order_book_delta(self, OrderBookData delta):
         """
         Handle the given order book data.
 
@@ -1878,7 +1872,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(delta)}", e)
                 raise
 
-    cpdef void handle_order_book(self, OrderBook order_book) except *:
+    cpdef void handle_order_book(self, OrderBook order_book):
         """
         Handle the given order book snapshot.
 
@@ -1903,7 +1897,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(order_book)}", e)
                 raise
 
-    cpdef void handle_ticker(self, Ticker ticker) except *:
+    cpdef void handle_ticker(self, Ticker ticker):
         """
         Handle the given ticker.
 
@@ -1928,7 +1922,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(ticker)}", e)
                 raise
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick):
         """
         Handle the given quote tick.
 
@@ -1955,7 +1949,7 @@ cdef class Actor(Component):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_quote_ticks(self, list ticks) except *:
+    cpdef void handle_quote_ticks(self, list ticks):
         """
         Handle the given historical quote tick data by handling each tick individually.
 
@@ -1984,7 +1978,7 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_historical_data(ticks[i])
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void handle_trade_tick(self, TradeTick tick):
         """
         Handle the given trade tick.
 
@@ -2011,7 +2005,7 @@ cdef class Actor(Component):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_trade_ticks(self, list ticks) except *:
+    cpdef void handle_trade_ticks(self, list ticks):
         """
         Handle the given tick data by handling each tick individually.
 
@@ -2040,7 +2034,7 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_historical_data(ticks[i])
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Handle the given bar data.
 
@@ -2067,7 +2061,7 @@ cdef class Actor(Component):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_bars(self, list bars) except *:
+    cpdef void handle_bars(self, list bars):
         """
         Handle the given historical bar data by handling each bar individually.
 
@@ -2088,7 +2082,7 @@ cdef class Actor(Component):
         cdef Bar last = bars[length - 1] if length > 0 else None
 
         if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.type}.")
+            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}.")
         else:
             self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
             return
@@ -2100,7 +2094,7 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_historical_data(bars[i])
 
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *:
+    cpdef void handle_venue_status_update(self, VenueStatusUpdate update):
         """
         Handle the given venue status update.
 
@@ -2125,7 +2119,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *:
+    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update):
         """
         Handle the given instrument status update.
 
@@ -2150,7 +2144,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_instrument_close(self, InstrumentClose update) except *:
+    cpdef void handle_instrument_close(self, InstrumentClose update):
         """
         Handle the given instrument close update.
 
@@ -2175,7 +2169,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_data(self, Data data) except *:
+    cpdef void handle_data(self, Data data):
         """
         Handle the given data.
 
@@ -2200,7 +2194,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
-    cpdef void handle_historical_data(self, Data data) except *:
+    cpdef void handle_historical_data(self, Data data):
         """
         Handle the given historical data.
 
@@ -2225,7 +2219,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
-    cpdef void handle_event(self, Event event) except *:
+    cpdef void handle_event(self, Event event):
         """
         Handle the given event.
 
@@ -2250,32 +2244,32 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(event)}", e)
                 raise
 
-    cpdef void _handle_data_response(self, DataResponse response) except *:
+    cpdef void _handle_data_response(self, DataResponse response):
         self.handle_data(response.data)
 
-    cpdef void _handle_instrument_response(self, DataResponse response) except *:
+    cpdef void _handle_instrument_response(self, DataResponse response):
         self.handle_instrument(response.data)
 
-    cpdef void _handle_instruments_response(self, DataResponse response) except *:
+    cpdef void _handle_instruments_response(self, DataResponse response):
         self.handle_instruments(response.data)
 
-    cpdef void _handle_quote_ticks_response(self, DataResponse response) except *:
+    cpdef void _handle_quote_ticks_response(self, DataResponse response):
         self.handle_quote_ticks(response.data)
 
-    cpdef void _handle_trade_ticks_response(self, DataResponse response) except *:
+    cpdef void _handle_trade_ticks_response(self, DataResponse response):
         self.handle_trade_ticks(response.data)
 
-    cpdef void _handle_bars_response(self, DataResponse response) except *:
+    cpdef void _handle_bars_response(self, DataResponse response):
         self.handle_bars(response.data)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_data_cmd(self, DataCommand command) except *:
+    cdef void _send_data_cmd(self, DataCommand command):
         if not self._log.is_bypassed:
             self._log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
-    cdef void _send_data_req(self, DataRequest request) except *:
+    cdef void _send_data_req(self, DataRequest request):
         if not self._log.is_bypassed:
             self._log.info(f"{REQ}{SENT} {request}.")
         self._msgbus.request(endpoint="DataEngine.request", request=request)

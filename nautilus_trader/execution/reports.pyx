@@ -518,7 +518,7 @@ cdef class ExecutionMassStatus(Document):
         """
         return self._position_reports.copy()
 
-    cpdef void add_order_reports(self, list reports) except *:
+    cpdef void add_order_reports(self, list reports):
         """
         Add the order reports to the mass status.
 
@@ -539,7 +539,7 @@ cdef class ExecutionMassStatus(Document):
         for report in reports:
             self._order_reports[report.venue_order_id] = report
 
-    cpdef void add_trade_reports(self, list reports) except *:
+    cpdef void add_trade_reports(self, list reports):
         """
         Add the trade reports to the mass status.
 
@@ -563,7 +563,7 @@ cdef class ExecutionMassStatus(Document):
                 self._trade_reports[report.venue_order_id] = []
             self._trade_reports[report.venue_order_id].append(report)
 
-    cpdef void add_position_reports(self, list reports) except *:
+    cpdef void add_position_reports(self, list reports):
         """
         Add the position status reports to the mass status.
 

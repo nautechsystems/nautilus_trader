@@ -120,7 +120,7 @@ class BinanceSpotWalletHttpAPI:
         fees = await self._endpoint_spot_trade_fee._get(
             parameters=self._endpoint_spot_trade_fee.GetParameters(
                 timestamp=self._timestamp(),
-                symbol=BinanceSymbol(symbol),
+                symbol=BinanceSymbol(symbol) if symbol is not None else None,
                 recvWindow=recv_window,
             ),
         )

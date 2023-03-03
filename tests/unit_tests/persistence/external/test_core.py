@@ -23,8 +23,8 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
 
+from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
@@ -69,7 +69,7 @@ class _TestPersistenceCore:
     def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490*.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490*.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -88,12 +88,12 @@ class _TestPersistenceCore:
     def test_raw_file_block_size_read(self):
         # Arrange
         self._load_data_into_catalog()
-        raw_file = RawFile(fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"))
+        raw_file = RawFile(fsspec.open(f"{TEST_DATA_DIR}/betfair/1.166564490.bz2"))
         data = b"".join(raw_file.iter())
 
         # Act
         raw_file = RawFile(
-            fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"),
+            fsspec.open(f"{TEST_DATA_DIR}/betfair/1.166564490.bz2"),
             block_size=1000,
         )
         blocks = list(raw_file.iter())
@@ -106,7 +106,7 @@ class _TestPersistenceCore:
     def test_raw_file_process(self):
         # Arrange
         rf = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2", compression="infer"),
+            open_file=fsspec.open(f"{TEST_DATA_DIR}/betfair/1.166564490.bz2", compression="infer"),
             block_size=None,
         )
 
@@ -555,6 +555,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=EUR-USD.SIM/0000000000000000001-0000000000000000010-0.parquet"
 
         assert self.fs.exists(path)
+        assert len(pd.read_parquet(path)) == 2
 
     def test_write_parquet_rust_trade_ticks_writes_expected(self):
         # Arrange

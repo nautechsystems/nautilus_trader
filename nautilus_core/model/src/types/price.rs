@@ -34,17 +34,18 @@ pub struct Price {
 }
 
 impl Price {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
 
-        Self {
+        Price {
             raw: f64_to_fixed_i64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        Self { raw, precision }
+        Price { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -64,6 +65,18 @@ impl From<&str> for Price {
             Err(err) => panic!("Cannot parse `input` string '{input}' as f64, {err}"),
         };
         Price::new(float_res, precision_from_str(input))
+    }
+}
+
+impl From<Price> for f64 {
+    fn from(value: Price) -> f64 {
+        value.as_f64()
+    }
+}
+
+impl From<&Price> for f64 {
+    fn from(value: &Price) -> f64 {
+        value.as_f64()
     }
 }
 

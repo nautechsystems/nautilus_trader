@@ -37,10 +37,9 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.batching import batch_files
-from nautilus_trader.persistence.batching import extract_generic_data_client_ids
-from nautilus_trader.persistence.batching import groupby_datatype
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.streaming.engine import StreamingEngine
+from nautilus_trader.persistence.streaming.engine import extract_generic_data_client_ids
+from nautilus_trader.persistence.streaming.engine import groupby_datatype
 
 
 class BacktestNode:
@@ -253,16 +252,14 @@ class BacktestNode:
         data_configs: list[BacktestDataConfig],
         batch_size_bytes: int,
     ) -> None:
-        config = data_configs[0]
-        catalog: ParquetDataCatalog = config.catalog()
-
         data_client_ids = extract_generic_data_client_ids(data_configs=data_configs)
 
-        for batch in batch_files(
-            catalog=catalog,
+        streaming_engine = StreamingEngine(
             data_configs=data_configs,
             target_batch_size_bytes=batch_size_bytes,
-        ):
+        )
+
+        for batch in streaming_engine:
             engine.clear_data()
             grouped = groupby_datatype(batch)
             for data in grouped:
@@ -292,12 +289,12 @@ class BacktestNode:
             )
             d = config.load()
             if config.instrument_id and d["instrument"] is None:
-                print(
-                    f"Requested instrument_id={d['instrument']} from data_config not found catalog",
+                engine._log.warning(
+                    f"Requested instrument_id={d['instrument']} from data_config not found in catalog",
                 )
                 continue
             if not d["data"]:
-                print(f"No data found for {config}")
+                engine._log.warning(f"No data found for {config}")
                 continue
 
             t1 = pd.Timestamp.now()

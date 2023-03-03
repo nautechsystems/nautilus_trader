@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import socket
-
 import pytest
 
 from nautilus_trader.common.clock import TestClock
@@ -70,7 +68,11 @@ class TestLogLevel:
 class TestLoggerTests:
     def test_log_debug_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.DEBUG)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -81,7 +83,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -92,7 +98,11 @@ class TestLoggerTests:
 
     def test_log_info_with_annotation_sends_to_stdout(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         annotations = {"my_tag": "something"}
@@ -105,7 +115,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -116,7 +130,11 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.INFO,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -127,7 +145,11 @@ class TestLoggerTests:
 
     def test_log_warning_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.WARNING)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.WARNING,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -138,7 +160,11 @@ class TestLoggerTests:
 
     def test_log_error_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.ERROR)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.ERROR,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -149,7 +175,11 @@ class TestLoggerTests:
 
     def test_log_critical_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -160,7 +190,11 @@ class TestLoggerTests:
 
     def test_log_exception_messages_to_console(self):
         # Arrange
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.CRITICAL,
+            bypass=True,
+        )
         logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
@@ -168,25 +202,3 @@ class TestLoggerTests:
 
         # Assert
         assert True  # No exceptions raised
-
-    def test_register_sink_sends_records_to_sink(self):
-        # Arrange
-        sink = []
-        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
-        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
-
-        # Act
-        logger.register_sink(sink.append)
-        logger_adapter.info("A log event", annotations={"tag": "risk"})
-
-        # Assert
-        assert sink[0] == {
-            "component": "TEST_LOGGER",
-            "machine_id": socket.gethostname(),
-            "level": "INF",
-            "msg": "A log event",
-            "instance_id": f"{logger.instance_id.value}",
-            "tag": "risk",
-            "timestamp": 0,
-            "trader_id": "TRADER-000",
-        }

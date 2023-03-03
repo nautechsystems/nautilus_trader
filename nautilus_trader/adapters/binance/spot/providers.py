@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
@@ -95,18 +96,21 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get current commission rates
-        if self._client.base_url.__contains__("testnet.binance.vision"):
+        try:
+            # response = await self._http_wallet.query_spot_trade_fees()
+            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # TODO: Requests for testnet seem to fail auth
+            self._log.warning(
+                "Currently not requesting actual trade fees. "
+                "All instruments will have zero fees.",
+            )
             fees_dict: dict[str, BinanceSpotTradeFee] = {}
-        else:
-            try:
-                response = await self._http_wallet.query_spot_trade_fees()
-                fees_dict = {fee.symbol: fee for fee in response}
-            except BinanceClientError as e:
-                self._log.error(
-                    "Cannot load instruments: API key authentication failed "
-                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                )
-                return
+        except BinanceClientError as e:
+            self._log.error(
+                "Cannot load instruments: API key authentication failed "
+                f"(this is needed to fetch the applicable account fee tier). {e.message}",
+            )
+            return
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_spot_exchange_info()
@@ -135,8 +139,14 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            response = await self._http_wallet.query_spot_trade_fees()
-            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # response = await self._http_wallet.query_spot_trade_fees()
+            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            # TODO: Requests for testnet seem to fail auth
+            self._log.warning(
+                "Currently not requesting actual trade fees. "
+                "All instruments will have zero fees.",
+            )
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -145,7 +155,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Extract all symbol strings
-        symbols = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols = [
+            str(BinanceSymbol(instrument_id.symbol.value)) for instrument_id in instrument_ids
+        ]
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_spot_exchange_info(symbols=symbols)
         symbol_info_dict: dict[str, BinanceSpotSymbolInfo] = {
@@ -166,12 +178,18 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
         # Get current commission rates
         try:
-            trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
-            fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in trade_fees}
+            # trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
+            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in trade_fees}
+            # TODO: Requests for testnet seem to fail auth
+            self._log.warning(
+                "Currently not requesting actual trade fees. "
+                "All instruments will have zero fees.",
+            )
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -221,8 +239,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
             PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
 
-            price_precision = abs(Decimal(tick_size).as_tuple().exponent)
-            size_precision = abs(Decimal(step_size).as_tuple().exponent)
+            price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
+            size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
             price_increment = Price.from_str(tick_size)
             size_increment = Quantity.from_str(step_size)
             lot_size = Quantity.from_str(step_size)

@@ -95,7 +95,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef double timestamp(self) except *:
+    cpdef double timestamp(self):
         """
         Return the current UNIX time in seconds.
 
@@ -110,7 +110,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef uint64_t timestamp_ms(self) except *:
+    cpdef uint64_t timestamp_ms(self):
         """
         Return the current UNIX time in milliseconds (ms).
 
@@ -125,7 +125,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef uint64_t timestamp_ns(self) except *:
+    cpdef uint64_t timestamp_ns(self):
         """
         Return the current UNIX time in nanoseconds (ns).
 
@@ -170,7 +170,7 @@ cdef class Clock:
         """
         return self.utc_now().astimezone(tz)
 
-    cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None]) except *:
+    cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None]):
         """
         Register the given handler as the clocks default handler.
 
@@ -187,7 +187,7 @@ cdef class Clock:
 
         self._default_handler = handler
 
-    cpdef uint64_t next_time_ns(self, str name) except *:
+    cpdef uint64_t next_time_ns(self, str name):
         """
         Find a particular timer.
 
@@ -213,7 +213,7 @@ cdef class Clock:
         str name,
         datetime alert_time,
         callback: Callable[[TimeEvent], None] = None,
-    ) except *:
+    ):
         """
         Set a time alert for the given time.
 
@@ -253,7 +253,7 @@ cdef class Clock:
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] = None,
-    ) except *:
+    ):
         """
         Set a time alert for the given time.
 
@@ -291,7 +291,7 @@ cdef class Clock:
         datetime start_time = None,
         datetime stop_time = None,
         callback: Optional[Callable[[TimeEvent], None]] = None,
-    ) except *:
+    ):
         """
         Set a timer to run.
 
@@ -344,7 +344,7 @@ cdef class Clock:
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
-    ) except *:
+    ):
         """
         Set a timer to run.
 
@@ -384,7 +384,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void cancel_timer(self, str name) except *:
+    cpdef void cancel_timer(self, str name):
         """
         Cancel the timer corresponding to the given label.
 
@@ -401,7 +401,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void cancel_timers(self) except *:
+    cpdef void cancel_timers(self):
         """
         Cancel all timers.
         """
@@ -433,13 +433,13 @@ cdef class TestClock(Clock):
     def timer_count(self) -> int:
         return test_clock_timer_count(&self._mem)
 
-    cpdef double timestamp(self) except *:
+    cpdef double timestamp(self):
         return nanos_to_secs(test_clock_time_ns(&self._mem))
 
-    cpdef uint64_t timestamp_ms(self) except *:
+    cpdef uint64_t timestamp_ms(self):
         return nanos_to_millis(test_clock_time_ns(&self._mem))
 
-    cpdef uint64_t timestamp_ns(self) except *:
+    cpdef uint64_t timestamp_ns(self):
         return test_clock_time_ns(&self._mem)
 
     cpdef void set_time_alert_ns(
@@ -447,7 +447,7 @@ cdef class TestClock(Clock):
         str name,
         uint64_t alert_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
-    ) except *:
+    ):
         Condition.not_none(name, "name")
         if callback is None:
             callback = self._default_handler
@@ -463,7 +463,7 @@ cdef class TestClock(Clock):
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
-    ) except *:
+    ):
         if callback is None:
             callback = self._default_handler
 
@@ -485,16 +485,16 @@ cdef class TestClock(Clock):
             stop_time_ns,
         )
 
-    cpdef uint64_t next_time_ns(self, str name) except *:
+    cpdef uint64_t next_time_ns(self, str name):
         return test_clock_next_time_ns(&self._mem, pystr_to_cstr(name))
 
-    cpdef void cancel_timer(self, str name) except *:
+    cpdef void cancel_timer(self, str name):
         test_clock_cancel_timer(&self._mem, pystr_to_cstr(name))
 
-    cpdef void cancel_timers(self) except *:
+    cpdef void cancel_timers(self):
         test_clock_cancel_timers(&self._mem)
 
-    cpdef void set_time(self, uint64_t to_time_ns) except *:
+    cpdef void set_time(self, uint64_t to_time_ns):
         """
         Set the clocks datetime to the given time (UTC).
 
@@ -582,7 +582,7 @@ cdef class LiveClock(Clock):
     def timer_count(self) -> int:
         return self._timer_count
 
-    cpdef void set_offset(self, int64_t offset_ns) except *:
+    cpdef void set_offset(self, int64_t offset_ns):
         """
         Set the offset (nanoseconds) for the clock.
 
@@ -597,13 +597,13 @@ cdef class LiveClock(Clock):
         self._offset_ms = nanos_to_millis(offset_ns)
         self._offset_secs = nanos_to_secs(offset_ns)
 
-    cpdef double timestamp(self) except *:
+    cpdef double timestamp(self):
         return unix_timestamp() + self._offset_secs
 
-    cpdef uint64_t timestamp_ms(self) except *:
+    cpdef uint64_t timestamp_ms(self):
         return unix_timestamp_ms() + self._offset_ms
 
-    cpdef uint64_t timestamp_ns(self) except *:
+    cpdef uint64_t timestamp_ns(self):
         return unix_timestamp_ns() + self._offset_ns
 
     cpdef void set_time_alert_ns(
@@ -611,7 +611,7 @@ cdef class LiveClock(Clock):
         str name,
         uint64_t alert_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
-    ) except *:
+    ):
         Condition.not_none(name, "name")
         if callback is None:
             callback = self._default_handler
@@ -634,7 +634,7 @@ cdef class LiveClock(Clock):
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
-    ) except *:
+    ):
         cdef uint64_t now_ns = self.timestamp_ns()  # Call here for greater accuracy
 
         Condition.valid_string(name, "name")
@@ -661,19 +661,19 @@ cdef class LiveClock(Clock):
         )
         self._add_timer(timer, callback)
 
-    cdef void _add_timer(self, LiveTimer timer, handler: Callable[[TimeEvent], None]) except *:
+    cdef void _add_timer(self, LiveTimer timer, handler: Callable[[TimeEvent], None]):
         self._timers[timer.name] = timer
         self._handlers[timer.name] = handler
         self._update_stack()
         self._update_timing()
 
-    cdef void _remove_timer(self, LiveTimer timer) except *:
+    cdef void _remove_timer(self, LiveTimer timer):
         self._timers.pop(timer.name, None)
         self._handlers.pop(timer.name, None)
         self._update_stack()
         self._update_timing()
 
-    cdef void _update_stack(self) except *:
+    cdef void _update_stack(self):
         self._timer_count = len(self._timers)
 
         if self._timer_count > 0:
@@ -685,10 +685,10 @@ cdef class LiveClock(Clock):
         else:
             self._stack = None
 
-    cpdef uint64_t next_time_ns(self, str name) except *:
+    cpdef uint64_t next_time_ns(self, str name):
         return self._timers[name].next_time_ns
 
-    cpdef void cancel_timer(self, str name) except *:
+    cpdef void cancel_timer(self, str name):
         Condition.valid_string(name, "name")
 
         cdef LiveTimer timer = self._timers.pop(name, None)
@@ -700,7 +700,7 @@ cdef class LiveClock(Clock):
         self._handlers.pop(name, None)
         self._remove_timer(timer)
 
-    cpdef void cancel_timers(self) except *:
+    cpdef void cancel_timers(self):
         cdef str name
         for name in self.timer_names:
             # Using a list of timer names from the property and passing this
@@ -710,7 +710,7 @@ cdef class LiveClock(Clock):
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void _update_timing(self) except *:
+    cdef void _update_timing(self):
         if self._timer_count == 0:
             self._next_event_time_ns = 0
             return
@@ -761,7 +761,7 @@ cdef class LiveClock(Clock):
                 stop_time_ns=stop_time_ns,
             )
 
-    cpdef void _raise_time_event(self, LiveTimer timer) except *:
+    cpdef void _raise_time_event(self, LiveTimer timer):
         cdef TimeEvent event = timer.pop_event(
             event_id=UUID4(),
             ts_init=self.timestamp_ns(),
@@ -776,7 +776,7 @@ cdef class LiveClock(Clock):
             timer.repeat(now_ns=self.timestamp_ns())
             self._update_timing()
 
-    cdef void _handle_time_event(self, TimeEvent event) except *:
+    cdef void _handle_time_event(self, TimeEvent event):
         handler = self._handlers.get(event.name)
         if handler is not None:
             handler(event)

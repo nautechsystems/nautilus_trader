@@ -88,7 +88,7 @@ eliminating many classes of bugs at compile-time.
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
 Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
-[PyO3](https://pyo3.rs/v0.15.1/) will be leveraged for easier Python bindings.
+[PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
 
 ## Architecture Quality Attributes
 

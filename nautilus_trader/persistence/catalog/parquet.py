@@ -34,6 +34,8 @@ from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -42,6 +44,7 @@ from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.util import is_filename_in_time_range
+from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -71,7 +74,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def __init__(
         self,
         path: str,
-        fs_protocol: str = "file",
+        fs_protocol: Optional[str] = "file",
         fs_storage_options: Optional[dict] = None,
     ):
         self.fs_protocol = fs_protocol
@@ -155,7 +158,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if end is not None:
             filters.append(ds.field(ts_column) <= pd.Timestamp(end).value)
 
-        full_path = self._make_path(cls=cls)
+        full_path = self.make_path(cls=cls)
 
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
@@ -163,6 +166,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             else:
                 return pd.DataFrame() if as_dataframe else None
 
+        # Load rust objects
         if isinstance(start, int) or start is None:
             start_nanos = start
         else:
@@ -173,34 +177,26 @@ class ParquetDataCatalog(BaseDataCatalog):
         else:
             end_nanos = dt_to_unix_nanos(end)  # datetime > nanos
 
-        # Load rust objects
         use_rust = kwargs.get("use_rust") and cls in (QuoteTick, TradeTick)
         if use_rust and kwargs.get("as_nautilus"):
-            # start_nanos = int(pd.Timestamp(end).to_datetime64()) if start else None
-            # end_nanos = int(pd.Timestamp(end).to_datetime64()) if end else None
-            from nautilus_trader.persistence.batching import (
-                generate_batches,  # avoid circular import error
-            )
-
             assert instrument_ids is not None
             assert len(instrument_ids) > 0
 
             to_merge = []
             for instrument_id in instrument_ids:
-                files = self._get_files(cls, instrument_id, start_nanos, end_nanos)
+                files = self.get_files(cls, instrument_id, start_nanos, end_nanos)
 
                 if raise_on_empty and not files:
                     raise RuntimeError("No files found.")
-                batches = generate_batches(
+
+                batches = generate_batches_rust(
                     files=files,
                     cls=cls,
-                    fs=self.fs,
-                    use_rust=True,
-                    n_rows=sys.maxsize,
-                    start_time=start_nanos,
-                    end_time=end_nanos,
+                    batch_size=sys.maxsize,
+                    start_nanos=start_nanos,
+                    end_nanos=end_nanos,
                 )
-                objs = list(itertools.chain(*batches))
+                objs = list(itertools.chain.from_iterable(batches))
                 if len(instrument_ids) == 1:
                     return objs  # skip merge, only 1 instrument
                 to_merge.append(objs)
@@ -243,14 +239,45 @@ class ParquetDataCatalog(BaseDataCatalog):
         else:
             return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
 
-    def make_path(self, cls: type, instrument_id: Optional[str] = None, clean=True) -> str:
+    def make_path(self, cls: type, instrument_id: Optional[str] = None) -> str:
         path = f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
         if instrument_id is not None:
             path += f"/instrument_id={clean_key(instrument_id)}"
         return path
 
-    def _make_path(self, cls: type) -> str:
-        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
+    def get_files(
+        self,
+        cls: type,
+        instrument_id: Optional[str] = None,
+        start_nanos: Optional[int] = None,
+        end_nanos: Optional[int] = None,
+        bar_spec: Optional[BarSpecification] = None,
+    ) -> list[str]:
+        folder = self.make_path(cls=cls, instrument_id=instrument_id)
+
+        if not self.fs.isdir(folder):
+            return []
+
+        paths = self.fs.glob(f"{folder}/**")
+
+        file_paths = []
+        for path in paths:
+            # Filter by BarType
+            bar_spec_matched = False
+            if cls is Bar:
+                bar_spec_matched = bar_spec and str(bar_spec) in path
+                if not bar_spec_matched:
+                    continue
+
+            # Filter by time range
+            file_path = pathlib.PurePosixPath(path).name
+            matched = is_filename_in_time_range(file_path, start_nanos, end_nanos)
+            if matched:
+                file_paths.append(str(path))
+
+        file_paths = sorted(file_paths, key=lambda x: Path(x).stem)
+
+        return file_paths
 
     def _get_files(
         self,

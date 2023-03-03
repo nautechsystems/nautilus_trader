@@ -96,7 +96,7 @@ async def main(market_id: str):
     SandboxExecutionClient.INSTRUMENTS = instruments
     node.build()
 
-    node.start()
+    node.run()
     # try:
     #     node.start()
     # except Exception as ex:

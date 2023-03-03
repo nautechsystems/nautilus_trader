@@ -192,12 +192,12 @@ class TestBettingAccount:
     @pytest.mark.parametrize(
         "price, quantity, side, locked_balance",
         [
-            ("0.80", 10, "BUY", "10"),
-            ("0.50", 10, "BUY", "10"),
-            ("0.10", 20, "BUY", "20"),
-            ("0.80", 10, "SELL", "2.5"),
-            ("0.5", 10, "SELL", "10"),
-            ("0.1", 10, "SELL", "90"),
+            ("1.25", 10, "BUY", "10"),
+            ("2.00", 10, "BUY", "10"),
+            ("10.0", 20, "BUY", "20"),
+            ("1.25", 10, "SELL", "2.5"),
+            ("2.0", 10, "SELL", "10"),
+            ("10.0", 10, "SELL", "90"),
         ],
     )
     def test_calculate_balance_locked(self, price, quantity, side, locked_balance):

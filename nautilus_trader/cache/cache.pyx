@@ -147,7 +147,7 @@ cdef class Cache(CacheFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void cache_general(self) except *:
+    cpdef void cache_general(self):
         """
         Clear the current general cache and load the general objects from the
         cache database.
@@ -165,7 +165,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._general else LogColor.NORMAL,
         )
 
-    cpdef void cache_currencies(self) except *:
+    cpdef void cache_currencies(self):
         """
         Clear the current currencies cache and load currencies from the cache
         database.
@@ -188,7 +188,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._currencies else LogColor.NORMAL,
         )
 
-    cpdef void cache_instruments(self) except *:
+    cpdef void cache_instruments(self):
         """
         Clear the current instruments cache and load instruments from the cache
         database.
@@ -206,7 +206,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
         )
 
-    cpdef void cache_accounts(self) except *:
+    cpdef void cache_accounts(self):
         """
         Clear the current accounts cache and load accounts from the cache
         database.
@@ -224,7 +224,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._accounts else LogColor.NORMAL,
         )
 
-    cpdef void cache_orders(self) except *:
+    cpdef void cache_orders(self):
         """
         Clear the current orders cache and load orders from the cache database.
         """
@@ -241,7 +241,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._orders else LogColor.NORMAL,
         )
 
-    cpdef void cache_order_lists(self) except *:
+    cpdef void cache_order_lists(self):
         """
         Clear the current order lists cache and load order lists using cached orders.
         """
@@ -278,7 +278,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._order_lists else LogColor.NORMAL,
         )
 
-    cpdef void cache_positions(self) except *:
+    cpdef void cache_positions(self):
         """
         Clear the current positions cache and load positions from the cache
         database.
@@ -296,7 +296,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
         )
 
-    cpdef void cache_commands(self) except *:
+    cpdef void cache_commands(self):
         """
         Clear the current submit order commands cache and load commands from the
         cache database.
@@ -322,7 +322,7 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._submit_order_list_commands else LogColor.NORMAL
         )
 
-    cpdef void build_index(self) except *:
+    cpdef void build_index(self):
         """
         Clear the current cache index and re-build.
         """
@@ -337,7 +337,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Index built in {unix_timestamp() - ts:.3f}s.")
 
-    cpdef bint check_integrity(self) except *:
+    cpdef bint check_integrity(self):
         """
         Check integrity of data within the cache.
 
@@ -612,7 +612,7 @@ cdef class Cache(CacheFacade):
             )
             return False
 
-    cpdef bint check_residuals(self) except *:
+    cpdef bint check_residuals(self):
         """
         Check for any residual open state and log warnings if any are found.
 
@@ -639,7 +639,7 @@ cdef class Cache(CacheFacade):
 
         return residuals
 
-    cpdef void clear_index(self) except *:
+    cpdef void clear_index(self):
         self._log.debug(f"Clearing index...")
 
         self._index_venue_account.clear()
@@ -667,7 +667,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Cleared index.")
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the cache.
 
@@ -697,7 +697,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Reset cache.")
 
-    cpdef void flush_db(self) except *:
+    cpdef void flush_db(self):
         """
         Flush the caches database which permanently removes all persisted data.
 
@@ -713,15 +713,15 @@ cdef class Cache(CacheFacade):
 
         self._log.info("Execution database flushed.")
 
-    cdef void _build_index_venue_account(self) except *:
+    cdef void _build_index_venue_account(self):
         cdef AccountId account_id
         for account_id in self._accounts.keys():
             self._cache_venue_account_id(account_id)
 
-    cdef void _cache_venue_account_id(self, AccountId account_id) except *:
+    cdef void _cache_venue_account_id(self, AccountId account_id):
         self._index_venue_account[Venue(account_id.get_issuer())] = account_id
 
-    cdef void _build_indexes_from_orders(self) except *:
+    cdef void _build_indexes_from_orders(self):
         cdef ClientOrderId client_order_id
         cdef Order order
         for client_order_id, order in self._orders.items():
@@ -773,7 +773,7 @@ cdef class Cache(CacheFacade):
             # 12: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
-    cdef void _build_indexes_from_positions(self) except *:
+    cdef void _build_indexes_from_positions(self):
         cdef ClientOrderId client_order_id
         cdef PositionId position_id
         cdef Position position
@@ -817,7 +817,7 @@ cdef class Cache(CacheFacade):
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
-    cpdef void load_actor(self, Actor actor) except *:
+    cpdef void load_actor(self, Actor actor):
         """
         Load the state dictionary into the given actor.
 
@@ -841,7 +841,7 @@ cdef class Cache(CacheFacade):
         else:
             self._log.info(f"No previous state found for {repr(actor.id)}")
 
-    cpdef void load_strategy(self, Strategy strategy) except *:
+    cpdef void load_strategy(self, Strategy strategy):
         """
         Load the state dictionary into the given strategy.
 
@@ -979,7 +979,7 @@ cdef class Cache(CacheFacade):
 
         return self._submit_order_list_commands.get(order_list_id)
 
-    cpdef void add(self, str key, bytes value) except *:
+    cpdef void add(self, str key, bytes value):
         """
         Add the given general object to the cache.
 
@@ -1003,7 +1003,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add(key, value)
 
-    cpdef void add_order_book(self, OrderBook order_book) except *:
+    cpdef void add_order_book(self, OrderBook order_book):
         """
         Add the given order book to the cache.
 
@@ -1017,7 +1017,7 @@ cdef class Cache(CacheFacade):
 
         self._order_books[order_book.instrument_id] = order_book
 
-    cpdef void add_ticker(self, Ticker ticker) except *:
+    cpdef void add_ticker(self, Ticker ticker):
         """
         Add the given ticker to the cache.
 
@@ -1039,7 +1039,7 @@ cdef class Cache(CacheFacade):
 
         tickers.appendleft(ticker)
 
-    cpdef void add_quote_tick(self, QuoteTick tick) except *:
+    cpdef void add_quote_tick(self, QuoteTick tick):
         """
         Add the given quote tick to the cache.
 
@@ -1061,7 +1061,7 @@ cdef class Cache(CacheFacade):
 
         ticks.appendleft(tick)
 
-    cpdef void add_trade_tick(self, TradeTick tick) except *:
+    cpdef void add_trade_tick(self, TradeTick tick):
         """
         Add the given trade tick to the cache.
 
@@ -1083,7 +1083,7 @@ cdef class Cache(CacheFacade):
 
         ticks.appendleft(tick)
 
-    cpdef void add_bar(self, Bar bar) except *:
+    cpdef void add_bar(self, Bar bar):
         """
         Add the given bar to the cache.
 
@@ -1110,7 +1110,7 @@ cdef class Cache(CacheFacade):
         elif price_type == PriceType.ASK:
             self._bars_ask[bar.bar_type.instrument_id] = bar
 
-    cpdef void add_quote_ticks(self, list ticks) except *:
+    cpdef void add_quote_ticks(self, list ticks):
         """
         Add the given quote ticks to the cache.
 
@@ -1147,7 +1147,7 @@ cdef class Cache(CacheFacade):
         for tick in ticks:
             cached_ticks.appendleft(tick)
 
-    cpdef void add_trade_ticks(self, list ticks) except *:
+    cpdef void add_trade_ticks(self, list ticks):
         """
         Add the given trade ticks to the cache.
 
@@ -1184,7 +1184,7 @@ cdef class Cache(CacheFacade):
         for tick in ticks:
             cached_ticks.appendleft(tick)
 
-    cpdef void add_bars(self, list bars) except *:
+    cpdef void add_bars(self, list bars):
         """
         Add the given bars to the cache.
 
@@ -1228,7 +1228,7 @@ cdef class Cache(CacheFacade):
         elif price_type == PriceType.ASK:
             self._bars_ask[bar.bar_type.instrument_id] = bar
 
-    cpdef void add_currency(self, Currency currency) except *:
+    cpdef void add_currency(self, Currency currency):
         """
         Add the given currency to the cache.
 
@@ -1249,7 +1249,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_currency(currency)
 
-    cpdef void add_instrument(self, Instrument instrument) except *:
+    cpdef void add_instrument(self, Instrument instrument):
         """
         Add the given instrument to the cache.
 
@@ -1272,7 +1272,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_instrument(instrument)
 
-    cpdef void add_account(self, Account account) except *:
+    cpdef void add_account(self, Account account):
         """
         Add the given account to the cache.
 
@@ -1300,7 +1300,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
-    cpdef void add_order(self, Order order, PositionId position_id, bint override = False) except *:
+    cpdef void add_order(self, Order order, PositionId position_id, bint override = False):
         """
         Add the given order to the cache indexed with the given position
         ID.
@@ -1375,7 +1375,7 @@ cdef class Cache(CacheFacade):
         cdef str position_id_str = f", for {position_id.to_str()}" if position_id is not None else ""
         self._log.debug(f"Added {order}{position_id_str}.")
 
-    cpdef void add_order_list(self, OrderList order_list) except *:
+    cpdef void add_order_list(self, OrderList order_list):
         """
         Add the given order list to the cache.
 
@@ -1403,7 +1403,7 @@ cdef class Cache(CacheFacade):
         Venue venue,
         ClientOrderId client_order_id,
         StrategyId strategy_id,
-    ) except *:
+    ):
         """
         Index the given position ID with the other given IDs.
 
@@ -1450,7 +1450,7 @@ cdef class Cache(CacheFacade):
             f"strategy_id={strategy_id}).",
         )
 
-    cpdef void add_position(self, Position position, OmsType oms_type) except *:
+    cpdef void add_position(self, Position position, OmsType oms_type):
         """
         Add the given position to the cache.
 
@@ -1506,7 +1506,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_position(position)
 
-    cpdef void snapshot_position(self, Position position) except *:
+    cpdef void snapshot_position(self, Position position):
         """
         Snapshot the given position in its current state.
 
@@ -1533,7 +1533,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
 
-    cpdef void add_submit_order_command(self, SubmitOrder command) except *:
+    cpdef void add_submit_order_command(self, SubmitOrder command):
         """
         Add the given command to the cache.
 
@@ -1559,7 +1559,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_submit_order_command(command)
 
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
         """
         Add the given command to the cache.
 
@@ -1585,7 +1585,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_submit_order_list_command(command)
 
-    cpdef void update_account(self, Account account) except *:
+    cpdef void update_account(self, Account account):
         """
         Update the given account in the cache.
 
@@ -1600,7 +1600,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_account(account)
 
-    cpdef void update_order(self, Order order) except *:
+    cpdef void update_order(self, Order order):
         """
         Update the given order in the cache.
 
@@ -1640,7 +1640,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_order(order)
 
-    cpdef void update_position(self, Position position) except *:
+    cpdef void update_position(self, Position position):
         """
         Update the given position in the cache.
 
@@ -1663,7 +1663,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_position(position)
 
-    cpdef void update_actor(self, Actor actor) except *:
+    cpdef void update_actor(self, Actor actor):
         """
         Update the given actor state in the cache.
 
@@ -1680,7 +1680,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_actor(actor)
 
-    cpdef void delete_actor(self, Actor actor) except *:
+    cpdef void delete_actor(self, Actor actor):
         """
         Delete the given actor from the cache.
 
@@ -1705,7 +1705,7 @@ cdef class Cache(CacheFacade):
             self._database.delete_actor(actor.id)
             self._log.debug(f"Deleted Actor(id={actor.id.value}).")
 
-    cpdef void update_strategy(self, Strategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy):
         """
         Update the given strategy state in the cache.
 
@@ -1722,7 +1722,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_strategy(strategy)
 
-    cpdef void delete_strategy(self, Strategy strategy) except *:
+    cpdef void delete_strategy(self, Strategy strategy):
         """
         Delete the given strategy from the cache.
 
@@ -2027,7 +2027,7 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef int book_update_count(self, InstrumentId instrument_id) except *:
+    cpdef int book_update_count(self, InstrumentId instrument_id):
         """
         The count of order book updates for the given instrument ID.
 
@@ -2051,7 +2051,7 @@ cdef class Cache(CacheFacade):
         else:
             return book.count
 
-    cpdef int ticker_count(self, InstrumentId instrument_id) except *:
+    cpdef int ticker_count(self, InstrumentId instrument_id):
         """
         The count of tickers for the given instrument ID.
 
@@ -2069,7 +2069,7 @@ cdef class Cache(CacheFacade):
 
         return len(self._tickers.get(instrument_id, []))
 
-    cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
+    cpdef int quote_tick_count(self, InstrumentId instrument_id):
         """
         The count of quote ticks for the given instrument ID.
 
@@ -2087,7 +2087,7 @@ cdef class Cache(CacheFacade):
 
         return len(self._quote_ticks.get(instrument_id, []))
 
-    cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
+    cpdef int trade_tick_count(self, InstrumentId instrument_id):
         """
         The count of trade ticks for the given instrument ID.
 
@@ -2105,7 +2105,7 @@ cdef class Cache(CacheFacade):
 
         return len(self._trade_ticks.get(instrument_id, []))
 
-    cpdef int bar_count(self, BarType bar_type) except *:
+    cpdef int bar_count(self, BarType bar_type):
         """
         The count of bars for the given bar type.
 
@@ -2123,7 +2123,7 @@ cdef class Cache(CacheFacade):
 
         return len(self._bars.get(bar_type, []))
 
-    cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
+    cpdef bint has_order_book(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the cache has an order book snapshot
         for the given instrument ID.
@@ -2140,7 +2140,7 @@ cdef class Cache(CacheFacade):
         """
         return instrument_id in self._order_books
 
-    cpdef bint has_tickers(self, InstrumentId instrument_id) except *:
+    cpdef bint has_tickers(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the cache has tickers for the given
         instrument ID.
@@ -2159,7 +2159,7 @@ cdef class Cache(CacheFacade):
 
         return self.ticker_count(instrument_id) > 0
 
-    cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef bint has_quote_ticks(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the cache has quote ticks for the
         given instrument ID.
@@ -2178,7 +2178,7 @@ cdef class Cache(CacheFacade):
 
         return self.quote_tick_count(instrument_id) > 0
 
-    cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef bint has_trade_ticks(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the cache has trade ticks for the
         given instrument ID.
@@ -2197,7 +2197,7 @@ cdef class Cache(CacheFacade):
 
         return self.trade_tick_count(instrument_id) > 0
 
-    cpdef bint has_bars(self, BarType bar_type) except *:
+    cpdef bint has_bars(self, BarType bar_type):
         """
         Return a value indicating whether the cache has bars for the given bar
         type.
@@ -2222,7 +2222,7 @@ cdef class Cache(CacheFacade):
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=PriceType.MID,
-    ) except *:
+    ):
         """
         Return the calculated exchange rate.
 
@@ -3007,7 +3007,7 @@ cdef class Cache(CacheFacade):
 
         return [self._orders[client_order_id] for client_order_id in client_order_ids]
 
-    cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
+    cpdef bint order_exists(self, ClientOrderId client_order_id):
         """
         Return a value indicating whether an order with the given ID exists.
 
@@ -3025,7 +3025,7 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders
 
-    cpdef bint is_order_open(self, ClientOrderId client_order_id) except *:
+    cpdef bint is_order_open(self, ClientOrderId client_order_id):
         """
         Return a value indicating whether an order with the given ID is open.
 
@@ -3043,7 +3043,7 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders_open
 
-    cpdef bint is_order_closed(self, ClientOrderId client_order_id) except *:
+    cpdef bint is_order_closed(self, ClientOrderId client_order_id):
         """
         Return a value indicating whether an order with the given ID is closed.
 
@@ -3061,7 +3061,7 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders_closed
 
-    cpdef bint is_order_emulated(self, ClientOrderId client_order_id) except *:
+    cpdef bint is_order_emulated(self, ClientOrderId client_order_id):
         """
         Return a value indicating whether an order with the given ID is emulated.
 
@@ -3079,7 +3079,7 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders_emulated
 
-    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
+    cpdef bint is_order_inflight(self, ClientOrderId client_order_id):
         """
         Return a value indicating whether an order with the given ID is in-flight.
 
@@ -3103,7 +3103,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         OrderSide side = OrderSide.NO_ORDER_SIDE,
-    ) except *:
+    ):
         """
         Return the count of open orders with the given query filters.
 
@@ -3131,7 +3131,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         OrderSide side = OrderSide.NO_ORDER_SIDE,
-    ) except *:
+    ):
         """
         Return the count of closed orders with the given query filters.
 
@@ -3159,7 +3159,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         OrderSide side = OrderSide.NO_ORDER_SIDE,
-    ) except *:
+    ):
         """
         Return the count of emulated orders with the given query filters.
 
@@ -3187,7 +3187,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         OrderSide side = OrderSide.NO_ORDER_SIDE,
-    ) except *:
+    ):
         """
         Return the count of in-flight orders with the given query filters.
 
@@ -3215,7 +3215,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         OrderSide side = OrderSide.NO_ORDER_SIDE,
-    ) except *:
+    ):
         """
         Return the total count of orders with the given query filters.
 
@@ -3282,7 +3282,7 @@ cdef class Cache(CacheFacade):
 
         return order_lists
 
-    cpdef bint order_list_exists(self, OrderListId order_list_id) except *:
+    cpdef bint order_list_exists(self, OrderListId order_list_id):
         """
         Return a value indicating whether an order list with the given ID exists.
 
@@ -3476,7 +3476,7 @@ cdef class Cache(CacheFacade):
         cdef set position_ids = self.position_closed_ids(venue, instrument_id, strategy_id)
         return self._get_positions_for_ids(position_ids, PositionSide.NO_POSITION_SIDE)
 
-    cpdef bint position_exists(self, PositionId position_id) except *:
+    cpdef bint position_exists(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given ID exists.
 
@@ -3494,7 +3494,7 @@ cdef class Cache(CacheFacade):
 
         return position_id in self._index_positions
 
-    cpdef bint is_position_open(self, PositionId position_id) except *:
+    cpdef bint is_position_open(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given ID exists
         and is open.
@@ -3513,7 +3513,7 @@ cdef class Cache(CacheFacade):
 
         return position_id in self._index_positions_open
 
-    cpdef bint is_position_closed(self, PositionId position_id) except *:
+    cpdef bint is_position_closed(self, PositionId position_id):
         """
         Return a value indicating whether a position with the given ID exists
         and is closed.
@@ -3538,7 +3538,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         PositionSide side = PositionSide.NO_POSITION_SIDE,
-    ) except *:
+    ):
         """
         Return the count of open positions with the given query filters.
 
@@ -3565,7 +3565,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-    ) except *:
+    ):
         """
         Return the count of closed positions with the given query filters.
 
@@ -3591,7 +3591,7 @@ cdef class Cache(CacheFacade):
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
         PositionSide side = PositionSide.NO_POSITION_SIDE,
-    ) except *:
+    ):
         """
         Return the total count of positions with the given query filters.
 

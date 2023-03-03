@@ -21,7 +21,7 @@ import pytest
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import MarketChange
 
-from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
@@ -136,7 +136,7 @@ class TestBetfairInstrumentProvider:
 
         mc: MarketChange = update.mc[0]
         market_def = mc.marketDefinition
-        market_def.marketId = mc.id
+        market_def = msgspec.structs.replace(market_def, marketId=mc.id)
         instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 

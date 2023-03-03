@@ -75,7 +75,7 @@ cdef class KeltnerChannel(Indicator):
         self.middle = 0
         self.lower = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -98,7 +98,7 @@ cdef class KeltnerChannel(Indicator):
         double high,
         double low,
         double close,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -127,7 +127,7 @@ cdef class KeltnerChannel(Indicator):
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         """
         Reset the indicator.
 

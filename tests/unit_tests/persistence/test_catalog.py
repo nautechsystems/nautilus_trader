@@ -187,9 +187,9 @@ class TestPersistenceCatalogRust:
         self._load_quote_ticks_into_catalog_rust()
 
         # Act
-        files1 = self.catalog._get_files(cls=QuoteTick, instrument_id="USD/JPY.SIM")
-        files2 = self.catalog._get_files(cls=QuoteTick, instrument_id="EUR/USD.SIM")
-        files3 = self.catalog._get_files(cls=QuoteTick, instrument_id="USD/CHF.SIM")
+        files1 = self.catalog.get_files(cls=QuoteTick, instrument_id="USD/JPY.SIM")
+        files2 = self.catalog.get_files(cls=QuoteTick, instrument_id="EUR/USD.SIM")
+        files3 = self.catalog.get_files(cls=QuoteTick, instrument_id="USD/CHF.SIM")
 
         # Assert
         assert files1 == [
@@ -205,7 +205,7 @@ class TestPersistenceCatalogRust:
         self._load_quote_ticks_into_catalog_rust()
 
         # Act
-        files = self.catalog._get_files(cls=QuoteTick)
+        files = self.catalog.get_files(cls=QuoteTick)
 
         # Assert
         assert files == [
@@ -220,21 +220,21 @@ class TestPersistenceCatalogRust:
         end = 1577919652000000125
 
         # Act
-        files1 = self.catalog._get_files(
+        files1 = self.catalog.get_files(
             cls=QuoteTick,
             instrument_id="EUR/USD.SIM",
             start_nanos=start,
             end_nanos=start,
         )
 
-        files2 = self.catalog._get_files(
+        files2 = self.catalog.get_files(
             cls=QuoteTick,
             instrument_id="EUR/USD.SIM",
             start_nanos=0,
             end_nanos=start - 1,
         )
 
-        files3 = self.catalog._get_files(
+        files3 = self.catalog.get_files(
             cls=QuoteTick,
             instrument_id="EUR/USD.SIM",
             start_nanos=end + 1,
@@ -395,18 +395,20 @@ class _TestPersistenceCatalog:
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         # Write some betfair trades and orderbook
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
 
-    @pytest.mark.skip(reason="fix after merge")
+    @pytest.mark.skipif(sys.platform == "win32", reason="windows paths broken")
     def test_from_env(self):
-        path = tempfile.mktemp()
-        os.environ["NAUTILUS_PATH"] = f"{self.fs_protocol}://{path}"
+        path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
+        uri = f"{self.fs_protocol}://{path}"
+        catalog = ParquetDataCatalog.from_uri(uri)
+        os.environ["NAUTILUS_PATH"] = uri
         catalog = ParquetDataCatalog.from_env()
-        assert catalog.fs_protocol == fsspec.filesystem(self.fs_protocol)
+        assert catalog.fs_protocol == self.fs_protocol
 
     def test_partition_key_correctly_remapped(self):
         # Arrange

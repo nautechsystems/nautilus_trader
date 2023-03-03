@@ -52,7 +52,7 @@ cdef class Swings(Indicator):
         self.since_high = 0
         self.since_low = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -75,7 +75,7 @@ cdef class Swings(Indicator):
         double high,
         double low,
         datetime timestamp,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -137,7 +137,7 @@ cdef class Swings(Indicator):
             else:
                 self.duration = self.since_high
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._high_inputs.clear()
         self._low_inputs.clear()
 

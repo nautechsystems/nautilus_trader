@@ -54,7 +54,7 @@ class TestLiveDataEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -152,8 +152,8 @@ class TestLiveDataEngine:
                 QuoteTick,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
@@ -302,8 +302,8 @@ class TestLiveDataEngine:
                 QuoteTick,
                 metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),

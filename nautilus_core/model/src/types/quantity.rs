@@ -34,17 +34,18 @@ pub struct Quantity {
 }
 
 impl Quantity {
+    #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
-        Self {
+        Quantity {
             raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        Self { raw, precision }
+        Quantity { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -52,6 +53,18 @@ impl Quantity {
     }
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
+    }
+}
+
+impl From<Quantity> for f64 {
+    fn from(value: Quantity) -> f64 {
+        value.as_f64()
+    }
+}
+
+impl From<&Quantity> for f64 {
+    fn from(value: &Quantity) -> f64 {
+        value.as_f64()
     }
 }
 

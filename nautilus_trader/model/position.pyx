@@ -172,19 +172,19 @@ cdef class Position:
     cdef TradeId last_trade_id_c(self):
         return self._events[-1].trade_id
 
-    cdef int event_count_c(self) except *:
+    cdef int event_count_c(self):
         return len(self._events)
 
-    cdef bint is_open_c(self) except *:
+    cdef bint is_open_c(self):
         return self.side != PositionSide.FLAT
 
-    cdef bint is_closed_c(self) except *:
+    cdef bint is_closed_c(self):
         return self.side == PositionSide.FLAT
 
-    cdef bint is_long_c(self) except *:
+    cdef bint is_long_c(self):
         return self.side == PositionSide.LONG
 
-    cdef bint is_short_c(self) except *:
+    cdef bint is_short_c(self):
         return self.side == PositionSide.SHORT
 
     @property
@@ -352,7 +352,7 @@ cdef class Position:
         return self.is_short_c()
 
     @staticmethod
-    cdef PositionSide side_from_order_side_c(OrderSide side) except *:
+    cdef PositionSide side_from_order_side_c(OrderSide side):
         if side == OrderSide.BUY:
             return PositionSide.LONG
         elif side == OrderSide.SELL:
@@ -379,7 +379,7 @@ cdef class Position:
         """
         return Position.side_from_order_side_c(side)
 
-    cpdef bint is_opposite_side(self, OrderSide side) except *:
+    cpdef bint is_opposite_side(self, OrderSide side):
         """
         Return a value indicating whether the given order side is opposite to
         the current position side.
@@ -396,7 +396,7 @@ cdef class Position:
         """
         return self.side != Position.side_from_order_side_c(side)
 
-    cpdef void apply(self, OrderFilled fill) except *:
+    cpdef void apply(self, OrderFilled fill):
         """
         Applies the given order fill event to the position.
 
@@ -591,7 +591,7 @@ cdef class Position:
         """
         return list(self._commissions.values())
 
-    cdef void _handle_buy_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_buy_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
         cdef double realized_pnl
         if fill.commission.currency == self.cost_currency:
@@ -624,7 +624,7 @@ cdef class Position:
         self.net_qty += last_qty
         self.net_qty = round(self.net_qty, self.size_precision)
 
-    cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_sell_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
         cdef double realized_pnl
         if fill.commission.currency == self.cost_currency:

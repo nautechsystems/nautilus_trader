@@ -18,7 +18,6 @@ import asyncio
 import traceback
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
-from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
@@ -61,8 +60,8 @@ async def main(market_id: str):
     instruments = provider.list_all()
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
-    # Determine account currency
-    account = await client.get_account_details()
+    # Determine account currency - used in execution client
+    # account = await client.get_account_details()
 
     # Configure trading node
     config = TradingNodeConfig(
@@ -79,14 +78,15 @@ async def main(market_id: str):
             ),
         },
         exec_clients={
-            "BETFAIR": BetfairExecClientConfig(
-                base_currency=account["currencyCode"],
-                # "username": "YOUR_BETFAIR_USERNAME",
-                # "password": "YOUR_BETFAIR_PASSWORD",
-                # "app_key": "YOUR_BETFAIR_APP_KEY",
-                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
-                market_filter=market_filter,
-            ),
+            # # UNCOMMENT TO SEND ORDERS
+            # "BETFAIR": BetfairExecClientConfig(
+            #     base_currency=account["currencyCode"],
+            #     # "username": "YOUR_BETFAIR_USERNAME",
+            #     # "password": "YOUR_BETFAIR_PASSWORD",
+            #     # "app_key": "YOUR_BETFAIR_APP_KEY",
+            #     # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+            #     market_filter=market_filter,
+            # ),
         },
     )
     strategies = [
@@ -95,6 +95,7 @@ async def main(market_id: str):
                 instrument_id=instrument.id.value,
                 max_trade_size=5,
                 order_id_tag=instrument.selection_id,
+                subscribe_ticker=True,
             ),
         )
         for instrument in instruments
@@ -110,7 +111,7 @@ async def main(market_id: str):
     node.build()
 
     try:
-        node.start()
+        node.run()
         await asyncio.gather(*asyncio.all_tasks())
     except Exception as e:
         print(e)

@@ -8,7 +8,7 @@
 typedef struct Rc_String Rc_String;
 
 /**
- * CVec is a C compatible struct that stores an opaque pointer to a block of
+ * `CVec` is a C compatible struct that stores an opaque pointer to a block of
  * memory, it's length and the capacity of the vector it was allocated from.
  *
  * NOTE: Changing the values here may lead to undefined behaviour when the
@@ -125,6 +125,8 @@ void uuid4_free(struct UUID4_t uuid4);
  *
  * # Safety
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ * - If `ptr` cannot be cast to a valid C string.
  */
 struct UUID4_t uuid4_from_cstr(const char *ptr);
 

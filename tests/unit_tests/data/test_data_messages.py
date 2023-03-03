@@ -146,8 +146,8 @@ class TestDataMessage:
                 Data,
                 metadata={  # str data type is invalid
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
@@ -159,13 +159,13 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "DataRequest(Data{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000})"
+            == "DataRequest(Data{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"
         )
         assert repr(request) == (
             f"DataRequest("
             f"client_id=None, "
             f"venue=BINANCE, "
-            f"data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000}}, "
+            f"data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000}}, "
             f"callback={repr(handler)}, "
             f"id={request_id})"
         )
@@ -182,8 +182,8 @@ class TestDataMessage:
                 TradeTick,
                 metadata={  # str data type is invalid
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "from_datetime": None,
-                    "to_datetime": None,
+                    "start": None,
+                    "end": None,
                     "limit": 1000,
                 },
             ),
@@ -195,13 +195,13 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "DataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000})"  # noqa
+            == "DataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"  # noqa
         )
         assert repr(request) == (
             f"DataRequest("
             f"client_id=None, "
             f"venue=BINANCE, "
-            f"data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000}}, "
+            f"data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000}}, "
             f"callback={repr(handler)}, "
             f"id={request_id})"
         )

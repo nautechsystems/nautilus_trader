@@ -55,17 +55,13 @@ from nautilus_trader.model.objects import Quantity
 
 
 class BinanceFuturesUserMsgData(msgspec.Struct, frozen=True):
-    """
-    Inner struct for execution WebSocket messages from `Binance`
-    """
+    """Inner struct for execution WebSocket messages from `Binance`."""
 
     e: BinanceFuturesEventType
 
 
 class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
-    """
-    Provides a wrapper for execution WebSocket messages from `Binance`.
-    """
+    """Provides a wrapper for execution WebSocket messages from `Binance`."""
 
     stream: str
     data: BinanceFuturesUserMsgData
@@ -219,7 +215,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         price = Price.from_str(self.p) if self.p is not None else None
         trigger_price = Price.from_str(self.sp) if self.sp is not None else None
         trailing_offset = Decimal(self.cr) * 100 if self.cr is not None else None
-        order_side = (OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL,)
+        order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
         post_only = self.f == BinanceTimeInForce.GTX
 
         return OrderStatusReport(

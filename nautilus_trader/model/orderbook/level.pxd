@@ -22,10 +22,10 @@ cdef class Level:
     cdef readonly list orders
     """The orders at the level.\n\n:returns: `list[Order]`"""
 
-    cpdef void bulk_add(self, list orders) except *
-    cpdef void add(self, BookOrder order) except *
-    cpdef void update(self, BookOrder order) except *
-    cpdef void delete(self, BookOrder order) except *
+    cpdef void bulk_add(self, list orders)
+    cpdef void add(self, BookOrder order)
+    cpdef void update(self, BookOrder order)
+    cpdef void delete(self, BookOrder order)
 
-    cpdef double volume(self) except *
+    cpdef double volume(self)
     cpdef double exposure(self)

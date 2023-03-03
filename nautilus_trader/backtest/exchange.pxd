@@ -93,11 +93,11 @@ cdef class SimulatedExchange:
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
-    cpdef void register_client(self, BacktestExecClient client) except *
-    cpdef void set_fill_model(self, FillModel fill_model) except *
-    cpdef void set_latency_model(self, LatencyModel latency_model) except *
-    cpdef void initialize_account(self) except *
-    cpdef void add_instrument(self, Instrument instrument) except *
+    cpdef void register_client(self, BacktestExecClient client)
+    cpdef void set_fill_model(self, FillModel fill_model)
+    cpdef void set_latency_model(self, LatencyModel latency_model)
+    cpdef void initialize_account(self)
+    cpdef void add_instrument(self, Instrument instrument)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -114,18 +114,18 @@ cdef class SimulatedExchange:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void adjust_account(self, Money adjustment) except *
+    cpdef void adjust_account(self, Money adjustment)
     cdef tuple generate_inflight_command(self, TradingCommand command)
-    cpdef void send(self, TradingCommand command) except *
-    cpdef void process_order_book(self, OrderBookData data) except *
-    cpdef void process_quote_tick(self, QuoteTick tick) except *
-    cpdef void process_trade_tick(self, TradeTick tick) except *
-    cpdef void process_bar(self, Bar bar) except *
-    cpdef void process_venue_status(self, VenueStatusUpdate update) except *
-    cpdef void process_instrument_status(self, InstrumentStatusUpdate update) except *
-    cpdef void process(self, uint64_t now_ns) except *
-    cpdef void reset(self) except *
+    cpdef void send(self, TradingCommand command)
+    cpdef void process_order_book(self, OrderBookData data)
+    cpdef void process_quote_tick(self, QuoteTick tick)
+    cpdef void process_trade_tick(self, TradeTick tick)
+    cpdef void process_bar(self, Bar bar)
+    cpdef void process_venue_status(self, VenueStatusUpdate update)
+    cpdef void process_instrument_status(self, InstrumentStatusUpdate update)
+    cpdef void process(self, uint64_t now_ns)
+    cpdef void reset(self)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
-    cdef void _generate_fresh_account_state(self) except *
+    cdef void _generate_fresh_account_state(self)

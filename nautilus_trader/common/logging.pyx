@@ -18,6 +18,7 @@ import socket
 import sys
 import traceback
 from platform import python_version
+from typing import Optional
 
 import aiohttp
 import msgspec
@@ -32,7 +33,6 @@ from nautilus_trader import __version__
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.enums_c cimport log_level_to_str
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
@@ -74,12 +74,16 @@ cdef class Logger:
         The machine ID.
     instance_id : UUID4, optional
         The instance ID.
-    level_stdout : LogLevel
-        The minimum log level for logging messages to stdout.
+    level_stdout : LogLevel, default ``INFO``
+        The minimum log level to write to stdout.
+    level_file : LogLevel, default ``DEBUG``
+        The minimum log level to write to a file.
+    file_path : str, optional
+        The optional log file path. If ``None`` will not log to a file.
     rate_limit : int, default 100_000
         The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
-        If the logger should be bypassed.
+        If the log output is bypassed.
     """
 
     def __init__(
@@ -89,6 +93,8 @@ cdef class Logger:
         str machine_id = None,
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
+        LogLevel level_file = LogLevel.DEBUG,
+        str file_path = None,
         int rate_limit = 100_000,
         bint bypass = False,
     ):
@@ -108,10 +114,12 @@ cdef class Logger:
             pystr_to_cstr(machine_id),
             pystr_to_cstr(instance_id_str),
             level_stdout,
+            level_file,
+            pystr_to_cstr(file_path) if file_path else NULL,
             rate_limit,
             bypass,
         )
-        self._sinks = []
+        self._file_path = file_path
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
@@ -154,6 +162,18 @@ cdef class Logger:
         return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
 
     @property
+    def file_path(self) -> Optional[str]:
+        """
+        Return the optional file path for logging.
+
+        Returns
+        -------
+        str or ``None``
+
+        """
+        return self._file_path
+
+    @property
     def is_bypassed(self) -> bool:
         """
         Return whether the logger is in bypass mode.
@@ -165,27 +185,7 @@ cdef class Logger:
         """
         return logger_is_bypassed(&self._mem)
 
-    cpdef void register_sink(self, handler: Callable[[dict], None]) except *:
-        """
-        Register the given sink handler with the logger.
-
-        Parameters
-        ----------
-        handler : Callable[[dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        Condition.not_none(handler, "handler")
-        Condition.not_in(handler, self._sinks, "handler", "_sinks")
-
-        self._sinks.append(handler)
-
-    cpdef void change_clock(self, Clock clock) except *:
+    cpdef void change_clock(self, Clock clock):
         """
         Change the loggers internal clock to the given clock.
 
@@ -198,28 +198,6 @@ cdef class Logger:
 
         self._clock = clock
 
-    cdef dict create_record(
-        self,
-        LogLevel level,
-        str component,
-        str msg,
-        dict annotations = None,
-    ):
-        cdef dict record = {
-            "timestamp": self._clock.timestamp_ns(),
-            "level": log_level_to_str(level),
-            "trader_id": str(self.trader_id),
-            "machine_id": self.machine_id,
-            "instance_id": str(self.instance_id),
-            "component": component,
-            "msg": msg,
-        }
-
-        if annotations is not None:
-            record = {**record, **annotations}
-
-        return record
-
     cdef void log(
         self,
         uint64_t timestamp_ns,
@@ -228,7 +206,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations = None,
-    ) except *:
+    ):
         self._log(
             timestamp_ns,
             level,
@@ -246,7 +224,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations,
-    ) except *:
+    ):
         logger_log(
             &self._mem,
             timestamp_ns,
@@ -255,19 +233,6 @@ cdef class Logger:
             pystr_to_cstr(component),
             pystr_to_cstr(msg),
         )
-
-        if not self._sinks:
-            return
-
-        cdef dict record = self.create_record(
-            level=level,
-            component=component,
-            msg=msg,
-            annotations=annotations,
-        )
-
-        for handler in self._sinks:
-            handler(record)
 
 
 cdef class LoggerAdapter:
@@ -369,7 +334,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given debug message with the logger.
 
@@ -401,7 +366,7 @@ cdef class LoggerAdapter:
         self, str msg,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given information message with the logger.
 
@@ -434,7 +399,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.YELLOW,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given warning message with the logger.
 
@@ -467,7 +432,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.RED,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given error message with the logger.
 
@@ -500,7 +465,7 @@ cdef class LoggerAdapter:
         str msg,
         LogColor color = LogColor.RED,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given critical message with the logger.
 
@@ -533,7 +498,7 @@ cdef class LoggerAdapter:
         str msg,
         ex,
         dict annotations = None,
-    ) except *:
+    ):
         """
         Log the given exception including stack trace information.
 
@@ -561,7 +526,7 @@ cdef class LoggerAdapter:
         self.error(f"{msg}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
 
 
-cpdef void nautilus_header(LoggerAdapter logger) except *:
+cpdef void nautilus_header(LoggerAdapter logger):
     Condition.not_none(logger, "logger")
     print("")  # New line to begin
     logger.info("\033[36m=================================================================")
@@ -631,7 +596,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
 
     logger.info("\033[36m=================================================================")
 
-cpdef void log_memory(LoggerAdapter logger) except *:
+cpdef void log_memory(LoggerAdapter logger):
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m MEMORY USAGE")
     logger.info("\033[36m=================================================================")

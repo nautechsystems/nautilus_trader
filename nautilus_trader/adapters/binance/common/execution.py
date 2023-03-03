@@ -131,7 +131,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType,
         base_url_ws: Optional[str] = None,
         clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
@@ -140,9 +140,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            oms_type=OmsType.HEDGING,
+            oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=AccountType.MARGIN,
+            account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -350,14 +350,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[str]:
         # Implement in child class
         raise NotImplementedError
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: str = None,
+        symbol: Optional[str] = None,
     ) -> list[str]:
         # Implement in child class
         raise NotImplementedError
@@ -454,6 +454,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             #     continue
             # if end is not None and timestamp > end:
             #     continue
+            if trade.symbol is None:
+                self.log.warning(f"No symbol for trade {trade}.")
+                continue
             report = trade.parse_to_trade_report(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(trade.symbol),
@@ -704,14 +707,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
         await self._cancel_order_single(
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
@@ -726,13 +721,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         for order in open_orders_strategy:
             if order.is_pending_cancel:
                 continue  # Already pending cancel
-            self.generate_order_pending_cancel(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
 
         # Check total orders for instrument
         open_orders_total_count = self._cache.orders_open_count(

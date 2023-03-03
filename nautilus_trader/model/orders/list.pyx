@@ -20,7 +20,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class OrderList:
     """
-    Represents a list of bulk or related parent-child contingent orders.
+    Represents a list of bulk or related contingent orders.
 
     Parameters
     ----------
@@ -58,6 +58,9 @@ cdef class OrderList:
 
     def __hash__(self) -> int:
         return hash(self.id)
+
+    def __len__(self) -> int:
+        return len(self.orders)
 
     def __repr__(self) -> str:
         return (

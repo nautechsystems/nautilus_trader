@@ -29,6 +29,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import OrderBookData
@@ -60,6 +61,9 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
+    use_agg_trade_ticks : bool, default False
+        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
+        TradeId of ticks will be the Aggregate tradeId returned by Binance.
     """
 
     def __init__(
@@ -73,11 +77,12 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         base_url_ws: Optional[str] = None,
+        use_agg_trade_ticks: bool = False,
     ):
-        if not account_type.is_spot_or_margin:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
-            )
+        PyCondition.true(
+            account_type.is_spot_or_margin,
+            "account_type was not SPOT, MARGIN_CROSS or MARGIN_ISOLATED",
+        )
 
         # Spot HTTP API
         self._spot_http_market = BinanceSpotMarketHttpAPI(client, account_type)
@@ -97,6 +102,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
+            use_agg_trade_ticks=use_agg_trade_ticks,
         )
 
         # Websocket msgspec decoders

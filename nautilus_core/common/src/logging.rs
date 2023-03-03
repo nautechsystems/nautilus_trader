@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::ffi::c_char;
+use std::fs::File;
 use std::io::{Stderr, Stdout};
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 use std::time::{Duration, Instant};
 use std::{
@@ -24,7 +26,7 @@ use std::{
 };
 
 use nautilus_core::datetime::unix_nanos_to_iso8601;
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
@@ -32,19 +34,21 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use crate::enums::{LogColor, LogLevel};
 
 pub struct Logger {
+    tx: Sender<LogMessage>,
     /// The trader ID for the logger.
     pub trader_id: TraderId,
     /// The machine ID for the logger.
     pub machine_id: String,
     /// The instance ID for the logger.
     pub instance_id: UUID4,
-    /// The maximum log level to write to stdout.
+    /// The minimum log level to write to stdout.
     pub level_stdout: LogLevel,
+    /// The minimum log level to write to a log file.
+    pub level_file: LogLevel,
     /// The maximum messages per second which can be flushed to stdout or stderr.
     pub rate_limit: usize,
     /// If logging is bypassed.
     pub is_bypassed: bool,
-    tx: Sender<LogMessage>,
 }
 
 #[derive(Clone, Debug)]
@@ -61,12 +65,15 @@ pub struct LogMessage {
 /// A separate thead is spawned at initialization which receives `LogMessage` structs over the
 /// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
 /// per second).
+#[allow(clippy::too_many_arguments)]
 impl Logger {
     fn new(
         trader_id: TraderId,
         machine_id: String,
         instance_id: UUID4,
         level_stdout: LogLevel,
+        level_file: LogLevel,
+        file_path: Option<PathBuf>,
         rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
@@ -74,7 +81,14 @@ impl Logger {
         let (tx, rx) = channel::<LogMessage>();
 
         thread::spawn(move || {
-            Self::handle_messages(&trader_id_clone, level_stdout, rate_limit, rx)
+            Self::handle_messages(
+                &trader_id_clone,
+                level_stdout,
+                level_file,
+                file_path,
+                rate_limit,
+                rx,
+            )
         });
 
         Logger {
@@ -82,6 +96,7 @@ impl Logger {
             machine_id,
             instance_id,
             level_stdout,
+            level_file,
             rate_limit,
             is_bypassed,
             tx,
@@ -91,83 +106,144 @@ impl Logger {
     fn handle_messages(
         trader_id: &str,
         level_stdout: LogLevel,
+        level_file: LogLevel,
+        file_path: Option<PathBuf>,
         rate_limit: usize,
         rx: Receiver<LogMessage>,
     ) {
-        let mut out = BufWriter::new(io::stdout());
-        let mut err = BufWriter::new(io::stderr());
+        // Setup std I/O buffers
+        let mut out_buf = BufWriter::new(io::stdout());
+        let mut err_buf = BufWriter::new(io::stderr());
 
-        let log_template = String::from(
+        // Setup log file
+        let file = file_path.map(|path| {
+            File::options()
+                .create(true)
+                .append(true)
+                .open(path)
+                .expect("Error creating log file")
+        });
+        let mut file_buf = file.map(BufWriter::new);
+
+        // Setup templates
+        let template_console = String::from(
             "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
         );
+        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
 
+        // Setup rate limiting
         let mut msg_count = 0;
-        let mut bucket_time = Instant::now();
+        let mut btime = Instant::now();
 
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
-            if log_msg.level < level_stdout {
-                continue;
-            }
-
-            while msg_count >= rate_limit {
-                if bucket_time.elapsed().as_secs() >= 1 {
-                    msg_count = 0;
-                    bucket_time = Instant::now();
-                } else {
-                    thread::sleep(Duration::from_millis(10));
-                }
-            }
-
-            let fmt_line = log_template
-                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-                .replace("{color}", &log_msg.color.to_string())
-                .replace("{level}", &log_msg.level.to_string())
-                .replace("{trader_id}", trader_id)
-                .replace("{component}", &log_msg.component)
-                .replace("{msg}", &log_msg.msg);
-
             if log_msg.level >= LogLevel::Error {
-                Self::write_stderr(&mut err, fmt_line);
-                Self::flush_stderr(&mut err);
-            } else {
-                Self::write_stdout(&mut out, fmt_line);
-                Self::flush_stdout(&mut out);
+                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
+                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
+                Self::write_stderr(&mut err_buf, &line);
+                Self::flush_stderr(&mut err_buf);
+            } else if log_msg.level >= level_stdout {
+                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
+                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
+                Self::write_stdout(&mut out_buf, &line);
+                Self::flush_stdout(&mut out_buf);
             }
 
-            msg_count += 1;
+            if log_msg.level >= level_file {
+                let line = Self::format_log_line_file(&log_msg, trader_id, &template_file);
+                Self::write_file(&mut file_buf, &line);
+                Self::flush_file(&mut file_buf);
+            }
         }
 
         // Finally ensure remaining buffers are flushed
-        Self::flush_stderr(&mut err);
-        Self::flush_stdout(&mut out);
+        Self::flush_stderr(&mut err_buf);
+        Self::flush_stdout(&mut out_buf);
+        Self::flush_file(&mut file_buf);
     }
 
-    fn write_stdout(out: &mut BufWriter<Stdout>, line: String) {
-        match out.write_all(line.as_bytes()) {
+    fn rate_limit_logging(
+        mut btime: Instant,
+        mut msg_count: usize,
+        rate_limit: usize,
+    ) -> (usize, Instant) {
+        while msg_count >= rate_limit {
+            if btime.elapsed().as_secs() >= 1 {
+                msg_count = 0;
+                btime = Instant::now();
+            } else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        msg_count += 1;
+        (msg_count, btime)
+    }
+
+    fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
+        template
+            .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
+            .replace("{color}", &log_msg.color.to_string())
+            .replace("{level}", &log_msg.level.to_string())
+            .replace("{trader_id}", trader_id)
+            .replace("{component}", &log_msg.component)
+            .replace("{msg}", &log_msg.msg)
+    }
+
+    fn format_log_line_file(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
+        template
+            .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
+            .replace("{level}", &log_msg.level.to_string())
+            .replace("{trader_id}", trader_id)
+            .replace("{component}", &log_msg.component)
+            .replace("{msg}", &log_msg.msg)
+    }
+
+    fn write_stdout(out_buf: &mut BufWriter<Stdout>, line: &str) {
+        match out_buf.write_all(line.as_bytes()) {
             Ok(_) => {}
             Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
-    fn flush_stdout(out: &mut BufWriter<Stdout>) {
-        match out.flush() {
+    fn flush_stdout(out_buf: &mut BufWriter<Stdout>) {
+        match out_buf.flush() {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
     }
 
-    fn write_stderr(err: &mut BufWriter<Stderr>, line: String) {
-        match err.write_all(line.as_bytes()) {
+    fn write_stderr(err_buf: &mut BufWriter<Stderr>, line: &str) {
+        match err_buf.write_all(line.as_bytes()) {
             Ok(_) => {}
             Err(e) => eprintln!("Error writing to stderr: {e:?}"),
         }
     }
 
-    fn flush_stderr(err: &mut BufWriter<Stderr>) {
-        match err.flush() {
+    fn flush_stderr(err_buf: &mut BufWriter<Stderr>) {
+        match err_buf.flush() {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+        }
+    }
+
+    fn write_file(file_buf: &mut Option<BufWriter<File>>, line: &str) {
+        match file_buf {
+            Some(file) => match file.write_all(line.as_bytes()) {
+                Ok(_) => {}
+                Err(e) => eprintln!("Error writing to file: {e:?}"),
+            },
+            None => {}
+        }
+    }
+
+    fn flush_file(file_buf: &mut Option<BufWriter<File>>) {
+        match file_buf {
+            Some(file) => match file.flush() {
+                Ok(_) => {}
+                Err(e) => eprintln!("Error writing to file: {e:?}"),
+            },
+            None => {}
         }
     }
 
@@ -275,6 +351,8 @@ pub unsafe extern "C" fn logger_new(
     machine_id_ptr: *const c_char,
     instance_id_ptr: *const c_char,
     level_stdout: LogLevel,
+    level_file: LogLevel,
+    file_path_ptr: *const c_char,
     rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
@@ -283,6 +361,8 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
+        level_file,
+        optional_cstr_to_string(file_path_ptr).map(PathBuf::from),
         rate_limit,
         is_bypassed != 0,
     )))
@@ -348,6 +428,8 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Debug,
+            LogLevel::Debug,
+            None,
             100_000,
             false,
         );
@@ -362,6 +444,8 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
+            LogLevel::Debug,
+            None,
             100_000,
             false,
         );
