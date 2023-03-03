@@ -1908,7 +1908,7 @@ class TestDataEngine:
         assert len(handler) == 1
         assert len(handler[0].data) == 1
 
-    @pytest.mark.skip
+    @pytest.mark.skip(reason="WIP")
     def test_request_quote_ticks_when_catalog_registered_using_rust(self):
         # Arrange
         catalog = data_catalog_setup(protocol="file")
