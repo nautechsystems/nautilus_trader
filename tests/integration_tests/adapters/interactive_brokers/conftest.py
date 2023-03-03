@@ -14,9 +14,70 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
-from ib_insync import IB
+
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-@pytest.fixture
-def ib() -> IB:
-    return IB()
+@pytest.fixture(scope="function")
+def venue():
+    return IB_VENUE
+
+
+@pytest.fixture(scope="function")
+def instrument(exec_engine):
+    return IBTestProviderStubs.aapl_instrument()
+
+
+@pytest.fixture(scope="function")
+def data_client_config():
+    return InteractiveBrokersDataClientConfig(
+        username="test",
+        password="test",
+        account_id="DU123456",
+    )
+
+
+@pytest.fixture(scope="function")
+def exec_client_config():
+    return InteractiveBrokersExecClientConfig(
+        username="test",
+        password="test",
+        account_id="DU123456",
+    )
+
+
+@pytest.fixture(scope="function")
+def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, clock, logger):
+    mocker.patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client")
+    return InteractiveBrokersLiveDataClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=data_client_config,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        logger=logger,
+    )
+
+
+@pytest.fixture(scope="function")
+def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
+    mocker.patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client")
+    return InteractiveBrokersLiveExecClientFactory.create(
+        loop=event_loop,
+        name=venue.value,
+        config=exec_client_config,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        logger=logger,
+    )

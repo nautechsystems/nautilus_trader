@@ -17,7 +17,6 @@ import pytest
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
 )
@@ -26,16 +25,11 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
 )
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from tests.integration_tests.adapters.base.base_providers import TestBaseProvider
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-class TestInteractiveBrokersProvider(TestBaseProvider):
-    def setup(self):
-        super().setup(
-            venue=IB_VENUE,
-            instrument=IBTestProviderStubs.aapl_instrument(),
-        )
+class TestInteractiveBrokersProvider:
+    instrument = IBTestProviderStubs.aapl_instrument()
 
     def test_nautilus_order_to_ib_market_order(self):
         # Arrange

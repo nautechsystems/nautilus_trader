@@ -16,18 +16,11 @@
 
 import asyncio
 import datetime
-from unittest.mock import patch
 
 import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.base.base_data import TestBaseDataClient
@@ -36,19 +29,6 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 
 class TestInteractiveBrokersData(TestBaseDataClient):
-    @patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client")
-    def setup(self, func, mock_client):
-        super().setup(
-            venue=IB_VENUE,
-            instrument=IBTestProviderStubs.aapl_instrument(),
-            data_client_factory=InteractiveBrokersLiveDataClientFactory,
-            data_client_config=InteractiveBrokersDataClientConfig(
-                username="test",
-                password="test",
-            ),
-        )
-        assert isinstance(self.data_client, InteractiveBrokersDataClient)
-
     def instrument_setup(self, instrument, contract_details):
         self.data_client.instrument_provider.contract_details[
             instrument.id.value
@@ -57,6 +37,13 @@ class TestInteractiveBrokersData(TestBaseDataClient):
             contract_details.contract.conId
         ] = instrument.id
         self.data_client.instrument_provider.add(instrument)
+
+    @pytest.mark.asyncio
+    async def test_connect(self):
+        self.data_client.connect()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert self.data_client.is_connected
 
     @pytest.mark.asyncio
     async def test_factory(self):

@@ -1,4 +1,4 @@
-# -------------------------------------------------------------------------------------------------
+# ---------------------------@pytest.mark.usefixtures("components")----------------------------------------------------------------------
 #  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
@@ -12,49 +12,38 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import asyncio
 from typing import Optional
 
 import pytest
 
-from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import LiveDataClientConfig
-from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
-from tests.integration_tests.adapters.base.common import TestBaseClient
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-class TestBaseDataClient(TestBaseClient):
-    def setup(
+class TestBaseDataClient:
+    venue: Optional[Venue] = None
+    instrument: Optional[Instrument] = None
+
+    @pytest.fixture(autouse=True, scope="function")
+    def init(
         self,
-        venue: Venue,
-        instrument: Instrument,
-        exec_client_factory: Optional[type[LiveExecClientFactory]] = None,
-        exec_client_config: Optional[LiveExecClientConfig] = None,
-        data_client_factory: Optional[type[LiveDataClientFactory]] = None,
-        data_client_config: Optional[LiveDataClientConfig] = None,
-        instrument_provider: Optional[InstrumentProvider] = None,
+        data_client,
+        cache,
+        instrument,
+        venue,
+        strategy,
+        trader_id,
+        strategy_id,
+        account_id,
     ):
-        super().setup(
-            venue=venue,
-            instrument=instrument,
-            exec_client_config=exec_client_config,
-            exec_client_factory=exec_client_factory,
-            data_client_config=data_client_config,
-            data_client_factory=data_client_factory,
-            instrument_provider=instrument_provider,
-        )
-
-    @pytest.mark.asyncio
-    async def test_connect(self):
-        self.data_client.connect()
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        assert self.data_client.is_connected
-
-    @pytest.mark.asyncio
-    async def test_subscribe_trade_ticks(self):
-        self.data_client.subscribe_trade_ticks(self.instrument)
+        self.data_client = data_client
+        self.cache = cache
+        self.instrument = instrument
+        self.venue = venue
+        self.strategy = strategy
+        self.client_order_id = TestIdStubs.client_order_id()
+        self.venue_order_id = TestIdStubs.venue_order_id()
+        self.strategy_id = strategy_id
+        self.trader_id = trader_id
+        self.account_id = account_id

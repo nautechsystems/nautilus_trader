@@ -17,37 +17,38 @@ from typing import Optional
 
 import pytest
 
-from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import LiveDataClientConfig
-from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
-from tests.integration_tests.adapters.base.common import TestBaseClient
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-class TestBaseExecClient(TestBaseClient):
-    def setup(
+class TestBaseExecClient:
+    venue: Optional[Venue] = None
+    instrument: Optional[Instrument] = None
+
+    @pytest.fixture(autouse=True, scope="function")
+    def init(
         self,
-        venue: Venue,
-        instrument: Instrument,
-        exec_client_factory: Optional[type[LiveExecClientFactory]] = None,
-        exec_client_config: Optional[LiveExecClientConfig] = None,
-        data_client_factory: Optional[type[LiveDataClientFactory]] = None,
-        data_client_config: Optional[LiveDataClientConfig] = None,
-        instrument_provider: Optional[InstrumentProvider] = None,
+        exec_client,
+        cache,
+        instrument,
+        venue,
+        strategy,
+        trader_id,
+        strategy_id,
+        account_id,
     ):
-        super().setup(
-            venue=venue,
-            instrument=instrument,
-            exec_client_config=exec_client_config,
-            exec_client_factory=exec_client_factory,
-            data_client_config=data_client_config,
-            data_client_factory=data_client_factory,
-            instrument_provider=instrument_provider,
-        )
+        self.exec_client = exec_client
+        self.cache = cache
+        self.instrument = instrument
+        self.venue = venue
+        self.strategy = strategy
+        self.client_order_id = TestIdStubs.client_order_id()
+        self.venue_order_id = TestIdStubs.venue_order_id()
+        self.strategy_id = strategy_id
+        self.trader_id = trader_id
+        self.account_id = account_id
 
     # --- HELPER FUNCTIONS ----------------------------------------------------------- #
 
@@ -68,26 +69,26 @@ class TestBaseExecClient(TestBaseClient):
         return order
 
     # --- BASE TESTS ----------------------------------------------------------------- #
-
-    @pytest.mark.asyncio
-    async def test_connect(self):
-        raise NotImplementedError
-
-    @pytest.mark.asyncio
-    async def test_disconnect(self):
-        raise NotImplementedError
-
-    def test_submit_order(self):
-        raise NotImplementedError
-
-    def test_submit_bracket_order(self):
-        raise NotImplementedError
-
-    def test_modify_order(self):
-        raise NotImplementedError
-
-    def test_cancel_order(self):
-        raise NotImplementedError
-
-    def test_generate_order_status_report(self):
-        raise NotImplementedError
+    #
+    # @pytest.mark.asyncio
+    # async def test_connect(self):
+    #     raise NotImplementedError
+    #
+    # @pytest.mark.asyncio
+    # async def test_disconnect(self):
+    #     raise NotImplementedError
+    #
+    # def test_submit_order(self):
+    #     raise NotImplementedError
+    #
+    # def test_submit_bracket_order(self):
+    #     raise NotImplementedError
+    #
+    # def test_modify_order(self):
+    #     raise NotImplementedError
+    #
+    # def test_cancel_order(self):
+    #     raise NotImplementedError
+    #
+    # def test_generate_order_status_report(self):
+    #     raise NotImplementedError

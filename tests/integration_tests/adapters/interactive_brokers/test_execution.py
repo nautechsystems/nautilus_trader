@@ -17,19 +17,13 @@ import datetime
 from unittest.mock import patch
 
 import pytest
-from ib_insync import IB
 from ib_insync import CommissionReport
 from ib_insync import Contract
 from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -56,23 +50,8 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 
 class TestInteractiveBrokersExecution(TestBaseExecClient):
-    def setup(self):
-        self.ib = IB()
-        with patch(
-            "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
-            return_value=self.ib,
-        ):
-            super().setup(
-                venue=IB_VENUE,
-                instrument=IBTestProviderStubs.aapl_instrument(),
-                exec_client_config=InteractiveBrokersExecClientConfig(
-                    username="test",
-                    password="test",
-                    account_id="DU123456",
-                ),
-                exec_client_factory=InteractiveBrokersLiveExecClientFactory,
-            )
-            assert isinstance(self.exec_client, InteractiveBrokersExecutionClient)
+    @pytest.fixture(autouse=True, scope="function")
+    def ib_init(self, mocker, exec_client, cache):
         self.contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         self.contract = self.contract_details.contract
 
@@ -103,10 +82,13 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         return order
 
     @pytest.mark.asyncio
-    @patch.object(IB, "connectAsync")
-    @patch.object(IB, "accountValues", lambda x: IBTestDataStubs.account_values())
-    async def test_connect(self, mock_connect_async):
+    async def test_connect(self, mocker):
         # Arrange
+        mocker.patch.object(
+            self.exec_client._client,
+            "accountValues",
+            return_value=IBTestDataStubs.account_values(),
+        )
 
         # Act
         self.exec_client.connect()
@@ -117,10 +99,13 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert self.exec_client.is_connected
 
     @pytest.mark.asyncio
-    @patch.object(IB, "connectAsync")
-    @patch.object(IB, "accountValues", lambda x: IBTestDataStubs.account_values())
-    async def test_disconnect(self, mock_connect_async):
+    async def test_disconnect(self, mocker):
         # Arrange
+        mocker.patch.object(
+            self.exec_client._client,
+            "accountValues",
+            return_value=IBTestDataStubs.account_values(),
+        )
         self.exec_client.connect()
         await asyncio.sleep(0)
         await asyncio.sleep(0)
@@ -141,21 +126,22 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         # Assert
         assert exec_client is not None
 
-    @patch.object(IB, "placeOrder")
-    def test_submit_order(self, mock_placeOrder):
+    def test_submit_order(self, mocker):
         # Arrange
-        instrument = IBTestProviderStubs.aapl_instrument()
-        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
-        self.instrument_setup(instrument=instrument, contract_details=contract_details)
+        self.instrument_setup(instrument=self.instrument, contract_details=self.contract_details)
+        trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
+        mock_place_order = mocker.patch.object(
+            self.exec_client._client,
+            "placeOrder",
+            return_value=trade,
+        )
+
+        # Act
         order = TestExecStubs.limit_order(
-            instrument_id=instrument.id,
+            instrument_id=self.instrument.id,
             client_order_id=self.client_order_id,
         )
         command = TestCommandStubs.submit_order_command(order=order)
-        trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
-        mock_placeOrder.return_value = trade
-
-        # Act
         self.exec_client.submit_order(command=command)
 
         # Assert
@@ -174,7 +160,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         }
 
         # Assert
-        kwargs = mock_placeOrder.call_args.kwargs
+        kwargs = mock_place_order.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -185,8 +171,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         # TODO - not implemented
         pass
 
-    @patch.object(IB, "placeOrder")
-    def test_modify_order(self, mock_placeOrder):
+    def test_modify_order(self, mocker):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -197,6 +182,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
             contract=contract,
             order=order,
         )
+        mock_place_order = mocker.patch.object(self.exec_client._client, "placeOrder")
 
         # Act
         command = TestCommandStubs.modify_order_command(
@@ -230,15 +216,14 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         }
 
         # Assert
-        kwargs = mock_placeOrder.call_args.kwargs
+        kwargs = mock_place_order.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
         assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
-    @patch.object(IB, "cancelOrder")
-    def test_cancel_order(self, mock_cancelOrder):
+    def test_cancel_order(self, mocker):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
@@ -249,6 +234,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
             contract=contract,
             order=order,
         )
+        mock_place_order = mocker.patch.object(self.exec_client._client, "cancelOrder")
 
         # Act
         command = TestCommandStubs.cancel_order_command(instrument_id=instrument.id)
@@ -270,7 +256,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         }
 
         # Assert
-        kwargs = mock_cancelOrder.call_args.kwargs
+        kwargs = mock_place_order.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
