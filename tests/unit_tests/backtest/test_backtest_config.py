@@ -135,7 +135,7 @@ class _TestBacktestConfig:
 
     def test_backtest_data_config_status_updates(self):
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(),
             catalog=self.catalog,
         )

@@ -44,6 +44,7 @@ cdef class DataEngine(Component):
     cdef Cache _cache
     cdef DataClient _default_client
     cdef object _catalog
+    cdef bint _use_rust
 
     cdef dict _clients
     cdef dict _routing_map
@@ -124,6 +125,7 @@ cdef class DataEngine(Component):
     cdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)
     cdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
     cdef void _handle_request(self, DataRequest request)
+    cdef void _query_data_catalog(self, DataRequest request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 

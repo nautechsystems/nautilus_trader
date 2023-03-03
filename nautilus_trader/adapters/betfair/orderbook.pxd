@@ -13,25 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orderbook.book cimport L2OrderBook
 
 
-cdef class Bet:
-    cdef Price price
-    cdef Quantity quantity
-    cdef OrderSide side
-
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
-
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
+cpdef L2OrderBook create_betfair_order_book(InstrumentId instrument_id)
+cpdef Price betfair_float_to_price(double value)
+cpdef Quantity betfair_float_to_quantity(double value)

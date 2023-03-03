@@ -80,8 +80,8 @@ class TestIdStubs:
 
         return betfair_instrument_id(
             market_id="1.179082386",
-            runner_id="50214",
-            runner_handicap=None,
+            selection_id="50214",
+            selection_handicap=None,
         )
 
     @staticmethod

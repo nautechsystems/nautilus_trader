@@ -19,16 +19,17 @@ from typing import Optional, Union
 import msgspec.json
 import pandas as pd
 from betfair_parser.spec.api.markets import MarketCatalog
-from betfair_parser.spec.api.markets import NavigationMarket
+from betfair_parser.spec.api.navigation import FlattenedMarket
+from betfair_parser.spec.api.navigation import Navigation
+from betfair_parser.spec.api.navigation import navigation_to_flatten_markets
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.config import BetfairInstrumentFilter
+from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.adapters.betfair.util import chunk
-from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -103,7 +104,10 @@ class BetfairInstrumentProvider(InstrumentProvider):
         currency = await self.get_account_currency()
 
         self._log.info(f"Loading markets with filter={filters}")
-        markets = await load_markets(self._client, filters=filters)
+        markets: list[FlattenedMarket] = await load_markets(
+            self._client,
+            filters=filters,
+        )
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
         market_metadata = await load_markets_metadata(client=self._client, markets=markets)
@@ -270,16 +274,13 @@ VALID_MARKET_FILTER_KEYS = (
 async def load_markets(
     client: BetfairClient,
     filters: list[BetfairInstrumentFilter] = None,
-) -> list[NavigationMarket]:
+) -> list[FlattenedMarket]:
     if isinstance(filters, dict):
         raise NotImplementedError
 
-    navigation = await client.list_navigation()
-    markets = list(flatten_tree(navigation, **merge_filters(filters or [])))
-    return [
-        msgspec.json.decode(msgspec.json.encode(market), type=NavigationMarket)
-        for market in markets
-    ]
+    navigation: Navigation = await client.list_navigation()
+    markets = navigation_to_flatten_markets(navigation, **filters)
+    return markets
 
 
 def merge_filters(filters: list[BetfairInstrumentFilter]) -> dict:
@@ -290,12 +291,12 @@ def merge_filters(filters: list[BetfairInstrumentFilter]) -> dict:
 
 
 def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalog]:
-    return [msgspec.json.decode(msgspec.json.encode(r), type=MarketCatalog) for r in catalog]
+    return msgspec.json.decode(msgspec.json.encode(catalog), type=list[MarketCatalog])
 
 
 async def load_markets_metadata(
     client: BetfairClient,
-    markets: list[NavigationMarket],
+    markets: list[FlattenedMarket],
 ) -> list[MarketCatalog]:
     all_results = []
     for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):

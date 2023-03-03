@@ -31,7 +31,6 @@ from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import process_files
@@ -559,7 +558,7 @@ class TestPersistenceBatching:
     def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -595,7 +594,6 @@ class TestPersistenceBatching:
             latest_timestamp = max(timestamps)
             assert timestamps == sorted(timestamps)
 
-    @pytest.mark.skip(reason="deserialization error")
     def test_batch_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -610,20 +608,14 @@ class TestPersistenceBatching:
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
-        # Add some arbitrary instrument data to appease BacktestEngine
-        instrument_data_config = BacktestDataConfig(
-            catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
-            instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
-            data_cls=InstrumentStatusUpdate,
-        )
+
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
         )
         engine = BacktestEngineConfig(streaming=streaming)
         run_config = BacktestRunConfig(
             engine=engine,
-            data=[data_config, instrument_data_config],
+            data=[data_config],
             venues=[BetfairTestStubs.betfair_venue_config()],
             batch_size_bytes=parse_bytes("1mib"),
         )

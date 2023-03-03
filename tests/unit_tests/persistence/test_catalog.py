@@ -395,18 +395,20 @@ class _TestPersistenceCatalog:
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         # Write some betfair trades and orderbook
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
 
-    @pytest.mark.skip(reason="fix after merge")
+    @pytest.mark.skipif(sys.platform == "win32", reason="windows paths broken")
     def test_from_env(self):
-        path = tempfile.mktemp()
-        os.environ["NAUTILUS_PATH"] = f"{self.fs_protocol}://{path}"
+        path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
+        uri = f"{self.fs_protocol}://{path}"
+        catalog = ParquetDataCatalog.from_uri(uri)
+        os.environ["NAUTILUS_PATH"] = uri
         catalog = ParquetDataCatalog.from_env()
-        assert catalog.fs_protocol == fsspec.filesystem(self.fs_protocol)
+        assert catalog.fs_protocol == self.fs_protocol
 
     def test_partition_key_correctly_remapped(self):
         # Arrange
