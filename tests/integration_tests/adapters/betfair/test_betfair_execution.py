@@ -146,7 +146,6 @@ class TestBaseExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.instrument_provider,
-            market_filter={},
         )
         self.exec_engine.register_client(self.exec_client)
 
