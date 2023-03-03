@@ -127,6 +127,16 @@ def strategy_id(strategy):
 
 
 @pytest.fixture(scope="function")
+def client_order_id(strategy):
+    return TestIdStubs.client_order_id()
+
+
+@pytest.fixture(scope="function")
+def venue_order_id(strategy):
+    return TestIdStubs.venue_order_id()
+
+
+@pytest.fixture(scope="function")
 def components(data_engine, exec_engine, risk_engine, strategy):
     return
 
