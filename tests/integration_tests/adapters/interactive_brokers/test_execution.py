@@ -16,14 +16,12 @@ import asyncio
 import datetime
 
 import pytest
-from ib_insync import IB
 from ib_insync import CommissionReport
 from ib_insync import Contract
 from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
-from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -84,8 +82,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_connect(self, mocker):
         # Arrange
-        mocker.patch.object(IB, "connectAsync")
-        mocker.patch.object(IB, "accountValues", return_value=IBTestDataStubs.account_values())
+        mocker.patch("ib_insync.ib.IB.connectAsync")
+        mocker.patch("ib_insync.ib.IB.accountValues", return_value=IBTestDataStubs.account_values())
 
         # Act
         self.exec_client.connect()
@@ -98,8 +96,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_disconnect(self, mocker):
         # Arrange
-        mocker.patch.object(IB, "connectAsync")
-        mocker.patch.object(IB, "accountValues", return_value=IBTestDataStubs.account_values())
+        mocker.patch("ib_insync.ib.IB.connectAsync")
+        mocker.patch("ib_insync.ib.IB.accountValues", return_value=IBTestDataStubs.account_values())
 
         self.exec_client.connect()
         await asyncio.sleep(0)
@@ -125,11 +123,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         # Arrange
         self.instrument_setup(instrument=self.instrument, contract_details=self.contract_details)
         trade = IBTestExecStubs.trade_submitted(client_order_id=self.client_order_id)
-        mock_place_order = mocker.patch.object(
-            self.exec_client._client,
-            "placeOrder",
-            return_value=trade,
-        )
+        mock_place_order = mocker.patch("ib_insync.ib.IB.placeOrder", return_value=trade)
 
         # Act
         order = TestExecStubs.limit_order(
@@ -177,7 +171,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
             contract=contract,
             order=order,
         )
-        mock_place_order = mocker.patch.object(self.exec_client._client, "placeOrder")
+        mock_place_order = mocker.patch("ib_insync.ib.IB.placeOrder")
 
         # Act
         command = TestCommandStubs.modify_order_command(
@@ -229,7 +223,7 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
             contract=contract,
             order=order,
         )
-        mock_place_order = mocker.patch.object(self.exec_client._client, "cancelOrder")
+        mock_place_order = mocker.patch("ib_insync.ib.IB.cancelOrder")
 
         # Act
         command = TestCommandStubs.cancel_order_command(instrument_id=instrument.id)
@@ -260,9 +254,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_on_submitted_event(self, mocker):
         # Arrange
-        mock_generate_order_accepted = mocker.patch.object(
-            InteractiveBrokersExecutionClient,
-            "generate_order_accepted",
+        mock_generate_order_accepted = mocker.patch(
+            "nautilus_trader.adapters.interactive_brokers.execution.InteractiveBrokersExecutionClient.generate_order_accepted",
         )
 
         self.instrument_setup()
@@ -286,9 +279,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_on_exec_details(self, mocker):
         # Arrange
-        mock_generate_order_filled = mocker.patch.object(
-            InteractiveBrokersExecutionClient,
-            "generate_order_filled",
+        mock_generate_order_filled = mocker.patch(
+            "nautilus_trader.adapters.interactive_brokers.execution.InteractiveBrokersExecutionClient.generate_order_filled",
         )
 
         self.instrument_setup()
@@ -334,9 +326,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_on_order_modify(self, mocker):
         # Arrange
-        mock_generate_order_updated = mocker.patch.object(
-            InteractiveBrokersExecutionClient,
-            "generate_order_updated",
+        mock_generate_order_updated = mocker.patch(
+            "nautilus_trader.adapters.interactive_brokers.execution.InteractiveBrokersExecutionClient.generate_order_updated",
         )
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
@@ -392,9 +383,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_on_order_cancel_cancelled(self, mocker):
         # Arrange
-        mock_generate_order_canceled = mocker.patch.object(
-            InteractiveBrokersExecutionClient,
-            "generate_order_canceled",
+        mock_generate_order_canceled = mocker.patch(
+            "nautilus_trader.adapters.interactive_brokers.execution.InteractiveBrokersExecutionClient.generate_order_canceled",
         )
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
@@ -418,9 +408,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_on_account_update(self, mocker):
         # Arrange
-        mock_generate_account_state = mocker.patch.object(
-            InteractiveBrokersExecutionClient,
-            "generate_account_state",
+        mock_generate_account_state = mocker.patch(
+            "nautilus_trader.adapters.interactive_brokers.execution.InteractiveBrokersExecutionClient.generate_account_state",
         )
         account_values = IBTestDataStubs.account_values()
 
