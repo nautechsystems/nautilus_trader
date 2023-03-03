@@ -51,7 +51,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.fixture(autouse=True, scope="function")
-    def ib_init(self, mocker, exec_client, cache):
+    def ib_init(self, exec_client, cache):
         self.contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         self.contract = self.contract_details.contract
 

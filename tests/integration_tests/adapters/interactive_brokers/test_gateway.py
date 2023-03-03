@@ -13,24 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from unittest.mock import call
-from unittest.mock import patch
-
-import docker
+from docker.models.containers import ContainerCollection
 
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 
 
 class TestIBGateway:
-    @patch.object(docker, "from_env")
-    def test_gateway_start_no_container(self, _):
+    def test_gateway_start_no_container(self, mocker):
+        mock_docker = mocker.patch.object(ContainerCollection, "run")
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
 
         # Arrange, Act
         self.gateway.start(wait=None)
 
         # Assert
-        expected = call.containers.run(
+        expected = dict(
             image="ghcr.io/unusualalpha/ib-gateway",
             name="nautilus-ib-gateway",
             detach=True,
@@ -43,5 +40,5 @@ class TestIBGateway:
                 "READ_ONLY_API": "yes",
             },
         )
-        result = self.gateway._docker.method_calls[-1]
+        result = mock_docker.call_args.kwargs
         assert result == expected
