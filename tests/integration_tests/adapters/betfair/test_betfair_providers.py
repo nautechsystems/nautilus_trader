@@ -21,6 +21,7 @@ import pytest
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import MarketChange
 
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentFilter
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import load_markets
@@ -51,21 +52,33 @@ class TestBetfairInstrumentProvider:
 
     @pytest.mark.asyncio
     async def test_load_markets(self):
-        markets = await load_markets(self.client, market_filter={})
+        markets = await load_markets(self.client, filters=None)
         assert len(markets) == 13227
 
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
+        markets = await load_markets(
+            self.client,
+            filters=[BetfairInstrumentFilter(event_type_name="Basketball")],
+        )
         assert len(markets) == 302
 
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Tennis"})
+        markets = await load_markets(
+            self.client,
+            [BetfairInstrumentFilter(event_type_name="Tennis")],
+        )
         assert len(markets) == 1958
 
-        markets = await load_markets(self.client, market_filter={"market_id": "1.177125728"})
+        markets = await load_markets(
+            self.client,
+            [BetfairInstrumentFilter(market_id="1.177125728")],
+        )
         assert len(markets) == 1
 
     @pytest.mark.asyncio
     async def test_load_markets_metadata(self):
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
+        markets = await load_markets(
+            self.client,
+            [BetfairInstrumentFilter(event_type_name="Basketball")],
+        )
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
         assert len(market_metadata) == 169
 
@@ -92,18 +105,18 @@ class TestBetfairInstrumentProvider:
 
     @pytest.mark.asyncio
     async def test_load_all(self):
-        await self.provider.load_all_async({"event_type_name": "Tennis"})
+        await self.provider.load_all_async([BetfairInstrumentFilter(event_type_name="Tennis")])
         assert len(self.provider.list_all()) == 4711
 
     @pytest.mark.asyncio
     async def test_list_all(self):
-        await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
+        await self.provider.load_all_async([BetfairInstrumentFilter(event_type_name="Basketball")])
         instruments = self.provider.list_all()
         assert len(instruments) == 23908
 
     @pytest.mark.asyncio
     async def test_search_instruments(self):
-        await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
+        await self.provider.load_all_async([BetfairInstrumentFilter(event_type_name="Basketball")])
         instruments = self.provider.search_instruments(
             instrument_filter={"market_type": "MATCH_ODDS"},
         )
@@ -111,7 +124,7 @@ class TestBetfairInstrumentProvider:
 
     @pytest.mark.asyncio
     async def test_get_betting_instrument(self):
-        await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
+        await self.provider.load_all_async([BetfairInstrumentFilter(market_id=["1.180678317"])])
         kw = dict(
             market_id="1.180678317",
             selection_id="11313157",

@@ -24,6 +24,7 @@ from nautilus_trader.config import LiveExecClientConfig
 class BetfairInstrumentFilter(InstrumentFilter, frozen=True):
     """Betfair instrument filter"""
 
+    event_type_name: Optional[str] = None
     event_type_id: Optional[str] = None
     market_id: Optional[list[str]] = None
 

@@ -83,7 +83,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
         # Act
         with patch.object(self.data_client._client, "reqMktData") as mock:
-            self.data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
+            await self.data_client._subscribe_trade_ticks(instrument_id=instrument_aapl.id)
 
         # Assert
         kwargs = mock.call_args.kwargs
@@ -109,7 +109,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
         # Act
         with patch.object(self.data_client._client, "reqMktDepth") as mock:
-            self.data_client.subscribe_order_book_snapshots(
+            await self.data_client._subscribe_order_book_snapshots(
                 instrument_id=instrument.id,
                 book_type=BookType.L2_MBP,
             )

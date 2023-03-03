@@ -279,7 +279,14 @@ async def load_markets(
         raise NotImplementedError
 
     navigation: Navigation = await client.list_navigation()
-    markets = navigation_to_flatten_markets(navigation, **filters)
+    markets: list[FlattenedMarket] = []
+    if filters is None:
+        return navigation_to_flatten_markets(navigation)
+    for filt in filters or []:
+        mkts = navigation_to_flatten_markets(
+            navigation, **{k: v for k, v in filt.dict().items() if v is not None}
+        )
+        markets.extend(mkts)
     return markets
 
 
