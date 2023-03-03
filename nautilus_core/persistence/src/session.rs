@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use std::ops::Deref;
 
@@ -19,7 +19,7 @@ use crate::parquet::{DecodeFromRecordBatch, ParquetType};
 #[derive(Default)]
 pub struct PersistenceSession {
     session_ctx: SessionContext,
-    runtime: Option<Runtime>,
+    runtime: RefCell<Option<Runtime>>,
     query_result: Option<PersistenceQuery>,
 }
 
@@ -54,7 +54,7 @@ impl PersistenceSession {
         let session_ctx = SessionContext::new();
         PersistenceSession {
             session_ctx,
-            runtime: Some(runtime),
+            runtime: RefCell::new(Some(runtime)),
             query_result: None,
         }
     }
@@ -63,7 +63,7 @@ impl PersistenceSession {
         let session_ctx = SessionContext::new();
         PersistenceSession {
             session_ctx,
-            runtime: None,
+            runtime: RefCell::new(None),
             query_result: None,
         }
     }
@@ -74,9 +74,11 @@ impl PersistenceSession {
     /// data sources registered with the context. The async stream
     /// is wrapped into a blocking stream.
     pub async fn query(&self, sql: &str) -> Result<BlockingStream<SendableRecordBatchStream>> {
-        match self.runtime {
+        let _guard = self.runtime.borrow().as_ref().map(|rt| rt.enter()).unwrap();
+
+        match self.runtime.borrow().as_ref() {
             // Use own runtime if it exists
-            Some(ref rt) => {
+            Some(rt) => {
                 let df = rt.block_on(self.sql(sql))?;
                 let stream = rt.block_on(df.execute_stream())?;
                 Ok(block_on_stream(stream))
@@ -103,7 +105,7 @@ impl PersistenceSession {
 impl PersistenceSession {
     #[new]
     pub fn new_session() -> Self {
-        Self::new()
+        Self::new_with_runtime()
     }
 
     pub fn new_query(
@@ -140,6 +142,8 @@ impl PersistenceSession {
 
     /// Each iteration returns a chunk of values read from the parquet file.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
+        let _guard = slf.runtime.borrow().as_ref().map(|rt| rt.enter()).unwrap();
+
         let query_result = slf
             .query_result
             .as_mut()
