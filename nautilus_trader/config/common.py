@@ -106,6 +106,9 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         """
         return bool(msgspec.json.decode(self.json(), type=self.__class__))
 
+    def replace(self, **kwargs):
+        return msgspec.structs.replace(self, **kwargs)
+
 
 class CacheConfig(NautilusConfig, frozen=True):
     """

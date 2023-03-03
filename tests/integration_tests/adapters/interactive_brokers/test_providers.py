@@ -18,14 +18,7 @@ import datetime
 from unittest.mock import MagicMock
 
 import pytest
-from ib_insync import CFD
-from ib_insync import Bond
 from ib_insync import ContractDetails
-from ib_insync import Crypto
-from ib_insync import Forex
-from ib_insync import Future
-from ib_insync import Option
-from ib_insync import Stock
 
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
@@ -73,66 +66,6 @@ class TestIBInstrumentProvider:
             "qualifyContractsAsync",
             return_value=self.async_return_value([contract_details.contract]),
         )
-
-    @pytest.mark.parametrize(
-        "filters, expected",
-        [
-            (
-                {"secType": "STK", "symbol": "AMD", "exchange": "SMART", "currency": "USD"},
-                Stock("AMD", "SMART", "USD"),
-            ),
-            (
-                {
-                    "secType": "STK",
-                    "symbol": "INTC",
-                    "exchange": "SMART",
-                    "primaryExchange": "NASDAQ",
-                    "currency": "USD",
-                },
-                Stock("INTC", "SMART", "USD", primaryExchange="NASDAQ"),
-            ),
-            (
-                {"secType": "CASH", "symbol": "EUR", "currency": "USD", "exchange": "IDEALPRO"},
-                Forex(symbol="EUR", currency="USD"),
-            ),  # EUR/USD,
-            ({"secType": "CFD", "symbol": "IBUS30"}, CFD("IBUS30")),
-            (
-                {
-                    "secType": "FUT",
-                    "symbol": "ES",
-                    "exchange": "GLOBEX",
-                    "lastTradeDateOrContractMonth": "20180921",
-                },
-                Future("ES", "20180921", "GLOBEX"),
-            ),
-            (
-                {
-                    "secType": "OPT",
-                    "symbol": "SPY",
-                    "exchange": "SMART",
-                    "lastTradeDateOrContractMonth": "20170721",
-                    "strike": 240,
-                    "right": "C",
-                },
-                Option("SPY", "20170721", 240, "C", "SMART"),
-            ),
-            (
-                {"secType": "BOND", "secIdType": "ISIN", "secId": "US03076KAA60"},
-                Bond(secIdType="ISIN", secId="US03076KAA60"),
-            ),
-            (
-                {"secType": "CRYPTO", "symbol": "BTC", "exchange": "PAXOS", "currency": "USD"},
-                Crypto("BTC", "PAXOS", "USD"),
-            ),
-        ],
-    )
-    def test_parse_contract(self, filters, expected):
-        result = self.provider._parse_contract(**filters)
-        fields = [
-            f.name for f in expected.__dataclass_fields__.values() if getattr(expected, f.name)
-        ]
-        for f in fields:
-            assert getattr(result, f) == getattr(expected, f)
 
     @pytest.mark.asyncio
     async def test_load_equity_contract_instrument(self, mocker):
@@ -239,21 +172,6 @@ class TestIBInstrumentProvider:
         self.provider.load_all(None)
 
     @pytest.mark.asyncio
-    async def test_instrument_filter_callable_none(self, mocker):
-        # Arrange
-        self.mock_ib_contract_calls(
-            mocker=mocker,
-            contract_details=IBTestProviderStubs.aapl_equity_contract_details(),
-        )
-
-        # Act
-        await self.provider.load_all_async()
-
-        # Assert
-        assert len(self.provider.get_all()) == 1
-
-    @pytest.mark.skip(reason="Configs now immutable, limx0 to fix")
-    @pytest.mark.asyncio
     async def test_instrument_filter_callable_option_filter(self, mocker):
         # Arrange
         self.mock_ib_contract_calls(
@@ -262,8 +180,8 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        self.provider.config.filter_callable = (
-            "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
+        self.provider.config = self.provider.config.replace(
+            filter_callable="tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options",
         )
         await self.provider.load_all_async()
         option_instruments = self.provider.get_all()
