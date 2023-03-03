@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from ib_insync import IB
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
@@ -71,7 +72,10 @@ def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, cl
 
 @pytest.fixture(scope="function")
 def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
-    mocker.patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client")
+    mocker.patch(
+        "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
+        return_value=IB(),
+    )
     return InteractiveBrokersLiveExecClientFactory.create(
         loop=event_loop,
         name=venue.value,

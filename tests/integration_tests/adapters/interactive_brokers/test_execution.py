@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 import asyncio
 import datetime
-from unittest.mock import patch
 
 import pytest
+from ib_insync import IB
 from ib_insync import CommissionReport
 from ib_insync import Contract
 from ib_insync import Fill
@@ -84,11 +84,8 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_connect(self, mocker):
         # Arrange
-        mocker.patch.object(
-            self.exec_client._client,
-            "accountValues",
-            return_value=IBTestDataStubs.account_values(),
-        )
+        mocker.patch.object(IB, "connectAsync")
+        mocker.patch.object(IB, "accountValues", return_value=IBTestDataStubs.account_values())
 
         # Act
         self.exec_client.connect()
@@ -101,11 +98,9 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
     @pytest.mark.asyncio
     async def test_disconnect(self, mocker):
         # Arrange
-        mocker.patch.object(
-            self.exec_client._client,
-            "accountValues",
-            return_value=IBTestDataStubs.account_values(),
-        )
+        mocker.patch.object(IB, "connectAsync")
+        mocker.patch.object(IB, "accountValues", return_value=IBTestDataStubs.account_values())
+
         self.exec_client.connect()
         await asyncio.sleep(0)
         await asyncio.sleep(0)
@@ -263,9 +258,13 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
     @pytest.mark.asyncio
-    @patch.object(InteractiveBrokersExecutionClient, "generate_order_accepted")
-    async def test_on_submitted_event(self, mock_generate_order_accepted):
+    async def test_on_submitted_event(self, mocker):
         # Arrange
+        mock_generate_order_accepted = mocker.patch.object(
+            InteractiveBrokersExecutionClient,
+            "generate_order_accepted",
+        )
+
         self.instrument_setup()
         self.order_setup()
         trade = IBTestExecStubs.trade_pre_submit(client_order_id=self.client_order_id)
@@ -285,9 +284,13 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    @patch.object(InteractiveBrokersExecutionClient, "generate_order_filled")
-    async def test_on_exec_details(self, mock_generate_order_filled):
+    async def test_on_exec_details(self, mocker):
         # Arrange
+        mock_generate_order_filled = mocker.patch.object(
+            InteractiveBrokersExecutionClient,
+            "generate_order_filled",
+        )
+
         self.instrument_setup()
         self.order_setup()
         contract = IBTestProviderStubs.aapl_equity_contract_details().contract
@@ -329,9 +332,12 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    @patch.object(InteractiveBrokersExecutionClient, "generate_order_updated")
-    async def test_on_order_modify(self, mock_generate_order_updated):
+    async def test_on_order_modify(self, mocker):
         # Arrange
+        mock_generate_order_updated = mocker.patch.object(
+            InteractiveBrokersExecutionClient,
+            "generate_order_updated",
+        )
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
         order = IBTestExecStubs.create_order(permId=1, client_order_id=self.client_order_id)
@@ -384,9 +390,12 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert order.status == OrderStatus.PENDING_CANCEL
 
     @pytest.mark.asyncio
-    @patch.object(InteractiveBrokersExecutionClient, "generate_order_canceled")
-    async def test_on_order_cancel_cancelled(self, mock_generate_order_canceled):
+    async def test_on_order_cancel_cancelled(self, mocker):
         # Arrange
+        mock_generate_order_canceled = mocker.patch.object(
+            InteractiveBrokersExecutionClient,
+            "generate_order_canceled",
+        )
         self.instrument_setup()
         self.order_setup(status=OrderStatus.ACCEPTED)
         order = IBTestExecStubs.create_order(permId=1, client_order_id=self.client_order_id)
@@ -407,9 +416,12 @@ class TestInteractiveBrokersExecution(TestBaseExecClient):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    @patch.object(InteractiveBrokersExecutionClient, "generate_account_state")
-    async def test_on_account_update(self, mock_generate_account_state):
+    async def test_on_account_update(self, mocker):
         # Arrange
+        mock_generate_account_state = mocker.patch.object(
+            InteractiveBrokersExecutionClient,
+            "generate_account_state",
+        )
         account_values = IBTestDataStubs.account_values()
 
         # Act
