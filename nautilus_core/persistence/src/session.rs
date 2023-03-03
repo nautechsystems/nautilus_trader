@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use std::ops::Deref;
 
@@ -10,7 +10,7 @@ use nautilus_core::cvec::CVec;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
-use pyo3_asyncio::tokio::re_exports::runtime::Runtime;
+use pyo3_asyncio::tokio::get_runtime;
 
 use crate::parquet::{DecodeFromRecordBatch, ParquetType};
 
@@ -19,7 +19,6 @@ use crate::parquet::{DecodeFromRecordBatch, ParquetType};
 #[derive(Default)]
 pub struct PersistenceSession {
     session_ctx: SessionContext,
-    runtime: RefCell<Option<Runtime>>,
     query_result: Option<PersistenceQuery>,
 }
 
@@ -45,25 +44,10 @@ impl Deref for PersistenceSession {
 }
 
 impl PersistenceSession {
-    /// Create a new data fusion session with a runtime
-    ///
-    /// This is mainly when using the persistence session in Python.
-    /// As it has to initialize it's own tokio runtime
-    pub fn new_with_runtime() -> Self {
-        let runtime = Runtime::new().expect("Unable to initialize tokio runtime in new session");
-        let session_ctx = SessionContext::new();
-        PersistenceSession {
-            session_ctx,
-            runtime: RefCell::new(Some(runtime)),
-            query_result: None,
-        }
-    }
-
     pub fn new() -> Self {
         let session_ctx = SessionContext::new();
         PersistenceSession {
             session_ctx,
-            runtime: RefCell::new(None),
             query_result: None,
         }
     }
@@ -74,21 +58,9 @@ impl PersistenceSession {
     /// data sources registered with the context. The async stream
     /// is wrapped into a blocking stream.
     pub async fn query(&self, sql: &str) -> Result<BlockingStream<SendableRecordBatchStream>> {
-        let _guard = self.runtime.borrow().as_ref().map(|rt| rt.enter()).unwrap();
-
-        match self.runtime.borrow().as_ref() {
-            // Use own runtime if it exists
-            Some(rt) => {
-                let df = rt.block_on(self.sql(sql))?;
-                let stream = rt.block_on(df.execute_stream())?;
-                Ok(block_on_stream(stream))
-            }
-            None => {
-                let df = self.sql(sql).await?;
-                let stream = df.execute_stream().await?;
-                Ok(block_on_stream(stream))
-            }
-        }
+        let df = self.sql(sql).await?;
+        let stream = df.execute_stream().await?;
+        Ok(block_on_stream(stream))
     }
 }
 
@@ -105,7 +77,9 @@ impl PersistenceSession {
 impl PersistenceSession {
     #[new]
     pub fn new_session() -> Self {
-        Self::new_with_runtime()
+        // initialize runtime here
+        get_runtime();
+        Self::new()
     }
 
     pub fn new_query(
@@ -114,6 +88,9 @@ impl PersistenceSession {
         metadata: HashMap<String, String>,
         parquet_type: ParquetType,
     ) {
+        let rt = get_runtime();
+        let _guard = rt.enter();
+
         match block_on(slf.query(&sql)) {
             Ok(result) => {
                 let query = PersistenceQuery {
@@ -142,7 +119,8 @@ impl PersistenceSession {
 
     /// Each iteration returns a chunk of values read from the parquet file.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
-        let _guard = slf.runtime.borrow().as_ref().map(|rt| rt.enter()).unwrap();
+        let rt = get_runtime();
+        let _guard = rt.enter();
 
         let query_result = slf
             .query_result
