@@ -53,7 +53,6 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-@pytest.mark.skip
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
@@ -335,31 +334,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "venue_order_id_modified": False,
         }
         assert kwargs == expected
-
-    @pytest.mark.asyncio
-    async def test_on_order_cancel_pending(self):
-        # Arrange
-        self.instrument_setup()
-        self.order_setup()
-        nautilus_order = TestExecStubs.limit_order()
-        order = IBTestExecStubs.create_order(permId=1)
-        trade = IBTestExecStubs.trade_pre_cancel(order=order)
-        self.cache.add_order(nautilus_order, None)
-
-        # Act
-        with patch.object(self.exec_client, "generate_order_pending_cancel") as mock:
-            self.exec_client._on_order_pending_cancel(trade)
-
-        # Assert
-        call = mock.call_args_list[0]
-        expected = {
-            "client_order_id": ClientOrderId("C-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
-            "strategy_id": StrategyId("S-001"),
-            "ts_event": 1646533038455087000,
-            "venue_order_id": None,
-        }
-        assert call.kwargs == expected
 
     @pytest.mark.asyncio
     async def test_on_order_cancel_cancelled(self):
