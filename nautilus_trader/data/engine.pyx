@@ -35,7 +35,9 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
+from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -47,6 +49,8 @@ from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -1133,35 +1137,55 @@ cdef class DataEngine(Component):
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
     cdef void _query_data_catalog(self, DataRequest request):
+        cdef datetime start = request.data_type.metadata.get("start")
+        cdef datetime end = request.data_type.metadata.get("end")
+
+        cdef uint64_t now_ns = self._clock.timestamp_ns()
+        cdef uint64_t start_ns = dt_to_unix_nanos(start) if start is not None else 0
+        cdef uint64_t end_ns = dt_to_unix_nanos(end) if end is not None else now_ns
+
+        if end is not None and end_ns > now_ns:
+            self._log.warning(
+                "Cannot request data beyond current time. "
+                f"Truncating `end` to current UNIX nanoseconds {unix_nanos_to_dt(now_ns)}.",
+            )
+            end_ns = now_ns
+
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
                 data = self._catalog.instruments(as_nautilus=True)
             else:
                 data = self._catalog.instruments(
-                    instrument_ids=[instrument_id],
+                    instrument_ids=[str(instrument_id)],
                     as_nautilus=True,
                 )
         elif request.data_type.type == QuoteTick:
             data = self._catalog.quote_ticks(
-                instrument_ids=[request.data_type.metadata.get("instrument_id")],
-                start=request.data_type.metadata.get("start"),
-                end=request.data_type.metadata.get("end"),
+                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                start=start_ns if start is not None else None,
+                end=end_ns if end is not None else None,
                 as_nautilus=True,
                 use_rust=self._use_rust,
             )
         elif request.data_type.type == TradeTick:
             data = self._catalog.quote_ticks(
-                instrument_ids=[request.data_type.metadata.get("instrument_id")],
-                start=request.data_type.metadata.get("start"),
-                end=request.data_type.metadata.get("end"),
+                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                start=start_ns if start is not None else None,
+                end=end_ns if end is not None else None,
                 as_nautilus=True,
                 use_rust=self._use_rust,
             )
         elif request.data_type.type == Bar:
+            bar_type = request.data_type.metadata.get("bar_type")
+            if bar_type is None:
+                self._log.error("No bar type provided for bars request.")
+                return
             data = self._catalog.bars(
-                instrument_ids=[request.data_type.metadata.get("instrument_id")],
-                bar_type=str(request.data_type.metadata.get("bar_type")),
+                instrument_ids=[str(bar_type.instrument_id)],
+                bar_type=str(bar_type),
+                start=start_ns if start is not None else None,
+                end=end_ns if end is not None else None,
                 as_nautilus=True,
                 use_rust=False,  # Until implemented
             )
@@ -1169,6 +1193,8 @@ cdef class DataEngine(Component):
             data = self._catalog.generic_data(
                 cls=request.data_type.type,
                 metadata=request.data_type.metadata,
+                start=start_ns if start is not None else None,
+                end=end_ns if end is not None else None,
                 as_nautilus=True,
             )
 
@@ -1177,7 +1203,7 @@ cdef class DataEngine(Component):
             venue=request.venue,
             data_type=request.data_type,
             data=data,
-            correlation_id=request.correlation_id,
+            correlation_id=request.id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
