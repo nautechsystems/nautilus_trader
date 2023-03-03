@@ -23,6 +23,8 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed Binance Futures trigger type parsing
 - Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
+- Fixed `Actor` handling of bars, thanks @limx0
+- Fixed `TrailingStopMarketOrder` slippage calculation when no `trigger_price`, thanks for reporting @rsmb7z
 
 ---
 
