@@ -25,6 +25,7 @@ from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokers
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
+from nautilus_trader.adapters.interactive_brokers.factories import clear_clients
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -35,6 +36,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
+        clear_clients()
         super().setup()
         self.instrument = TestInstrumentProvider.aapl_equity()
         self.data_client: InteractiveBrokersDataClient = (
