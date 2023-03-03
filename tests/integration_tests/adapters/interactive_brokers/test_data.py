@@ -15,7 +15,6 @@
 
 import asyncio
 import datetime
-from unittest.mock import patch
 
 import pytest
 from ib_insync import Contract
@@ -38,22 +37,23 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
         self.instrument = TestInstrumentProvider.aapl_equity()
-        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            self.data_client: InteractiveBrokersDataClient = (
-                InteractiveBrokersLiveDataClientFactory.create(
-                    loop=self.loop,
-                    name="IB",
-                    config=InteractiveBrokersDataClientConfig(  # noqa: S106
-                        username="test",
-                        password="test",
-                    ),
-                    msgbus=self.msgbus,
-                    cache=self.cache,
-                    clock=self.clock,
-                    logger=self.logger,
-                )
+        self.data_client: InteractiveBrokersDataClient = (
+            InteractiveBrokersLiveDataClientFactory.create(
+                loop=self.loop,
+                name="IB",
+                config=InteractiveBrokersDataClientConfig(  # noqa: S106
+                    username="test",
+                    password="test",
+                    start_gateway=False,
+                    connect=False,
+                ),
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
             )
-            assert isinstance(self.data_client, InteractiveBrokersDataClient)
+        )
+        assert isinstance(self.data_client, InteractiveBrokersDataClient)
 
     def instrument_setup(self, instrument, contract_details):
         self.data_client.instrument_provider.contract_details[
@@ -65,7 +65,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.data_client.instrument_provider.add(instrument)
 
     @pytest.mark.asyncio
-    async def test_factory(self, event_loop):
+    async def test_factory(self):
         # Arrange
         # Act
         data_client = self.data_client
@@ -74,7 +74,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert data_client is not None
 
     @pytest.mark.asyncio
-    async def test_subscribe_trade_ticks(self, event_loop):
+    async def test_subscribe_trade_ticks(self, mocker):
         # Arrange
         instrument_aapl = IBTestProviderStubs.aapl_instrument()
         self.data_client.instrument_provider.contract_details[
@@ -82,10 +82,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         ] = IBTestProviderStubs.aapl_equity_contract_details()
 
         # Act
-        with patch.object(self.data_client._client, "reqMktData") as mock:
-            await self.data_client._subscribe_trade_ticks(instrument_id=instrument_aapl.id)
+        await self.data_client._subscribe_trade_ticks(instrument_id=instrument_aapl.id)
 
         # Assert
+        mock = self.data_client._client.reqMktData
         kwargs = mock.call_args.kwargs
         expected = {
             "contract": Contract(
@@ -102,19 +102,19 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    async def test_subscribe_order_book_deltas(self, event_loop):
+    async def test_subscribe_order_book_deltas(self):
         # Arrange
         instrument = IBTestProviderStubs.aapl_instrument()
         self.instrument_setup(instrument, IBTestProviderStubs.aapl_equity_contract_details())
 
         # Act
-        with patch.object(self.data_client._client, "reqMktDepth") as mock:
-            await self.data_client._subscribe_order_book_snapshots(
-                instrument_id=instrument.id,
-                book_type=BookType.L2_MBP,
-            )
+        await self.data_client._subscribe_order_book_snapshots(
+            instrument_id=instrument.id,
+            book_type=BookType.L2_MBP,
+        )
 
         # Assert
+        mock = self.data_client._client.reqMktDepth
         kwargs = mock.call_args.kwargs
         expected = {
             "contract": Contract(
@@ -132,7 +132,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    async def test_on_book_update(self, event_loop):
+    async def test_on_book_update(self):
         # Arrange
         self.instrument_setup(
             IBTestProviderStubs.eurusd_instrument(),
@@ -144,7 +144,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.data_client._on_order_book_snapshot(ticker=ticker, book_type=BookType.L2_MBP)
 
     @pytest.mark.asyncio
-    async def test_on_ticker_update(self, event_loop):
+    async def test_on_ticker_update(self):
         # Arrange
         self.instrument_setup(
             IBTestProviderStubs.eurusd_instrument(),
@@ -156,7 +156,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.data_client._on_trade_ticker_update(ticker=ticker)
 
     @pytest.mark.asyncio
-    async def test_on_quote_tick_update(self, event_loop):
+    async def test_on_quote_tick_update(self):
         # Arrange
         self.instrument_setup(
             IBTestProviderStubs.eurusd_instrument(),
@@ -175,7 +175,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
 
     @pytest.mark.asyncio
-    async def test_on_quote_tick_update_nans(self, event_loop):
+    async def test_on_quote_tick_update_nans(self):
         # Arrange
         self.instrument_setup(self.instrument, IBTestProviderStubs.aapl_equity_contract_details())
         contract = IBTestProviderStubs.aapl_equity_contract_details().contract

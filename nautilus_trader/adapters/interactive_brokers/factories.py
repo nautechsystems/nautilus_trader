@@ -18,7 +18,7 @@ import os
 from functools import lru_cache
 from typing import Literal, Optional
 
-import ib_insync
+from ib_insync import IB
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
@@ -40,7 +40,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 
 GATEWAY = None
-IB_INSYNC_CLIENTS: dict[tuple, ib_insync.IB] = {}
+IB_INSYNC_CLIENTS: dict[tuple, IB] = {}
 
 
 def get_cached_ib_client(
@@ -54,7 +54,7 @@ def get_cached_ib_client(
     client_id: int = 1,
     start_gateway: bool = True,
     read_only_api: bool = True,
-) -> ib_insync.IB:
+) -> IB:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
 
@@ -106,7 +106,7 @@ def get_cached_ib_client(
     client_key: tuple = (host, port, client_id)
 
     if client_key not in IB_INSYNC_CLIENTS:
-        client = ib_insync.IB()
+        client = IB()
         if connect:
             for _ in range(10):
                 try:
@@ -123,7 +123,7 @@ def get_cached_ib_client(
 
 @lru_cache(1)
 def get_cached_interactive_brokers_instrument_provider(
-    client: ib_insync.IB,
+    client: IB,
     config: InstrumentProviderConfig,
     logger: Logger,
 ) -> InteractiveBrokersInstrumentProvider:
@@ -196,6 +196,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             port=config.gateway_port,
             trading_mode=config.trading_mode,
             client_id=config.client_id,
+            connect=config.connect,
             start_gateway=config.start_gateway,
             read_only_api=config.read_only_api,
         )
@@ -268,6 +269,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             port=config.gateway_port,
             client_id=config.client_id,
             start_gateway=config.start_gateway,
+            connect=config.connect,
             read_only_api=config.read_only_api,
         )
 

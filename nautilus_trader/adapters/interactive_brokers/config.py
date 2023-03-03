@@ -58,6 +58,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
+    connect: bool = True
     read_only_api: bool = True
 
 
@@ -100,4 +101,5 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
+    connect: bool = True
     read_only_api: bool = True
