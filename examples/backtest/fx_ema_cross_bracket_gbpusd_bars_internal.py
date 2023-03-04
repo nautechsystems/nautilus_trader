@@ -14,7 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
 from decimal import Decimal
 
 import pandas as pd
