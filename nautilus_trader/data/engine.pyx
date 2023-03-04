@@ -1144,6 +1144,9 @@ cdef class DataEngine(Component):
         cdef uint64_t start_ns = dt_to_unix_nanos(start) if start is not None else 0
         cdef uint64_t end_ns = dt_to_unix_nanos(end) if end is not None else now_ns
 
+        # Validate request time range
+        Condition.true(start_ns <= end_ns, f"start {start_ns} was greater than end {end_ns}")
+
         if end is not None and end_ns > now_ns:
             self._log.warning(
                 "Cannot request data beyond current time. "
@@ -1163,16 +1166,16 @@ cdef class DataEngine(Component):
         elif request.data_type.type == QuoteTick:
             data = self._catalog.quote_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
-                start=start_ns if start is not None else None,
-                end=end_ns if end is not None else None,
+                start=start_ns,
+                end=end_ns,
                 as_nautilus=True,
                 use_rust=self._use_rust,
             )
         elif request.data_type.type == TradeTick:
-            data = self._catalog.quote_ticks(
+            data = self._catalog.trade_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
-                start=start_ns if start is not None else None,
-                end=end_ns if end is not None else None,
+                start=start_ns,
+                end=end_ns,
                 as_nautilus=True,
                 use_rust=self._use_rust,
             )
@@ -1184,8 +1187,8 @@ cdef class DataEngine(Component):
             data = self._catalog.bars(
                 instrument_ids=[str(bar_type.instrument_id)],
                 bar_type=str(bar_type),
-                start=start_ns if start is not None else None,
-                end=end_ns if end is not None else None,
+                start=start_ns,
+                end=end_ns,
                 as_nautilus=True,
                 use_rust=False,  # Until implemented
             )
@@ -1193,9 +1196,16 @@ cdef class DataEngine(Component):
             data = self._catalog.generic_data(
                 cls=request.data_type.type,
                 metadata=request.data_type.metadata,
-                start=start_ns if start is not None else None,
-                end=end_ns if end is not None else None,
+                start=start_ns,
+                end=end_ns,
                 as_nautilus=True,
+            )
+
+        # Validation data is not from the future
+        if data and data[-1].ts_init > now_ns:
+            raise RuntimeError(
+                "Invalid response: Historical data from the future: "
+                f"data[-1].ts_init={data[-1].ts_init}, now_ns={now_ns}",
             )
 
         response = DataResponse(

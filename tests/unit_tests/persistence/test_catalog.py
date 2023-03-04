@@ -65,12 +65,12 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestPersistenceCatalogRust:
-    def setup(self):
+    def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self.instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("SIM"))
 
-    def teardown(self):
+    def teardown(self) -> None:
         # Cleanup
         path = self.catalog.path
         fs = self.catalog.fs

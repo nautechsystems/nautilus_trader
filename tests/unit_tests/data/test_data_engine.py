@@ -15,8 +15,9 @@
 
 import itertools
 import os
+import sys
 
-import pytest
+import pandas as pd
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
@@ -67,6 +68,7 @@ from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -90,7 +92,7 @@ class TestDataEngine:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
-            bypass=True,
+            bypass=False,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -1908,39 +1910,38 @@ class TestDataEngine:
         assert len(handler) == 1
         assert len(handler[0].data) == 1
 
-    @pytest.mark.skip(reason="WIP")
-    def test_request_quote_ticks_when_catalog_registered_using_rust(self):
+    def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
         # Arrange
         catalog = data_catalog_setup(protocol="file")
+        self.clock.set_time(to_time_ns=1638058200000000000)  # <- Set to end of data
+
         parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
-
         reader = ParquetReader(
             parquet_data_path,
-            1000,
+            100,
             ParquetType.QuoteTick,
             ParquetReaderType.File,
         )
 
         mapped_chunk = map(QuoteTick.list_from_capsule, reader)
-        quotes = list(itertools.chain(*mapped_chunk))
+        ticks = list(itertools.chain(*mapped_chunk))
 
-        min_timestamp = str(quotes[0].ts_init).rjust(19, "0")
-        max_timestamp = str(quotes[-1].ts_init).rjust(19, "0")
+        min_timestamp = str(ticks[0].ts_init).rjust(19, "0")
+        max_timestamp = str(ticks[-1].ts_init).rjust(19, "0")
 
-        # Write EUR/USD quotes
+        sim_venue = Venue("SIM")
+
         # Reset reader
-        symbol_str = "EUR/USD"
-        sim = Venue("SIM")
         reader = ParquetReader(
             parquet_data_path,
-            1000,
+            100,
             ParquetType.QuoteTick,
             ParquetReaderType.File,
         )
 
         metadata = {
-            "instrument_id": symbol_str,
+            "instrument_id": f"EUR/USD.{sim_venue}",
             "price_precision": "5",
             "size_precision": "0",
         }
@@ -1953,7 +1954,7 @@ class TestDataEngine:
             catalog.path,
             "data",
             "quote_tick.parquet",
-            f"instrument_id={symbol_str.replace('/', '-')}",  # EUR-USD.SIM
+            f"instrument_id=EUR-USD.{sim_venue}",
             f"{min_timestamp}-{max_timestamp}-0.parquet",
         )
 
@@ -1967,14 +1968,14 @@ class TestDataEngine:
         self.data_engine.register_catalog(catalog, use_rust=True)
 
         # Act
-        handler = []
+        handler: list[DataResponse] = []
         request = DataRequest(
             client_id=None,
-            venue=sim,
+            venue=sim_venue,
             data_type=DataType(
                 QuoteTick,
                 metadata={
-                    "instrument_id": InstrumentId(Symbol("EUR/USD"), sim),
+                    "instrument_id": InstrumentId(Symbol("EUR/USD"), sim_venue),
                 },
             ),
             callback=handler.append,
@@ -1989,11 +1990,113 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         assert len(handler[0].data) == 9500
-        assert isinstance(handler[0].data, QuoteTick)
+        assert isinstance(handler[0].data, list)
+        assert isinstance(handler[0].data[0], QuoteTick)
+
+    def test_request_trade_ticks_when_catalog_registered_using_rust(self) -> None:
+        # Arrange
+        catalog = data_catalog_setup(protocol="file")
+        self.clock.set_time(to_time_ns=1638058200000000000)  # <- Set to end of data
+
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
+        assert os.path.exists(parquet_data_path)
+        reader = ParquetReader(
+            parquet_data_path,
+            100,
+            ParquetType.TradeTick,
+            ParquetReaderType.File,
+        )
+
+        mapped_chunk = map(TradeTick.list_from_capsule, reader)
+        trades = list(itertools.chain(*mapped_chunk))
+
+        min_timestamp = str(trades[0].ts_init).rjust(19, "0")
+        max_timestamp = str(trades[-1].ts_init).rjust(19, "0")
+
+        sim_venue = Venue("SIM")
+
+        # Reset reader
+        reader = ParquetReader(
+            parquet_data_path,
+            100,
+            ParquetType.TradeTick,
+            ParquetReaderType.File,
+        )
+
+        metadata = {
+            "instrument_id": f"EUR/USD.{sim_venue}",
+            "price_precision": "5",
+            "size_precision": "0",
+        }
+        writer = ParquetWriter(
+            ParquetType.TradeTick,
+            metadata,
+        )
+
+        file_path = os.path.join(
+            catalog.path,
+            "data",
+            "trade_tick.parquet",
+            f"instrument_id=EUR-USD.{sim_venue}",
+            f"{min_timestamp}-{max_timestamp}-0.parquet",
+        )
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as f:
+            for chunk in reader:
+                writer.write(chunk)
+            data: bytes = writer.flush_bytes()
+            f.write(data)
+
+        self.data_engine.register_catalog(catalog, use_rust=True)
+
+        # Act
+        handler: list[DataResponse] = []
+        request1 = DataRequest(
+            client_id=None,
+            venue=sim_venue,
+            data_type=DataType(
+                TradeTick,
+                metadata={
+                    "instrument_id": InstrumentId(Symbol("EUR/USD"), sim_venue),
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        request2 = DataRequest(
+            client_id=None,
+            venue=sim_venue,
+            data_type=DataType(
+                TradeTick,
+                metadata={
+                    "instrument_id": InstrumentId(Symbol("EUR/USD"), sim_venue),
+                    "start": UNIX_EPOCH,
+                    "end": pd.Timestamp(sys.maxsize, tz="UTC"),
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request1)
+        self.msgbus.request(endpoint="DataEngine.request", request=request2)
+
+        # Assert
+        assert self.data_engine.request_count == 2
+        assert len(handler) == 2
+        assert len(handler[0].data) == 100
+        assert len(handler[1].data) == 100
+        assert isinstance(handler[0].data, list)
+        assert isinstance(handler[0].data[0], TradeTick)
 
     def test_request_bars_when_catalog_registered(self):
         # Arrange
         catalog = data_catalog_setup(protocol="file")
+        self.clock.set_time(to_time_ns=1638058200000000000)  # <- Set to end of data
 
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -2040,6 +2143,8 @@ class TestDataEngine:
                         InstrumentId(Symbol("ADABTC"), BINANCE),
                         BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
                     ),
+                    "start": UNIX_EPOCH,
+                    "end": pd.Timestamp(sys.maxsize, tz="UTC"),
                 },
             ),
             callback=handler.append,
@@ -2054,3 +2159,5 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         assert len(handler[0].data) == 21
+        assert handler[0].data[0].ts_init == 1637971200000000000
+        assert handler[0].data[-1].ts_init == 1638058200000000000
