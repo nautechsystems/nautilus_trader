@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import itertools
+import os
+
 import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -22,6 +25,10 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.engine import DataEngineConfig
@@ -55,6 +62,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -1842,7 +1850,147 @@ class TestDataEngine:
         assert len(handler) == 1
         assert handler[0].data == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
 
+    def test_request_instrument_when_catalog_registered(self):
+        # Arrange
+        catalog = data_catalog_setup(protocol="file")
+
+        idealpro = Venue("IDEALPRO")
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+        write_objects(catalog=catalog, chunk=[instrument])
+
+        self.data_engine.register_catalog(catalog)
+
+        # Act
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=idealpro,
+            data_type=DataType(Instrument, metadata={"instrument_id": instrument.id}),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert len(handler[0].data) == 1
+
+    def test_request_instruments_for_venue_when_catalog_registered(self):
+        # Arrange
+        catalog = data_catalog_setup(protocol="file")
+
+        idealpro = Venue("IDEALPRO")
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
+        write_objects(catalog=catalog, chunk=[instrument])
+
+        self.data_engine.register_catalog(catalog)
+
+        # Act
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=idealpro,
+            data_type=DataType(Instrument, metadata={}),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert len(handler[0].data) == 1
+
     @pytest.mark.skip(reason="WIP")
+    def test_request_quote_ticks_when_catalog_registered_using_rust(self):
+        # Arrange
+        catalog = data_catalog_setup(protocol="file")
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
+        assert os.path.exists(parquet_data_path)
+
+        reader = ParquetReader(
+            parquet_data_path,
+            1000,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
+        )
+
+        mapped_chunk = map(QuoteTick.list_from_capsule, reader)
+        quotes = list(itertools.chain(*mapped_chunk))
+
+        min_timestamp = str(quotes[0].ts_init).rjust(19, "0")
+        max_timestamp = str(quotes[-1].ts_init).rjust(19, "0")
+
+        # Write EUR/USD quotes
+        # Reset reader
+        symbol_str = "EUR/USD"
+        sim = Venue("SIM")
+        reader = ParquetReader(
+            parquet_data_path,
+            1000,
+            ParquetType.QuoteTick,
+            ParquetReaderType.File,
+        )
+
+        metadata = {
+            "instrument_id": symbol_str,
+            "price_precision": "5",
+            "size_precision": "0",
+        }
+        writer = ParquetWriter(
+            ParquetType.QuoteTick,
+            metadata,
+        )
+
+        file_path = os.path.join(
+            catalog.path,
+            "data",
+            "quote_tick.parquet",
+            f"instrument_id={symbol_str.replace('/', '-')}",  # EUR-USD.SIM
+            f"{min_timestamp}-{max_timestamp}-0.parquet",
+        )
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as f:
+            for chunk in reader:
+                writer.write(chunk)
+            data: bytes = writer.flush_bytes()
+            f.write(data)
+
+        self.data_engine.register_catalog(catalog, use_rust=True)
+
+        # Act
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=sim,
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "instrument_id": InstrumentId(Symbol("EUR/USD"), sim),
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert len(handler[0].data) == 9500
+        assert isinstance(handler[0].data, QuoteTick)
+
     def test_request_bars_when_catalog_registered(self):
         # Arrange
         catalog = data_catalog_setup(protocol="file")
@@ -1887,7 +2035,7 @@ class TestDataEngine:
             venue=BINANCE,
             data_type=DataType(
                 Bar,
-                metadata={  # str data type is invalid
+                metadata={
                     "bar_type": BarType(
                         InstrumentId(Symbol("ADABTC"), BINANCE),
                         BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
@@ -1905,4 +2053,4 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
+        assert len(handler[0].data) == 21

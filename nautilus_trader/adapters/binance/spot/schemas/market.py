@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
@@ -71,10 +70,10 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
 
     def parse_to_quote_asset(self):
         return Currency(
-            code=self.baseAsset,
-            precision=self.baseAssetPrecision,
+            code=self.quoteAsset,
+            precision=self.quoteAssetPrecision,
             iso4217=0,  # Currently undetermined for crypto assets
-            name=self.baseAsset,
+            name=self.quoteAsset,
             currency_type=CurrencyType.CRYPTO,
         )
 
