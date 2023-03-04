@@ -12,38 +12,28 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from unittest import mock
-from unittest.mock import Mock
-
-import pytest
-from eventkit import Event
-from ib_insync import IB
-from ib_insync import Contract
-from ib_insync import Ticker
-
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
-
-
-class FakeIB(IB):
-    errorEvent = Event("errorEvent")
-    newOrderEvent = Event("newOrderEvent")
-    orderModifyEvent = Event("orderModifyEvent")
-    cancelOrderEvent = Event("cancelOrderEvent")
-    openOrderEvent = Event("openOrderEvent")
-    orderStatusEvent = Event("orderStatusEvent")
-    execDetailsEvent = Event("execDetailsEvent")
-
-    _tickers: list[Ticker] = []
-    reqMktData = Mock(return_value=Ticker(contract=Contract(conId=1)))
-    reqMktDepth = Mock(return_value=Ticker(contract=Contract(conId=1)))
-    placeOrder = Mock(return_value=IBTestExecStubs.trade_submitted())
-    cancelOrder = Mock()
-
-
-@pytest.fixture(scope="function", autouse=True)
-def mock_ib_class():
-    with mock.patch(
-        "nautilus_trader.adapters.interactive_brokers.factories.IB",
-        return_value=FakeIB,
-    ) as mock_ib:
-        yield mock_ib
+# from unittest.mock import Mock
+#
+# import pytest
+# from eventkit import Event
+# from ib_insync import IB
+# from ib_insync import Contract
+# from ib_insync import Ticker
+#
+# from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
+#
+#
+# class FakeIB(IB):
+#     errorEvent = Event("errorEvent")
+#     newOrderEvent = Event("newOrderEvent")
+#     orderModifyEvent = Event("orderModifyEvent")
+#     cancelOrderEvent = Event("cancelOrderEvent")
+#     openOrderEvent = Event("openOrderEvent")
+#     orderStatusEvent = Event("orderStatusEvent")
+#     execDetailsEvent = Event("execDetailsEvent")
+#
+#     _tickers: list[Ticker] = []
+#     reqMktData = Mock(return_value=Ticker(contract=Contract(conId=1)))
+#     reqMktDepth = Mock(return_value=Ticker(contract=Contract(conId=1)))
+#     placeOrder = Mock(return_value=IBTestExecStubs.trade_submitted())
+#     cancelOrder = Mock()

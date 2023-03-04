@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from unittest.mock import patch
 
 import pytest
 from ib_insync import IB
@@ -107,7 +107,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         command = TestCommandStubs.submit_order_command(order=order)
 
         # Act
-        self.exec_client.submit_order(command=command)
+        with patch("ib_insync.ib.IB.placeOrder") as mock:
+            self.exec_client.submit_order(command=command)
 
         # Assert
         expected = {
@@ -125,7 +126,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         }
 
         # Assert
-        kwargs = self.exec_client._client.placeOrder.call_args.kwargs
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -151,7 +152,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             price=Price.from_int(10),
             quantity=Quantity.from_str("100"),
         )
-        self.exec_client.modify_order(command=command)
+        with patch("ib_insync.ib.IB.placeOrder") as mock:
+            self.exec_client.modify_order(command=command)
 
         # Assert
         expected = {
@@ -176,7 +178,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         }
 
         # Assert
-        kwargs = self.exec_client._client.placeOrder.call_args.kwargs
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -197,7 +199,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
         # Act
         command = TestCommandStubs.cancel_order_command(instrument_id=instrument.id)
-        self.exec_client.cancel_order(command=command)
+        with patch("ib_insync.ib.IB.cancelOrder") as mock:
+            self.exec_client.cancel_order(command=command)
 
         # Assert
         expected = {
@@ -215,7 +218,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         }
 
         # Assert
-        kwargs = self.exec_client._client.cancelOrder.call_args.kwargs
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
