@@ -15,6 +15,8 @@ Released on TBD (UTC).
 - Added `DataCatalogConfig` for more cohesive data catalog configuration
 - Added `DataEngine.register_catalog` to support historical data requests
 - Added `catalog_config` field to base `NautilusKernelConfig`
+- `PortfolioAnalyzer` PnL statistics now take optional `unrealized_pnl`
+- Backtest performance statistics now include unrealized PnL in total PnL
 - Now immediately caching orders and order lists in `Strategy`
 - Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
 - Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
@@ -25,6 +27,8 @@ Released on TBD (UTC).
 - Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
 - Fixed `Actor` handling of bars, thanks @limx0
 - Fixed `TrailingStopMarketOrder` slippage calculation when no `trigger_price`, thanks for reporting @rsmb7z
+- Fixed `BinanceSpotInstrumentProvider` parsing of quote asset (was using base), thanks for reporting @logogin
+- Fixed undocumented Binance time in force 'GTE\_GTC', thanks for reporting @graceyangfan
 
 ---
 
