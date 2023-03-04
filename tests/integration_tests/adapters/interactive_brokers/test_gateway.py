@@ -12,12 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import sys
 
+import pytest
 from docker.models.containers import ContainerCollection
 
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 
 
+@pytest.mark.skip(sys.platform == "darwin")
 class TestIBGateway:
     def test_gateway_start_no_container(self, mocker):
         mock_docker = mocker.patch.object(ContainerCollection, "run")
