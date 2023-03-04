@@ -43,6 +43,11 @@ GATEWAY = None
 IB_INSYNC_CLIENTS: dict[tuple, IB] = {}
 
 
+def clear_clients():
+    global IB_INSYNC_CLIENTS
+    IB_INSYNC_CLIENTS = {}
+
+
 def get_cached_ib_client(
     username: str,
     password: str,
