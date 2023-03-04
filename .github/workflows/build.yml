@@ -118,7 +118,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           make pytest
-          # make test-examples // TODO(cs): Pending accounting investigation
+          make test-examples
 
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)
