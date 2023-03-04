@@ -185,6 +185,7 @@ class BinanceTimeInForce(Enum):
     IOC = "IOC"
     FOK = "FOK"
     GTX = "GTX"  # FUTURES only, Good Till Crossing (Post Only)
+    GTE_GTC = "GTC"  # Undocumented
 
 
 @unique
@@ -278,6 +279,7 @@ class BinanceEnumParser:
             BinanceTimeInForce.FOK: TimeInForce.FOK,
             BinanceTimeInForce.GTC: TimeInForce.GTC,
             BinanceTimeInForce.GTX: TimeInForce.GTC,  # Convert GTX to GTC
+            BinanceTimeInForce.GTE_GTC: TimeInForce.GTC,  # Undocumented
             BinanceTimeInForce.IOC: TimeInForce.IOC,
         }
         self.int_to_ext_time_in_force = {
