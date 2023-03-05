@@ -175,6 +175,7 @@ class EMACrossBracket(Strategy):
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
+                self.cancel_all_orders(self.instrument_id)
                 self.buy(bar)
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.close_all_positions(self.instrument_id)
@@ -183,6 +184,7 @@ class EMACrossBracket(Strategy):
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
+                self.cancel_all_orders(self.instrument_id)
                 self.sell(bar)
             elif self.portfolio.is_net_long(self.instrument_id):
                 self.close_all_positions(self.instrument_id)

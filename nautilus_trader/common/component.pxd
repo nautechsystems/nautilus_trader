@@ -34,8 +34,8 @@ cdef class ComponentFSMFactory:
 cdef class Component:
     cdef readonly Clock _clock
     cdef readonly LoggerAdapter _log
+    cdef readonly MessageBus _msgbus
     cdef FiniteStateMachine _fsm
-    cdef MessageBus _msgbus
     cdef dict _config
 
     cdef readonly TraderId trader_id

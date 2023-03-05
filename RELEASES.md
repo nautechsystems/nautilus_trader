@@ -29,6 +29,8 @@ Released on TBD (UTC).
 - Fixed `TrailingStopMarketOrder` slippage calculation when no `trigger_price`, thanks for reporting @rsmb7z
 - Fixed `BinanceSpotInstrumentProvider` parsing of quote asset (was using base), thanks for reporting @logogin
 - Fixed undocumented Binance time in force 'GTE\_GTC', thanks for reporting @graceyangfan
+- Fixed `CancelAllOrders` command handling for contingent orders not yet in matching core
+- Fixed `Position` calculation of `last_qty` when commission currency was equal to base currency, thanks for reporting @rsmb7z
 
 ---
 
