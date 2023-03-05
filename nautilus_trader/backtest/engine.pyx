@@ -1111,7 +1111,7 @@ cdef class BacktestEngine:
                 for c in account.commissions().values():
                     self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                self._log.info(f"Unrealized PnLs (included in total):")
+                self._log.info(f"Unrealized PnLs (included in totals):")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value))
                 if not unrealized_pnls:
                     self._log.info("None")

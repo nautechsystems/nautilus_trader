@@ -55,6 +55,8 @@ class EMACrossConfig(StrategyConfig):
         The fast EMA period.
     slow_ema_period : int, default 20
         The slow EMA period.
+    close_positions_on_stop : bool, default True
+        If all open positions should be closed on strategy stop.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -68,6 +70,7 @@ class EMACrossConfig(StrategyConfig):
     trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
+    close_positions_on_stop: bool = True
 
 
 class EMACross(Strategy):
@@ -97,6 +100,7 @@ class EMACross(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
+        self.close_positions_on_stop = config.close_positions_on_stop
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     def on_start(self):
@@ -303,7 +307,8 @@ class EMACross(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
+        if self.close_positions_on_stop:
+            self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
