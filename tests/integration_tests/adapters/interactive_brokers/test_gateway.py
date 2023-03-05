@@ -20,7 +20,7 @@ from docker.models.containers import ContainerCollection
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 
 
-@pytest.mark.skipif(sys.platform == "darwin")
+@pytest.mark.skipif(sys.platform == "darwin", reason="Busted on macos")
 class TestIBGateway:
     def test_gateway_start_no_container(self, mocker):
         mock_docker = mocker.patch.object(ContainerCollection, "run")
