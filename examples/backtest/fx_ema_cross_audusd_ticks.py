@@ -86,9 +86,10 @@ if __name__ == "__main__":
     config = EMACrossConfig(
         instrument_id=str(AUDUSD_SIM.id),
         bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+        trade_size=Decimal(1_000_000),
         fast_ema_period=10,
         slow_ema_period=20,
-        trade_size=Decimal(1_000_000),
+        close_positions_on_stop=True,
     )
     # Instantiate and add your strategy
     strategy = EMACross(config=config)

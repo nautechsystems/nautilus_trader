@@ -41,18 +41,18 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 
 
 cdef class DataEngine(Component):
-    cdef Cache _cache
-    cdef DataClient _default_client
-    cdef object _catalog
-    cdef bint _use_rust
+    cdef readonly Cache _cache
+    cdef readonly DataClient _default_client
+    cdef readonly object _catalog
+    cdef readonly bint _use_rust
 
-    cdef dict _clients
-    cdef dict _routing_map
-    cdef dict _order_book_intervals
-    cdef dict _bar_aggregators
-    cdef bint _time_bars_build_with_no_updates
-    cdef bint _time_bars_timestamp_on_close
-    cdef bint _validate_data_sequence
+    cdef readonly dict _clients
+    cdef readonly dict _routing_map
+    cdef readonly dict _order_book_intervals
+    cdef readonly dict _bar_aggregators
+    cdef readonly bint _time_bars_build_with_no_updates
+    cdef readonly bint _time_bars_timestamp_on_close
+    cdef readonly bint _validate_data_sequence
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -102,57 +102,57 @@ cdef class DataEngine(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, DataCommand command)
-    cdef void _handle_subscribe(self, DataClient client, Subscribe command)
-    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command)
-    cdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type)
-    cdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
-    cdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue)
-    cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cdef void _handle_unsubscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
-    cdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)
-    cdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
-    cdef void _handle_request(self, DataRequest request)
-    cdef void _query_data_catalog(self, DataRequest request)
+    cpdef void _execute_command(self, DataCommand command)
+    cpdef void _handle_subscribe(self, DataClient client, Subscribe command)
+    cpdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command)
+    cpdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type)
+    cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
+    cpdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue)
+    cpdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _handle_unsubscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)
+    cpdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
+    cpdef void _handle_request(self, DataRequest request)
+    cpdef void _query_data_catalog(self, DataRequest request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, Data data)
-    cdef void _handle_instrument(self, Instrument instrument)
-    cdef void _handle_order_book_data(self, OrderBookData data)
-    cdef void _handle_ticker(self, Ticker ticker)
-    cdef void _handle_quote_tick(self, QuoteTick tick)
-    cdef void _handle_trade_tick(self, TradeTick tick)
-    cdef void _handle_bar(self, Bar bar)
-    cdef void _handle_generic_data(self, GenericData data)
-    cdef void _handle_venue_status_update(self, VenueStatusUpdate data)
-    cdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data)
-    cdef void _handle_close_price(self, InstrumentClose data)
+    cpdef void _handle_data(self, Data data)
+    cpdef void _handle_instrument(self, Instrument instrument)
+    cpdef void _handle_order_book_data(self, OrderBookData data)
+    cpdef void _handle_ticker(self, Ticker ticker)
+    cpdef void _handle_quote_tick(self, QuoteTick tick)
+    cpdef void _handle_trade_tick(self, TradeTick tick)
+    cpdef void _handle_bar(self, Bar bar)
+    cpdef void _handle_generic_data(self, GenericData data)
+    cpdef void _handle_venue_status_update(self, VenueStatusUpdate data)
+    cpdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data)
+    cpdef void _handle_close_price(self, InstrumentClose data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
-    cdef void _handle_response(self, DataResponse response)
-    cdef void _handle_instruments(self, list instruments)
-    cdef void _handle_quote_ticks(self, list ticks)
-    cdef void _handle_trade_ticks(self, list ticks)
-    cdef void _handle_bars(self, list bars, Bar partial)
+    cpdef void _handle_response(self, DataResponse response)
+    cpdef void _handle_instruments(self, list instruments)
+    cpdef void _handle_quote_ticks(self, list ticks)
+    cpdef void _handle_trade_ticks(self, list ticks)
+    cpdef void _handle_bars(self, list bars, Bar partial)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cpdef void _internal_update_instruments(self, list instruments)
     cpdef void _maintain_order_book(self, OrderBookData data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
-    cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type)
-    cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type)
+    cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)

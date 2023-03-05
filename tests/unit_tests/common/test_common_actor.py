@@ -1080,6 +1080,28 @@ class TestActor:
         assert actor.calls == ["on_start", "on_bar"]
         assert actor.object_storer.get_store()[0] == bar
 
+    def test_handle_bars(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        result = []
+        actor.on_historical_data = result.append
+
+        actor.start()
+
+        bars = [TestDataStubs.bar_5decimal(), TestDataStubs.bar_5decimal()]
+
+        # Act
+        actor.handle_bars(bars)
+
+        # Assert
+        assert result == bars
+
     def test_handle_data_when_not_running_does_not_send_to_on_data(self):
         # Arrange
         actor = MockActor()

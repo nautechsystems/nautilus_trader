@@ -603,7 +603,6 @@ cdef class Position:
         cdef double last_qty = fill.last_qty.as_f64_c()
         cdef Quantity last_qty_obj = fill.last_qty
         if self.base_currency is not None and fill.commission.currency == self.base_currency:
-            last_qty -= fill.commission.as_f64_c()
             last_qty_obj = Quantity(last_qty, self.size_precision)
 
         # LONG POSITION
@@ -636,7 +635,6 @@ cdef class Position:
         cdef double last_qty = fill.last_qty.as_f64_c()
         cdef Quantity last_qty_obj = fill.last_qty
         if self.base_currency is not None and fill.commission.currency == self.base_currency:
-            last_qty -= fill.commission.as_f64_c()
             last_qty_obj = Quantity(last_qty, self.size_precision)
 
         # SHORT POSITION

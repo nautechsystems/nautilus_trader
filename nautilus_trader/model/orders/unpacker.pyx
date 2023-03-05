@@ -77,3 +77,20 @@ cdef class OrderUnpacker:
 
         """
         return OrderUnpacker.unpack_c(values)
+
+    @staticmethod
+    def from_init(OrderInitialized init) -> Order:
+        """
+        Return an order initialized from the given event.
+
+        Parameters
+        ----------
+        init : OrderInitialized
+            The event to initialize with.
+
+        Returns
+        -------
+        Order
+
+        """
+        return OrderUnpacker.from_init_c(init)
