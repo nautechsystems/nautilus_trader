@@ -20,6 +20,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -142,15 +143,18 @@ def components(data_engine, exec_engine, risk_engine, strategy):
 
 
 # TO BE IMPLEMENTED IN ADAPTER conftest.py
-
-
 @pytest.fixture(scope="function")
-def data_client(data_engine):
+def venue() -> Venue:
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture(scope="function")
-def exec_client(exec_engine):
+def data_client():
+    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+
+
+@pytest.fixture(scope="function")
+def exec_client():
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
 
 

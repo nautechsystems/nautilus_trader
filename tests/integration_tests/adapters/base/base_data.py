@@ -21,7 +21,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-class TestBaseDataClient:
+class BaseDataClient:
     venue: Optional[Venue] = None
     instrument: Optional[Instrument] = None
 
