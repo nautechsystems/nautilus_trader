@@ -135,7 +135,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         base_url_ws: Optional[str] = None,
         clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),

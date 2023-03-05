@@ -257,7 +257,7 @@ cdef class RiskEngine(Component):
         self._msgbus.publish_c(topic="events.risk", msg=event)
         self._log_state()
 
-    cdef void _log_state(self):
+    cpdef void _log_state(self):
         cdef LogColor color = LogColor.BLUE
         if self.trading_state == TradingState.REDUCING:
             color = LogColor.YELLOW
@@ -392,7 +392,7 @@ cdef class RiskEngine(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command):
+    cpdef void _execute_command(self, Command command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
@@ -410,7 +410,7 @@ cdef class RiskEngine(Component):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef void _handle_submit_order(self, SubmitOrder command):
+    cpdef void _handle_submit_order(self, SubmitOrder command):
         if self.is_bypassed:
             # Perform no further risk checks or throttling
             if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
@@ -456,7 +456,7 @@ cdef class RiskEngine(Component):
         else:
             self._send_to_emulator(command)
 
-    cdef void _handle_submit_order_list(self, SubmitOrderList command):
+    cpdef void _handle_submit_order_list(self, SubmitOrderList command):
         if self.is_bypassed:
             # Perform no further risk checks or throttling
             if command.has_emulated_order:
@@ -491,7 +491,7 @@ cdef class RiskEngine(Component):
         else:
             self._execution_gateway(instrument, command)
 
-    cdef void _handle_modify_order(self, ModifyOrder command):
+    cpdef void _handle_modify_order(self, ModifyOrder command):
         ########################################################################
         # VALIDATE COMMAND
         ########################################################################
@@ -570,7 +570,7 @@ cdef class RiskEngine(Component):
         else:
             self._send_to_emulator(command)
 
-    cdef void _handle_cancel_order(self, CancelOrder command):
+    cpdef void _handle_cancel_order(self, CancelOrder command):
         ########################################################################
         # VALIDATE COMMAND
         ########################################################################
@@ -593,13 +593,13 @@ cdef class RiskEngine(Component):
             # All checks passed
             self._send_to_emulator(command)
 
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command):
+    cpdef void _handle_cancel_all_orders(self, CancelAllOrders command):
         self._send_to_emulator(command)
         self._send_to_execution(command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
-    cdef bint _check_order(self, Instrument instrument, Order order):
+    cpdef bint _check_order(self, Instrument instrument, Order order):
         ########################################################################
         # VALIDATION CHECKS
         ########################################################################
@@ -610,7 +610,7 @@ cdef class RiskEngine(Component):
 
         return True  # Check passed
 
-    cdef bint _check_order_price(self, Instrument instrument, Order order):
+    cpdef bint _check_order_price(self, Instrument instrument, Order order):
         ########################################################################
         # CHECK PRICE
         ########################################################################
@@ -632,7 +632,7 @@ cdef class RiskEngine(Component):
 
         return True  # Passed
 
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order):
+    cpdef bint _check_order_quantity(self, Instrument instrument, Order order):
         cdef str risk_msg = self._check_quantity(instrument, order.quantity)
         if risk_msg:
             self._deny_order(order=order, reason=risk_msg)
@@ -640,7 +640,7 @@ cdef class RiskEngine(Component):
 
         return True  # Passed
 
-    cdef bint _check_orders_risk(self, Instrument instrument, list orders):
+    cpdef bint _check_orders_risk(self, Instrument instrument, list orders):
         ########################################################################
         # RISK CHECKS
         ########################################################################
@@ -758,7 +758,7 @@ cdef class RiskEngine(Component):
         # Finally
         return True  # Passed
 
-    cdef str _check_price(self, Instrument instrument, Price price):
+    cpdef str _check_price(self, Instrument instrument, Price price):
         if price is None:
             # Nothing to check
             return None
@@ -770,7 +770,7 @@ cdef class RiskEngine(Component):
                 # Check failed
                 return f"price {price} invalid (not positive)"
 
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity):
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity):
         if quantity is None:
             # Nothing to check
             return None
@@ -786,7 +786,7 @@ cdef class RiskEngine(Component):
 
 # -- DENIALS --------------------------------------------------------------------------------------
 
-    cdef void _deny_command(self, TradingCommand command, str reason):
+    cpdef void _deny_command(self, TradingCommand command, str reason):
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason=reason)
         elif isinstance(command, SubmitOrderList):
@@ -801,7 +801,7 @@ cdef class RiskEngine(Component):
         elif isinstance(command, SubmitOrderList):
             self._deny_order_list(command.order_list, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
 
-    cdef void _deny_order(self, Order order, str reason):
+    cpdef void _deny_order(self, Order order, str reason):
         self._log.error(f"SubmitOrder DENIED: {reason}.")
 
         if order is None:
@@ -828,13 +828,13 @@ cdef class RiskEngine(Component):
 
         self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
-    cdef void _deny_order_list(self, OrderList order_list, str reason):
+    cpdef void _deny_order_list(self, OrderList order_list, str reason):
         cdef Order order
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
 
-    cdef void _reject_modify_order(self, Order order, str reason):
+    cpdef void _reject_modify_order(self, Order order, str reason):
         # Generate event
         cdef uint64_t now = self._clock.timestamp_ns()
         cdef OrderModifyRejected denied = OrderModifyRejected(
@@ -852,7 +852,7 @@ cdef class RiskEngine(Component):
 
         self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
-    cdef void _reject_cancel_order(self, Order order, str reason):
+    cpdef void _reject_cancel_order(self, Order order, str reason):
         # Generate event
         cdef uint64_t now = self._clock.timestamp_ns()
         cdef OrderCancelRejected denied = OrderCancelRejected(
@@ -872,7 +872,7 @@ cdef class RiskEngine(Component):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
+    cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
         if instrument is None:
             # Get instrument for order
             instrument = self._cache.instrument(command.instrument_id)
