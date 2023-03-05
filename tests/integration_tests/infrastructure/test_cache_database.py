@@ -75,9 +75,11 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
 # - A Redis instance listening on the default port 6379
-pytestmark = pytest.mark.redis
 
-pytest.mark.skipif(sys.platform == "win32", reason="not longer testing with Memurai database")
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="not longer testing with Memurai database",
+)
 
 
 class TestRedisCacheDatabase:
