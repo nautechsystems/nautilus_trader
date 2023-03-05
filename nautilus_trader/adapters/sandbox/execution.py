@@ -89,15 +89,15 @@ class SandboxExecutionClient(LiveExecutionClient):
         self.balance = AccountBalance(total=money, locked=Money(0, money.currency), free=money)
         self.test_clock = TestClock()
         self._account_type = account_type
-        venue = Venue(venue)
+        sandbox_venue = Venue(venue)
         super().__init__(
             loop=loop,
             client_id=ClientId(venue),
-            venue=venue,
+            venue=sandbox_venue,
             oms_type=oms_type,
             account_type=account_type,
             base_currency=self._currency,
-            instrument_provider=InstrumentProvider(venue=venue, logger=logger),
+            instrument_provider=InstrumentProvider(venue=sandbox_venue, logger=logger),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -105,7 +105,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             config=None,
         )
         self.exchange = SimulatedExchange(
-            venue=venue,
+            venue=sandbox_venue,
             oms_type=oms_type,
             account_type=self._account_type,
             base_currency=self._currency,
