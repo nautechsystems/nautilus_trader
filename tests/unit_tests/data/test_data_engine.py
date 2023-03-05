@@ -92,7 +92,7 @@ class TestDataEngine:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
-            bypass=False,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
