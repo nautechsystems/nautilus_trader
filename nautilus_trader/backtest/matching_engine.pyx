@@ -672,7 +672,7 @@ cdef class OrderMatchingEngine:
 
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id):
         cdef Order order
-        for order in self._core.get_orders():
+        for order in self.cache.orders_open(venue=None, instrument_id=command.instrument_id):
             if command.order_side != OrderSide.NO_ORDER_SIDE and command.order_side != order.side:
                 continue
             if order.is_inflight_c() or order.is_open_c():

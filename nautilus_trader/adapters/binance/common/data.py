@@ -111,7 +111,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         account_type: BinanceAccountType,
         base_url_ws: Optional[str] = None,
         use_agg_trade_ticks: bool = False,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
