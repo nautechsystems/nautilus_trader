@@ -173,10 +173,11 @@ async def fill_order(
 
 
 @pytest.fixture()
-def test_order(instrument):
+def test_order(instrument, strategy_id):
     return TestExecStubs.limit_order(
         instrument_id=instrument.id,
         price=betfair_float_to_price(2.0),
+        strategy_id=strategy_id,
     )
 
 
@@ -206,7 +207,7 @@ async def test_submit_order_success(betfair_client, strategy, test_order):
 
 
 @pytest.mark.asyncio
-async def test_submit_order_error(betfair_client, strategy):
+async def test_submit_order_error(betfair_client, strategy, test_order, messages):
     # Arrange
     mock_betfair_request(betfair_client, BetfairResponses.betting_place_order_error())
 
@@ -246,7 +247,7 @@ async def test_modify_order_success(
 
 
 @pytest.mark.asyncio
-async def test_modify_order_error_order_doesnt_exist(betfair_client, exec_client):
+async def test_modify_order_error_order_doesnt_exist(betfair_client, exec_client, test_order):
     # Arrange
     command = TestCommandStubs.modify_order_command(
         order=test_order,
@@ -264,7 +265,7 @@ async def test_modify_order_error_order_doesnt_exist(betfair_client, exec_client
         "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
         "venue_order_id": None,
         "reason": "ORDER NOT IN CACHE",
-        "ts_event": 0,
+        "ts_event": mock_reject.call_args.kwargs["ts_event"],
     }
     assert mock_reject.call_args.kwargs == expected_kw
 
@@ -299,6 +300,8 @@ async def test_modify_order_error_no_venue_id(betfair_client, exec_client, strat
 async def test_cancel_order_success(
     betfair_client,
     exec_client,
+    accept_order,
+    test_order,
     venue_order_id,
     strategy_id,
     instrument,
@@ -322,7 +325,7 @@ async def test_cancel_order_success(
         "instrument_id": instrument.id,
         "client_order_id": test_order.client_order_id,
         "venue_order_id": venue_order_id,
-        "ts_event": 0,
+        "ts_event": mock_generate_order_canceled.call_args.kwargs["ts_event"],
     }
     assert mock_generate_order_canceled.call_args.kwargs == expected_kw
 
@@ -334,7 +337,9 @@ async def test_cancel_order_fail(
     venue_order_id,
     strategy_id,
     venue,
+    test_order,
     instrument,
+    accept_order,
 ):
     # Arrange
     order = await accept_order(order=test_order, venue_order_id=venue_order_id)
@@ -361,16 +366,16 @@ async def test_cancel_order_fail(
         "client_order_id": test_order.client_order_id,
         "venue_order_id": venue_order_id,
         "reason": "Error: ERROR_IN_ORDER",
-        "ts_event": 0,
+        "ts_event": mock_generate_order_cancel_rejected.call_args.kwargs["ts_event"],
     }
     assert mock_generate_order_cancel_rejected.call_args.kwargs == expected_kw
 
 
 @pytest.mark.asyncio
-async def test_order_multiple_fills(exec_client, events):
+async def test_order_multiple_fills(exec_client, cache, events):
     # Arrange
     for ocm in BetfairStreaming.ocm_multiple_fills():
-        await _setup_state(order_change_message=ocm)
+        await _setup_state(order_change_message=ocm, exec_client=exec_client, cache=cache)
 
     # Act
     for order_change_message in BetfairStreaming.ocm_multiple_fills():

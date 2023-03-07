@@ -13,47 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-import pytest
-
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
-from nautilus_trader.common.clock import Clock
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.rust.common import LogLevel
-from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.test_kit.stubs.component import TestComponentStubs
-from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
-class TestBetfairAccount:
-    def setup(self):
-        # Fixture Setup
-        self.clock = Clock()
-        self.venue = BETFAIR_VENUE
-        self.account = TestExecStubs.betting_account()
-        self.instrument = BetfairDataProvider.betting_instrument()
-
-        # Setup logging
-        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
-
-        self.msgbus = MessageBus(
-            trader_id=TestIdStubs.trader_id(),
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(self.instrument)
-
-    @pytest.mark.skip(reason="needs accounting fixes")
-    def test_betting_instrument_notional_value(self):
-        notional = self.instrument.notional_value(
-            price=betfair_float_to_price(2.0),
-            quantity=betfair_float_to_quantity(100.0),
-        )
-        assert notional == Decimal("200.0")
+def test_betting_instrument_notional_value(instrument):
+    notional = instrument.notional_value(
+        price=betfair_float_to_price(2.0),
+        quantity=betfair_float_to_quantity(100.0),
+    ).as_double()
+    assert notional == 200.0

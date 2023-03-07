@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from pytest_mock import MockerFixture
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -27,29 +28,30 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.trading.trader import Trader
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def account_id(venue):
     return AccountId(f"{venue.value}-001")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def clock():
     return LiveClock()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def logger(clock):
     return Logger(clock)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def trader_id():
     return TestIdStubs.trader_id()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def msgbus(trader_id, clock, logger):
     return MessageBus(
         trader_id,
@@ -58,12 +60,14 @@ def msgbus(trader_id, clock, logger):
     )
 
 
-@pytest.fixture(scope="function")
-def cache(logger):
-    return TestComponentStubs.cache(logger)
+@pytest.fixture()
+def cache(logger, instrument):
+    cache = TestComponentStubs.cache(logger)
+    cache.add_instrument(instrument)
+    return cache
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def portfolio(clock, logger, cache, msgbus):
     return Portfolio(
         msgbus,
@@ -73,7 +77,7 @@ def portfolio(clock, logger, cache, msgbus):
     )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def data_engine(msgbus, cache, clock, logger, data_client):
     engine = DataEngine(
         msgbus,
@@ -85,7 +89,7 @@ def data_engine(msgbus, cache, clock, logger, data_client):
     return engine
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def exec_engine(msgbus, cache, clock, logger, exec_client):
     engine = ExecutionEngine(
         msgbus,
@@ -97,18 +101,68 @@ def exec_engine(msgbus, cache, clock, logger, exec_client):
     return engine
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def risk_engine(portfolio, msgbus, cache, clock, logger):
-    return RiskEngine(
+    risk_engine = RiskEngine(
         portfolio,
         msgbus,
         cache,
         clock,
         logger,
     )
+    return risk_engine
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(autouse=True)
+def trader(
+    trader_id,
+    msgbus,
+    cache,
+    portfolio,
+    data_engine,
+    risk_engine,
+    exec_engine,
+    clock,
+    logger,
+    event_loop,
+):
+    return Trader(
+        trader_id=trader_id,
+        msgbus=msgbus,
+        cache=cache,
+        portfolio=portfolio,
+        data_engine=data_engine,
+        risk_engine=risk_engine,
+        exec_engine=exec_engine,
+        clock=clock,
+        logger=logger,
+        loop=event_loop,
+    )
+
+
+@pytest.fixture()
+def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
+    mock = mocker.MagicMock()
+    msgbus.deregister(endpoint="DataEngine.process", handler=data_engine.process)
+    msgbus.register(
+        endpoint="DataEngine.process",
+        handler=mock,
+    )
+    return mock
+
+
+@pytest.fixture()
+def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
+    mock = mocker.MagicMock()
+    msgbus.deregister(endpoint="ExecEngine.process", handler=exec_engine.process)
+    msgbus.register(
+        endpoint="ExecEngine.process",
+        handler=mock,
+    )
+    return mock
+
+
+@pytest.fixture()
 def strategy(trader_id, portfolio, msgbus, cache, clock, logger):
     strategy = Strategy()
     strategy.register(
@@ -122,42 +176,56 @@ def strategy(trader_id, portfolio, msgbus, cache, clock, logger):
     return strategy
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def strategy_id(strategy):
     return strategy.id
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def client_order_id(strategy):
     return TestIdStubs.client_order_id()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def venue_order_id(strategy):
     return TestIdStubs.venue_order_id()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def components(data_engine, exec_engine, risk_engine, strategy):
     return
 
 
+@pytest.fixture()
+def events(msgbus):
+    events = []
+    msgbus.subscribe("events.*", handler=events.append)
+    return events
+
+
+@pytest.fixture()
+def messages(msgbus):
+    messages = []
+    msgbus.subscribe("*", handler=messages.append)
+    return messages
+
+
 # TO BE IMPLEMENTED IN ADAPTER conftest.py
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def venue() -> Venue:
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def data_client():
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def exec_client():
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture(scope="function")
-def instrument(exec_engine):
+@pytest.fixture()
+def instrument():
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
