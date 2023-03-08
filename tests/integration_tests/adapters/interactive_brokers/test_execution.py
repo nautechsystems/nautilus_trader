@@ -29,6 +29,9 @@ from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBr
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
+    account_values_to_nautilus_account_info,
+)
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
@@ -337,31 +340,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert kwargs == expected
 
     @pytest.mark.asyncio
-    async def test_on_order_cancel_pending(self):
-        # Arrange
-        self.instrument_setup()
-        self.order_setup()
-        nautilus_order = TestExecStubs.limit_order()
-        order = IBTestExecStubs.create_order(permId=1)
-        trade = IBTestExecStubs.trade_pre_cancel(order=order)
-        self.cache.add_order(nautilus_order, None)
-
-        # Act
-        with patch.object(self.exec_client, "generate_order_pending_cancel") as mock:
-            self.exec_client._on_order_pending_cancel(trade)
-
-        # Assert
-        call = mock.call_args_list[0]
-        expected = {
-            "client_order_id": ClientOrderId("C-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
-            "strategy_id": StrategyId("S-001"),
-            "ts_event": 1646533038455087000,
-            "venue_order_id": None,
-        }
-        assert call.kwargs == expected
-
-    @pytest.mark.asyncio
     async def test_on_order_cancel_cancelled(self):
         # Arrange
         self.instrument_setup()
@@ -423,3 +401,20 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
         assert expected["margins"][0].to_dict() == kwargs["margins"][0].to_dict()
         assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins")])
+
+    @pytest.mark.asyncio
+    async def test_account_values_to_nautilus_account_info(self):
+        # Arrange
+        account_values = IBTestDataStubs.account_values(fn="account_values_fa.json")
+
+        # Act
+        balances, margin = account_values_to_nautilus_account_info(account_values, "DU1xxxxxx")
+
+        # Assert
+        expected_balance = AccountBalance(
+            total=Money.from_str("1_020_194.83 USD"),
+            locked=Money.from_str("0.00 USD"),
+            free=Money.from_str("1_020_194.83 USD"),
+        )
+        assert balances == [expected_balance]
+        assert margin == []

@@ -300,8 +300,8 @@ class IBTestDataStubs:
         return Contract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
 
     @staticmethod
-    def account_values() -> list[AccountValue]:
-        with open(RESPONSES_PATH / "account_values.json", "rb") as f:
+    def account_values(fn: str = "account_values.json") -> list[AccountValue]:
+        with open(RESPONSES_PATH / fn, "rb") as f:
             raw = msgspec.json.decode(f.read())
             return [AccountValue(**acc) for acc in raw]
 
