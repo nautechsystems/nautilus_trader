@@ -321,7 +321,7 @@ class LiveExecutionEngine(ExecutionEngine):
         try:
             while self._is_running:
                 command: Optional[TradingCommand] = await self._cmd_queue.get()
-                if command is None:  # Sentinel message (fast C-level check)
+                if command is None:  # Sentinel message
                     continue  # Returns to the top to check `self._is_running`
                 self._execute_command(command)
         except asyncio.CancelledError:
@@ -340,7 +340,7 @@ class LiveExecutionEngine(ExecutionEngine):
         try:
             while self._is_running:
                 event: Optional[OrderEvent] = await self._evt_queue.get()
-                if event is None:  # Sentinel message (fast C-level check)
+                if event is None:  # Sentinel message
                     continue  # Returns to the top to check `self._is_running`
                 self._handle_event(event)
         except asyncio.CancelledError:
@@ -468,7 +468,7 @@ class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_position_report(report)
         else:
             self._log.error(  # pragma: no cover (design-time error)
-                f"Cannot handle report: unrecognized {report}.",  # pragma: no cover (design-time error)
+                f"Cannot handle unrecognized report: {report}.",  # pragma: no cover (design-time error)
             )
             return False
 
@@ -751,6 +751,11 @@ class LiveExecutionEngine(ExecutionEngine):
         return filled
 
     def _generate_external_order(self, report: OrderStatusReport) -> Order:
+        self._log.info(
+            f"Generating external order {repr(report.client_order_id)}",
+            color=LogColor.BLUE,
+        )
+
         # Prepare order options
         options: dict[str, Any] = {}
         if report.price is not None:
@@ -929,6 +934,7 @@ class LiveExecutionEngine(ExecutionEngine):
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
+        self._log.debug(f"Generated {filled}.")
         self._handle_event(filled)
 
     def _should_update(self, order: Order, report: OrderStatusReport) -> bool:
