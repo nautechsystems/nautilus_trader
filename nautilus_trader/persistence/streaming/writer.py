@@ -44,7 +44,7 @@ class StreamingFeatherWriter:
         self,
         path: str,
         logger: LoggerAdapter,
-        fs_protocol: str = "file",
+        fs_protocol: Optional[str] = "file",
         flush_interval_ms: Optional[int] = None,
         replace: bool = False,
         include_types: Optional[tuple[type]] = None,
