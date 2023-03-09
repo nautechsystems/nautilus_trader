@@ -65,10 +65,10 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     reconciliation_lookback_mins : NonNegativeInt, optional
         The maximum lookback minutes to reconcile state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
-    inflight_check_interval_ms : NonNegativeInt, default 5_000
+    inflight_check_interval_ms : NonNegativeInt, default 2_000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
-    inflight_check_threshold_ms : NonNegativeInt, default 2_000
+    inflight_check_threshold_ms : NonNegativeInt, default 5_000
         The threshold (milliseconds) beyond which an in-flight orders status
         is checked with the venue.
     qsize : PositiveInt, default 10_000
@@ -77,8 +77,8 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
 
     reconciliation: bool = True
     reconciliation_lookback_mins: Optional[NonNegativeInt] = None
-    inflight_check_interval_ms: NonNegativeInt = 5_000
-    inflight_check_threshold_ms: NonNegativeInt = 2_000
+    inflight_check_interval_ms: NonNegativeInt = 2_000
+    inflight_check_threshold_ms: NonNegativeInt = 5_000
     qsize: PositiveInt = 10_000
 
 
