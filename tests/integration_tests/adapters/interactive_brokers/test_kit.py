@@ -17,6 +17,7 @@ import datetime
 import gzip
 import pathlib
 import pickle
+from typing import Optional
 
 import msgspec
 import pandas as pd
@@ -35,6 +36,7 @@ from ib_insync import Trade
 from ib_insync import TradeLogEntry
 
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.option import Option
@@ -357,7 +359,7 @@ class IBTestExecStubs:
         action: str = "BUY",
         quantity: int = 100000,
         limit_price: float = 105.0,
-        client_order_id="C-1",
+        client_order_id: ClientOrderId = ClientOrderId("C-1"),
     ):
         if kind == "LIMIT":
             return IBLimitOrder(
@@ -367,7 +369,7 @@ class IBTestExecStubs:
                 totalQuantity=quantity,
                 lmtPrice=limit_price,
                 permId=permId,
-                orderRef=client_order_id,
+                orderRef=client_order_id.value,
             )
         else:
             raise RuntimeError
@@ -413,9 +415,13 @@ class IBTestExecStubs:
         )
 
     @staticmethod
-    def trade_pre_submit(contract=None, order: IBOrder = None) -> Trade:
+    def trade_pre_submit(
+        contract=None,
+        order: IBOrder = None,
+        client_order_id: Optional[ClientOrderId] = None,
+    ) -> Trade:
         contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order()
+        order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
         return Trade(
             contract=contract,
             order=order,
@@ -468,9 +474,13 @@ class IBTestExecStubs:
         )
 
     @staticmethod
-    def trade_submitted(contract=None, order: IBOrder = None) -> Trade:
+    def trade_submitted(
+        contract=None,
+        order: IBOrder = None,
+        client_order_id: Optional[ClientOrderId] = None,
+    ) -> Trade:
         contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order()
+        order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
         return Trade(
             contract=contract,
             order=order,
