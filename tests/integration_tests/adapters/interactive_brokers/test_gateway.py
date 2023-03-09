@@ -13,37 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from unittest import mock
-from unittest.mock import MagicMock
-from unittest.mock import call
-
 import pytest
+from docker.models.containers import ContainerCollection
 
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
-from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
+@pytest.mark.no_ci
+def test_gateway_start_no_container(mocker):
+    # Arrange,
+    mock_docker = mocker.patch.object(ContainerCollection, "run")
+    gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
 
+    # Act
+    gateway.start(wait=None)
 
-class TestIBGateway:
-    @pytest.mark.skip(reason="local test")
-    def test_gateway_start_no_container(self):
-        mock.patch("nautilus_trader.adapters.interactive_brokers.gateway.docker")
-        self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
-        self.gateway._docker = MagicMock()
-
-        # Arrange, Act
-        self.gateway.start(wait=None)
-
-        # Assert
-        expected = call.containers.run(
-            image="ghcr.io/unusualalpha/ib-gateway",
-            name="nautilus-ib-gateway",
-            detach=True,
-            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
-            platform="amd64",
-            environment={"TWSUSERID": "test", "TWSPASSWORD": "test", "TRADING_MODE": "paper"},
-        )
-        result = self.gateway._docker.method_calls[-1]
-        assert result == expected
+    # Assert
+    expected = dict(
+        image="ghcr.io/unusualalpha/ib-gateway",
+        name="nautilus-ib-gateway",
+        detach=True,
+        ports={"4001": "4001", "4002": "4002", "5900": "5900"},
+        platform="amd64",
+        environment={
+            "TWS_USERID": "test",
+            "TWS_PASSWORD": "test",
+            "TRADING_MODE": "paper",
+            "READ_ONLY_API": "yes",
+        },
+    )
+    result = mock_docker.call_args.kwargs
+    assert result == expected

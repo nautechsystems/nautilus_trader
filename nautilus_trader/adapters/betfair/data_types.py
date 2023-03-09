@@ -50,21 +50,6 @@ class SubscriptionStatus(Enum):
     RUNNING = 2
 
 
-class InstrumentSearch(Data):
-    """
-    Represents a `Betfair` instrument search.
-    """
-
-    def __init__(
-        self,
-        instruments,
-        ts_event,
-        ts_init,
-    ):
-        super().__init__(ts_event, ts_init)
-        self.instruments = instruments
-
-
 class BSPOrderBookDeltas(OrderBookDeltas):
     """
     Represents a batch of Betfair BSP order book delta.

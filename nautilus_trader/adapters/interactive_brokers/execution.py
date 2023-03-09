@@ -87,8 +87,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    instrument_provider : BinanceInstrumentProvider
-        The instrument provider.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
     """
@@ -140,11 +138,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     async def _connect(self):
         # Connect client
         if not self._client.isConnected():
-            await self._client.connect()
+            await self._client.connectAsync()
 
         # Load account balance
         account_values: list[AccountValue] = self._client.accountValues()
         self.on_account_update(account_values)
+
+        self._set_connected(True)
 
     async def _disconnect(self):
         # Disconnect clients
@@ -209,11 +209,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
+        # TODO - NEEDS TESTING
         if not (command.quantity or command.price):
             return
         # ib_insync modifies orders by modifying the original order object and
         # calling placeOrder again.
-        # TODO - NEEDS TESTING
         PyCondition.not_none(command, "command")
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
@@ -308,14 +308,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         assert trade.orderStatus.status == IBOrderStatus.PendingCancel
         client_order_id = ClientOrderId(trade.order.orderRef)
         order: Order = self._cache.order(client_order_id)
-        if trade.orderStatus.status == IBOrderStatus.PendingCancel:
-            self.generate_order_pending_cancel(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=dt_to_unix_nanos(trade.log[-1].time),
-            )
+        assert order.status == OrderStatus.PENDING_CANCEL
 
     def _on_order_cancelled(self, trade: IBTrade):
         assert trade.orderStatus.status in (IBOrderStatus.Cancelled, IBOrderStatus.ApiCancelled)

@@ -13,64 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 import pytest
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import Venue
-
-
-@pytest.fixture(scope="session")
-def loop():
-    return asyncio.get_event_loop()
-
-
-@pytest.fixture(scope="session")
-def live_clock():
-    return LiveClock()
-
-
-@pytest.fixture(scope="session")
-def live_logger(live_clock):
-    return Logger(clock=live_clock)
-
-
-@pytest.fixture(scope="session")
-def binance_http_client(loop, live_clock, live_logger):
-    client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
-        loop=asyncio.get_event_loop(),
-        clock=live_clock,
-        logger=live_logger,
-        key="SOME_BINANCE_API_KEY",
-        secret="SOME_BINANCE_API_SECRET",
-    )
-    return client
 
 
 @pytest.fixture()
 def venue() -> Venue:
-    raise BINANCE_VENUE
+    raise NotImplementedError("`venue` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def data_client():
-    pass
+    raise NotImplementedError("`data_client` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def exec_client():
-    pass
+    raise NotImplementedError("`exec_client` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def instrument():
-    pass
+    raise NotImplementedError("`instrument` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
-def account_state():
-    pass
+def account_state() -> AccountState:
+    raise NotImplementedError("`account_state` needs to be implemented in adapter `conftest.py`")
