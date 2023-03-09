@@ -67,10 +67,10 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def cache():
+    def cache(logger: Optional[Logger] = None):
         return Cache(
             database=None,
-            logger=TestComponentStubs.logger(),
+            logger=logger or TestComponentStubs.logger(),
         )
 
     @staticmethod

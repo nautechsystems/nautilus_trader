@@ -478,7 +478,7 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef void _set_position_id_counts(self):
+    cpdef void _set_position_id_counts(self):
         # For the internal position ID generator
         cdef list positions = self._cache.positions()
 
@@ -502,7 +502,7 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, TradingCommand command):
+    cpdef void _execute_command(self, TradingCommand command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
@@ -537,7 +537,7 @@ cdef class ExecutionEngine(Component):
                 f"Cannot handle command: unrecognized {command}.",  # pragma: no cover (design-time error)
             )
 
-    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
+    cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
         if not self._cache.order_exists(command.order.client_order_id):
             # Cache order
             self._cache.add_order(command.order, command.position_id)
@@ -545,7 +545,7 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_order(command)
 
-    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
+    cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
         cdef Order order
         for order in command.order_list.orders:
             if not self._cache.order_exists(order.client_order_id):
@@ -555,21 +555,21 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_order_list(command)
 
-    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
+    cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)
 
-    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command):
+    cpdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command):
         client.cancel_order(command)
 
-    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command):
+    cpdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command):
         client.cancel_all_orders(command)
 
-    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command):
+    cpdef void _handle_query_order(self, ExecutionClient client, QueryOrder command):
         client.query_order(command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, OrderEvent event):
+    cpdef void _handle_event(self, OrderEvent event):
         if self.debug:
             self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
@@ -627,7 +627,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
-    cdef OmsType _determine_oms_type(self, OrderFilled fill):
+    cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
         # Check for strategy OMS override
         cdef OmsType oms_type = self._oms_overrides.get(fill.strategy_id, OmsType.UNSPECIFIED)
@@ -641,7 +641,7 @@ cdef class ExecutionEngine(Component):
 
         return oms_type
 
-    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type):
+    cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type):
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if self.debug:
@@ -674,7 +674,7 @@ cdef class ExecutionEngine(Component):
                 f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
             )
 
-    cdef void _apply_event_to_order(self, Order order, OrderEvent event):
+    cpdef void _apply_event_to_order(self, Order order, OrderEvent event):
         try:
             order.apply(event)
         except InvalidStateTrigger as e:
@@ -692,7 +692,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type):
+    cpdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -721,7 +721,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._update_position(instrument, position, fill, oms_type)
 
-    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
+    cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
@@ -747,7 +747,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
+    cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         try:
             position.apply(fill)
         except KeyError as e:
@@ -778,14 +778,14 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef bint _will_flip_position(self, Position position, OrderFilled fill):
+    cpdef bint _will_flip_position(self, Position position, OrderFilled fill):
         return (
             # Check for flip (last_qty guaranteed to be positive)
             position.is_opposite_side(fill.order_side)
             and fill.last_qty._mem.raw > position.quantity._mem.raw
         )
 
-    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
+    cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)

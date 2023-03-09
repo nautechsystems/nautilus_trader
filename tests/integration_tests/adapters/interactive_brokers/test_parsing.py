@@ -25,56 +25,55 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
 )
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-class TestInteractiveBrokersData(InteractiveBrokersTestBase):
-    def setup(self):
-        super().setup()
-        self.instrument = IBTestProviderStubs.aapl_instrument()
+pytestmark = pytest.mark.no_ci
 
-    def test_nautilus_order_to_ib_market_order(self):
-        # Arrange
-        nautilus_market_order = TestExecStubs.market_order(instrument_id=self.instrument.id)
 
-        # Act
-        result = nautilus_order_to_ib_order(nautilus_market_order)
+def test_nautilus_order_to_ib_market_order(instrument):
+    # Arrange
+    nautilus_market_order = TestExecStubs.market_order(instrument_id=instrument.id)
 
-        # Assert
-        expected = IBMarketOrder(action="BUY", totalQuantity=100.0)
-        assert result.action == expected.action
-        assert result.totalQuantity == expected.totalQuantity
+    # Act
+    result = nautilus_order_to_ib_order(nautilus_market_order)
 
-    def test_nautilus_order_to_ib_limit_order(self):
-        # Arrange
-        nautilus_market_order = TestExecStubs.limit_order(instrument_id=self.instrument.id)
+    # Assert
+    expected = IBMarketOrder(action="BUY", totalQuantity=100.0)
+    assert result.action == expected.action
+    assert result.totalQuantity == expected.totalQuantity
 
-        # Act
-        result = nautilus_order_to_ib_order(nautilus_market_order)
 
-        # Assert
-        expected = IBLimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0)
-        assert result.action == expected.action
-        assert result.totalQuantity == expected.totalQuantity
-        assert result.lmtPrice == expected.lmtPrice
+def test_nautilus_order_to_ib_limit_order(instrument):
+    # Arrange
+    nautilus_market_order = TestExecStubs.limit_order(instrument_id=instrument.id)
 
-    @pytest.mark.parametrize(
-        "contract, instrument_id",
-        [
-            (IBTestProviderStubs.aapl_equity_contract_details().contract, "AAPL.AMEX"),
-            (IBTestProviderStubs.cl_future_contract_details().contract, "CLZ3.NYMEX"),
-            (IBTestProviderStubs.eurusd_forex_contract_details().contract, "EUR/USD.IDEALPRO"),
-            (
-                IBTestProviderStubs.tsla_option_contract_details().contract,
-                "TSLA230120C00100000.MIAX",
-            ),
-        ],
-    )
-    def test_ib_contract_to_instrument_id(self, contract, instrument_id):
-        # Arrange, Act
-        result = ib_contract_to_instrument_id(contract)
+    # Act
+    result = nautilus_order_to_ib_order(nautilus_market_order)
 
-        # Assert
-        expected = InstrumentId.from_str(instrument_id)
-        assert result == expected
+    # Assert
+    expected = IBLimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0)
+    assert result.action == expected.action
+    assert result.totalQuantity == expected.totalQuantity
+    assert result.lmtPrice == expected.lmtPrice
+
+
+@pytest.mark.parametrize(
+    "contract, instrument_id",
+    [
+        (IBTestProviderStubs.aapl_equity_contract_details().contract, "AAPL.AMEX"),
+        (IBTestProviderStubs.cl_future_contract_details().contract, "CLZ3.NYMEX"),
+        (IBTestProviderStubs.eurusd_forex_contract_details().contract, "EUR/USD.IDEALPRO"),
+        (
+            IBTestProviderStubs.tsla_option_contract_details().contract,
+            "TSLA230120C00100000.MIAX",
+        ),
+    ],
+)
+def test_ib_contract_to_instrument_id(contract, instrument_id):
+    # Arrange, Act
+    result = ib_contract_to_instrument_id(contract)
+
+    # Assert
+    expected = InstrumentId.from_str(instrument_id)
+    assert result == expected

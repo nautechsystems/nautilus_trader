@@ -37,11 +37,11 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
-    cdef PortfolioFacade _portfolio
-    cdef Cache _cache
-    cdef dict _max_notional_per_order
-    cdef Throttler _order_submit_throttler
-    cdef Throttler _order_modify_throttler
+    cdef readonly PortfolioFacade _portfolio
+    cdef readonly Cache _cache
+    cdef readonly dict _max_notional_per_order
+    cdef readonly Throttler _order_submit_throttler
+    cdef readonly Throttler _order_modify_throttler
 
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
@@ -60,7 +60,7 @@ cdef class RiskEngine(Component):
     cpdef void process(self, Event event)
     cpdef void set_trading_state(self, TradingState state)
     cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal)
-    cdef void _log_state(self)
+    cpdef void _log_state(self)
 
 # -- RISK SETTINGS --------------------------------------------------------------------------------
 
@@ -76,34 +76,34 @@ cdef class RiskEngine(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command)
-    cdef void _handle_submit_order(self, SubmitOrder command)
-    cdef void _handle_submit_order_list(self, SubmitOrderList command)
-    cdef void _handle_modify_order(self, ModifyOrder command)
-    cdef void _handle_cancel_order(self, CancelOrder command)
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
+    cpdef void _execute_command(self, Command command)
+    cpdef void _handle_submit_order(self, SubmitOrder command)
+    cpdef void _handle_submit_order_list(self, SubmitOrderList command)
+    cpdef void _handle_modify_order(self, ModifyOrder command)
+    cpdef void _handle_cancel_order(self, CancelOrder command)
+    cpdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
-    cdef bint _check_order(self, Instrument instrument, Order order)
-    cdef bint _check_order_price(self, Instrument instrument, Order order)
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order)
-    cdef bint _check_orders_risk(self, Instrument instrument, list orders)
-    cdef str _check_price(self, Instrument instrument, Price price)
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
+    cpdef bint _check_order(self, Instrument instrument, Order order)
+    cpdef bint _check_order_price(self, Instrument instrument, Order order)
+    cpdef bint _check_order_quantity(self, Instrument instrument, Order order)
+    cpdef bint _check_orders_risk(self, Instrument instrument, list orders)
+    cpdef str _check_price(self, Instrument instrument, Price price)
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
 # -- DENIALS --------------------------------------------------------------------------------------
 
-    cdef void _deny_command(self, TradingCommand command, str reason)
+    cpdef void _deny_command(self, TradingCommand command, str reason)
     cpdef void _deny_new_order(self, TradingCommand command)
-    cdef void _deny_order(self, Order order, str reason)
-    cdef void _deny_order_list(self, OrderList order_list, str reason)
-    cdef void _reject_modify_order(self, Order order, str reason)
-    cdef void _reject_cancel_order(self, Order order, str reason)
+    cpdef void _deny_order(self, Order order, str reason)
+    cpdef void _deny_order_list(self, OrderList order_list, str reason)
+    cpdef void _reject_modify_order(self, Order order, str reason)
+    cpdef void _reject_cancel_order(self, Order order, str reason)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command)
+    cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command)
     cpdef void _send_to_execution(self, TradingCommand command)
     cpdef void _send_to_emulator(self, TradingCommand command)
 

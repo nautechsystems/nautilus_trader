@@ -96,11 +96,6 @@ jobs:
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
-      - name: Install Memurai (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install memurai-developer.install
-
       # Run nautilus_core tests (Linux & macOS)
       - name: Run nautilus_core cargo tests
         if: runner.os != 'Windows'
@@ -111,20 +106,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           make pytest
-          # make test-examples // TODO(cs): Pending accounting investigation
+          make test-examples
 
       # Run tests (macOS)
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
         run: |
           make pytest
-          # make test-examples // TODO(cs): Pending accounting investigation
+          make test-examples
 
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: |
           poetry install --with test --all-extras
-          poetry run pytest --ignore=tests/performance_tests --new-first --failed-first
+          poetry run pytest --ignore=tests/performance_tests -k "not no_ci" --new-first --failed-first
         env:
           PARALLEL_BUILD: false

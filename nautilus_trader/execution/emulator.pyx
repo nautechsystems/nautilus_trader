@@ -495,6 +495,8 @@ cdef class OrderEmulator(Actor):
             )
             return
 
+        self._log.debug(f"Cancelling order {order}.")
+
         # Remove emulation trigger
         order.emulation_trigger = TriggerType.NO_TRIGGER
 

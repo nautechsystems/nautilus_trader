@@ -87,8 +87,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    instrument_provider : BinanceInstrumentProvider
-        The instrument provider.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
     """
@@ -140,11 +138,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     async def _connect(self):
         # Connect client
         if not self._client.isConnected():
-            await self._client.connect()
+            await self._client.connectAsync()
 
         # Load account balance
         account_values: list[AccountValue] = self._client.accountValues()
         self.on_account_update(account_values)
+
+        self._set_connected(True)
 
     async def _disconnect(self):
         # Disconnect clients
@@ -209,11 +209,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
+        # TODO - NEEDS TESTING
         if not (command.quantity or command.price):
             return
         # ib_insync modifies orders by modifying the original order object and
         # calling placeOrder again.
-        # TODO - NEEDS TESTING
         PyCondition.not_none(command, "command")
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
@@ -357,10 +357,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def on_account_update(self, account_values: list[AccountValue]):
         self._log.debug(str(account_values))
+        account_id = self.account_id.get_id()
         balances, margins = account_values_to_nautilus_account_info(
             account_values,
-            self.account_id.get_id(),
+            account_id,
         )
+        if not balances:
+            self._log.error(f"Failed to parse balances for {account_id=}")
+            # Log some information about the other values
+            search_keys = ("FullAvailableFunds", "CashBalance", "NetLiquidation")
+            other_values = [acc_val for acc_val in account_values if acc_val.tag in search_keys]
+            for value in other_values:
+                self._log.info(f"Found account_value = {value}")
+            raise RuntimeError("No account information")
+
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
             balances=balances,

@@ -13,64 +13,54 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 import pytest
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
-
-
-@pytest.fixture(scope="session")
-def loop():
-    return asyncio.get_event_loop()
-
-
-@pytest.fixture(scope="session")
-def live_clock():
-    return LiveClock()
-
-
-@pytest.fixture(scope="session")
-def live_logger(live_clock):
-    return Logger(clock=live_clock)
-
-
-@pytest.fixture(scope="session")
-def binance_http_client(loop, live_clock, live_logger):
-    client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
-        loop=asyncio.get_event_loop(),
-        clock=live_clock,
-        logger=live_logger,
-        key="SOME_BINANCE_API_KEY",
-        secret="SOME_BINANCE_API_SECRET",
-    )
-    return client
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 
 
 @pytest.fixture()
 def venue() -> Venue:
-    raise BINANCE_VENUE
+    return Venue("SANDBOX")
 
 
 @pytest.fixture()
-def data_client():
-    pass
-
-
-@pytest.fixture()
-def exec_client():
-    pass
+def exec_client(
+    instrument,
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+    logger,
+    venue,
+):
+    SandboxExecutionClient.INSTRUMENTS = [instrument]
+    return SandboxExecutionClient(
+        loop=event_loop,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        logger=logger,
+        venue=venue.value,
+        currency="USD",
+        balance=100_000,
+    )
 
 
 @pytest.fixture()
 def instrument():
-    pass
+    return TestInstrumentProvider.equity("AAPL", "SANDBOX")
 
 
 @pytest.fixture()
-def account_state():
+def account_state() -> AccountState:
+    return TestEventStubs.cash_account_state(account_id=AccountId("SANDBOX-001"))
+
+
+@pytest.fixture()
+def data_client():
     pass

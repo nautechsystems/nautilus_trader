@@ -1093,6 +1093,7 @@ cdef class BacktestEngine:
             self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
             self._log.info("\033[36m-----------------------------------------------------------------")
+            unrealized_pnls: Optional[dict[Currency, Money]] = None
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
@@ -1110,12 +1111,12 @@ cdef class BacktestEngine:
                 for c in account.commissions().values():
                     self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                self._log.info(f"Unrealized PnLs:")
-                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
+                self._log.info(f"Unrealized PnLs (included in totals):")
+                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value))
                 if not unrealized_pnls:
                     self._log.info("None")
                 else:
-                    for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values():
+                    for b in unrealized_pnls.values():
                         self._log.info(b.to_str())
 
             # Log output diagnostics for all simulation modules
@@ -1139,7 +1140,8 @@ cdef class BacktestEngine:
             for currency in account.currencies():
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency):
+                unrealized_pnl = unrealized_pnls.get(currency) if unrealized_pnls else None
+                for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency, unrealized_pnl):
                     self._log.info(stat)
                 self._log.info("\033[36m-----------------------------------------------------------------")
 

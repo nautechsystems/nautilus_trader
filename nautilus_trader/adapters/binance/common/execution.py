@@ -135,7 +135,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         base_url_ws: Optional[str] = None,
         clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
@@ -187,6 +187,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
+        self._generate_order_status_retries: dict[ClientOrderId, int] = {}
 
         # Order submission method hashmap
         self._submit_order_method = {
@@ -299,6 +300,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
+        retries = self._generate_order_status_retries.get(client_order_id, 0)
+        if retries > 3:
+            self._log.error(
+                f"Reached maximum retries 3/3 for generating OrderStatusReport for "
+                f"{repr(client_order_id) if client_order_id else ''} "
+                f"{repr(venue_order_id) if venue_order_id else ''}...",
+            )
+            return None
+
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
@@ -320,10 +330,35 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
         except BinanceError as e:
             self._log.error(
-                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}",
+                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}. Retry {retries}/3",
             )
-            return None
+            retries += 1
+            self._generate_order_status_retries[client_order_id] = retries
+            if not client_order_id:
+                self.log.warning("Cannot retry without a client order ID.")
+            else:
+                order: Optional[Order] = self._cache.order(client_order_id)
+                if order is None:
+                    self._log.warning("Order not found in cache.")
+                    return None
+                elif order.is_closed:
+                    return None  # Nothing else to do
+
+                if retries >= 3:
+                    # Order will no longer be considered in-flight once this event is applied.
+                    # We could pop the value out of the hashmap here, but better to leave it in
+                    # so that there are no longer subsequent retries (we don't expect many of these).
+                    self.generate_order_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        reason=e.message,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+            return None  # Error now handled
+
         if not binance_order:
+            # Cannot proceed to generating report
             return None
 
         report: OrderStatusReport = binance_order.parse_to_order_status_report(
