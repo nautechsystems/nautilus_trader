@@ -28,6 +28,9 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
+pytestmark = pytest.mark.no_ci
+
+
 def test_nautilus_order_to_ib_market_order(instrument):
     # Arrange
     nautilus_market_order = TestExecStubs.market_order(instrument_id=instrument.id)

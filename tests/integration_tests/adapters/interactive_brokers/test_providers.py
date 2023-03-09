@@ -37,6 +37,9 @@ from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
+pytestmark = pytest.mark.no_ci
+
+
 def mock_ib_contract_calls(mocker, instrument_provider, contract_details: ContractDetails):
     mocker.patch.object(
         instrument_provider._client,
