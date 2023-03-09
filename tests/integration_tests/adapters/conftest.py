@@ -12,14 +12,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Optional
 
 import pytest
 from pytest_mock import MockerFixture
 
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
@@ -28,6 +34,7 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.trading.strategy import StrategyConfig
 from nautilus_trader.trading.trader import Trader
 
 
@@ -38,7 +45,9 @@ def account_id(venue):
 
 @pytest.fixture()
 def clock():
-    return LiveClock()
+    clock = TestClock()
+    clock.set_time(0)
+    return clock
 
 
 @pytest.fixture()
@@ -68,13 +77,15 @@ def cache(logger, instrument):
 
 
 @pytest.fixture()
-def portfolio(clock, logger, cache, msgbus):
-    return Portfolio(
+def portfolio(clock, logger, cache, msgbus, account_state):
+    portfolio = Portfolio(
         msgbus,
         cache,
         clock,
         logger,
     )
+    portfolio.update_account(account_state)
+    return portfolio
 
 
 @pytest.fixture()
@@ -164,7 +175,7 @@ def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
 
 @pytest.fixture()
 def strategy(trader_id, portfolio, msgbus, cache, clock, logger):
-    strategy = Strategy()
+    strategy = Strategy(config=StrategyConfig(strategy_id="S", order_id_tag="001"))
     strategy.register(
         trader_id,
         portfolio,
@@ -192,15 +203,40 @@ def venue_order_id(strategy):
 
 
 @pytest.fixture()
+def trade_id(strategy):
+    return TestIdStubs.trade_id()
+
+
+@pytest.fixture(autouse=True)
 def components(data_engine, exec_engine, risk_engine, strategy):
+    # Ensures components are created and running for every test
     return
 
 
-@pytest.fixture()
-def events(msgbus):
+def _collect_events(msgbus, filter_types: Optional[tuple[type, ...]] = None):
     events = []
-    msgbus.subscribe("events.*", handler=events.append)
+
+    def handler(event: Event):
+        if filter_types is None or isinstance(event, filter_types):
+            events.append(event)
+
+    msgbus.subscribe("events.*", handler=handler)
     return events
+
+
+@pytest.fixture()
+def events(msgbus) -> list[Event]:
+    return _collect_events(msgbus, filter_types=None)
+
+
+@pytest.fixture()
+def fill_events(msgbus):
+    return _collect_events(msgbus, filter_types=(OrderFilled,))
+
+
+@pytest.fixture()
+def cancel_events(msgbus):
+    return _collect_events(msgbus, filter_types=(OrderCanceled,))
 
 
 @pytest.fixture()
@@ -208,6 +244,11 @@ def messages(msgbus):
     messages = []
     msgbus.subscribe("*", handler=messages.append)
     return messages
+
+
+@pytest.fixture()
+def account(account_state, cache):
+    return AccountFactory.create(account_state)
 
 
 # TO BE IMPLEMENTED IN ADAPTER conftest.py
@@ -228,4 +269,9 @@ def exec_client():
 
 @pytest.fixture()
 def instrument():
+    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+
+
+@pytest.fixture()
+def account_state() -> AccountState:
     raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")

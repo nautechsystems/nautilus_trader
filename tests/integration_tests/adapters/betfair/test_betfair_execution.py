@@ -27,7 +27,6 @@ from betfair_parser.spec.streaming.ocm import MatchedOrder
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -41,7 +40,6 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
@@ -54,7 +52,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
@@ -63,7 +60,14 @@ from tests.integration_tests.adapters.betfair.test_kit import format_current_ord
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
-async def _setup_state(exec_client, cache, order_change_message, include_fills: bool = False):
+async def _setup_order_state(
+    order_change_message,
+    exec_client,
+    cache,
+    strategy,
+    trade_id,
+    include_fills: bool = False,
+):
     """
     Ready the engine to test a message from betfair, setting orders into the correct state
     """
@@ -88,22 +92,42 @@ async def _setup_state(exec_client, cache, order_change_message, include_fills: 
                     )
                     cache.add_instrument(instrument)
                 if not cache.order(client_order_id):
+                    assert strategy is not None, "strategy can't be none if accepting order"
                     order = TestExecStubs.limit_order(
                         instrument_id=instrument_id,
                         price=betfair_float_to_price(order_update.p),
                         client_order_id=client_order_id,
                     )
                     exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
-                    await accept_order(order, venue_order_id)
+                    await _accept_order(order, venue_order_id, exec_client, strategy, cache)
 
                     if include_fills and order_update.sm:
-                        await fill_order(
+                        await _fill_order(
                             order,
+                            exec_client=exec_client,
                             fill_price=order_update.avp or order_update.p,
                             fill_qty=order_update.sm,
                             venue_order_id=venue_order_id,
+                            trade_id=trade_id,
                             quote_currency=GBP,
                         )
+
+
+@pytest.fixture()
+def setup_order_state(exec_client, cache, strategy, trade_id, venue_order_id):
+    return partial(
+        _setup_order_state,
+        exec_client=exec_client,
+        cache=cache,
+        strategy=strategy,
+        trade_id=trade_id,
+        include_fills=False,
+    )
+
+
+@pytest.fixture()
+def setup_order_state_fills(setup_order_state):
+    return partial(setup_order_state, include_fills=True)
 
 
 async def _submit_order(order, exec_client, strategy, cache):
@@ -118,6 +142,35 @@ async def _submit_order(order, exec_client, strategy, cache):
 @pytest.fixture()
 def submit_order(exec_client, strategy, cache):
     return partial(_submit_order, exec_client=exec_client, strategy=strategy, cache=cache)
+
+
+async def _fill_order(
+    order,
+    exec_client,
+    fill_price: float,
+    fill_qty: float,
+    venue_order_id,
+    trade_id,
+    quote_currency,
+):
+    exec_client.generate_order_filled(
+        strategy_id=order.strategy_id,
+        instrument_id=order.instrument_id,
+        client_order_id=order.client_order_id,
+        venue_order_id=venue_order_id,
+        trade_id=trade_id or TradeId("1"),
+        venue_position_id=None,
+        order_side=order.side,
+        order_type=order.order_type,
+        last_qty=betfair_float_to_quantity(fill_qty),
+        last_px=betfair_float_to_price(fill_price),
+        quote_currency=quote_currency,
+        commission=Money.from_str(f"0 {quote_currency.code}"),
+        liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+        ts_event=0,
+    )
+    await asyncio.sleep(0)
+    return order
 
 
 async def _accept_order(order, venue_order_id: VenueOrderId, exec_client, strategy, cache):
@@ -139,37 +192,19 @@ def accept_order(exec_client, strategy, cache):
 
 
 @pytest.fixture()
-async def fill_order(
+def fill_order(
     exec_client,
     venue_order_id: VenueOrderId,
     quote_currency: Currency,
     trade_id: Optional[str] = None,
-) -> Order:
-    async def inner(
-        order,
-        fill_price: float,
-        fill_qty: float,
-    ):
-        exec_client.generate_order_filled(
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=venue_order_id,
-            trade_id=TradeId(trade_id or "1"),
-            venue_position_id=None,
-            order_side=order.side,
-            order_type=order.order_type,
-            last_qty=betfair_float_to_quantity(fill_qty),
-            last_px=betfair_float_to_price(fill_price),
-            quote_currency=quote_currency,
-            commission=Money.from_str(f"0 {quote_currency.code}"),
-            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-            ts_event=0,
-        )
-        await asyncio.sleep(0)
-        return order
-
-    return inner
+):
+    return partial(
+        _fill_order,
+        exec_client=exec_client,
+        venue_order_id=venue_order_id,
+        quote_currency=quote_currency,
+        trade_id=trade_id,
+    )
 
 
 @pytest.fixture()
@@ -181,13 +216,13 @@ def test_order(instrument, strategy_id):
     )
 
 
-@pytest.fixture()
-async def setup(cache, instrument, account_id, exec_client, venue_order_id, client_order_id):
-    cache.add_instrument(instrument)
-    cache.add_account(TestExecStubs.betting_account(account_id=account_id))
-
-    exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
-    await exec_client.connection_account_state()
+# @pytest.fixture()
+# async def setup(cache, instrument, account_id, exec_client, venue_order_id, client_order_id):
+#     cache.add_instrument(instrument)
+#     cache.add_account(TestExecStubs.betting_account(account_id=account_id))
+#
+#     exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+#     await exec_client.connection_account_state()
 
 
 @pytest.mark.asyncio
@@ -240,7 +275,7 @@ async def test_modify_order_success(
     await asyncio.sleep(0)
 
     # Assert
-    pending_update, updated = events[-2:]
+    pending_update, _, updated = events[-3:]
     assert isinstance(pending_update, OrderPendingUpdate)
     assert isinstance(updated, OrderUpdated)
     assert updated.price == betfair_float_to_price(50)
@@ -265,21 +300,26 @@ async def test_modify_order_error_order_doesnt_exist(betfair_client, exec_client
         "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
         "venue_order_id": None,
         "reason": "ORDER NOT IN CACHE",
-        "ts_event": mock_reject.call_args.kwargs["ts_event"],
+        "ts_event": 0,
     }
     assert mock_reject.call_args.kwargs == expected_kw
 
 
-async def test_modify_order_error_no_venue_id(betfair_client, exec_client, strategy_id, instrument):
+@pytest.mark.asyncio
+async def test_modify_order_error_no_venue_id(
+    betfair_client,
+    exec_client,
+    strategy_id,
+    submit_order,
+    test_order,
+    instrument,
+):
     # Arrange
     order = await submit_order(test_order)
     mock_betfair_request(betfair_client, BetfairResponses.betting_replace_orders_success())
 
     # Act
-    command = TestCommandStubs.modify_order_command(
-        price=betfair_float_to_price(2.0),
-        order=order,
-    )
+    command = TestCommandStubs.modify_order_command(price=betfair_float_to_price(2.0), order=order)
     with patch.object(BetfairExecutionClient, "generate_order_modify_rejected") as mock_reject:
         exec_client.modify_order(command)
         await asyncio.sleep(0)
@@ -325,7 +365,7 @@ async def test_cancel_order_success(
         "instrument_id": instrument.id,
         "client_order_id": test_order.client_order_id,
         "venue_order_id": venue_order_id,
-        "ts_event": mock_generate_order_canceled.call_args.kwargs["ts_event"],
+        "ts_event": 0,
     }
     assert mock_generate_order_canceled.call_args.kwargs == expected_kw
 
@@ -366,16 +406,16 @@ async def test_cancel_order_fail(
         "client_order_id": test_order.client_order_id,
         "venue_order_id": venue_order_id,
         "reason": "Error: ERROR_IN_ORDER",
-        "ts_event": mock_generate_order_cancel_rejected.call_args.kwargs["ts_event"],
+        "ts_event": 0,
     }
     assert mock_generate_order_cancel_rejected.call_args.kwargs == expected_kw
 
 
 @pytest.mark.asyncio
-async def test_order_multiple_fills(exec_client, cache, events):
+async def test_order_multiple_fills(exec_client, setup_order_state, events):
     # Arrange
     for ocm in BetfairStreaming.ocm_multiple_fills():
-        await _setup_state(order_change_message=ocm, exec_client=exec_client, cache=cache)
+        await setup_order_state(order_change_message=ocm)
 
     # Act
     for order_change_message in BetfairStreaming.ocm_multiple_fills():
@@ -383,7 +423,7 @@ async def test_order_multiple_fills(exec_client, cache, events):
         await asyncio.sleep(0.0)
 
     # Assert
-    result = [fill.last_qty for fill in events[-3:]]
+    result = [fill.last_qty for fill in events if isinstance(fill, OrderFilled)]
     expected = [
         betfair_float_to_quantity(16.1900),
         betfair_float_to_quantity(0.77),
@@ -408,11 +448,11 @@ async def test_check_account_currency(exec_client):
 
 
 @pytest.mark.asyncio
-async def test_order_stream_full_image(exec_client, events):
+async def test_order_stream_full_image(exec_client, setup_order_state, events):
     # Arrange
     raw = BetfairStreaming.ocm_FULL_IMAGE()
     ocm = STREAM_DECODER.decode(raw)
-    await _setup_state(ocm, include_fills=True)
+    await setup_order_state(ocm, include_fills=True)
     exec_client._check_order_update = MagicMock()
 
     # Act
@@ -442,11 +482,11 @@ async def test_order_stream_empty_image(exec_client, events):
 
 
 @pytest.mark.asyncio
-async def test_order_stream_new_full_image(exec_client, cache, events):
+async def test_order_stream_new_full_image(exec_client, setup_order_state, cache, events):
     # Arrange
     raw = BetfairStreaming.ocm_NEW_FULL_IMAGE()
     ocm = msgspec.json.decode(raw, type=OCM)
-    await _setup_state(ocm)
+    await setup_order_state(ocm)
     order = cache.orders()[0]
     exec_client.generate_order_filled(
         strategy_id=order.strategy_id,
@@ -468,14 +508,14 @@ async def test_order_stream_new_full_image(exec_client, cache, events):
     # Act
     exec_client.handle_order_stream_update(raw)
     await asyncio.sleep(0)
-    assert len(events) == 3
+    assert len(events) == 6
 
 
 @pytest.mark.asyncio
-async def test_order_stream_sub_image(exec_client, events):
+async def test_order_stream_sub_image(exec_client, setup_order_state, events):
     # Arrange
     order_change_message = BetfairStreaming.ocm_SUB_IMAGE()
-    await _setup_state(order_change_message=order_change_message)
+    await setup_order_state(order_change_message=order_change_message)
 
     # Act
     exec_client.handle_order_stream_update(
@@ -488,10 +528,10 @@ async def test_order_stream_sub_image(exec_client, events):
 
 
 @pytest.mark.asyncio
-async def test_order_stream_update(exec_client, events):
+async def test_order_stream_update(exec_client, setup_order_state, events):
     # Arrange
     order_change_message = BetfairStreaming.ocm_UPDATE()
-    await _setup_state(order_change_message=order_change_message)
+    await setup_order_state(order_change_message=order_change_message)
 
     # Act
     exec_client.handle_order_stream_update(
@@ -500,14 +540,14 @@ async def test_order_stream_update(exec_client, events):
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 3
+    assert len(events) == 5
 
 
 @pytest.mark.asyncio
-async def test_order_stream_filled(exec_client, events):
+async def test_order_stream_filled(exec_client, setup_order_state, events, fill_events):
     # Arrange
     order_change_message = BetfairStreaming.ocm_FILLED()
-    await _setup_state(order_change_message=order_change_message)
+    await setup_order_state(order_change_message=order_change_message)
 
     # Act
     exec_client.handle_order_stream_update(
@@ -516,13 +556,20 @@ async def test_order_stream_filled(exec_client, events):
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 3
-    assert isinstance(events[2], OrderFilled)
-    assert events[2].last_px == betfair_float_to_price(1.10)
+    assert len(events) == 6
+    fill: OrderFilled = fill_events[0]
+    assert isinstance(fill, OrderFilled)
+    assert fill.last_px == betfair_float_to_price(1.10)
 
 
 @pytest.mark.asyncio
-async def test_order_stream_filled_multiple_prices(exec_client, cache, venue_order_id, events):
+async def test_order_stream_filled_multiple_prices(
+    exec_client,
+    setup_order_state,
+    cache,
+    venue_order_id,
+    events,
+):
     # Arrange
     order_change_message = BetfairStreaming.generate_order_change_message(
         price=1.50,
@@ -533,10 +580,10 @@ async def test_order_stream_filled_multiple_prices(exec_client, cache, venue_ord
         avp=1.60,
         order_id=venue_order_id.value,
     )
-    await _setup_state(order_change_message)
+    await setup_order_state(order_change_message)
     exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
     await asyncio.sleep(0)
-    order = cache.order(client_order_id=ClientOrderId("229435133092"))
+    order = cache.order(client_order_id=ClientOrderId("1"))
     assert order
 
     # Act
@@ -548,23 +595,24 @@ async def test_order_stream_filled_multiple_prices(exec_client, cache, venue_ord
         sm=20,
         avp=1.50,
     )
-    await _setup_state(order_change_message)
+    await setup_order_state(order_change_message)
     exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
     await asyncio.sleep(0)
 
     # Assert
-    assert len(events) == 6
-    assert isinstance(events[2], OrderFilled)
-    assert isinstance(events[5], OrderFilled)
-    assert events[2].last_px == betfair_float_to_price(1.60)
-    assert events[5].last_px == betfair_float_to_price(1.50)
+    assert len(events) == 12
+    fill1, fill2 = (event for event in events if isinstance(event, OrderFilled))
+    assert isinstance(fill1, OrderFilled)
+    assert isinstance(fill2, OrderFilled)
+    assert fill1.last_px == betfair_float_to_price(1.60)
+    assert fill2.last_px == betfair_float_to_price(1.50)
 
 
 @pytest.mark.asyncio
-async def test_order_stream_mixed(exec_client, events):
+async def test_order_stream_mixed(exec_client, setup_order_state, fill_events, cancel_events):
     # Arrange
     order_change_message = BetfairStreaming.ocm_MIXED()
-    await _setup_state(order_change_message=order_change_message)
+    await setup_order_state(order_change_message=order_change_message)
 
     # Act
     exec_client.handle_order_stream_update(
@@ -573,17 +621,18 @@ async def test_order_stream_mixed(exec_client, events):
     await asyncio.sleep(0)
 
     # Assert
-    fill1, fill2, cancel = events[-3:]
+    fill1, fill2 = fill_events
+    (cancel,) = cancel_events
     assert isinstance(fill1, OrderFilled) and fill1.venue_order_id.value == "229430281341"
     assert isinstance(fill2, OrderFilled) and fill2.venue_order_id.value == "229430281339"
     assert isinstance(cancel, OrderCanceled) and cancel.venue_order_id.value == "229430281339"
 
 
 @pytest.mark.asyncio
-async def test_duplicate_trade_id(exec_client, events):
+async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, cancel_events):
     # Arrange
     for update in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
-        await _setup_state(update)
+        await setup_order_state(update)
 
     # Act
     for order_change_message in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
@@ -591,7 +640,8 @@ async def test_duplicate_trade_id(exec_client, events):
         await asyncio.sleep(0)
 
     # Assert
-    fill1, cancel, fill2, fill3 = events[-4:]
+    fill1, fill2, fill3 = fill_events
+    (cancel,) = cancel_events
     # First order example, partial fill followed by remainder canceled
     assert isinstance(fill1, OrderFilled)
     assert isinstance(cancel, OrderCanceled)
@@ -611,17 +661,20 @@ async def test_betfair_order_reduces_balance(
     exec_client,
     betfair_client,
     cache,
-    instrument,
-    events,
+    account,
     venue,
+    accept_order,
+    test_order,
+    instrument,
     venue_order_id,
 ):
     # Arrange
-    balance = cache.account_for_venue(venue).balances()[GBP]
+    balance = account.balances()[GBP]
     order = await accept_order(test_order, venue_order_id)
+    await asyncio.sleep(0)
 
     # Act
-    balance_order = cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
+    balance_order = cache.account_for_venue(venue).balances()[GBP]
 
     # Cancel the order, balance should return
     command = TestCommandStubs.cancel_order_command(
@@ -632,7 +685,8 @@ async def test_betfair_order_reduces_balance(
     mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
     exec_client.cancel_order(command)
     await asyncio.sleep(0)
-    balance_cancel = cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
+    balance_cancel = account.balances()[GBP]
+    await asyncio.sleep(0)
 
     # Assert
     assert balance.free == Money(1000.0, GBP)
@@ -641,10 +695,15 @@ async def test_betfair_order_reduces_balance(
 
 
 @pytest.mark.asyncio
-async def test_betfair_order_cancelled_no_timestamp(exec_client, clock, events):
+async def test_betfair_order_cancelled_no_timestamp(
+    exec_client,
+    setup_order_state,
+    clock,
+    cancel_events,
+):
     # Arrange
     update = STREAM_DECODER.decode(BetfairStreaming.ocm_error_fill())
-    await _setup_state(update)
+    await setup_order_state(update)
     clock.set_time(1)
 
     # Act
@@ -655,7 +714,7 @@ async def test_betfair_order_cancelled_no_timestamp(exec_client, clock, events):
         await asyncio.sleep(0)
 
     # Assert
-    cancel1, cancel2 = events[-2:]
+    cancel1, cancel2 = cancel_events
     assert isinstance(cancel1, OrderCanceled)
     assert isinstance(cancel2, OrderCanceled)
     assert cancel1.ts_init == 1
@@ -671,6 +730,7 @@ async def test_betfair_order_cancelled_no_timestamp(exec_client, clock, events):
     ],
 )
 async def test_various_betfair_order_fill_scenarios(
+    setup_order_state,
     price,
     size,
     side,
@@ -678,11 +738,11 @@ async def test_various_betfair_order_fill_scenarios(
     updates,
     last_qtys,
     exec_client,
-    events,
+    fill_events,
 ):
     # Arrange
     update = BetfairStreaming.ocm_filled_different_price()
-    await _setup_state(update)
+    await setup_order_state(update)
 
     # Act
     for raw in updates:
@@ -693,17 +753,16 @@ async def test_various_betfair_order_fill_scenarios(
         await asyncio.sleep(0)
 
     # Assert
-    events = [event for event in events if not isinstance(event, (OrderInitialized, OrderAccepted))]
-    for msg, _, last_qty in zip(events, updates, last_qtys):
+    for msg, _, last_qty in zip(fill_events, updates, last_qtys):
         assert isinstance(msg, OrderFilled)
         assert msg.last_qty == last_qty
 
 
 @pytest.mark.asyncio
-async def test_order_filled_avp_update(exec_client):
+async def test_order_filled_avp_update(exec_client, setup_order_state):
     # Arrange
     update = BetfairStreaming.ocm_filled_different_price()
-    await _setup_state(update)
+    await setup_order_state(update)
 
     # Act
     order_change_message = BetfairStreaming.generate_order_change_message(

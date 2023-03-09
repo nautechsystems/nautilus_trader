@@ -209,11 +209,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
+        # TODO - NEEDS TESTING
         if not (command.quantity or command.price):
             return
         # ib_insync modifies orders by modifying the original order object and
         # calling placeOrder again.
-        # TODO - NEEDS TESTING
         PyCondition.not_none(command, "command")
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
