@@ -78,7 +78,8 @@ def msgbus(trader_id, clock, logger):
 @pytest.fixture()
 def cache(logger, instrument):
     cache = TestComponentStubs.cache(logger)
-    cache.add_instrument(instrument)
+    if instrument is not None:
+        cache.add_instrument(instrument)
     return cache
 
 
@@ -90,7 +91,8 @@ def portfolio(clock, logger, cache, msgbus, account_state):
         clock,
         logger,
     )
-    portfolio.update_account(account_state)
+    if account_state is not None:
+        portfolio.update_account(account_state)
     return portfolio
 
 
@@ -115,7 +117,8 @@ def exec_engine(msgbus, cache, clock, logger, exec_client):
         clock,
         logger,
     )
-    engine.register_client(exec_client)
+    if exec_client is not None:
+        engine.register_client(exec_client)
     return engine
 
 
