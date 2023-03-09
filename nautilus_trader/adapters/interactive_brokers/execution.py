@@ -302,6 +302,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             venue_order_id_modified=False,  # TODO (bm) - does this happen?
         )
 
+    def _on_order_pending_cancel(self, trade: IBTrade):
+        assert trade.orderStatus.status == IBOrderStatus.PendingCancel
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        assert order.status == OrderStatus.PENDING_CANCEL
+
     def _on_order_cancelled(self, trade: IBTrade):
         assert trade.orderStatus.status in (IBOrderStatus.Cancelled, IBOrderStatus.ApiCancelled)
         client_order_id = ClientOrderId(trade.order.orderRef)

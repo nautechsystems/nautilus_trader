@@ -18,20 +18,22 @@ import pytest
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentFilter
 
 
-class TestInteractiveBrokersConfig:
-    @pytest.mark.parametrize(
-        "value",
-        [
-            "AAPL.AMEX",
-            "CLZ3.NYMEX",
-            "EUR/USD.IDEALPRO",
-            "TSLA230120C00100000.MIAX",
-        ],
-    )
-    def test_from_instrument_id(self, value):
-        # Arrange
-        # Act
-        filt = InteractiveBrokersInstrumentFilter.from_instrument_id(value)
+pytestmark = pytest.mark.no_ci
 
-        # Assert
-        assert filt.validate()
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "AAPL.AMEX",
+        "CLZ3.NYMEX",
+        "EUR/USD.IDEALPRO",
+        "TSLA230120C00100000.MIAX",
+    ],
+)
+def test_from_instrument_id(self, value):
+    # Arrange
+    # Act
+    filt = InteractiveBrokersInstrumentFilter.from_instrument_id(value)
+
+    # Assert
+    assert filt.validate()
