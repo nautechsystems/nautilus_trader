@@ -39,16 +39,16 @@ class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):
         return cls(symbol=local_symbol, primaryExchange=primary_exchange, **kwargs)
 
     @classmethod
-    def stock(cls, value):
-        return cls.from_instrument_id(secType="STK", value=value)
+    def stock(cls, value, **kwargs):
+        return cls.from_instrument_id(secType="STK", value=value, **kwargs)
 
     @classmethod
-    def forex(cls, value):
-        return cls.from_instrument_id(secType="CASH", value=value)
+    def forex(cls, value, **kwargs):
+        return cls.from_instrument_id(secType="CASH", value=value, **kwargs)
 
     @classmethod
-    def future(cls, value):
-        return cls.from_instrument_id(secType="FUT", value=value)
+    def future(cls, value, **kwargs):
+        return cls.from_instrument_id(secType="FUT", value=value, **kwargs)
 
     def to_contract(self) -> Contract:
         return Contract(

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 import datetime
 from unittest.mock import AsyncMock
 
@@ -20,6 +20,7 @@ import msgspec.structs
 import pytest
 from ib_insync import ContractDetails
 
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentFilter
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import OptionKind
@@ -139,7 +140,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(symbol="CLZ3", exchange="NYMEX")
+    await instrument_provider.load(instrument_id)
     future = instrument_provider.find(instrument_id)
 
     # Assert
@@ -161,7 +162,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX")
+    await instrument_provider.load(instrument_id)
     option = instrument_provider.find(instrument_id)
 
     # Assert
@@ -186,7 +187,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
+    await instrument_provider.load(instrument_id)
     fx = instrument_provider.find(instrument_id)
 
     # Assert
@@ -200,6 +201,8 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
 @pytest.mark.asyncio
 async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     # Arrange
+    instrument_id = InstrumentId.from_str("CLZ3.NYMEX")
+
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -207,7 +210,7 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(symbol="CLZ3", exchange="NYMEX")
+    await instrument_provider.load(instrument_id)
 
     # Assert
     expected = {174230596: InstrumentId.from_str("CLZ3.NYMEX")}
@@ -228,9 +231,11 @@ async def test_instrument_filter_callable_none(mocker, instrument_provider):
         instrument_provider=instrument_provider,
         contract_details=IBTestProviderStubs.aapl_equity_contract_details(),
     )
+    filters = [InteractiveBrokersInstrumentFilter.stock("AAPL.NASDAQ")]
 
     # Act
-    await instrument_provider.load()
+    instrument_provider.load_all(filters)
+    await asyncio.sleep(0)
 
     # Assert
     assert len(instrument_provider.get_all()) == 1
@@ -244,6 +249,7 @@ async def test_instrument_filter_callable_option_filter(mocker, instrument_provi
         instrument_provider=instrument_provider,
         contract_details=IBTestProviderStubs.tsla_option_contract_details(),
     )
+    filters = [InteractiveBrokersInstrumentFilter.stock("AAPL.NASDAQ")]
 
     # Act
     new_cb = "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
@@ -251,7 +257,8 @@ async def test_instrument_filter_callable_option_filter(mocker, instrument_provi
         instrument_provider.config,
         filter_callable=new_cb,
     )
-    await instrument_provider.load()
+    instrument_provider.load_all(filters)
+    await asyncio.sleep(0)
     option_instruments = instrument_provider.get_all()
 
     # Assert

@@ -30,9 +30,8 @@ pytestmark = pytest.mark.no_ci
         "TSLA230120C00100000.MIAX",
     ],
 )
-def test_from_instrument_id(self, value):
-    # Arrange
-    # Act
+def test_from_instrument_id(value):
+    # Arrange, Act
     filt = InteractiveBrokersInstrumentFilter.from_instrument_id(value)
 
     # Assert
