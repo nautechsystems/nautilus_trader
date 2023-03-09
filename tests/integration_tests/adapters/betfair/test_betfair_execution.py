@@ -32,6 +32,7 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currency import Currency
@@ -212,17 +213,9 @@ def test_order(instrument, strategy_id):
     return TestExecStubs.limit_order(
         instrument_id=instrument.id,
         price=betfair_float_to_price(2.0),
+        quantity=Quantity.from_str("100"),
         strategy_id=strategy_id,
     )
-
-
-# @pytest.fixture()
-# async def setup(cache, instrument, account_id, exec_client, venue_order_id, client_order_id):
-#     cache.add_instrument(instrument)
-#     cache.add_account(TestExecStubs.betting_account(account_id=account_id))
-#
-#     exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
-#     await exec_client.connection_account_state()
 
 
 @pytest.mark.asyncio
@@ -656,8 +649,21 @@ async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, c
     )
 
 
+@pytest.mark.parametrize(
+    "side,price,quantity,free",
+    [
+        (OrderSide.BUY, Price.from_str("2.0"), Quantity.from_str("100"), 900),
+        (OrderSide.BUY, Price.from_str("5.0"), Quantity.from_str("50"), 950),
+        (OrderSide.SELL, Price.from_str("1.2"), Quantity.from_str("100"), 980),
+        (OrderSide.SELL, Price.from_str("5.0"), Quantity.from_str("100"), 600),
+    ],
+)
 @pytest.mark.asyncio
-async def test_betfair_order_reduces_balance(
+async def test_betfair_back_order_reduces_balance(
+    side,
+    price,
+    quantity,
+    free,
     exec_client,
     betfair_client,
     cache,
@@ -667,16 +673,24 @@ async def test_betfair_order_reduces_balance(
     test_order,
     instrument,
     venue_order_id,
+    strategy_id,
 ):
     # Arrange
-    balance = account.balances()[GBP]
-    order = await accept_order(test_order, venue_order_id)
-    await asyncio.sleep(0)
+    order = TestExecStubs.limit_order(
+        instrument_id=instrument.id,
+        order_side=side,
+        price=price,
+        quantity=quantity,
+        strategy_id=strategy_id,
+    )
+    balance_pre_order = account.balances()[GBP]
 
-    # Act
+    # Act - Send order
+    await accept_order(order, venue_order_id)
+    await asyncio.sleep(0)
     balance_order = cache.account_for_venue(venue).balances()[GBP]
 
-    # Cancel the order, balance should return
+    # Act - Cancel the order, balance should return
     command = TestCommandStubs.cancel_order_command(
         instrument_id=instrument.id,
         client_order_id=order.client_order_id,
@@ -689,8 +703,8 @@ async def test_betfair_order_reduces_balance(
     await asyncio.sleep(0)
 
     # Assert
-    assert balance.free == Money(1000.0, GBP)
-    assert balance_order.free == Money(900.0, GBP)
+    assert balance_pre_order.free == Money(1000.0, GBP)
+    assert balance_order.free == Money(free, GBP)
     assert balance_cancel.free == Money(1000.0, GBP)
 
 
