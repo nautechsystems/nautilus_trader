@@ -26,7 +26,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-pytestmark = pytest.mark.skip(reason="breaking CI")
+pytestmark = pytest.mark.no_ci
 
 
 def instrument_setup(self, instrument, contract_details):
