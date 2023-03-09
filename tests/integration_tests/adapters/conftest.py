@@ -102,7 +102,8 @@ def data_engine(msgbus, cache, clock, logger, data_client):
         clock,
         logger,
     )
-    engine.register_client(data_client)
+    if data_client is not None:
+        engine.register_client(data_client)
     return engine
 
 

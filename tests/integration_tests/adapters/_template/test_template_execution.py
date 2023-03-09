@@ -19,7 +19,7 @@ from nautilus_trader.adapters._template.execution import TemplateLiveExecutionCl
 from nautilus_trader.live.execution_client import LiveExecutionClient
 
 
-pytestmark = pytest.mark.skip(reason="example")
+pytestmark = pytest.mark.skip(reason="template")
 
 
 @pytest.fixture()

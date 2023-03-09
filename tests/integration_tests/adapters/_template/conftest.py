@@ -15,31 +15,30 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.core import TEMPLATE_VENUE  # noqa
-from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider  # noqa
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.identifiers import Venue
 
 
-pytestmark = pytest.mark.skip(reason="template")
+@pytest.fixture()
+def venue() -> Venue:
+    raise NotImplementedError("`venue` needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture(scope="function")
-def instrument_provider():
-    clock = TestClock()
-    return TemplateInstrumentProvider(
-        venue=TEMPLATE_VENUE,
-        logger=Logger(clock),
-    )
+@pytest.fixture()
+def data_client():
+    raise NotImplementedError("`data_client` needs to be implemented in adapter `conftest.py`")
 
 
-def test_load_all_async(instrument_provider):
-    pass
+@pytest.fixture()
+def exec_client():
+    raise NotImplementedError("`exec_client` needs to be implemented in adapter `conftest.py`")
 
 
-def test_load_all(instrument_provider):
-    pass
+@pytest.fixture()
+def instrument():
+    raise NotImplementedError("`instrument` needs to be implemented in adapter `conftest.py`")
 
 
-def test_load(instrument_provider):
-    pass
+@pytest.fixture()
+def account_state() -> AccountState:
+    raise NotImplementedError("`account_state` needs to be implemented in adapter `conftest.py`")

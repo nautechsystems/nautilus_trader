@@ -19,7 +19,7 @@ from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
 
 
-pytestmark = pytest.mark.skip(reason="example")
+pytestmark = pytest.mark.skip(reason="template")
 
 
 @pytest.fixture()
