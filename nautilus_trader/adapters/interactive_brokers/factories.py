@@ -21,6 +21,7 @@ from typing import Literal, Optional
 import ib_insync
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import GatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
@@ -48,11 +49,11 @@ def get_cached_ib_client(
     password: str,
     host: str = "127.0.0.1",
     port: Optional[int] = None,
+    gateway: Optional[GatewayConfig] = None,
     trading_mode: Literal["paper", "live"] = "paper",
     connect: bool = True,
     timeout: int = 300,
     client_id: int = 1,
-    start_gateway: bool = True,
     read_only_api: bool = True,
 ) -> ib_insync.IB:
     """
@@ -73,14 +74,14 @@ def get_cached_ib_client(
         The IB host to connect to
     port : int, optional
         The IB port to connect to
+    gateway : GatewayConfig, optional
+        The config used when connecting to or creating a Gateway
     connect: bool, optional
         Whether to connect to IB.
     timeout: int, optional
         The timeout for trying to establish a connection
     client_id: int, optional
         The client_id to connect with
-    start_gateway: bool
-        Start the IB Gateway docker container
     read_only_api: bool
         Set read-only (no execution) when starting the gateway.
 
@@ -90,12 +91,15 @@ def get_cached_ib_client(
 
     """
     global IB_INSYNC_CLIENTS, GATEWAY
-    if start_gateway:
+    if gateway is not None and gateway.start:
         # Start gateway
         if GATEWAY is None:
             GATEWAY = InteractiveBrokersGateway(
                 username=username,
                 password=password,
+                host=gateway.host,
+                port=gateway.port,
+                network=gateway.network,
                 trading_mode=trading_mode,
                 read_only_api=read_only_api,
             )
@@ -192,11 +196,11 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         client = get_cached_ib_client(
             username=config.username or os.environ["TWS_USERNAME"],
             password=config.password or os.environ["TWS_PASSWORD"],
-            host=config.gateway_host,
-            port=config.gateway_port,
+            host=config.gateway.host,
+            port=config.gateway.port,
+            gateway=config.gateway,
             trading_mode=config.trading_mode,
             client_id=config.client_id,
-            start_gateway=config.start_gateway,
             read_only_api=config.read_only_api,
         )
 
@@ -264,10 +268,9 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         client = get_cached_ib_client(
             username=config.username or os.environ["TWS_USERNAME"],
             password=config.password or os.environ["TWS_PASSWORD"],
-            host=config.gateway_host,
-            port=config.gateway_port,
+            host=config.gateway.host,
+            port=config.gateway.port,
             client_id=config.client_id,
-            start_gateway=config.start_gateway,
             read_only_api=config.read_only_api,
         )
 

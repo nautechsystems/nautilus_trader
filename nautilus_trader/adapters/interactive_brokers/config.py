@@ -20,6 +20,7 @@ from ib_insync import Contract
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config.common import InstrumentFilter
+from nautilus_trader.config.common import NautilusConfig
 
 
 class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):
@@ -54,9 +55,27 @@ class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):
         return Contract(
             secType=self.secType,
             symbol=self.symbol,
-            exchange=self.exchange or self.primaryExchange,
+            exchange=self.exchange or "SMART",
             primaryExchange=self.primaryExchange,
         )
+
+
+class GatewayConfig(NautilusConfig):
+    """
+    start: bool, optional
+        Start or not internal tws docker container.
+    host : str, optional
+        The hostname for the gateway server.
+    port : int, optional
+        The port for the gateway server.
+    network : str, optional
+        The network for the gateway docker container
+    """
+
+    start: bool = False
+    host: str = "127.0.0.1"
+    port: Optional[int] = None
+    network: Optional[str] = None
 
 
 class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
@@ -78,14 +97,14 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
         paper or live.
     account_id : str, optional
         The account_id to use for Nautilus.
-    gateway_host : str, optional
-        The hostname for the gateway server.
-    gateway_port : int, optional
-        The port for the gateway server.
+    host : str, optional
+        The hostname for the TWS or Gateway server.
+    port : int, optional
+        The port for the TWS or Gateway server.
+    gateway : GatewayConfig, optional
+
     client_id: int, optional
         The client_id to be passed into connect call.
-    start_gateway: bool, optional
-        Start or not internal tws docker container.
     read_only_api: bool, optional, default True
         Read only; no execution. Set read_only_api=False to allow executing live orders.
     """
@@ -94,10 +113,10 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     password: Optional[str] = None
     trading_mode: Literal["paper", "live"] = "paper"
     account_id: Optional[str] = None
-    gateway_host: str = "127.0.0.1"
-    gateway_port: Optional[int] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    gateway: Optional[GatewayConfig] = None
     client_id: int = 1
-    start_gateway: bool = True
     read_only_api: bool = True
 
 
@@ -124,7 +143,9 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
         The hostname for the gateway server.
     gateway_port : int, optional
         The port for the gateway server.
-     client_id: int, optional
+    gateway_network: str, optional, default None
+        Gateway network setting in docker container
+    client_id: int, optional
         The client_id to be passed into connect call.
     start_gateway: bool, optional
         Start or not internal tws docker container.
@@ -136,8 +157,6 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     password: Optional[str] = None
     account_id: Optional[str] = None
     trading_mode: Literal["paper", "live"] = "paper"
-    gateway_host: str = "127.0.0.1"
-    gateway_port: Optional[int] = None
+    gateway: Optional[GatewayConfig] = None
     client_id: int = 1
-    start_gateway: bool = True
     read_only_api: bool = True

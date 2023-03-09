@@ -58,6 +58,7 @@ class InteractiveBrokersGateway:
         trading_mode: Optional[str] = "paper",
         start: bool = False,
         read_only_api: bool = True,
+        network: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
     ):
         assert username is not None, "`username` not set"
@@ -68,6 +69,7 @@ class InteractiveBrokersGateway:
         self.read_only_api = read_only_api
         self.host = host
         self.port = port or self.PORTS[trading_mode]
+        self.network = network
         if docker is None:
             raise RuntimeError("Docker not installed")
         self._docker = docker.from_env()
@@ -153,8 +155,11 @@ class InteractiveBrokersGateway:
             image=self.IMAGE,
             name=self.CONTAINER_NAME,
             detach=True,
-            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
+            ports={"4001": "4001", "4002": "4002", "5900": "5900"}
+            if self.network != "host"
+            else None,
             platform="amd64",
+            network=self.network,
             environment={
                 "TWS_USERID": self.username,
                 "TWS_PASSWORD": self.password,

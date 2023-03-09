@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.adapters.interactive_brokers.config import GatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentFilter
@@ -51,12 +52,12 @@ config_node = TradingNodeConfig(
                 load_all=True,
                 filters=instrument_filters,
             ),
-            start_gateway=False,
+            gateway=GatewayConfig(start=True, network="host"),
         ),
     },
     exec_clients={
         "IB": InteractiveBrokersExecClientConfig(
-            start_gateway=False,
+            gateway=GatewayConfig(start=True, network="host"),
         ),
     },
     timeout_connection=90.0,
