@@ -19,30 +19,28 @@ from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
 
 
-@pytest.mark.skip(reason="example")
+pytestmark = pytest.mark.skip(reason="example")
+
+
 @pytest.fixture()
 def data_client() -> LiveMarketDataClient:
     return TemplateLiveMarketDataClient()  # type: ignore
 
 
-@pytest.mark.skip(reason="example")
 def test_connect(data_client: LiveMarketDataClient):
     data_client.connect()
     assert data_client.is_connected
 
 
-@pytest.mark.skip(reason="example")
 def test_disconnect(data_client: LiveMarketDataClient):
     data_client.connect()
     data_client.disconnect()
     assert not data_client.is_connected
 
 
-@pytest.mark.skip(reason="example")
 def test_reset(data_client: LiveMarketDataClient):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_dispose(data_client: LiveMarketDataClient):
     pass

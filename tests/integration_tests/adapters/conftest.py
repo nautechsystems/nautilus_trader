@@ -20,6 +20,7 @@ from pytest_mock import MockerFixture
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -53,6 +54,11 @@ def clock():
 @pytest.fixture()
 def logger(clock):
     return Logger(clock)
+
+
+@pytest.fixture()
+def log(logger):
+    return LoggerAdapter("test", logger)
 
 
 @pytest.fixture()
@@ -254,24 +260,24 @@ def account(account_state, cache):
 # TO BE IMPLEMENTED IN ADAPTER conftest.py
 @pytest.fixture()
 def venue() -> Venue:
-    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+    raise NotImplementedError("`venue` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def data_client():
-    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+    raise NotImplementedError("`data_client` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def exec_client():
-    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+    raise NotImplementedError("`exec_client` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def instrument():
-    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+    raise NotImplementedError("`instrument` needs to be implemented in adapter `conftest.py`")
 
 
 @pytest.fixture()
 def account_state() -> AccountState:
-    raise NotImplementedError("Needs to be implemented in adapter `conftest.py`")
+    raise NotImplementedError("`account_state` needs to be implemented in adapter `conftest.py`")

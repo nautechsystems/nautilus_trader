@@ -25,20 +25,23 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def venue():
     return IB_VENUE
 
 
-@pytest.fixture(scope="function")
-def instrument(exec_engine):
+@pytest.fixture()
+def instrument():
     return IBTestProviderStubs.aapl_instrument()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def data_client_config():
     return InteractiveBrokersDataClientConfig(
         username="test",
@@ -47,7 +50,7 @@ def data_client_config():
     )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def exec_client_config():
     return InteractiveBrokersExecClientConfig(
         username="test",
@@ -56,7 +59,7 @@ def exec_client_config():
     )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, clock, logger):
     mocker.patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client")
     return InteractiveBrokersLiveDataClientFactory.create(
@@ -70,7 +73,7 @@ def data_client(mocker, data_client_config, venue, event_loop, msgbus, cache, cl
     )
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
     mocker.patch(
         "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
@@ -85,3 +88,8 @@ def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, cl
         clock=clock,
         logger=logger,
     )
+
+
+@pytest.fixture()
+def account_state(venue) -> AccountState:
+    return TestEventStubs.cash_account_state(account_id=AccountId(f"{venue.value}-001"))

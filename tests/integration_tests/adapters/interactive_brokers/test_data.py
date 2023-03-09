@@ -29,46 +29,36 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 pytestmark = pytest.mark.no_ci
 
 
-def instrument_setup(self, instrument, contract_details):
-    self.data_client.instrument_provider.contract_details[instrument.id.value] = contract_details
-    self.data_client.instrument_provider.contract_id_to_instrument_id[
+def instrument_setup(data_client, instrument, contract_details):
+    data_client.instrument_provider.contract_details[instrument.id.value] = contract_details
+    data_client.instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId
     ] = instrument.id
-    self.data_client.instrument_provider.add(instrument)
+    data_client.instrument_provider.add(instrument)
 
 
 @pytest.mark.asyncio
-async def test_connect(self):
-    self.data_client.connect()
+async def test_connect(data_client):
+    data_client.connect()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
-    assert self.data_client.is_connected
+    assert data_client.is_connected
 
 
 @pytest.mark.asyncio
-async def test_factory(self):
-    # Arrange
-    # Act
-    data_client = self.data_client
-
-    # Assert
-    assert data_client is not None
-
-
-@pytest.mark.asyncio
-async def test_subscribe_trade_ticks(self):
+async def test_subscribe_trade_ticks(data_client):
     # Arrange
     instrument_aapl = IBTestProviderStubs.aapl_instrument()
-    self.data_client.instrument_provider.contract_details[
+    data_client.instrument_provider.contract_details[
         instrument_aapl.id.value
     ] = IBTestProviderStubs.aapl_equity_contract_details()
 
     # Act
-    self.data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
+    data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
     await asyncio.sleep(0)
 
     # Assert
-    kwargs = self.data_client._client.reqMktData.call_args.kwargs
+    kwargs = data_client._client.reqMktData.call_args.kwargs
     expected = {
         "contract": Contract(
             secType="STK",
@@ -85,20 +75,20 @@ async def test_subscribe_trade_ticks(self):
 
 
 @pytest.mark.asyncio
-async def test_subscribe_order_book_deltas(self, event_loop):
+async def test_subscribe_order_book_deltas(data_client, instrument):
     # Arrange
     instrument = IBTestProviderStubs.aapl_instrument()
-    self.instrument_setup(instrument, IBTestProviderStubs.aapl_equity_contract_details())
+    instrument_setup(data_client, instrument, IBTestProviderStubs.aapl_equity_contract_details())
 
     # Act
-    self.data_client.subscribe_order_book_snapshots(
+    data_client.subscribe_order_book_snapshots(
         instrument_id=instrument.id,
         book_type=BookType.L2_MBP,
     )
     await asyncio.sleep(0)
 
     # Assert
-    kwargs = self.data_client._client.reqMktDepth.call_args.kwargs
+    kwargs = data_client._client.reqMktDepth.call_args.kwargs
     expected = {
         "contract": Contract(
             secType="STK",
@@ -116,35 +106,38 @@ async def test_subscribe_order_book_deltas(self, event_loop):
 
 
 @pytest.mark.asyncio
-async def test_on_book_update(self, event_loop):
+async def test_on_book_update(data_client):
     # Arrange
-    self.instrument_setup(
+    instrument_setup(
+        data_client,
         IBTestProviderStubs.eurusd_instrument(),
         IBTestProviderStubs.eurusd_forex_contract_details(),
     )
 
     # Act
     for ticker in IBTestDataStubs.market_depth(name="eurusd"):
-        self.data_client._on_order_book_snapshot(ticker=ticker, book_type=BookType.L2_MBP)
+        data_client._on_order_book_snapshot(ticker=ticker, book_type=BookType.L2_MBP)
 
 
 @pytest.mark.asyncio
-async def test_on_ticker_update(self, event_loop):
+async def test_on_ticker_update(data_client):
     # Arrange
-    self.instrument_setup(
+    instrument_setup(
+        data_client,
         IBTestProviderStubs.eurusd_instrument(),
         IBTestProviderStubs.eurusd_forex_contract_details(),
     )
 
     # Act
     for ticker in IBTestDataStubs.tickers("eurusd"):
-        self.data_client._on_trade_ticker_update(ticker=ticker)
+        data_client._on_trade_ticker_update(ticker=ticker)
 
 
 @pytest.mark.asyncio
-async def test_on_quote_tick_update(self, event_loop):
+async def test_on_quote_tick_update(data_client):
     # Arrange
-    self.instrument_setup(
+    instrument_setup(
+        data_client,
         IBTestProviderStubs.eurusd_instrument(),
         IBTestProviderStubs.eurusd_forex_contract_details(),
     )
@@ -158,13 +151,13 @@ async def test_on_quote_tick_update(self, event_loop):
     )
 
     # Act
-    self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
+    data_client._on_quote_tick_update(tick=ticker, contract=contract)
 
 
 @pytest.mark.asyncio
-async def test_on_quote_tick_update_nans(self, event_loop):
+async def test_on_quote_tick_update_nans(data_client, instrument):
     # Arrange
-    self.instrument_setup(self.instrument, IBTestProviderStubs.aapl_equity_contract_details())
+    instrument_setup(data_client, instrument, IBTestProviderStubs.aapl_equity_contract_details())
     contract = IBTestProviderStubs.aapl_equity_contract_details().contract
     ticker = Ticker(
         time=datetime.datetime(2022, 3, 4, 6, 8, 36, 992576, tzinfo=datetime.timezone.utc),
@@ -172,10 +165,10 @@ async def test_on_quote_tick_update_nans(self, event_loop):
         askSize=29500.0,
     )
     data = []
-    self.data_client._handle_data = data.append
+    data_client._handle_data = data.append
 
     # Act
-    self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
+    data_client._on_quote_tick_update(tick=ticker, contract=contract)
     update = data[0]
     await asyncio.sleep(0)
 
@@ -188,8 +181,8 @@ async def test_on_quote_tick_update_nans(self, event_loop):
             "ask": "0.00",
             "bid_size": "44600",
             "ask_size": "29500",
-            "ts_event": 1646374116992576000,
-            "ts_init": 1658919315437688375,
+            "ts_event": 0,
+            "ts_init": 0,
         },
     )
     assert update == expected

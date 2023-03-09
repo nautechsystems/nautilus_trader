@@ -21,6 +21,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 
 
+pytestmark = pytest.mark.skip(reason="example")
+
+
 @pytest.fixture(scope="function")
 def instrument_provider():
     clock = TestClock()
@@ -30,16 +33,13 @@ def instrument_provider():
     )
 
 
-@pytest.mark.skip(reason="example")
 def test_load_all_async(instrument_provider):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_load_all(instrument_provider):
     pass
 
 
-@pytest.mark.skip(reason="example")
 def test_load(instrument_provider):
     pass
