@@ -268,6 +268,13 @@ def venue() -> Venue:
 
 
 @pytest.fixture()
+def instrument_provider():
+    raise NotImplementedError(
+        "`instrument_provider` needs to be implemented in adapter `conftest.py`",
+    )
+
+
+@pytest.fixture()
 def data_client():
     raise NotImplementedError("`data_client` needs to be implemented in adapter `conftest.py`")
 

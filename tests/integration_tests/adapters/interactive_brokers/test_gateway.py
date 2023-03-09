@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import sys
 
 import pytest
 from docker.models.containers import ContainerCollection
@@ -20,7 +19,7 @@ from docker.models.containers import ContainerCollection
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Busted on macos")
+@pytest.mark.no_ci
 def test_gateway_start_no_container(mocker):
     # Arrange,
     mock_docker = mocker.patch.object(ContainerCollection, "run")

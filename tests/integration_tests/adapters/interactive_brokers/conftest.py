@@ -25,6 +25,10 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -42,6 +46,11 @@ def instrument():
 
 
 @pytest.fixture()
+def client() -> IB:
+    return IB()
+
+
+@pytest.fixture()
 def data_client_config():
     return InteractiveBrokersDataClientConfig(
         username="test",
@@ -56,6 +65,15 @@ def exec_client_config():
         username="test",
         password="test",
         account_id="DU123456",
+    )
+
+
+@pytest.fixture()
+def instrument_provider(client, logger):
+    return InteractiveBrokersInstrumentProvider(
+        client=client,
+        config=InstrumentProviderConfig(),
+        logger=logger,
     )
 
 
