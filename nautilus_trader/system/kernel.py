@@ -243,7 +243,7 @@ class NautilusKernel:
         # Setup loop (if sandbox live)
         self._loop: Optional[AbstractEventLoop] = None
         if environment != Environment.BACKTEST:
-            self._loop = loop or asyncio.get_event_loop()
+            self._loop = loop or asyncio.get_running_loop()
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
                 self._loop.set_default_executor(self.executor)
@@ -296,7 +296,7 @@ class NautilusKernel:
         ########################################################################
         if isinstance(data_config, LiveDataEngineConfig):
             self._data_engine = LiveDataEngine(
-                loop=loop,
+                loop=self.loop,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
@@ -317,7 +317,7 @@ class NautilusKernel:
         ########################################################################
         if isinstance(risk_config, LiveRiskEngineConfig):
             self._risk_engine = LiveRiskEngine(
-                loop=loop,
+                loop=self.loop,
                 portfolio=self._portfolio,
                 msgbus=self._msgbus,
                 cache=self._cache,
@@ -340,7 +340,7 @@ class NautilusKernel:
         ########################################################################
         if isinstance(exec_config, LiveExecEngineConfig):
             self._exec_engine = LiveExecutionEngine(
-                loop=loop,
+                loop=self.loop,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
@@ -423,6 +423,9 @@ class NautilusKernel:
             self._writer.close()
 
     def _setup_loop(self) -> None:
+        if self._loop is None:
+            raise RuntimeError("No event loop available for the node")
+
         if self._loop.is_closed():
             self.log.error("Cannot setup signal handling (event loop was closed).")
             return
@@ -434,10 +437,13 @@ class NautilusKernel:
         self.log.debug(f"Event loop signal handling setup for {signals}.")
 
     def _loop_sig_handler(self, sig) -> None:
+        if self._loop is None:
+            raise RuntimeError("No event loop available for the node")
+
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
         if self._loop_sig_callback:
-            self.loop_sig_callback(sig)
+            self._loop_sig_callback(sig)
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
         # Setup persistence
@@ -450,7 +456,7 @@ class NautilusKernel:
             include_types=config.include_types,  # type: ignore  # TODO(cs)
             logger=self.log,
         )
-        self._trader.subscribe("*", self.writer.write)
+        self._trader.subscribe("*", self._writer.write)
         self.log.info(f"Writing data & events to {path}")
 
     @property
@@ -466,7 +472,7 @@ class NautilusKernel:
         return self._environment
 
     @property
-    def loop(self) -> AbstractEventLoop:
+    def loop(self) -> asyncio.AbstractEventLoop:
         """
         Return the kernels event loop.
 
@@ -475,7 +481,7 @@ class NautilusKernel:
         AbstractEventLoop
 
         """
-        return self._loop
+        return self._loop or asyncio.get_running_loop()
 
     @property
     def loop_sig_callback(self) -> Optional[Callable]:
@@ -783,7 +789,7 @@ class NautilusKernel:
             self.log.warning(f"Canceling pending task {task}")
             task.cancel()
 
-        if self.loop.is_running():
+        if self.loop and self.loop.is_running():
             self.log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 

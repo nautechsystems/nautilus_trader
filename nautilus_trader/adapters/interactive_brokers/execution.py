@@ -365,10 +365,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def on_account_update(self, account_values: list[AccountValue]):
         self._log.debug(str(account_values))
+        account_id = self.account_id.get_id()
         balances, margins = account_values_to_nautilus_account_info(
             account_values,
-            self.account_id.get_id(),
+            account_id,
         )
+        if not balances:
+            self._log.error(f"Failed to parse balances for {account_id=}")
+            # Log some information about the other values
+            search_keys = ("FullAvailableFunds", "CashBalance", "NetLiquidation")
+            other_values = [acc_val for acc_val in account_values if acc_val.tag in search_keys]
+            for value in other_values:
+                self._log.info(f"Found account_value = {value}")
+            raise RuntimeError("No account information")
+
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
             balances=balances,

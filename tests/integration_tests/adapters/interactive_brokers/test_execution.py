@@ -26,6 +26,9 @@ from ib_insync import Trade
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
+    account_values_to_nautilus_account_info,
+)
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -569,6 +572,24 @@ async def test_on_account_update(mocker, exec_client):
     assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
     assert expected["margins"][0].to_dict() == kwargs["margins"][0].to_dict()
     assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins")])
+
+
+@pytest.mark.asyncio
+async def test_account_values_to_nautilus_account_info():
+    # Arrange
+    account_values = IBTestDataStubs.account_values(fn="account_values_fa.json")
+
+    # Act
+    balances, margin = account_values_to_nautilus_account_info(account_values, "DU1xxxxxx")
+
+    # Assert
+    expected_balance = AccountBalance(
+        total=Money.from_str("1_020_194.83 USD"),
+        locked=Money.from_str("0.00 USD"),
+        free=Money.from_str("1_020_194.83 USD"),
+    )
+    assert balances == [expected_balance]
+    assert margin == []
 
 
 def test_generate_order_status_report():
