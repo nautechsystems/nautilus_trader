@@ -1097,14 +1097,14 @@ nest-asyncio = "*"
 
 [[package]]
 name = "identify"
-version = "2.5.18"
+version = "2.5.19"
 description = "File identification library for Python"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "identify-2.5.18-py2.py3-none-any.whl", hash = "sha256:93aac7ecf2f6abf879b8f29a8002d3c6de7086b8c28d88e1ad15045a15ab63f9"},
-    {file = "identify-2.5.18.tar.gz", hash = "sha256:89e144fa560cc4cffb6ef2ab5e9fb18ed9f9b3cb054384bab4b95c12f6c309fe"},
+    {file = "identify-2.5.19-py2.py3-none-any.whl", hash = "sha256:3ee3533e7f6f5023157fbebbd5687bb4b698ce6f305259e0d24b2d7d9efb72bc"},
+    {file = "identify-2.5.19.tar.gz", hash = "sha256:4102ecd051f6884449e7359e55b38ba6cd7aafb6ef27b8e2b38495a5723ea106"},
 ]
 
 [package.extras]
@@ -2113,18 +2113,18 @@ plugins = ["importlib-metadata"]
 
 [[package]]
 name = "pylint"
-version = "2.16.4"
+version = "2.17.0"
 description = "python code static checker"
 category = "dev"
 optional = false
 python-versions = ">=3.7.2"
 files = [
-    {file = "pylint-2.16.4-py3-none-any.whl", hash = "sha256:4a770bb74fde0550fa0ab4248a2ad04e7887462f9f425baa0cd8d3c1d098eaee"},
-    {file = "pylint-2.16.4.tar.gz", hash = "sha256:8841f26a0dbc3503631b6a20ee368b3f5e0e5461a1d95cf15d103dab748a0db3"},
+    {file = "pylint-2.17.0-py3-none-any.whl", hash = "sha256:e097d8325f8c88e14ad12844e3fe2d963d3de871ea9a8f8ad25ab1c109889ddc"},
+    {file = "pylint-2.17.0.tar.gz", hash = "sha256:1460829b6397cb5eb0cdb0b4fc4b556348e515cdca32115f74a1eb7c20b896b4"},
 ]
 
 [package.dependencies]
-astroid = ">=2.14.2,<=2.16.0-dev0"
+astroid = ">=2.15.0,<=2.17.0-dev0"
 colorama = {version = ">=0.4.5", markers = "sys_platform == \"win32\""}
 dill = [
     {version = ">=0.2", markers = "python_version < \"3.11\""},
@@ -2443,14 +2443,14 @@ use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
 [[package]]
 name = "setuptools"
-version = "67.5.1"
+version = "67.6.0"
 description = "Easily download, build, install, upgrade, and uninstall Python packages"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "setuptools-67.5.1-py3-none-any.whl", hash = "sha256:1c39d42bda4cb89f7fdcad52b6762e3c309ec8f8715b27c684176b7d71283242"},
-    {file = "setuptools-67.5.1.tar.gz", hash = "sha256:15136a251127da2d2e77ac7a1bc231eb504654f7e3346d93613a13f2e2787535"},
+    {file = "setuptools-67.6.0-py3-none-any.whl", hash = "sha256:b78aaa36f6b90a074c1fa651168723acbf45d14cb1196b6f02c0fd07f17623b2"},
+    {file = "setuptools-67.6.0.tar.gz", hash = "sha256:2ee892cd5f29f3373097f5a814697e397cf3ce313616df0af11231e2ad118077"},
 ]
 
 [package.extras]
@@ -3247,4 +3247,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "91105649292e0b3f842d452dbf83e24e63da708d26191655443f6a1266086eaf"
+content-hash = "24196d7ec72cc952a944a4467567cdce35f2306a6cdf28c237f9eb86999573c5"
