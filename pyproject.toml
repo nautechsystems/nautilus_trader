@@ -146,6 +146,116 @@ max_complexity = 10
 extend_ignore = ["E203"]
 minimum_python_version = "3.9"
 
+[tool.pylint.MASTER]
+load-plugins = [
+    'pylint.extensions.mccabe',
+    'pylint.extensions.redefined_variable_type',
+    'pylint.extensions.broad_try_clause'
+]
+
+[tool.pylint.messages_control]
+max-line-length = 100
+disable = [
+    "abstract-method",
+    "arguments-differ",
+    "arguments-renamed",
+    "assert-on-string-literal",
+    "assert-on-tuple",
+    "attribute-defined-outside-init",
+    "bad-continuation",
+    "bad-whitespace",
+    "broad-exception-caught",
+    "broad-exception-raised",
+    "c-extension-no-member",
+    "cell-var-from-loop",
+    "comparison-of-constants",
+    "comparison-with-callable",
+    "comparison-with-itself",
+    "consider-using-dict-items",
+    "consider-using-f-string",
+    "consider-using-generator",
+    "consider-using-in",
+    "cyclic-import",
+    "deprecated-method",
+    "disallowed-name",
+    "duplicate-code",
+    "eval-used",
+    "f-string-without-interpolation",
+    "fixme",
+    "global-statement",
+    "global-variable-not-assigned",
+    "import-error",
+    "import-outside-toplevel",
+    "implicit-str-concat",
+    "inconsistent-return-statements",
+    "invalid-name",
+    "invalid-overridden-method",
+    "invalid-sequence-index",
+    "line-too-long",
+    "logging-fstring-interpolation",
+    "logging-not-lazy",
+    "missing-docstring",
+    "missing-timeout",
+    "no-else-break",
+    "no-else-continue",
+    "no-else-raised",
+    "no-else-raise",
+    "no-else-return",
+    "no-member",
+    "no-name-in-module",
+    "no-self-argument",
+    "no-value-for-parameter",
+    "pointless-statement",
+    "pointless-string-statement",
+    "protected-access",
+    "raise-missing-from",
+    "redefined-argument-from-local",
+    "redefined-builtin",
+    "redefined-outer-name",
+    "redefined-variable-type",
+    "self-assigning-variable",
+    "simplifiable-if-expression",
+    "simplifiable-if-statement",
+    "superfluous-parens",
+    "too-complex",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-locals",
+    "too-many-lines",
+    "too-many-instance-attributes",
+    "too-many-nested-blocks",
+    "too-many-public-methods",
+    "too-many-statements",
+    "too-many-try-statements",
+    "undefined-loop-variable",
+    "unbalanced-tuple-unpacking",
+    "unidiomatic-typecheck",
+    "unnecessary-comprehension",
+    "unnecessary-dunder-call",
+    "unnecessary-ellipsis",
+    "unnecessary-lambda-assignment",
+    "unnecessary-parent-delegation",
+    "unnecessary-pass",
+    "unused-argument",
+    "unused-variable",
+    "unknown-option-value",
+    "use-a-generator",
+    "use-dict-literal",
+    "use-implicit-booleaness-not-comparison",
+    "useless-option-value",
+    "useless-parent-delegation",
+    "useless-return",
+    "use-list-literal",
+    "unspecified-encoding",
+]
+
+[tool.pylint.design]
+# limiting the number of returns might discourage
+# the use of guard clauses. So we increase the
+# allowed number of returns from 6 to 8
+max-returns = 8
+
 ##########################################################
 # Static analysis configs                                #
 ##########################################################

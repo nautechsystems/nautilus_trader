@@ -30,6 +30,9 @@ format:
 pre-commit: format
 	pre-commit run --all-files
 
+pylint:
+	pylint ./nautilus_trader --rcfile=pyproject.toml --jobs=0
+
 update:
 	(cd nautilus_core && cargo update)
 	poetry update
