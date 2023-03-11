@@ -291,10 +291,7 @@ class _TestPersistenceCore:
                 {
                     "value": np.arange(5),
                     "instrument_id": ["a", "a", "a", "b", "b"],
-                    "ts_init": [
-                        int(ts.to_datetime64())
-                        for ts in pd.date_range(start_date, periods=5, tz="UTC")
-                    ],
+                    "ts_init": [ts.value for ts in pd.date_range(start_date, periods=5, tz="UTC")],
                 },
             )
             write_parquet(
