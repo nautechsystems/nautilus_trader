@@ -31,7 +31,7 @@ pre-commit: format
 	pre-commit run --all-files
 
 ruff:
-	ruff check .
+	ruff check . --fix
 
 update:
 	(cd nautilus_core && cargo update)

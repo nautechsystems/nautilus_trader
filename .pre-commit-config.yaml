@@ -68,12 +68,6 @@ repos:
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v2.1.3
-    hooks:
-      - id: pycln
-        name: pycln (remove unused imports)
-
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v2.4.0
     hooks:
