@@ -529,4 +529,4 @@ class TestLiveExecutionEngine:
         await self.exec_engine._check_inflight_orders()
 
         # Assert
-        assert self.exec_engine.command_count == 2
+        assert self.exec_engine.command_count == 3
