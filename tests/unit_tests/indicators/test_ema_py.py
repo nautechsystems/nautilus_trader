@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from examples.indicators.ema_python import PyExponentialMovingAverage
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 

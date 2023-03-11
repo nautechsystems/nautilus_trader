@@ -111,7 +111,7 @@ See [Instruments](./instruments.md) for more details on creating other instrumen
 
 ```python
 from nautilus_trader.persistence.external.core import process_files, write_objects
-from nautilus_trader.backtest.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 # Use nautilus test helpers to create a EUR/USD FX instrument for our purposes
 instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")

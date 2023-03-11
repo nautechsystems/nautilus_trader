@@ -3,28 +3,26 @@
 Released on 11th March 2023 (UTC).
 
 ### Breaking Changes
-- Moved `TestInstrumentProvider` to `backtest.providers`
-- Moved `TestDataProvider` to `test_kit.providers`
-- Moved wranglers to `persistence.wranglers`
-- Moved loaders to `persistence.loaders` (to be consolidated)
+- Moved `backtest.providers` to `test_kit.providers`
+- Moved `backtest.data.wranglers` to `persistence.wranglers` (to be consolidated)
+- Moved `backtest.data.loaders` to `persistence.loaders` (to be consolidated)
 - Renamed `from_datetime` to `start` across data request methods and properties
 - Renamed `to_datetime` to `end` across data request methods and properties
-- Change parquet catalog schema dictionary integer key widths/types
 - Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
 - Removed redundant log sink machinery
-- All pickled data due Cython 3.0.0b1
+- Changed parquet catalog schema dictionary integer key widths/types
+- Invalidated all pickled data due to Cython 3.0.0b1 upgrade
 
 ### Enhancements
 - Added logging to file at core Rust level
 - Added `DataCatalogConfig` for more cohesive data catalog configuration
 - Added `DataEngine.register_catalog` to support historical data requests
 - Added `catalog_config` field to base `NautilusKernelConfig`
+- Changed to immediately caching orders and order lists in `Strategy`
+- Changed to checking duplicate `client_order_id` and `order_list_id` in `Strategy`
+- Changed generating and applying `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
 - `PortfolioAnalyzer` PnL statistics now take optional `unrealized_pnl`
 - Backtest performance statistics now include unrealized PnL in total PnL
-- Now immediately caching orders and order lists in `Strategy`
-- Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
-- Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
-- Upgrade Cython to `3.0.0b1`
 
 ### Fixes
 - Fixed Binance Futures trigger type parsing

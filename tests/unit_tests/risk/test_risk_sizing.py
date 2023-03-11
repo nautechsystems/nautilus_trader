@@ -15,13 +15,13 @@
 
 from decimal import Decimal
 
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.risk.sizing import FixedRiskSizer
 from nautilus_trader.risk.sizing import PositionSizer
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 USDJPY = TestInstrumentProvider.default_fx_ccy("GBP/USD")
