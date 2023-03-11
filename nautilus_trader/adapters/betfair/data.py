@@ -26,9 +26,8 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
-from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.cache.cache import Cache
@@ -38,7 +37,6 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -140,7 +138,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
         self._log.debug("scheduling heartbeat")
-        self._loop.create_task(self._post_connect_heartbeat())
+        self.create_task(self._post_connect_heartbeat())
 
     async def _post_connect_heartbeat(self):
         for _ in range(3):
@@ -168,40 +166,16 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.error("Cannot dispose a connected data client.")
             return
 
-    # -- REQUESTS ---------------------------------------------------------------------------------
-
-    async def _request(self, data_type: DataType, correlation_id: UUID4):
-        if data_type.type == InstrumentSearch:
-            # Strategy has requested a list of instruments
-            await self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id)
-        else:
-            await super()._request(data_type=data_type, correlation_id=correlation_id)
-
-    async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
-        await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
-        instruments = self._instrument_provider.search_instruments(
-            instrument_filter=data_type.metadata,
-        )
-        now = self._clock.timestamp_ns()
-        search = InstrumentSearch(
-            instruments=instruments,
-            ts_event=now,
-            ts_init=now,
-        )
-        self._handle_data_response(data_type=data_type, data=search, correlation_id=correlation_id)
-
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe_order_book_deltas(
+    async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ):
-        if kwargs is None:
-            kwargs = {}
-        PyCondition.not_none(instrument_id, "instrument_id")
+        PyCondition.not_none(instrument_id, "instrument_id")  # noqa
 
         instrument: BettingInstrument = self._instrument_provider.find(instrument_id)
 
@@ -218,12 +192,12 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_market_ids.add(instrument.market_id)
         self._subscribed_instrument_ids.add(instrument.id)
         if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
-            self._loop.create_task(self.delayed_subscribe(delay=5))
+            self.create_task(self.delayed_subscribe(delay=5))
             self.subscription_status = SubscriptionStatus.PENDING_STARTUP
         elif self.subscription_status == SubscriptionStatus.PENDING_STARTUP:
             pass
         elif self.subscription_status == SubscriptionStatus.RUNNING:
-            self._loop.create_task(self.delayed_subscribe(delay=0))
+            self.create_task(self.delayed_subscribe(delay=0))
 
         self._log.info(
             f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.",
@@ -239,9 +213,16 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        pass  # Subscribed as part of orderbook
+
     async def _subscribe_instrument(self, instrument_id: InstrumentId):
+        instrument = self._instrument_provider.load(instrument_id)
+        self._handle_data(instrument)
+
+    async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():
-            self._handle_data(data=instrument)
+            self._handle_data(instrument)
 
     async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
@@ -259,11 +240,6 @@ class BetfairDataClient(LiveMarketDataClient):
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")
-
-    # -- INTERNAL ---------------------------------------------------------------------------------
-
-    def handle_data(self, data: Data):
-        self._handle_data(data=data)
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
@@ -285,7 +261,7 @@ class BetfairDataClient(LiveMarketDataClient):
             if isinstance(data, (BetfairStartingPrice, BSPOrderBookDeltas)):
                 # Not a regular data type
                 generic_data = GenericData(
-                    DataType(data.__class__, metadata={"instrument_id": data.instrument_id}),
+                    DataType(data.__class__, {"instrument_id": data.instrument_id}),
                     data,
                 )
                 self._handle_data(generic_data)
@@ -318,6 +294,9 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
-            # TODO (bm) - self._loop.create_task(self._stream.reconnect())
-            self._log.error(str(update))
-            raise RuntimeError()
+            self._log.warning(str(update))
+            if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
+                raise RuntimeError("No more connections available")
+            else:
+                self._log.info("Attempting reconnect")
+                self.create_task(self._stream.reconnect())

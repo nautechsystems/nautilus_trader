@@ -111,7 +111,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         account_type: BinanceAccountType,
         base_url_ws: Optional[str] = None,
         use_agg_trade_ticks: bool = False,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
@@ -449,8 +449,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,  # noqa
         limit: int,  # noqa
         correlation_id: UUID4,  # noqa
-        from_datetime: Optional[pd.Timestamp] = None,  # noqa
-        to_datetime: Optional[pd.Timestamp] = None,  # noqa
+        start: Optional[pd.Timestamp] = None,  # noqa
+        end: Optional[pd.Timestamp] = None,  # noqa
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
@@ -461,14 +461,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        from_datetime: Optional[pd.Timestamp] = None,
-        to_datetime: Optional[pd.Timestamp] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
 
         if not self._use_agg_trade_ticks:
-            if from_datetime is not None or to_datetime is not None:
+            if start is not None or end is not None:
                 self._log.warning(
                     "Trade ticks have been requested with a from/to time range, "
                     f"however the request will be for the most recent {limit}. "
@@ -483,10 +483,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             # Convert from timestamps to milliseconds
             start_time_ms = None
             end_time_ms = None
-            if from_datetime:
-                start_time_ms = str(int(from_datetime.timestamp() * 1000))
-            if to_datetime:
-                end_time_ms = str(int(to_datetime.timestamp() * 1000))
+            if start:
+                start_time_ms = str(int(start.timestamp() * 1000))
+            if end:
+                end_time_ms = str(int(end.timestamp() * 1000))
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=instrument_id,
                 limit=limit,
@@ -502,8 +502,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         bar_type: BarType,
         limit: int,
         correlation_id: UUID4,
-        from_datetime: Optional[pd.Timestamp] = None,
-        to_datetime: Optional[pd.Timestamp] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -543,12 +543,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return
 
         start_time_ms = None
-        if from_datetime is not None:
-            start_time_ms = secs_to_millis(from_datetime.timestamp())
+        if start is not None:
+            start_time_ms = secs_to_millis(start.timestamp())
 
         end_time_ms = None
-        if to_datetime is not None:
-            end_time_ms = secs_to_millis(to_datetime.timestamp())
+        if end is not None:
+            end_time_ms = secs_to_millis(end.timestamp())
 
         bars = await self._http_market.request_binance_bars(
             bar_type=bar_type,

@@ -138,7 +138,10 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         )
 
         catalog = self.catalog()
-        instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
+        instruments = catalog.instruments(
+            instrument_ids=[self.instrument_id] if self.instrument_id else None,
+            as_nautilus=True,
+        )
         if not instruments:
             return {"data": [], "instrument": None}
         data = catalog.query(**query)
@@ -226,7 +229,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         return tokenize_config(self.dict())
 
 
-def parse_filters_expr(s: str):
+def parse_filters_expr(s: Optional[str]):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
     """
     Parse a pyarrow.dataset filter expression from a string.

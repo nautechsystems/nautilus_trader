@@ -97,7 +97,7 @@ cdef class OrderFactory:
             initial_count=initial_order_list_id_count,
         )
 
-    cpdef void set_client_order_id_count(self, int count) except *:
+    cpdef void set_client_order_id_count(self, int count):
         """
         Set the internal order ID generator count to the given count.
 
@@ -113,7 +113,7 @@ cdef class OrderFactory:
         """
         self._order_id_generator.set_count(count)
 
-    cpdef void set_order_list_id_count(self, int count) except *:
+    cpdef void set_order_list_id_count(self, int count):
         """
         Set the internal order list ID generator count to the given count.
 
@@ -129,7 +129,7 @@ cdef class OrderFactory:
         """
         self._order_list_id_generator.set_count(count)
 
-    cpdef ClientOrderId generate_client_order_id(self) except *:
+    cpdef ClientOrderId generate_client_order_id(self):
         """
         Generate and return a new client order ID.
 
@@ -142,7 +142,7 @@ cdef class OrderFactory:
         """
         return self._order_id_generator.generate()
 
-    cpdef OrderListId generate_order_list_id(self) except *:
+    cpdef OrderListId generate_order_list_id(self):
         """
         Generate and return a new order list ID.
 
@@ -155,7 +155,7 @@ cdef class OrderFactory:
         """
         return self._order_list_id_generator.generate()
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the order factory.
 

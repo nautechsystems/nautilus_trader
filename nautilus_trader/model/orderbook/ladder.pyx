@@ -65,7 +65,7 @@ cdef class Ladder:
     def __repr__(self) -> str:
         return f"{Ladder.__name__}({self.levels})"
 
-    cpdef void add(self, BookOrder order) except *:
+    cpdef void add(self, BookOrder order):
         """
         Add the given order to the ladder.
 
@@ -101,7 +101,7 @@ cdef class Ladder:
 
         self._order_id_level_index[order.order_id] = level
 
-    cpdef void update(self, BookOrder order) except *:
+    cpdef void update(self, BookOrder order):
         """
         Update the given order in the ladder.
 
@@ -129,7 +129,7 @@ cdef class Ladder:
             self.delete(order=order)
             self.add(order=order)
 
-    cpdef void delete(self, BookOrder order) except *:
+    cpdef void delete(self, BookOrder order):
         """
         Delete the given order in the ladder.
 

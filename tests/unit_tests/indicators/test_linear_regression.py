@@ -15,8 +15,8 @@
 
 import math
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.linear_regression import LinearRegression
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 

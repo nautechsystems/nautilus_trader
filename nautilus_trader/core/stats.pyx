@@ -21,7 +21,7 @@ from libc.math cimport sqrt
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef double fast_mean(np.ndarray values) except *:
+cpdef double fast_mean(np.ndarray values):
     """
     Return the average value for numpy.ndarray values.
 
@@ -65,7 +65,7 @@ cpdef inline double fast_mean_iterated(
     double current_value,
     int expected_length,
     bint drop_left=True,
-) except *:
+):
     """
     Return the calculated average from the given inputs.
 
@@ -107,7 +107,7 @@ cpdef inline double fast_mean_iterated(
     return current_value + (next_value - value_to_drop) / length
 
 
-cpdef inline double fast_std(np.ndarray values) except *:
+cpdef inline double fast_std(np.ndarray values):
     """
     Return the standard deviation from the given values.
 
@@ -130,7 +130,7 @@ cpdef inline double fast_std(np.ndarray values) except *:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef double fast_std_with_mean(np.ndarray values, double mean) except *:
+cpdef double fast_std_with_mean(np.ndarray values, double mean):
     """
     Return the standard deviation from the given values and mean.
 
@@ -170,7 +170,7 @@ cpdef double fast_std_with_mean(np.ndarray values, double mean) except *:
     return sqrt(std_dev / length)
 
 
-cpdef inline double fast_mad(np.ndarray values) except *:
+cpdef inline double fast_mad(np.ndarray values):
     """
     Return the mean absolute deviation from the given values.
 
@@ -189,7 +189,7 @@ cpdef inline double fast_mad(np.ndarray values) except *:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *:
+cpdef double fast_mad_with_mean(np.ndarray values, double mean):
     """
     Return the mean absolute deviation from the given values and mean.
 
@@ -225,7 +225,7 @@ cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *:
     return mad / length
 
 
-cpdef inline double basis_points_as_percentage(double basis_points) except *:
+cpdef inline double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
 

@@ -137,6 +137,8 @@ cdef class BacktestEngine:
             load_state=config.load_state,
             save_state=config.save_state,
             log_level=log_level_from_str(config.log_level.upper()),
+            log_level_file=log_level_from_str(config.log_level_file.upper()),
+            log_file_path=config.log_file_path,
             log_rate_limit=config.log_rate_limit,
             bypass_logging=config.bypass_logging,
         )
@@ -1084,14 +1086,18 @@ cdef class BacktestEngine:
         if not self._config.run_analysis:
             return
 
-        for exchange in self._venues.values():
-            account = exchange.exec_client.get_account()
+        cdef:
+            list venue_positions
+            set venue_currencies
+        for venue in self._venues.values():
+            account = venue.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
+            self._log.info(f"\033[36m SimulatedVenue {venue.id}")
             self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            if exchange.is_frozen_account:
+            unrealized_pnls: Optional[dict[Currency, Money]] = None
+            if venue.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 if account is None:
@@ -1108,36 +1114,41 @@ cdef class BacktestEngine:
                 for c in account.commissions().values():
                     self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                self._log.info(f"Unrealized PnLs:")
-                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
+                self._log.info(f"Unrealized PnLs (included in totals):")
+                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(venue.id.value))
                 if not unrealized_pnls:
                     self._log.info("None")
                 else:
-                    for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values():
+                    for b in unrealized_pnls.values():
                         self._log.info(b.to_str())
 
             # Log output diagnostics for all simulation modules
-            for module in exchange.modules:
+            for module in venue.modules:
                 module.log_diagnostics(self._log)
 
             self._log.info("\033[36m=================================================================")
             self._log.info("\033[36m PORTFOLIO PERFORMANCE")
             self._log.info("\033[36m=================================================================")
 
-            # Find all positions for venue
-            exchange_positions = []
+            # Collect all positions and currencies for venue
+            venue_positions = []
+            venue_currencies = set()
             for position in positions:
-                if position.instrument_id.venue == exchange.id:
-                    exchange_positions.append(position)
+                if position.instrument_id.venue == venue.id:
+                    venue_positions.append(position)
+                    venue_currencies.add(position.quote_currency)
+                    if position.base_currency is not None:
+                        venue_currencies.add(position.base_currency)
 
             # Calculate statistics
-            self._kernel.portfolio.analyzer.calculate_statistics(account, exchange_positions)
+            self._kernel.portfolio.analyzer.calculate_statistics(account, venue_positions)
 
             # Present PnL performance stats per asset
-            for currency in account.currencies():
+            for currency in sorted(list(venue_currencies), key=lambda x: x.code):
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency):
+                unrealized_pnl = unrealized_pnls.get(currency) if unrealized_pnls else None
+                for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency, unrealized_pnl):
                     self._log.info(stat)
                 self._log.info("\033[36m-----------------------------------------------------------------")
 

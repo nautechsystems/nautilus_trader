@@ -23,7 +23,7 @@ cdef class PositionSizer:
     cdef readonly Instrument instrument
     """The instrument for position sizing.\n\n:returns: `Instrument`"""
 
-    cpdef void update_instrument(self, Instrument instrument) except *
+    cpdef void update_instrument(self, Instrument instrument)
     cpdef Quantity calculate(
         self,
         Price entry,

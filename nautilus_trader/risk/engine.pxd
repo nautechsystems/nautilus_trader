@@ -37,18 +37,16 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
-    cdef PortfolioFacade _portfolio
-    cdef Cache _cache
-    cdef dict _max_notional_per_order
-    cdef Throttler _order_submit_throttler
-    cdef Throttler _order_modify_throttler
+    cdef readonly PortfolioFacade _portfolio
+    cdef readonly Cache _cache
+    cdef readonly dict _max_notional_per_order
+    cdef readonly Throttler _order_submit_throttler
+    cdef readonly Throttler _order_modify_throttler
 
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly bint is_bypassed
     """If the risk engine is completely bypassed.\n\n:returns: `bool`"""
-    cdef readonly bint deny_modify_pending_update
-    """If deny `ModifyOrder` commands when an order is in a `PENDING_UPDATE` state.\n\n:returns: `bool`"""
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
@@ -58,11 +56,11 @@ cdef class RiskEngine(Component):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void execute(self, Command command) except *
-    cpdef void process(self, Event event) except *
-    cpdef void set_trading_state(self, TradingState state) except *
-    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal) except *
-    cdef void _log_state(self) except *
+    cpdef void execute(self, Command command)
+    cpdef void process(self, Event event)
+    cpdef void set_trading_state(self, TradingState state)
+    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal)
+    cpdef void _log_state(self)
 
 # -- RISK SETTINGS --------------------------------------------------------------------------------
 
@@ -73,41 +71,42 @@ cdef class RiskEngine(Component):
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *
-    cpdef void _on_stop(self) except *
+    cpdef void _on_start(self)
+    cpdef void _on_stop(self)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command) except *
-    cdef void _handle_submit_order(self, SubmitOrder command) except *
-    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
-    cdef void _handle_modify_order(self, ModifyOrder command) except *
-    cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
+    cpdef void _execute_command(self, Command command)
+    cpdef void _handle_submit_order(self, SubmitOrder command)
+    cpdef void _handle_submit_order_list(self, SubmitOrderList command)
+    cpdef void _handle_modify_order(self, ModifyOrder command)
+    cpdef void _handle_cancel_order(self, CancelOrder command)
+    cpdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
-    cdef bint _check_order_id(self, Order order) except *
-    cdef bint _check_order(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_price(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
-    cdef bint _check_orders_risk(self, Instrument instrument, list orders) except *
-    cdef str _check_price(self, Instrument instrument, Price price)
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
+    cpdef bint _check_order(self, Instrument instrument, Order order)
+    cpdef bint _check_order_price(self, Instrument instrument, Order order)
+    cpdef bint _check_order_quantity(self, Instrument instrument, Order order)
+    cpdef bint _check_orders_risk(self, Instrument instrument, list orders)
+    cpdef str _check_price(self, Instrument instrument, Price price)
+    cpdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
 # -- DENIALS --------------------------------------------------------------------------------------
 
-    cdef void _deny_command(self, TradingCommand command, str reason) except *
-    cpdef void _deny_new_order(self, TradingCommand command) except *
-    cdef void _deny_order(self, Order order, str reason) except *
-    cdef void _deny_order_list(self, OrderList order_list, str reason) except *
+    cpdef void _deny_command(self, TradingCommand command, str reason)
+    cpdef void _deny_new_order(self, TradingCommand command)
+    cpdef void _deny_order(self, Order order, str reason)
+    cpdef void _deny_order_list(self, OrderList order_list, str reason)
+    cpdef void _reject_modify_order(self, Order order, str reason)
+    cpdef void _reject_cancel_order(self, Order order, str reason)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *
-    cpdef void _send_to_execution(self, TradingCommand command) except *
-    cpdef void _send_to_emulator(self, TradingCommand command) except *
+    cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command)
+    cpdef void _send_to_execution(self, TradingCommand command)
+    cpdef void _send_to_emulator(self, TradingCommand command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_event(self, Event event) except *
+    cpdef void _handle_event(self, Event event)

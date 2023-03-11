@@ -130,7 +130,7 @@ cdef class TimeEventHandler:
         """
         self.handle()
 
-    cpdef void handle(self) except *:
+    cpdef void handle(self):
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
@@ -248,7 +248,7 @@ cdef class LiveTimer:
             ts_init=ts_init,
         )
 
-    cpdef void iterate_next_time(self, uint64_t now_ns) except *:
+    cpdef void iterate_next_time(self, uint64_t now_ns):
         """
         Iterates the timers next time and checks if the timer is now expired.
 
@@ -262,7 +262,7 @@ cdef class LiveTimer:
         if self.stop_time_ns and now_ns >= self.stop_time_ns:
             self.is_expired = True
 
-    cpdef void repeat(self, uint64_t now_ns) except *:
+    cpdef void repeat(self, uint64_t now_ns):
         """
         Continue the timer.
 
@@ -274,7 +274,7 @@ cdef class LiveTimer:
         """
         self._internal = self._start_timer(now_ns)
 
-    cpdef void cancel(self) except *:
+    cpdef void cancel(self):
         """
         Cancels the timer (the timer will not generate an event).
         """

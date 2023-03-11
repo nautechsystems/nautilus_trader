@@ -1,3 +1,42 @@
+# NautilusTrader 1.170.0 Beta
+
+Released on 11th March 2023 (UTC).
+
+### Breaking Changes
+- Moved `backtest.data.providers` to `test_kit.providers`
+- Moved `backtest.data.wranglers` to `persistence.wranglers` (to be consolidated)
+- Moved `backtest.data.loaders` to `persistence.loaders` (to be consolidated)
+- Renamed `from_datetime` to `start` across data request methods and properties
+- Renamed `to_datetime` to `end` across data request methods and properties
+- Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
+- Removed redundant log sink machinery
+- Changed parquet catalog schema dictionary integer key widths/types
+- Invalidated all pickled data due to Cython 3.0.0b1 upgrade
+
+### Enhancements
+- Added logging to file at core Rust level
+- Added `DataCatalogConfig` for more cohesive data catalog configuration
+- Added `DataEngine.register_catalog` to support historical data requests
+- Added `catalog_config` field to base `NautilusKernelConfig`
+- Changed to immediately caching orders and order lists in `Strategy`
+- Changed to checking duplicate `client_order_id` and `order_list_id` in `Strategy`
+- Changed generating and applying `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
+- `PortfolioAnalyzer` PnL statistics now take optional `unrealized_pnl`
+- Backtest performance statistics now include unrealized PnL in total PnL
+
+### Fixes
+- Fixed Binance Futures trigger type parsing
+- Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
+- Fixed `Actor` handling of bars, thanks @limx0
+- Fixed `CancelAllOrders` command handling for contingent orders not yet in matching core
+- Fixed `TrailingStopMarketOrder` slippage calculation when no `trigger_price`, thanks for reporting @rsmb7z
+- Fixed `BinanceSpotInstrumentProvider` parsing of quote asset (was using base), thanks for reporting @logogin
+- Fixed undocumented Binance time in force 'GTE\_GTC', thanks for reporting @graceyangfan
+- Fixed `Position` calculation of `last_qty` when commission currency was equal to base currency, thanks for reporting @rsmb7z
+- Fixed `BacktestEngine` post backtest run PnL performance statistics for currencies traded per venue, thanks for reporting @rsmb7z
+
+---
+
 # NautilusTrader 1.169.0 Beta
 
 Released on 18th February 2023 (UTC).

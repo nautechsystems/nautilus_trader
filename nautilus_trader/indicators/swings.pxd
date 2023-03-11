@@ -46,5 +46,5 @@ cdef class Swings(Indicator):
     cdef readonly int since_low
     """The bars since the last swing low.\n\n:returns: `int`"""
 
-    cpdef void handle_bar(self, Bar bar) except *
-    cpdef void update_raw(self, double high, double low, datetime timestamp) except *
+    cpdef void handle_bar(self, Bar bar)
+    cpdef void update_raw(self, double high, double low, datetime timestamp)

@@ -20,7 +20,6 @@ from decimal import Decimal
 import pytest
 import pytz
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -32,6 +31,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -44,6 +44,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -51,11 +52,14 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.strategies import KaboomStrategy
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -76,7 +80,7 @@ class TestStrategy:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
-            bypass=True,
+            # bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -763,6 +767,43 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 0
 
+    def test_submit_order_when_duplicate_id_then_denies(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order2 = MarketOrder(
+            self.trader_id,
+            strategy.id,
+            AUDUSD_SIM.id,
+            order1.client_order_id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            UUID4(),
+            0,
+            TimeInForce.DAY,
+        )
+        strategy.submit_order(order1)
+
+        # Act
+        strategy.submit_order(order2)
+
+        # Assert
+        assert order2.status == OrderStatus.DENIED
+
     def test_submit_order_with_valid_order_successfully_submits(self):
         # Arrange
         strategy = Strategy()
@@ -848,6 +889,127 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 0
         assert order.status == OrderStatus.FILLED
+
+    def test_submit_order_list_with_duplicate_order_list_id_then_denies(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket1 = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket2 = OrderList(
+            order_list_id=bracket1.id,
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        strategy.submit_order_list(bracket1)
+
+        # Act
+        strategy.submit_order_list(bracket2)
+
+        # Assert
+        assert self.cache.order_exists(entry.client_order_id)
+        assert self.cache.order_exists(stop_loss.client_order_id)
+        assert self.cache.order_exists(take_profit.client_order_id)
+        assert self.cache.order_list_exists(bracket1.id)
+        assert self.cache.order_list_exists(bracket2.id)
+        assert bracket1.orders[0].status == OrderStatus.INITIALIZED
+        assert bracket1.orders[1].status == OrderStatus.INITIALIZED
+        assert bracket1.orders[2].status == OrderStatus.INITIALIZED
+        assert entry.status == OrderStatus.DENIED
+        assert stop_loss.status == OrderStatus.DENIED
+        assert take_profit.status == OrderStatus.DENIED
+
+    def test_submit_order_list_with_duplicate_order_id_then_denies(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket1 = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket2 = OrderList(
+            order_list_id=strategy.order_factory.generate_order_list_id(),
+            orders=[bracket1.orders[0], stop_loss, take_profit],
+        )
+
+        strategy.submit_order_list(bracket1)
+
+        # Act
+        strategy.submit_order_list(bracket2)
+
+        # Assert
+        assert self.cache.order_exists(bracket1.orders[0].client_order_id)
+        assert self.cache.order_exists(bracket1.orders[1].client_order_id)
+        assert self.cache.order_exists(bracket1.orders[2].client_order_id)
+        assert self.cache.order_exists(stop_loss.client_order_id)
+        assert self.cache.order_exists(take_profit.client_order_id)
+        assert self.cache.order_list_exists(bracket1.id)
+        assert self.cache.order_list_exists(bracket2.id)
+        assert bracket1.orders[0].status == OrderStatus.DENIED
+        assert stop_loss.status == OrderStatus.DENIED
+        assert take_profit.status == OrderStatus.DENIED
 
     def test_submit_order_list_with_valid_order_successfully_submits(self):
         # Arrange
@@ -1051,40 +1213,6 @@ class TestStrategy:
         assert strategy.cache.order_exists(order.client_order_id)
         assert not strategy.cache.is_order_open(order.client_order_id)
         assert strategy.cache.is_order_closed(order.client_order_id)
-
-    def test_modify_order_when_pending_update_does_not_submit_command(self):
-        # Arrange
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            USDJPY_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-            Price.from_str("90.001"),
-        )
-
-        strategy.submit_order(order)
-        self.exchange.process(0)
-        self.exec_engine.process(TestEventStubs.order_pending_update(order))
-
-        # Act
-        strategy.modify_order(
-            order=order,
-            quantity=Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),
-        )
-        self.exchange.process(0)
-
-        # Assert
-        assert self.exec_engine.command_count == 1
 
     def test_modify_order_when_pending_cancel_does_not_submit_command(self):
         # Arrange

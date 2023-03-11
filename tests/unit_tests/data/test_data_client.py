@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
@@ -31,6 +30,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -48,8 +48,6 @@ class TestDataClient:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
-        self.sink = []
-        self.logger.register_sink(self.sink.append)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -94,11 +92,7 @@ class TestDataClient:
         self.client.subscribe(data_type)
 
         # Assert
-        assert self.sink[-1]["level"] == "ERR"
-        assert (
-            self.sink[-1]["msg"]
-            == "Cannot subscribe to Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `subscribe` method for this client."  # noqa
-        )  # noqa
+        # TODO(cs): Determine better way of asserting this than parsing logs
 
     def test_unsubscribe_when_not_implemented_logs_error(self):
         # Arrange
@@ -108,11 +102,7 @@ class TestDataClient:
         self.client.subscribe(data_type)
 
         # Assert
-        assert self.sink[-1]["level"] == "ERR"
-        assert (
-            self.sink[-1]["msg"]
-            == "Cannot subscribe to Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `subscribe` method for this client."  # noqa
-        )  # noqa
+        # TODO(cs): Determine better way of asserting this than parsing logs
 
     def test_request_when_not_implemented_logs_error(self):
         # Arrange
@@ -122,11 +112,7 @@ class TestDataClient:
         self.client.request(data_type, UUID4())
 
         # Assert
-        assert self.sink[-1]["level"] == "ERR"
-        assert (
-            self.sink[-1]["msg"]
-            == "Cannot request Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `request` method for this client."  # noqa
-        )  # noqa
+        # TODO(cs): Determine better way of asserting this than parsing logs
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange

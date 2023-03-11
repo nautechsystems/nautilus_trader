@@ -24,7 +24,7 @@ cdef class Currency:
     cdef uint8_t get_precision(self)
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=*) except *
+    cdef void register_c(Currency currency, bint overwrite=*)
 
     @staticmethod
     cdef Currency from_str_c(str code, bint strict=*)

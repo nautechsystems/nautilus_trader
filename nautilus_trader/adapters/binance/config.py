@@ -20,7 +20,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class BinanceDataClientConfig(LiveDataClientConfig):
+class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``BinanceDataClient`` instances.
 
@@ -59,7 +59,7 @@ class BinanceDataClientConfig(LiveDataClientConfig):
     use_agg_trade_ticks: bool = False
 
 
-class BinanceExecClientConfig(LiveExecClientConfig):
+class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``BinanceExecutionClient`` instances.
 

@@ -18,12 +18,12 @@ import platform
 
 import pytest
 
-from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
+from nautilus_trader.persistence.loaders import ParquetTickDataLoader
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 

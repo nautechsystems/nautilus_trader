@@ -19,8 +19,6 @@ import msgspec
 import pytest
 from click.testing import CliRunner
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -43,6 +41,8 @@ from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
@@ -135,7 +135,7 @@ class _TestBacktestConfig:
 
     def test_backtest_data_config_status_updates(self):
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(),
             catalog=self.catalog,
         )

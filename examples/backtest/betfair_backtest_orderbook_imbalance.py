@@ -15,12 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
+from decimal import Decimal
 
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -31,6 +31,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.objects import Money
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
@@ -56,12 +57,12 @@ if __name__ == "__main__":
         TestInstrumentProvider.betting_instrument(
             market_id="1.166811431",
             selection_id="19248890",
-            handicap="0.0",
+            selection_handicap="0.0",
         ),
         TestInstrumentProvider.betting_instrument(
             market_id="1.166811431",
             selection_id="38848248",
-            handicap="0.0",
+            selection_handicap="0.0",
         ),
     ]
     engine.add_instrument(instruments[0])
@@ -78,7 +79,7 @@ if __name__ == "__main__":
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id.value,
-                max_trade_size=10,
+                max_trade_size=Decimal(10),
                 order_id_tag=instrument.selection_id,
             ),
         )

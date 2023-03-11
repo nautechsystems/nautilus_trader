@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.accounting.accounts.betting import BettingAccount
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
@@ -34,6 +33,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -192,12 +192,12 @@ class TestBettingAccount:
     @pytest.mark.parametrize(
         "price, quantity, side, locked_balance",
         [
-            ("0.80", 10, "BUY", "10"),
-            ("0.50", 10, "BUY", "10"),
-            ("0.10", 20, "BUY", "20"),
-            ("0.80", 10, "SELL", "2.5"),
-            ("0.5", 10, "SELL", "10"),
-            ("0.1", 10, "SELL", "90"),
+            ("1.25", 10, "BUY", "10"),
+            ("2.00", 10, "BUY", "10"),
+            ("10.0", 20, "BUY", "20"),
+            ("1.25", 10, "SELL", "2.5"),
+            ("2.0", 10, "SELL", "10"),
+            ("10.0", 10, "SELL", "90"),
         ],
     )
     def test_calculate_balance_locked(self, price, quantity, side, locked_balance):

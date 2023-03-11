@@ -13,16 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.risk.engine cimport RiskEngine
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orderbook.book cimport L2OrderBook
 
 
-cdef class LiveRiskEngine(RiskEngine):
-    cdef object _loop
-    cdef object _cmd_queue_task
-    cdef object _evt_queue_task
-    cdef Queue _cmd_queue
-    cdef Queue _evt_queue
-
-    cdef readonly bint is_running
-    """If the risk engine is running.\n\n:returns: `bool`"""
+cpdef L2OrderBook create_betfair_order_book(InstrumentId instrument_id)
+cpdef Price betfair_float_to_price(double value)
+cpdef Quantity betfair_float_to_quantity(double value)

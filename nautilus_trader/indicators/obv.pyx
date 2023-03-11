@@ -44,7 +44,7 @@ cdef class OnBalanceVolume(Indicator):
         self._obv = deque(maxlen=None if period == 0 else period)
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -67,7 +67,7 @@ cdef class OnBalanceVolume(Indicator):
         double open,
         double close,
         double volume,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -96,6 +96,6 @@ cdef class OnBalanceVolume(Indicator):
             if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._obv.clear()
         self.value = 0

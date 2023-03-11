@@ -53,7 +53,7 @@ cdef class LinearRegression(Indicator):
         self.R2 = 0.0
         self.value = 0.0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -67,7 +67,7 @@ cdef class LinearRegression(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double close) except *:
+    cpdef void update_raw(self, double close):
         """
         Update the indicator with the given raw values.
 
@@ -107,7 +107,7 @@ cdef class LinearRegression(Indicator):
         self.cfo = 100.0 * residuals[-1] / y_arr[-1]
         self.R2 = 1.0 - sum(residuals * residuals) / sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._inputs.clear()
         self.slope = 0.0
         self.intercept = 0.0

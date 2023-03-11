@@ -73,22 +73,12 @@ class RawFile:
         self,
         open_file: OpenFile,
         block_size: Optional[int] = None,
-        progress: bool = False,
     ):
         self.open_file = open_file
         self.block_size = block_size
-        # TODO - waiting for tqdm support in fsspec https://github.com/intake/filesystem_spec/pulls?q=callback
-        assert not progress, "Progress not yet available, awaiting fsspec feature"
-        self.progress = progress
 
     def iter(self):
         with self.open_file as f:
-            if self.progress:
-                f.read = read_progress(
-                    f.read,
-                    total=self.open_file.fs.stat(self.open_file.path)["size"],
-                )
-
             while True:
                 raw = f.read(self.block_size)
                 if not raw:

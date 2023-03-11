@@ -289,12 +289,12 @@ class BacktestNode:
             )
             d = config.load()
             if config.instrument_id and d["instrument"] is None:
-                print(
-                    f"Requested instrument_id={d['instrument']} from data_config not found catalog",
+                engine._log.warning(
+                    f"Requested instrument_id={d['instrument']} from data_config not found in catalog",
                 )
                 continue
             if not d["data"]:
-                print(f"No data found for {config}")
+                engine._log.warning(f"No data found for {config}")
                 continue
 
             t1 = pd.Timestamp.now()

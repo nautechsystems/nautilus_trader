@@ -15,13 +15,13 @@
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down
 from nautilus_trader.model.tick_scheme.base import round_up
 from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -108,27 +108,27 @@ class TestBettingTickScheme:
         self.tick_scheme: TieredTickScheme = get_tick_scheme("BETFAIR")
 
     def test_attrs(self):
-        assert self.tick_scheme.min_price == Price.from_str("0.0010000")
-        assert self.tick_scheme.max_price == Price.from_str("0.9900990")
+        assert self.tick_scheme.min_price == Price.from_str("1.01")
+        assert self.tick_scheme.max_price == Price.from_str("1000")
 
     def test_build_ticks(self):
         result = self.tick_scheme.ticks[:5].tolist()
         expected = [
-            Price.from_str("0.0010000"),
-            Price.from_str("0.0010101"),
-            Price.from_str("0.0010204"),
-            Price.from_str("0.0010309"),
-            Price.from_str("0.0010417"),
+            Price.from_str("1.01"),
+            Price.from_str("1.02"),
+            Price.from_str("1.03"),
+            Price.from_str("1.04"),
+            Price.from_str("1.05"),
         ]
         assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
         [
-            (0.99, 349),
-            (0.90, 339),
-            (0.5, 250),
-            (0.285, 190),
+            (1.01, 0),
+            (1.10, 9),
+            (2.0, 99),
+            (3.5, 159),
         ],
     )
     def test_find_tick_idx(self, value, expected):
@@ -138,11 +138,11 @@ class TestBettingTickScheme:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (0.667, 0, "0.6711409"),
-            (0.5, 0, "0.5"),
-            (0.4975, 0, "0.5000000"),
-            (0.4950, 0, "0.4950495"),
-            (0.4950, 2, "0.5025126"),
+            (1.499, 0, "1.50"),
+            (2.000, 0, "2.0"),
+            (2.011, 0, "2.02"),
+            (2.021, 0, "2.04"),
+            (2.027, 2, "2.08"),
         ],
     )
     def test_next_ask_price(self, value, n, expected):
@@ -153,11 +153,11 @@ class TestBettingTickScheme:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (0.667, 0, "0.6666667"),
-            (0.5, 0, "0.5"),
-            (0.4975, 0, "0.4950495"),
-            (0.4950, 0, "0.4901961"),
-            (0.4950, 2, "0.4807692"),
+            (1.499, 0, "1.49"),
+            (2.000, 0, "2.0"),
+            (2.011, 0, "2.00"),
+            (2.021, 0, "2.02"),
+            (2.027, 2, "1.99"),
         ],
     )
     def test_next_bid_price(self, value, n, expected):

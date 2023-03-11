@@ -17,7 +17,6 @@ from datetime import datetime
 
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.analysis.statistics.sharpe_ratio import SharpeRatio
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import AUD
@@ -29,6 +28,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 
 

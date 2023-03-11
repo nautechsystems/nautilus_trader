@@ -30,11 +30,9 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
-from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.common import price_to_probability
-from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
@@ -69,6 +67,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -76,8 +75,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -351,14 +348,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
         existing_order = self._cache.order(client_order_id)  # type: Order
 
-        self.generate_order_pending_update(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
         if existing_order is None:
             self._log.warning(
                 f"Attempting to update order that does not exist in the cache: {command}",
@@ -381,7 +370,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
-                venue_order_id=VenueOrderId("-1"),
+                venue_order_id=None,
                 reason="ORDER MISSING VENUE_ORDER_ID",
                 ts_event=self._clock.timestamp_ns(),
             )
@@ -443,12 +432,11 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=VenueOrderId(update_instruction["betId"]),
-                quantity=Quantity(
+                quantity=betfair_float_to_quantity(
                     update_instruction["instruction"]["limitOrder"]["size"],
-                    precision=BETFAIR_QUANTITY_PRECISION,
                 ),
-                price=price_to_probability(
-                    str(update_instruction["instruction"]["limitOrder"]["price"]),
+                price=betfair_float_to_price(
+                    update_instruction["instruction"]["limitOrder"]["price"],
                 ),
                 trigger_price=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
@@ -457,14 +445,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Received cancel order: {command}")
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
         instrument = self._cache.instrument(command.instrument_id)
         PyCondition.not_none(instrument, "instrument")
 
@@ -672,15 +652,15 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self.check_cache_against_order_image(order_change_message)
                     continue
 
-    def check_cache_against_order_image(self, order_change_message: OCM):
+    def check_cache_against_order_image(self, order_change_message: OCM):  # noqa
         for market in order_change_message.oc:
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
-                    runner_id=str(selection.id),
-                    runner_handicap=selection.hc,
+                    selection_id=str(selection.id),
+                    selection_handicap=selection.hc,
                 )
-                orders = self._cache.orders()
+                orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}
                 for unmatched_order in selection.uo:
                     # We can match on venue_order_id here
@@ -688,22 +668,27 @@ class BetfairExecutionClient(LiveExecutionClient):
                     if order is not None:
                         continue  # Order exists
                     self._log.error(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=} ")
+                    raise RuntimeError(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=}")
                 matched_orders = [(OrderSide.SELL, lay) for lay in selection.ml] + [
                     (OrderSide.BUY, back) for back in selection.mb
                 ]
                 for side, matched_order in matched_orders:
                     # We don't get much information from Betfair here, try our best to match order
-                    price = price_to_probability(str(matched_order.price))
-                    quantity = Quantity(matched_order.size, precision=BETFAIR_QUANTITY_PRECISION)
-                    order = [
-                        o
-                        for o in orders
-                        if o.side == side and o.price == price and o.quantity == quantity
-                    ]
-                    if order:
-                        continue
-                    else:
+                    price = betfair_float_to_price(matched_order.price)
+                    quantity = betfair_float_to_quantity(matched_order.size)
+                    matched = False
+                    for order in orders:
+                        for event in order.events:
+                            if isinstance(event, OrderFilled):
+                                if (
+                                    order.side == side
+                                    and order.price == price
+                                    and quantity <= order.quantity
+                                ):
+                                    matched = True
+                    if not matched:
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
+                        raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder):
         """
@@ -766,8 +751,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
-                    last_px=price_to_probability(str(fill_price)),
+                    last_qty=betfair_float_to_quantity(fill_qty),
+                    last_px=betfair_float_to_price(fill_price),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
@@ -783,16 +768,16 @@ class BetfairExecutionClient(LiveExecutionClient):
             # New fill, simply return average price
             return unmatched_order.avp
         else:
-            new_price = price_to_probability(str(unmatched_order.avp))
+            new_price = betfair_float_to_price(unmatched_order.avp)
             prev_price = order.avg_px
             if prev_price == new_price:
                 # Matched at same price
                 return unmatched_order.avp
             else:
-                avg_price = Price(order.avg_px, precision=BETFAIR_PRICE_PRECISION)
-                prev_price = probability_to_price(avg_price)
+                avg_price = betfair_float_to_price(order.avg_px)
+                prev_price = betfair_float_to_price(avg_price)
                 prev_size = order.filled_qty
-                new_price = Price(unmatched_order.avp, precision=BETFAIR_PRICE_PRECISION)
+                new_price = betfair_float_to_price(unmatched_order.avp)
                 new_size = unmatched_order.sm - prev_size
                 total_size = prev_size + new_size
                 price = (new_price - (prev_price * (prev_size / total_size))) / (
@@ -835,8 +820,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
-                    last_px=price_to_probability(str(fill_price)),
+                    last_qty=betfair_float_to_quantity(fill_qty),
+                    last_px=betfair_float_to_price(fill_price),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),
@@ -913,7 +898,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
-            self._log.error(str(update))
+            self._log.warning(str(update))
             if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             else:

@@ -199,7 +199,7 @@ cdef class MarginAccount(Account):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void set_default_leverage(self, leverage: Decimal) except *:
+    cpdef void set_default_leverage(self, leverage: Decimal):
         """
         Set the default leverage for the account (if not specified by instrument).
 
@@ -221,7 +221,7 @@ cdef class MarginAccount(Account):
 
         self.default_leverage = leverage
 
-    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *:
+    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal):
         """
         Set the leverage for the given instrument.
 
@@ -246,7 +246,7 @@ cdef class MarginAccount(Account):
 
         self._leverages[instrument_id] = leverage
 
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init):
         """
         Update the initial (order) margin.
 
@@ -282,7 +282,7 @@ cdef class MarginAccount(Account):
 
         self._recalculate_balance(margin_init.currency)
 
-    cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint) except *:
+    cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint):
         """
         Update the maintenance (position) margin.
 
@@ -318,7 +318,7 @@ cdef class MarginAccount(Account):
 
         self._recalculate_balance(margin_maint.currency)
 
-    cpdef void update_margin(self, MarginBalance margin) except *:
+    cpdef void update_margin(self, MarginBalance margin):
         """
         Update the margin balance.
 
@@ -336,7 +336,7 @@ cdef class MarginAccount(Account):
         self._margins[margin.instrument_id] = margin
         self._recalculate_balance(margin.currency)
 
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
+    cpdef void clear_margin_init(self, InstrumentId instrument_id):
         """
         Clear the initial (order) margins for the given instrument ID.
 
@@ -361,7 +361,7 @@ cdef class MarginAccount(Account):
 
             self._recalculate_balance(margin.currency)
 
-    cpdef void clear_margin_maint(self, InstrumentId instrument_id) except *:
+    cpdef void clear_margin_maint(self, InstrumentId instrument_id):
         """
         Clear the maintenance (position) margins for the given instrument ID.
 
@@ -386,7 +386,7 @@ cdef class MarginAccount(Account):
 
             self._recalculate_balance(margin.currency)
 
-    cpdef void clear_margin(self, InstrumentId instrument_id) except *:
+    cpdef void clear_margin(self, InstrumentId instrument_id):
         """
         Clear the maintenance (position) margins for the given instrument ID.
 
@@ -408,11 +408,11 @@ cdef class MarginAccount(Account):
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
-    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
         return self._leverages.get(instrument_id, self.default_leverage) == 1
 
-    cdef void _recalculate_balance(self, Currency currency) except *:
+    cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
             # TODO(cs): Temporary pending reimplementation of accounting

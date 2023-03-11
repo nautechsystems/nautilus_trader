@@ -18,7 +18,6 @@ from datetime import timedelta
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
@@ -47,6 +46,7 @@ from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -1079,6 +1079,28 @@ class TestActor:
         # Assert
         assert actor.calls == ["on_start", "on_bar"]
         assert actor.object_storer.get_store()[0] == bar
+
+    def test_handle_bars(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        result = []
+        actor.on_historical_data = result.append
+
+        actor.start()
+
+        bars = [TestDataStubs.bar_5decimal(), TestDataStubs.bar_5decimal()]
+
+        # Act
+        actor.handle_bars(bars)
+
+        # Assert
+        assert result == bars
 
     def test_handle_data_when_not_running_does_not_send_to_on_data(self):
         # Arrange

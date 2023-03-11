@@ -79,7 +79,7 @@ cdef class VolatilityRatio(Indicator):
         self._atr_slow = AverageTrueRange(slow_period, ma_type, use_previous, value_floor)
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -102,7 +102,7 @@ cdef class VolatilityRatio(Indicator):
         double high,
         double low,
         double close,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw value.
 
@@ -124,14 +124,14 @@ cdef class VolatilityRatio(Indicator):
 
         self._check_initialized()
 
-    cdef void _check_initialized(self) except *:
+    cdef void _check_initialized(self):
         if not self.initialized:
             self._set_has_inputs(True)
 
             if self._atr_fast.initialized and self._atr_slow.initialized:
                 self._set_initialized(True)
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._atr_fast.reset()
         self._atr_slow.reset()
         self.value = 0

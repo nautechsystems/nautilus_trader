@@ -53,7 +53,7 @@ cdef class RelativeStrengthIndex(Indicator):
         self._last_value = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -67,7 +67,7 @@ cdef class RelativeStrengthIndex(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double value) except *:
+    cpdef void update_raw(self, double value):
         """
         Update the indicator with the given value.
 
@@ -108,7 +108,7 @@ cdef class RelativeStrengthIndex(Indicator):
         self.value = self._rsi_max - (self._rsi_max / (1 + rs))
         self._last_value = value
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._average_gain.reset()
         self._average_loss.reset()
         self._last_value = 0

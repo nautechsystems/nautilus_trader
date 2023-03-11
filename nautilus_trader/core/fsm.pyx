@@ -105,7 +105,7 @@ cdef class FiniteStateMachine:
         """
         return self.state_string_c()
 
-    cpdef void trigger(self, int trigger) except *:
+    cpdef void trigger(self, int trigger):
         """
         Process the FSM with the given trigger. The trigger must be valid for
         the FSMs current state.

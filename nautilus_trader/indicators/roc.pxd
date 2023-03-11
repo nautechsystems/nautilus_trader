@@ -25,4 +25,4 @@ cdef class RateOfChange(Indicator):
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double price) except *
+    cpdef void update_raw(self, double price)

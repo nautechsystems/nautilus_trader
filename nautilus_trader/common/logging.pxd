@@ -37,11 +37,9 @@ cdef str RES
 cdef class Logger:
     cdef CLogger _mem
     cdef Clock _clock
-    cdef list _sinks
+    cdef str _file_path
 
-    cpdef void register_sink(self, handler: Callable[[dict], None]) except *
-    cpdef void change_clock(self, Clock clock) except *
-    cdef dict create_record(self, LogLevel level, str component, str msg, dict annotations=*)
+    cpdef void change_clock(self, Clock clock)
     cdef void log(
         self,
         uint64_t timestamp_ns,
@@ -50,7 +48,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations=*,
-    ) except *
+    )
     cdef void _log(
         self,
         uint64_t timestamp_ns,
@@ -59,7 +57,7 @@ cdef class Logger:
         str component,
         str msg,
         dict annotations,
-    ) except *
+    )
 
 
 cdef class LoggerAdapter:
@@ -68,13 +66,13 @@ cdef class LoggerAdapter:
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void info(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void error(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void exception(self, str msg, ex, dict annotations=*) except *
+    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void info(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void error(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*)
+    cpdef void exception(self, str msg, ex, dict annotations=*)
 
 
-cpdef void nautilus_header(LoggerAdapter logger) except *
-cpdef void log_memory(LoggerAdapter logger) except *
+cpdef void nautilus_header(LoggerAdapter logger)
+cpdef void log_memory(LoggerAdapter logger)

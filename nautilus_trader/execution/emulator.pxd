@@ -45,39 +45,39 @@ cdef class OrderEmulator(Actor):
     cdef set _subscribed_strategies
     cdef set _monitored_positions
 
-    cpdef void execute(self, TradingCommand command) except *
+    cpdef void execute(self, TradingCommand command)
     cpdef MatchingCore create_matching_core(self, Instrument instrument)
-    cdef void _handle_submit_order(self, SubmitOrder command) except *
-    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
-    cdef void _handle_modify_order(self, ModifyOrder command) except *
-    cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
+    cdef void _handle_submit_order(self, SubmitOrder command)
+    cdef void _handle_submit_order_list(self, SubmitOrderList command)
+    cdef void _handle_modify_order(self, ModifyOrder command)
+    cdef void _handle_cancel_order(self, CancelOrder command)
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
-    cdef void _create_new_submit_order(self, Order order, PositionId position_id, ExecAlgorithmSpecification exec_algorithm_spec, ClientId client_id) except *
-    cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *
+    cdef void _create_new_submit_order(self, Order order, PositionId position_id, ExecAlgorithmSpecification exec_algorithm_spec, ClientId client_id)
+    cdef void _cancel_order(self, MatchingCore matching_core, Order order)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _handle_order_rejected(self, OrderRejected rejected) except *
-    cdef void _handle_order_canceled(self, OrderCanceled canceled) except *
-    cdef void _handle_order_expired(self, OrderExpired expired) except *
-    cdef void _handle_order_updated(self, OrderUpdated updated) except *
-    cdef void _handle_order_filled(self, OrderFilled filled) except *
-    cdef void _handle_contingencies(self, Order order) except *
-    cdef void _update_order_quantity(self, Order order, Quantity new_quantity) except *
+    cdef void _handle_order_rejected(self, OrderRejected rejected)
+    cdef void _handle_order_canceled(self, OrderCanceled canceled)
+    cdef void _handle_order_expired(self, OrderExpired expired)
+    cdef void _handle_order_updated(self, OrderUpdated updated)
+    cdef void _handle_order_filled(self, OrderFilled filled)
+    cdef void _handle_contingencies(self, Order order)
+    cdef void _update_order_quantity(self, Order order, Quantity new_quantity)
 
 # -------------------------------------------------------------------------------------------------
 
-    cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _fill_market_order(self, Order order) except *
-    cpdef void _fill_limit_order(self, Order order) except *
+    cpdef void _trigger_stop_order(self, Order order)
+    cpdef void _fill_market_order(self, Order order)
+    cpdef void _fill_limit_order(self, Order order)
 
-    cdef void _iterate_orders(self, MatchingCore matching_core) except *
-    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order) except *
+    cdef void _iterate_orders(self, MatchingCore matching_core)
+    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_command(self, TradingCommand command) except *
-    cdef void _send_exec_command(self, TradingCommand command) except *
-    cdef void _send_risk_event(self, OrderEvent event) except *
-    cdef void _send_exec_event(self, OrderEvent event) except *
+    cdef void _send_risk_command(self, TradingCommand command)
+    cdef void _send_exec_command(self, TradingCommand command)
+    cdef void _send_risk_event(self, OrderEvent event)
+    cdef void _send_exec_event(self, OrderEvent event)
