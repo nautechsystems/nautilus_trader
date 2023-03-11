@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.data.bet import Bet
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price

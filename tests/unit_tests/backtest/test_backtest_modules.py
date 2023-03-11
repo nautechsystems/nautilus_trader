@@ -15,14 +15,12 @@
 
 import pandas as pd
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.model.currencies import USD
@@ -30,6 +28,8 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")

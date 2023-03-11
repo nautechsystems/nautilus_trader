@@ -20,10 +20,8 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -42,6 +40,8 @@ from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.persistence.streaming.engine import StreamingEngine
 from nautilus_trader.persistence.streaming.engine import _BufferIterator
 from nautilus_trader.persistence.streaming.engine import _StreamingBuffer
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs

@@ -50,7 +50,7 @@ from nautilus_trader.adapters.betfair.parsing.streaming import (
 from nautilus_trader.adapters.betfair.parsing.streaming import (
     market_definition_to_instrument_status_updates,
 )
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4

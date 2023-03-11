@@ -18,8 +18,8 @@ from datetime import timedelta
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
