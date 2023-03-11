@@ -15,8 +15,8 @@
 
 import pytest
 
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.indicators.keltner_position import KeltnerPosition
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 

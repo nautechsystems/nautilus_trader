@@ -18,13 +18,13 @@ import os
 
 import pandas as pd
 
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 

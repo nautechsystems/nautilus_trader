@@ -23,7 +23,6 @@ import pytest
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
@@ -61,6 +60,7 @@ from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import MyData
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs

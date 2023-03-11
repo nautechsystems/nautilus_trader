@@ -31,11 +31,11 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 RAW_CONFIG = msgspec.json.encode(

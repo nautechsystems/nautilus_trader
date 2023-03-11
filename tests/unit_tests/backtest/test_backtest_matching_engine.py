@@ -15,7 +15,6 @@
 
 from nautilus_trader.backtest.matching_engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
@@ -27,6 +26,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs

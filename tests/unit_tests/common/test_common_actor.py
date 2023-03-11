@@ -19,7 +19,6 @@ from datetime import timedelta
 import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
@@ -47,6 +46,7 @@ from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs

@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 import pytest
 
-from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.data.bet import Bet
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 class DecimaL:
