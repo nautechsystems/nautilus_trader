@@ -3,7 +3,7 @@
 Released on 11th March 2023 (UTC).
 
 ### Breaking Changes
-- Moved `backtest.providers` to `test_kit.providers`
+- Moved `backtest.data.providers` to `test_kit.providers`
 - Moved `backtest.data.wranglers` to `persistence.wranglers` (to be consolidated)
 - Moved `backtest.data.loaders` to `persistence.loaders` (to be consolidated)
 - Renamed `from_datetime` to `start` across data request methods and properties
