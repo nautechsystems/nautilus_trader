@@ -26,9 +26,7 @@ import pyarrow.dataset as ds
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
@@ -55,6 +53,8 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import ParquetReader as ParquetByteReader
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.data import TestDataStubs

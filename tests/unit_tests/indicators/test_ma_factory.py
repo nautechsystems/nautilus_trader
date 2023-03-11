@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.dema import DoubleExponentialMovingAverage
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.average.hma import HullMovingAverage

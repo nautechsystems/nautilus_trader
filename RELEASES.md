@@ -3,6 +3,10 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Moved `TestInstrumentProvider` to `backtest.providers`
+- Moved `TestDataProvider` to `test_kit.providers`
+- Moved wranglers to `persistence.wranglers`
+- Moved loaders to `persistence.loaders` (to be consolidated)
 - Renamed `from_datetime` to `start` across data request methods and properties
 - Renamed `to_datetime` to `end` across data request methods and properties
 - Change parquet catalog schema dictionary integer key widths/types

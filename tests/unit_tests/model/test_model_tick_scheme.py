@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down

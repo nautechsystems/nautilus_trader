@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 from fsspec.implementations.memory import MemoryFileSystem
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.indicators.bias import Bias
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 

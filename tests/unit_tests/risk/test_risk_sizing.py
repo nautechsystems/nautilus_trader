@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price

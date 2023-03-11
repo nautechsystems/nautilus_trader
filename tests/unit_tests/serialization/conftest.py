@@ -15,7 +15,7 @@
 
 from typing import Any
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId

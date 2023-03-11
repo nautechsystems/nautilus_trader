@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
+from nautilus_trader.backtest.providers import TestInstrumentProvider
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.performance import PerformanceBench
 from nautilus_trader.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.providers import TestDataProvider
 
 
 class TestDataWranglersPerformance(PerformanceHarness):

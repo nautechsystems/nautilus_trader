@@ -15,7 +15,7 @@
 
 import numpy as np
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
 from nautilus_trader.indicators.fuzzy_enum import CandleBodySize

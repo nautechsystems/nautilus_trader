@@ -15,7 +15,7 @@
 
 from datetime import timedelta
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.providers import TestInstrumentProvider
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
