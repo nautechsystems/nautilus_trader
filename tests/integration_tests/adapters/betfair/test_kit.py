@@ -635,7 +635,7 @@ class BetfairDataProvider:
     @staticmethod
     def market_ids():
         """
-        A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`.
+        Return a list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`.
         """
         return (
             "1.148894697",

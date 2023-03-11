@@ -139,9 +139,69 @@ line_length = 100
 # Linter configs                                         #
 ##########################################################
 [tool.ruff]
-# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default
-select = ["E", "F"]
-ignore = ["E741"]
+select = [
+    "E",
+    "F",
+    "W",
+    "C90",
+    "D",
+    "UP",
+    "S",
+    "T10",
+    "ICN",
+    "PYI",
+    "Q",
+    # "RSE",
+    "TID",
+    # "ARG",
+    # "ERA",
+    # "PD",
+    # "PGH",
+    # "PL",
+    # "PLE",
+    # "PLR",
+    # "PLW",
+    # "NPY",
+    # "RUF",
+]
+
+ignore = [
+    "E741",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D107",
+    "D105",
+    "D200",
+    "D203",
+    "D205",
+    "D212",
+    "D400",
+    "D413",
+    "D415",
+    "D416",
+    "S101",  # Use of assert detected (OK in test suite)
+    "S105",  # Use of hardcoded password (spurious)
+    "S106",  # Use of hardcoded password (spurious)
+    "S113",  # Probable use of requests call without timeout **fix**
+]
+
+# pydocstyle ignore reasons
+# -------------------------
+# D100: Missing docstring in public module  **fix**
+# D102: Missing docstring in public method  **fix**
+# D103: Missing docstring in public function  **fix**
+# D104: Missing docstring in public package  **fix**
+# D200: One-line docstring should fit on one line with quotes (optional style)
+# D203: 1 blank line required before class docstring (optional style)
+# D205: 1 blank line required between summary line and description (optional style)
+# D212: Multi-line docstring summary should start at the first line (optional style)
+# D400: First line should end with a period (not always a first line)
+# D413: Missing blank line after last section ('Parameters')
+# D415: First line should end with a period, question mark, or exclamation point (not always a first line)
+# D416: Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
 fixable = ["A", "B", "C", "D", "E", "F"]
