@@ -24,11 +24,11 @@ cdef class FillModel:
     cdef readonly double prob_slippage
     """The probability of aggressive order execution slipping.\n\n:returns: `bool`"""
 
-    cpdef bint is_limit_filled(self) except *
-    cpdef bint is_stop_filled(self) except *
-    cpdef bint is_slipped(self) except *
+    cpdef bint is_limit_filled(self)
+    cpdef bint is_stop_filled(self)
+    cpdef bint is_slipped(self)
 
-    cdef bint _event_success(self, double probability) except *
+    cdef bint _event_success(self, double probability)
 
 
 cdef class LatencyModel:

@@ -134,11 +134,11 @@ cdef class ExchangeRateCalculator:
             if perm[0] not in exchange_rates_perm1:
                 # Search for inverse
                 if perm[1] in exchange_rates_perm0:
-                    exchange_rates_perm1[perm[0]] = 1.0 / exchange_rates_perm0[perm[1]]
+                    exchange_rates_perm1[perm[0]] = 1.0 / float(exchange_rates_perm0[perm[1]])
             if perm[1] not in exchange_rates_perm0:
                 # Search for inverse
                 if perm[0] in exchange_rates_perm1:
-                    exchange_rates_perm0[perm[1]] = 1.0 / exchange_rates_perm1[perm[0]]
+                    exchange_rates_perm0[perm[1]] = 1.0 / float(exchange_rates_perm1[perm[0]])
 
         cdef dict quotes = exchange_rates.get(from_currency.code)
         if quotes:

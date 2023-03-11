@@ -34,8 +34,8 @@ cdef class ComponentFSMFactory:
 cdef class Component:
     cdef readonly Clock _clock
     cdef readonly LoggerAdapter _log
+    cdef readonly MessageBus _msgbus
     cdef FiniteStateMachine _fsm
-    cdef MessageBus _msgbus
     cdef dict _config
 
     cdef readonly TraderId trader_id
@@ -45,30 +45,30 @@ cdef class Component:
     cdef readonly type type
     """The components type.\n\n:returns: `type`"""
 
-    cdef void _change_clock(self, Clock clock) except *
-    cdef void _change_logger(self, Logger logger) except *
-    cdef void _change_msgbus(self, MessageBus msgbus) except *
+    cdef void _change_clock(self, Clock clock)
+    cdef void _change_logger(self, Logger logger)
+    cdef void _change_msgbus(self, MessageBus msgbus)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _start(self) except *
-    cpdef void _stop(self) except *
-    cpdef void _resume(self) except *
-    cpdef void _reset(self) except *
-    cpdef void _dispose(self) except *
-    cpdef void _degrade(self) except *
-    cpdef void _fault(self) except *
+    cpdef void _start(self)
+    cpdef void _stop(self)
+    cpdef void _resume(self)
+    cpdef void _reset(self)
+    cpdef void _dispose(self)
+    cpdef void _degrade(self)
+    cpdef void _fault(self)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cdef void _initialize(self) except *
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cpdef void resume(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
-    cpdef void degrade(self) except *
-    cpdef void fault(self) except *
+    cdef void _initialize(self)
+    cpdef void start(self)
+    cpdef void stop(self)
+    cpdef void resume(self)
+    cpdef void reset(self)
+    cpdef void dispose(self)
+    cpdef void degrade(self)
+    cpdef void fault(self)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -77,4 +77,4 @@ cdef class Component:
         ComponentTrigger trigger,
         bint is_transitory,
         action: Callable[[None], None]=*,
-    ) except *
+    )

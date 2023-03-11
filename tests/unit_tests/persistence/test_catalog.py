@@ -26,9 +26,6 @@ import pyarrow.dataset as ds
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
@@ -55,8 +52,11 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import ParquetReader as ParquetByteReader
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
@@ -65,12 +65,12 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestPersistenceCatalogRust:
-    def setup(self):
+    def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self.instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("SIM"))
 
-    def teardown(self):
+    def teardown(self) -> None:
         # Cleanup
         path = self.catalog.path
         fs = self.catalog.fs
@@ -395,18 +395,20 @@ class _TestPersistenceCatalog:
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         # Write some betfair trades and orderbook
         process_files(
-            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
 
-    @pytest.mark.skip(reason="fix after merge")
+    @pytest.mark.skipif(sys.platform == "win32", reason="windows paths broken")
     def test_from_env(self):
-        path = tempfile.mktemp()
-        os.environ["NAUTILUS_PATH"] = f"{self.fs_protocol}://{path}"
+        path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
+        uri = f"{self.fs_protocol}://{path}"
+        catalog = ParquetDataCatalog.from_uri(uri)
+        os.environ["NAUTILUS_PATH"] = uri
         catalog = ParquetDataCatalog.from_env()
-        assert catalog.fs_protocol == fsspec.filesystem(self.fs_protocol)
+        assert catalog.fs_protocol == self.fs_protocol
 
     def test_partition_key_correctly_remapped(self):
         # Arrange

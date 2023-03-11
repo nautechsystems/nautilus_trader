@@ -49,7 +49,7 @@ cdef class Queue:
 
         self._queue = collections.deque()
 
-    cpdef int qsize(self) except *:
+    cpdef int qsize(self):
         """
         Return the number of items in the queue.
 
@@ -60,7 +60,7 @@ cdef class Queue:
         """
         return self._qsize()
 
-    cpdef bint empty(self) except *:
+    cpdef bint empty(self):
         """
         Return a value indicating whether the queue is empty.
 
@@ -72,7 +72,7 @@ cdef class Queue:
         """
         return self._empty()
 
-    cpdef bint full(self) except *:
+    cpdef bint full(self):
         """
         Return a value indicating whether the queue is full.
 
@@ -109,7 +109,7 @@ cdef class Queue:
 
         self._put_nowait(item)
 
-    cpdef void put_nowait(self, item) except *:
+    cpdef void put_nowait(self, item):
         """
         Put `item` onto the queue *without* blocking.
 
@@ -204,19 +204,19 @@ cdef class Queue:
         """
         return list(self._queue)
 
-    cdef int _qsize(self) except *:
+    cdef int _qsize(self):
         return self.count
 
-    cdef bint _empty(self) except *:
+    cdef bint _empty(self):
         return self.count == 0
 
-    cdef bint _full(self) except *:
+    cdef bint _full(self):
         if self.maxsize <= 0:
             return False
         else:
             return self.count >= self.maxsize
 
-    cdef void _put_nowait(self, item) except *:
+    cdef void _put_nowait(self, item):
         if self._full():
             raise asyncio.QueueFull()
         self._queue.appendleft(item)

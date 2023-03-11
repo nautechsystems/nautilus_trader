@@ -79,25 +79,25 @@ cdef class BacktestDataClient(DataClient):
 
         self.is_connected = False
 
-    cpdef void _start(self) except *:
+    cpdef void _start(self):
         self._log.info(f"Connecting...")
         self.is_connected = True
         self._log.info(f"Connected.")
 
-    cpdef void _stop(self) except *:
+    cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe(self, DataType data_type) except *:
+    cpdef void subscribe(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
         self._add_subscription(data_type)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe(self, DataType data_type) except *:
+    cpdef void unsubscribe(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
         self._remove_subscription(data_type)
@@ -105,7 +105,7 @@ cdef class BacktestDataClient(DataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
+    cpdef void request(self, DataType data_type, UUID4 correlation_id):
         Condition.not_none(data_type, "data_type")
         # Do nothing else for backtest
 
@@ -147,25 +147,25 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         self.is_connected = False
 
-    cpdef void _start(self) except *:
+    cpdef void _start(self):
         self._log.info(f"Connecting...")
         self.is_connected = True
         self._log.info(f"Connected.")
 
-    cpdef void _stop(self) except *:
+    cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_instruments(self) except *:
+    cpdef void subscribe_instruments(self):
         cdef Instrument instrument
         for instrument in self._cache.instruments(Venue(self.id.value)):
             self.subscribe_instrument(instrument.id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_instrument(instrument_id)
@@ -177,7 +177,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         BookType book_type,
         int depth = 0,
         dict kwargs = None,
-    ) except *:
+    ):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_order_book_deltas(instrument_id)
@@ -189,112 +189,112 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         BookType book_type,
         int depth = 0,
         dict kwargs = None,
-    ) except *:
+    ):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_order_book_snapshots(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_ticker(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_quote_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_trade_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_bars(self, BarType bar_type) except *:
+    cpdef void subscribe_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")
 
         self._add_subscription_bars(bar_type)
         # Do nothing else for backtest
 
-    cpdef void subscribe_venue_status_updates(self, Venue venue) except *:
+    cpdef void subscribe_venue_status_updates(self, Venue venue):
         Condition.not_none(venue, "venue")
 
         self._add_subscription_venue_status_updates(venue)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_instrument_status_updates(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_instrument_close(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instruments(self) except *:
+    cpdef void unsubscribe_instruments(self):
         self._subscriptions_instrument.clear()
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_order_book_deltas(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_order_book_snapshots(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_ticker(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_quote_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_trade_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")
 
         self._remove_subscription_bars(bar_type)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument_status_updates(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue) except *:
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue):
         Condition.not_none(venue, "venue")
 
         self._remove_subscription_venue_status_updates(venue)
 
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument_close(instrument_id)
@@ -302,7 +302,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -321,7 +321,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             correlation_id=correlation_id,
         )
 
-    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id) except *:
+    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id):
         Condition.not_none(correlation_id, "correlation_id")
 
         cdef list instruments = self._cache.instruments(venue)
@@ -340,9 +340,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime: Optional[datetime] = None,
-        datetime to_datetime: Optional[datetime] = None,
-    ) except *:
+        datetime start: Optional[datetime] = None,
+        datetime end: Optional[datetime] = None,
+    ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -353,9 +353,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime: Optional[datetime] = None,
-        datetime to_datetime: Optional[datetime] = None,
-    ) except *:
+        datetime start: Optional[datetime] = None,
+        datetime end: Optional[datetime] = None,
+    ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
@@ -367,9 +367,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         BarType bar_type,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime: Optional[datetime] = None,
-        datetime to_datetime: Optional[datetime] = None,
-    ) except *:
+        datetime start: Optional[datetime] = None,
+        datetime end: Optional[datetime] = None,
+    ):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")

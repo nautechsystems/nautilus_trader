@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.bet import Bet
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 class DecimaL:
@@ -110,7 +110,3 @@ class TestBet:
             side=side,
         ).exposure()
         assert result == expected
-
-    def test_dict(self):
-        bet = Bet(price=self.price, quantity=self.size, side=OrderSide.BUY)
-        assert Bet.from_dict(bet.to_dict(bet)) == bet

@@ -131,6 +131,8 @@ def _build_extensions() -> list[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
+    extra_link_args = RUST_LIBS
+
     if platform.system() == "Darwin":
         extra_compile_args.append("-Wno-unreachable-code-fallthrough")
 
@@ -141,7 +143,6 @@ def _build_extensions() -> list[Extension]:
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
 
-    extra_link_args = RUST_LIBS
     if platform.system() == "Windows":
         extra_link_args += [
             "WS2_32.Lib",
@@ -251,13 +252,13 @@ def _get_rustc_version() -> str:
         return output
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            "You are installing from source which requires the Rust compiler to "
-            "be installed.\nFind more information at https://www.rust-lang.org/tools/install\n"
+            "You are installing from source which requires the Rust compiler to be installed.\n"
+            "Find more information at https://www.rust-lang.org/tools/install\n"
             f"Error running rustc: {e.stderr.decode()}",
         ) from e
 
 
-def build(pyo3_only=False) -> None:
+def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
     _copy_rust_dylibs_to_project()

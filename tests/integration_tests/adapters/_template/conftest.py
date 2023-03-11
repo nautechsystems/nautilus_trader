@@ -13,20 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.data.engine cimport DataEngine
+import pytest
+
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.identifiers import Venue
 
 
-cdef class LiveDataEngine(DataEngine):
-    cdef object _loop
-    cdef object _cmd_queue_task
-    cdef object _req_queue_task
-    cdef object _res_queue_task
-    cdef object _data_queue_task
-    cdef Queue _cmd_queue
-    cdef Queue _req_queue
-    cdef Queue _res_queue
-    cdef Queue _data_queue
+@pytest.fixture()
+def venue() -> Venue:
+    raise NotImplementedError("`venue` needs to be implemented in adapter `conftest.py`")
 
-    cdef readonly bint is_running
-    """If the data engine is running.\n\n:returns: `bool`"""
+
+@pytest.fixture()
+def data_client():
+    raise NotImplementedError("`data_client` needs to be implemented in adapter `conftest.py`")
+
+
+@pytest.fixture()
+def exec_client():
+    raise NotImplementedError("`exec_client` needs to be implemented in adapter `conftest.py`")
+
+
+@pytest.fixture()
+def instrument():
+    raise NotImplementedError("`instrument` needs to be implemented in adapter `conftest.py`")
+
+
+@pytest.fixture()
+def account_state() -> AccountState:
+    raise NotImplementedError("`account_state` needs to be implemented in adapter `conftest.py`")

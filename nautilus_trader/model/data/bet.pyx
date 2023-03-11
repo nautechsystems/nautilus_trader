@@ -140,15 +140,3 @@ cdef class Bet:
 
         """
         return Bet.to_dict_c(obj)
-
-
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side):
-    """
-    Nautilus considers orders/trades in probability space; convert back to betting prices/quantities.
-    """
-    bet_price: Decimal = Decimal(1) / price
-    return Bet(
-        price=bet_price,
-        quantity=quantity,
-        side=side
-    )

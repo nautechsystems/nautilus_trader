@@ -33,8 +33,11 @@ from typing import Callable, Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
+from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -46,6 +49,9 @@ from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -121,6 +127,8 @@ cdef class DataEngine(Component):
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
+        self._catalog: Optional[ParquetDataCatalog] = None
+        self._use_rust: bool = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
 
@@ -143,7 +151,7 @@ cdef class DataEngine(Component):
         self._msgbus.register(endpoint="DataEngine.response", handler=self.response)
 
     @property
-    def registered_clients(self):
+    def registered_clients(self) -> list[ClientId]:
         """
         Return the execution clients registered with the engine.
 
@@ -155,7 +163,7 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self):
+    def default_client(self) -> Optional[ClientId]:
         """
         Return the default data client registered with the engine.
 
@@ -166,9 +174,24 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
+    def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
+        """
+        Register the given data catalog with the engine.
+
+        Parameters
+        ----------
+        catalog : ParquetDataCatalog
+            The data catalog to register.
+
+        """
+        Condition.not_none(catalog, "catalog")
+
+        self._catalog = catalog
+        self._use_rust = use_rust
+
 # --REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_client(self, DataClient client) except *:
+    cpdef void register_client(self, DataClient client):
         """
         Register the given data client with the data engine.
 
@@ -198,7 +221,7 @@ cdef class DataEngine(Component):
 
         self._log.info(f"Registered {client}{routing_log}.")
 
-    cpdef void register_default_client(self, DataClient client) except *:
+    cpdef void register_default_client(self, DataClient client):
         """
         Register the given client as the default routing client (when a specific
         venue routing cannot be found).
@@ -217,7 +240,7 @@ cdef class DataEngine(Component):
 
         self._log.info(f"Registered {client} for default routing.")
 
-    cpdef void register_venue_routing(self, DataClient client, Venue venue) except *:
+    cpdef void register_venue_routing(self, DataClient client, Venue venue):
         """
         Register the given client to route orders to the given venue.
 
@@ -242,7 +265,7 @@ cdef class DataEngine(Component):
 
         self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
-    cpdef void deregister_client(self, DataClient client) except *:
+    cpdef void deregister_client(self, DataClient client):
         """
         Deregister the given data client from the data engine.
 
@@ -410,7 +433,7 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_instrument_close()
         return subscriptions
 
-    cpdef bint check_connected(self) except *:
+    cpdef bint check_connected(self):
         """
         Check all of the engines clients are connected.
 
@@ -426,7 +449,7 @@ cdef class DataEngine(Component):
                 return False
         return True
 
-    cpdef bint check_disconnected(self) except *:
+    cpdef bint check_disconnected(self):
         """
         Check all of the engines clients are disconnected.
 
@@ -444,22 +467,22 @@ cdef class DataEngine(Component):
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *:
+    cpdef void _on_start(self):
         pass  # Optionally override in subclass
 
-    cpdef void _on_stop(self) except *:
+    cpdef void _on_stop(self):
         pass  # Optionally override in subclass
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
-    cpdef void _start(self) except *:
+    cpdef void _start(self):
         cdef DataClient client
         for client in self._clients.values():
             client.start()
 
         self._on_start()
 
-    cpdef void _stop(self) except *:
+    cpdef void _stop(self):
         cdef DataClient client
         for client in self._clients.values():
             client.stop()
@@ -470,7 +493,7 @@ cdef class DataEngine(Component):
 
         self._on_stop()
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         cdef DataClient client
         for client in self._clients.values():
             client.reset()
@@ -484,7 +507,7 @@ cdef class DataEngine(Component):
         self.request_count = 0
         self.response_count = 0
 
-    cpdef void _dispose(self) except *:
+    cpdef void _dispose(self):
         cdef DataClient client
         for client in self._clients.values():
             client.dispose()
@@ -493,7 +516,7 @@ cdef class DataEngine(Component):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void execute(self, DataCommand command) except *:
+    cpdef void execute(self, DataCommand command):
         """
         Execute the given data command.
 
@@ -507,7 +530,7 @@ cdef class DataEngine(Component):
 
         self._execute_command(command)
 
-    cpdef void process(self, Data data) except *:
+    cpdef void process(self, Data data):
         """
         Process the given data.
 
@@ -521,7 +544,7 @@ cdef class DataEngine(Component):
 
         self._handle_data(data)
 
-    cpdef void request(self, DataRequest request) except *:
+    cpdef void request(self, DataRequest request):
         """
         Handle the given request.
 
@@ -535,7 +558,7 @@ cdef class DataEngine(Component):
 
         self._handle_request(request)
 
-    cpdef void response(self, DataResponse response) except *:
+    cpdef void response(self, DataResponse response):
         """
         Handle the given response.
 
@@ -551,7 +574,7 @@ cdef class DataEngine(Component):
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _execute_command(self, DataCommand command) except *:
+    cpdef void _execute_command(self, DataCommand command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
@@ -573,7 +596,7 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *:
+    cpdef void _handle_subscribe(self, DataClient client, Subscribe command):
         if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
@@ -629,7 +652,7 @@ cdef class DataEngine(Component):
         else:
             self._handle_subscribe_data(client, command.data_type)
 
-    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
+    cpdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command):
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
@@ -670,11 +693,11 @@ cdef class DataEngine(Component):
         else:
             self._handle_unsubscribe_data(client, command.data_type)
 
-    cdef void _handle_subscribe_instrument(
+    cpdef void _handle_subscribe_instrument(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
 
         if instrument_id is None:
@@ -684,12 +707,12 @@ cdef class DataEngine(Component):
         if instrument_id not in client.subscribed_instruments():
             client.subscribe_instrument(instrument_id)
 
-    cdef void _handle_subscribe_order_book_deltas(
+    cpdef void _handle_subscribe_order_book_deltas(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
         dict metadata,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
@@ -733,12 +756,12 @@ cdef class DataEngine(Component):
             priority=10,
         )
 
-    cdef void _handle_subscribe_order_book_snapshots(
+    cpdef void _handle_subscribe_order_book_snapshots(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
         dict metadata,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
@@ -810,60 +833,61 @@ cdef class DataEngine(Component):
             priority=10,
         )
 
-    cdef void _handle_subscribe_ticker(
+    cpdef void _handle_subscribe_ticker(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id not in client.subscribed_tickers():
             client.subscribe_ticker(instrument_id)
 
-    cdef void _handle_subscribe_quote_ticks(
+    cpdef void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id)
 
-    cdef void _handle_subscribe_trade_ticks(
+    cpdef void _handle_subscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id)
 
-    cdef void _handle_subscribe_bars(
+    cpdef void _handle_subscribe_bars(
         self,
         MarketDataClient client,
         BarType bar_type,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internally_aggregated() and bar_type not in self._bar_aggregators:
+        if bar_type.is_internally_aggregated():
             # Internal aggregation
-            self._start_bar_aggregator(client, bar_type)
+            if bar_type not in self._bar_aggregators:
+                self._start_bar_aggregator(client, bar_type)
         else:
             # External aggregation
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type)
 
-    cdef void _handle_subscribe_data(
+    cpdef void _handle_subscribe_data(
         self,
         DataClient client,
         DataType data_type,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
 
@@ -877,44 +901,44 @@ cdef class DataEngine(Component):
             )
             return
 
-    cdef void _handle_subscribe_venue_status_updates(
+    cpdef void _handle_subscribe_venue_status_updates(
         self,
         MarketDataClient client,
         Venue venue,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(venue, "venue")
 
         if venue not in client.subscribed_venue_status_updates():
             client.subscribe_venue_status_updates(venue)
 
-    cdef void _handle_subscribe_instrument_status_updates(
+    cpdef void _handle_subscribe_instrument_status_updates(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id not in client.subscribed_instrument_status_updates():
             client.subscribe_instrument_status_updates(instrument_id)
 
-    cdef void _handle_subscribe_instrument_close(
+    cpdef void _handle_subscribe_instrument_close(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id not in client.subscribed_instrument_close():
             client.subscribe_instrument_close(instrument_id)
 
-    cdef void _handle_unsubscribe_instrument(
+    cpdef void _handle_unsubscribe_instrument(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
 
         if instrument_id is None:
@@ -929,12 +953,12 @@ cdef class DataEngine(Component):
             ):
                 client.unsubscribe_instrument(instrument_id)
 
-    cdef void _handle_unsubscribe_order_book_deltas(
+    cpdef void _handle_unsubscribe_order_book_deltas(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
         dict metadata,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
@@ -946,12 +970,12 @@ cdef class DataEngine(Component):
         ):
             client.unsubscribe_order_book_deltas(instrument_id)
 
-    cdef void _handle_unsubscribe_order_book_snapshots(
+    cpdef void _handle_unsubscribe_order_book_snapshots(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
         dict metadata,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
@@ -963,11 +987,11 @@ cdef class DataEngine(Component):
         ):
             client.unsubscribe_order_book_snapshots(instrument_id)
 
-    cdef void _handle_unsubscribe_ticker(
+    cpdef void _handle_unsubscribe_ticker(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -978,11 +1002,11 @@ cdef class DataEngine(Component):
         ):
             client.unsubscribe_ticker(instrument_id)
 
-    cdef void _handle_unsubscribe_quote_ticks(
+    cpdef void _handle_unsubscribe_quote_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -993,11 +1017,11 @@ cdef class DataEngine(Component):
         ):
             client.unsubscribe_quote_ticks(instrument_id)
 
-    cdef void _handle_unsubscribe_trade_ticks(
+    cpdef void _handle_unsubscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -1008,27 +1032,31 @@ cdef class DataEngine(Component):
         ):
             client.unsubscribe_trade_ticks(instrument_id)
 
-    cdef void _handle_unsubscribe_bars(
+    cpdef void _handle_unsubscribe_bars(
         self,
         MarketDataClient client,
         BarType bar_type,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internally_aggregated() and bar_type in self._bar_aggregators:
+        if self._msgbus.has_subscribers(f"data.bars.{bar_type}"):
+            return
+
+        if bar_type.is_internally_aggregated():
             # Internal aggregation
-            self._stop_bar_aggregator(client, bar_type)
+            if bar_type in self._bar_aggregators:
+                self._stop_bar_aggregator(client, bar_type)
         else:
-            if not self._msgbus.has_subscribers(f"data.bars.{bar_type}"):
-                # External aggregation
+            # External aggregation
+            if bar_type in client.subscribed_bars():
                 client.unsubscribe_bars(bar_type)
 
-    cdef void _handle_unsubscribe_data(
+    cpdef void _handle_unsubscribe_data(
         self,
         DataClient client,
         DataType data_type,
-    ) except *:
+    ):
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
 
@@ -1044,11 +1072,18 @@ cdef class DataEngine(Component):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cdef void _handle_request(self, DataRequest request) except *:
+    cpdef void _handle_request(self, DataRequest request):
         if self.debug:
             self._log.debug(f"{RECV}{REQ} {request}.", LogColor.MAGENTA)
         self.request_count += 1
 
+        # Query data catalog
+        if self._catalog:
+            # For now we'll just query the catalog if its present (as very likely this is a backtest)
+            self._query_data_catalog(request)
+            return
+
+        # Query data client
         cdef DataClient client = self._clients.get(request.client_id)
         if client is None:
             client = self._routing_map.get(
@@ -1074,8 +1109,8 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("start"),
+                request.data_type.metadata.get("end"),
             )
         elif request.data_type.type == TradeTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
@@ -1083,8 +1118,8 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("start"),
+                request.data_type.metadata.get("end"),
             )
         elif request.data_type.type == Bar:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
@@ -1092,8 +1127,8 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("bar_type"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("start"),
+                request.data_type.metadata.get("end"),
             )
         else:
             try:
@@ -1101,9 +1136,92 @@ cdef class DataEngine(Component):
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
+    cpdef void _query_data_catalog(self, DataRequest request):
+        cdef datetime start = request.data_type.metadata.get("start")
+        cdef datetime end = request.data_type.metadata.get("end")
+
+        cdef uint64_t now_ns = self._clock.timestamp_ns()
+        cdef uint64_t start_ns = dt_to_unix_nanos(start) if start is not None else 0
+        cdef uint64_t end_ns = dt_to_unix_nanos(end) if end is not None else now_ns
+
+        # Validate request time range
+        Condition.true(start_ns <= end_ns, f"start {start_ns} was greater than end {end_ns}")
+
+        if end is not None and end_ns > now_ns:
+            self._log.warning(
+                "Cannot request data beyond current time. "
+                f"Truncating `end` to current UNIX nanoseconds {unix_nanos_to_dt(now_ns)}.",
+            )
+            end_ns = now_ns
+
+        if request.data_type.type == Instrument:
+            instrument_id = request.data_type.metadata.get("instrument_id")
+            if instrument_id is None:
+                data = self._catalog.instruments(as_nautilus=True)
+            else:
+                data = self._catalog.instruments(
+                    instrument_ids=[str(instrument_id)],
+                    as_nautilus=True,
+                )
+        elif request.data_type.type == QuoteTick:
+            data = self._catalog.quote_ticks(
+                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                start=start_ns,
+                end=end_ns,
+                as_nautilus=True,
+                use_rust=self._use_rust,
+            )
+        elif request.data_type.type == TradeTick:
+            data = self._catalog.trade_ticks(
+                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                start=start_ns,
+                end=end_ns,
+                as_nautilus=True,
+                use_rust=self._use_rust,
+            )
+        elif request.data_type.type == Bar:
+            bar_type = request.data_type.metadata.get("bar_type")
+            if bar_type is None:
+                self._log.error("No bar type provided for bars request.")
+                return
+            data = self._catalog.bars(
+                instrument_ids=[str(bar_type.instrument_id)],
+                bar_type=str(bar_type),
+                start=start_ns,
+                end=end_ns,
+                as_nautilus=True,
+                use_rust=False,  # Until implemented
+            )
+        else:
+            data = self._catalog.generic_data(
+                cls=request.data_type.type,
+                metadata=request.data_type.metadata,
+                start=start_ns,
+                end=end_ns,
+                as_nautilus=True,
+            )
+
+        # Validation data is not from the future
+        if data and data[-1].ts_init > now_ns:
+            raise RuntimeError(
+                "Invalid response: Historical data from the future: "
+                f"data[-1].ts_init={data[-1].ts_init}, now_ns={now_ns}",
+            )
+
+        response = DataResponse(
+            client_id=request.client_id,
+            venue=request.venue,
+            data_type=request.data_type,
+            data=data,
+            correlation_id=request.id,
+            response_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_response(response)
+
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, Data data) except *:
+    cpdef void _handle_data(self, Data data):
         self.data_count += 1
 
         if isinstance(data, OrderBookData):
@@ -1129,7 +1247,7 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
-    cdef void _handle_instrument(self, Instrument instrument) except *:
+    cpdef void _handle_instrument(self, Instrument instrument):
         self._cache.add_instrument(instrument)
         self._msgbus.publish_c(
             topic=f"data.instrument"
@@ -1138,7 +1256,7 @@ cdef class DataEngine(Component):
             msg=instrument,
         )
 
-    cdef void _handle_order_book_data(self, OrderBookData data) except *:
+    cpdef void _handle_order_book_data(self, OrderBookData data):
         self._msgbus.publish_c(
             topic=f"data.book.deltas"
                   f".{data.instrument_id.venue}"
@@ -1146,7 +1264,7 @@ cdef class DataEngine(Component):
             msg=data,
         )
 
-    cdef void _handle_ticker(self, Ticker ticker) except *:
+    cpdef void _handle_ticker(self, Ticker ticker):
         self._cache.add_ticker(ticker)
         self._msgbus.publish_c(
             topic=f"data.tickers"
@@ -1155,7 +1273,7 @@ cdef class DataEngine(Component):
             msg=ticker,
         )
 
-    cdef void _handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void _handle_quote_tick(self, QuoteTick tick):
         self._cache.add_quote_tick(tick)
         self._msgbus.publish_c(
             topic=f"data.quotes"
@@ -1164,7 +1282,7 @@ cdef class DataEngine(Component):
             msg=tick,
         )
 
-    cdef void _handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void _handle_trade_tick(self, TradeTick tick):
         self._cache.add_trade_tick(tick)
         self._msgbus.publish_c(
             topic=f"data.trades"
@@ -1173,7 +1291,7 @@ cdef class DataEngine(Component):
             msg=tick,
         )
 
-    cdef void _handle_bar(self, Bar bar) except *:
+    cpdef void _handle_bar(self, Bar bar):
         cdef BarType bar_type = bar.bar_type
 
         cdef:
@@ -1209,21 +1327,21 @@ cdef class DataEngine(Component):
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
-    cdef void _handle_venue_status_update(self, VenueStatusUpdate data) except *:
+    cpdef void _handle_venue_status_update(self, VenueStatusUpdate data):
         self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
 
-    cdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data) except *:
+    cpdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data):
         self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
 
-    cdef void _handle_close_price(self, InstrumentClose data) except *:
+    cpdef void _handle_close_price(self, InstrumentClose data):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
-    cdef void _handle_generic_data(self, GenericData data) except *:
+    cpdef void _handle_generic_data(self, GenericData data):
         self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data.data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
-    cdef void _handle_response(self, DataResponse response) except *:
+    cpdef void _handle_response(self, DataResponse response):
         if self.debug:
             self._log.debug(f"{RECV}{RES} {response}.", LogColor.MAGENTA)
         self.response_count += 1
@@ -1242,18 +1360,18 @@ cdef class DataEngine(Component):
 
         self._msgbus.response(response)
 
-    cdef void _handle_instruments(self, list instruments) except *:
+    cpdef void _handle_instruments(self, list instruments):
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cdef void _handle_quote_ticks(self, list ticks) except *:
+    cpdef void _handle_quote_ticks(self, list ticks):
         self._cache.add_quote_ticks(ticks)
 
-    cdef void _handle_trade_ticks(self, list ticks) except *:
+    cpdef void _handle_trade_ticks(self, list ticks):
         self._cache.add_trade_ticks(ticks)
 
-    cdef void _handle_bars(self, list bars, Bar partial) except *:
+    cpdef void _handle_bars(self, list bars, Bar partial):
         self._cache.add_bars(bars)
 
         cdef TimeBarAggregator aggregator
@@ -1273,13 +1391,13 @@ cdef class DataEngine(Component):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     # Python wrapper to enable callbacks
-    cpdef void _internal_update_instruments(self, list instruments: [Instrument]) except *:
+    cpdef void _internal_update_instruments(self, list instruments: [Instrument]):
         # Handle all instruments individually
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void _maintain_order_book(self, OrderBookData data) except *:
+    cpdef void _maintain_order_book(self, OrderBookData data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
             self._log.error(
@@ -1290,7 +1408,7 @@ cdef class DataEngine(Component):
 
         order_book.apply(data)
 
-    cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
+    cpdef void _snapshot_order_book(self, TimeEvent snap_event):
         cdef tuple pieces = snap_event.name.partition('_')[2].partition('_')
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef int interval_ms = int(pieces[2])
@@ -1315,7 +1433,7 @@ cdef class DataEngine(Component):
                 f"no order book found, {snap_event}.",
             )
 
-    cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type):
         cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1386,7 +1504,7 @@ cdef class DataEngine(Component):
             )
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
 
-    cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
+    cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type):
         cdef aggregator = self._bar_aggregators.get(bar_type)
         if aggregator is None:
             self._log.warning(

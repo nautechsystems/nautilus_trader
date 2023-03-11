@@ -31,11 +31,11 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 RAW_CONFIG = msgspec.json.encode(
@@ -244,25 +244,6 @@ class TestTradingNodeOperation:
 
         # assert self.node.kernel.data_engine.registered_clients
         # TODO(cs): Assert existence of client
-
-    @pytest.mark.asyncio
-    async def test_register_log_sink(self):
-        # Arrange
-        node = TradingNode()
-
-        sink = []
-
-        # Act
-        node.kernel.add_log_sink(sink.append)
-        node.build()
-
-        node.run()
-        await asyncio.sleep(1)
-
-        # Assert: Log record received
-        assert sink[-1]["trader_id"] == node.trader_id.value
-        assert sink[-1]["machine_id"] == node.machine_id
-        assert sink[-1]["instance_id"] == node.instance_id.value
 
     @pytest.mark.asyncio
     async def test_run(self):

@@ -147,7 +147,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void initialize_orders(self) except *:
+    cpdef void initialize_orders(self):
         """
         Initialize the portfolios orders.
 
@@ -207,7 +207,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self.initialized = initialized
 
-    cpdef void initialize_positions(self) except *:
+    cpdef void initialize_positions(self):
         """
         Initialize the portfolios positions.
 
@@ -285,7 +285,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self.initialized = initialized
 
-    cpdef void update_quote_tick(self, QuoteTick tick) except *:
+    cpdef void update_quote_tick(self, QuoteTick tick):
         """
         Update the portfolio with the given tick.
 
@@ -364,7 +364,7 @@ cdef class Portfolio(PortfolioFacade):
             if not self._pending_calcs:
                 self.initialized = True
 
-    cpdef void update_account(self, AccountState event) except *:
+    cpdef void update_account(self, AccountState event):
         """
         Apply the given account state.
 
@@ -388,7 +388,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._log.info(f"Updated {event}.")
 
-    cpdef void update_order(self, OrderEvent event) except *:
+    cpdef void update_order(self, OrderEvent event):
         """
         Update the portfolio with the given order.
 
@@ -469,7 +469,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._log.debug(f"Updated {event}.")
 
-    cpdef void update_position(self, PositionEvent event) except *:
+    cpdef void update_position(self, PositionEvent event):
         """
         Update the portfolio with the given position event.
 
@@ -531,7 +531,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._log.debug(f"Updated {event}.")
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the portfolio.
 
@@ -908,7 +908,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return self._net_position(instrument_id)
 
-    cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
+    cpdef bint is_net_long(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the portfolio is net long the given
         instrument ID.
@@ -928,7 +928,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return self._net_position(instrument_id) > 0.0
 
-    cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
+    cpdef bint is_net_short(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the portfolio is net short the given
         instrument ID.
@@ -948,7 +948,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return self._net_position(instrument_id) < 0.0
 
-    cpdef bint is_flat(self, InstrumentId instrument_id) except *:
+    cpdef bint is_flat(self, InstrumentId instrument_id):
         """
         Return a value indicating whether the portfolio is flat for the given
         instrument ID.
@@ -968,7 +968,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return self._net_position(instrument_id) == 0.0
 
-    cpdef bint is_completely_flat(self) except *:
+    cpdef bint is_completely_flat(self):
         """
         Return a value indicating whether the portfolio is completely flat.
 
@@ -989,7 +989,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef object _net_position(self, InstrumentId instrument_id):
         return self._net_positions.get(instrument_id, Decimal(0))
 
-    cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *:
+    cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open):
         cdef double net_position = 0.0
 
         cdef Position position

@@ -80,7 +80,7 @@ cdef class KeltnerPosition(Indicator):
 
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -103,7 +103,7 @@ cdef class KeltnerPosition(Indicator):
         double high,
         double low,
         double close,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw value.
 
@@ -132,6 +132,6 @@ cdef class KeltnerPosition(Indicator):
         else:
             self.value = 0
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._kc.reset()
         self.value = 0

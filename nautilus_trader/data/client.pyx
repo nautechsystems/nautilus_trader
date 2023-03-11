@@ -92,7 +92,7 @@ cdef class DataClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
-    cpdef void _set_connected(self, bint value=True) except *:
+    cpdef void _set_connected(self, bint value=True):
         """
         Setter for Python implementations to change the readonly property.
 
@@ -117,7 +117,7 @@ cdef class DataClient(Component):
         """
         return sorted(list(self._subscriptions_generic))
 
-    cpdef void subscribe(self, DataType data_type) except *:
+    cpdef void subscribe(self, DataType data_type):
         """
         Subscribe to data for the given data type.
 
@@ -132,7 +132,7 @@ cdef class DataClient(Component):
             f"You can implement by overriding the `subscribe` method for this client.",
         )
 
-    cpdef void unsubscribe(self, DataType data_type) except *:
+    cpdef void unsubscribe(self, DataType data_type):
         """
         Unsubscribe from data for the given data type.
 
@@ -147,19 +147,19 @@ cdef class DataClient(Component):
             f"You can implement by overriding the `unsubscribe` method for this client.",
         )
 
-    cpdef void _add_subscription(self, DataType data_type) except *:
+    cpdef void _add_subscription(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
         self._subscriptions_generic.add(data_type)
 
-    cpdef void _remove_subscription(self, DataType data_type) except *:
+    cpdef void _remove_subscription(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
         self._subscriptions_generic.discard(data_type)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
+    cpdef void request(self, DataType data_type, UUID4 correlation_id):
         """
         Request data for the given data type.
 
@@ -186,10 +186,10 @@ cdef class DataClient(Component):
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_data(self, Data data) except *:
+    cpdef void _handle_data(self, Data data):
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id) except *:
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=self.venue,
@@ -387,7 +387,7 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_instrument_close))
 
-    cpdef void subscribe(self, DataType data_type) except *:
+    cpdef void subscribe(self, DataType data_type):
         """
         Subscribe to data for the given data type.
 
@@ -403,7 +403,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instruments(self) except *:
+    cpdef void subscribe_instruments(self):
         """
         Subscribe to all `Instrument` data.
 
@@ -414,7 +414,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id):
         """
         Subscribe to the `Instrument` with the given instrument ID.
 
@@ -425,7 +425,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None):
         """
         Subscribe to `OrderBookDeltas` data for the given instrument ID.
 
@@ -447,7 +447,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None) except *:
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None):
         """
         Subscribe to `OrderBookSnapshot` data for the given instrument ID.
 
@@ -469,7 +469,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id):
         """
         Subscribe to `Ticker` data for the given instrument ID.
 
@@ -485,7 +485,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
         """
         Subscribe to `QuoteTick` data for the given instrument ID.
 
@@ -501,7 +501,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id):
         """
         Subscribe to `TradeTick` data for the given instrument ID.
 
@@ -517,7 +517,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_venue_status_updates(self, Venue venue) except *:
+    cpdef void subscribe_venue_status_updates(self, Venue venue):
         """
         Subscribe to `InstrumentStatusUpdate` data for the venue.
 
@@ -533,7 +533,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id):
         """
         Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
 
@@ -549,7 +549,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id):
         """
         Subscribe to `InstrumentClose` updates for the given instrument ID.
 
@@ -565,7 +565,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_bars(self, BarType bar_type) except *:
+    cpdef void subscribe_bars(self, BarType bar_type):
         """
         Subscribe to `Bar` data for the given bar type.
 
@@ -581,7 +581,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe(self, DataType data_type) except *:
+    cpdef void unsubscribe(self, DataType data_type):
         """
         Unsubscribe from data for the given data type.
 
@@ -596,7 +596,7 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `unsubscribe` method for this client.",
         )
 
-    cpdef void unsubscribe_instruments(self) except *:
+    cpdef void unsubscribe_instruments(self):
         """
         Unsubscribe from all `Instrument` data.
 
@@ -607,7 +607,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id):
         """
         Unsubscribe from `Instrument` data for the given instrument ID.
 
@@ -623,7 +623,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id):
         """
         Unsubscribe from `OrderBookDeltas` data for the given instrument ID.
 
@@ -639,7 +639,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id):
         """
         Unsubscribe from `OrderBookSnapshot` data for the given instrument ID.
 
@@ -655,7 +655,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id):
         """
         Unsubscribe from `Ticker` data for the given instrument ID.
 
@@ -671,7 +671,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id):
         """
         Unsubscribe from `QuoteTick` data for the given instrument ID.
 
@@ -687,7 +687,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id):
         """
         Unsubscribe from `TradeTick` data for the given instrument ID.
 
@@ -703,7 +703,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type):
         """
         Unsubscribe from `Bar` data for the given bar type.
 
@@ -719,7 +719,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue) except *:
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue):
         """
         Unsubscribe from `InstrumentStatusUpdate` data for the given venue.
 
@@ -735,7 +735,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id):
         """
         Unsubscribe from `InstrumentStatusUpdate` data for the given instrument ID.
 
@@ -751,7 +751,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id):
         """
         Unsubscribe from `InstrumentClose` data for the given instrument ID.
 
@@ -767,119 +767,119 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void _add_subscription(self, DataType data_type) except *:
+    cpdef void _add_subscription(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
         self._subscriptions_generic.add(data_type)
 
-    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument.add(instrument_id)
 
-    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_delta.add(instrument_id)
 
-    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_snapshot.add(instrument_id)
 
-    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_ticker.add(instrument_id)
 
-    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_quote_tick.add(instrument_id)
 
-    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_trade_tick.add(instrument_id)
 
-    cpdef void _add_subscription_bars(self, BarType bar_type) except *:
+    cpdef void _add_subscription_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")
 
         self._subscriptions_bar.add(bar_type)
 
-    cpdef void _add_subscription_venue_status_updates(self, Venue venue) except *:
+    cpdef void _add_subscription_venue_status_updates(self, Venue venue):
         Condition.not_none(venue, "venue")
 
         self._subscriptions_venue_status_update.add(venue)
 
-    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_status_update.add(instrument_id)
 
-    cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_close.add(instrument_id)
 
-    cpdef void _remove_subscription(self, DataType data_type) except *:
+    cpdef void _remove_subscription(self, DataType data_type):
         Condition.not_none(data_type, "data_type")
 
         self._subscriptions_generic.discard(data_type)
 
-    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument.discard(instrument_id)
 
-    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_delta.discard(instrument_id)
 
-    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_snapshot.discard(instrument_id)
 
-    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_ticker.discard(instrument_id)
 
-    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_quote_tick.discard(instrument_id)
 
-    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_trade_tick.discard(instrument_id)
 
-    cpdef void _remove_subscription_bars(self, BarType bar_type) except *:
+    cpdef void _remove_subscription_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")
 
         self._subscriptions_bar.discard(bar_type)
 
-    cpdef void _remove_subscription_venue_status_updates(self, Venue venue) except *:
+    cpdef void _remove_subscription_venue_status_updates(self, Venue venue):
         Condition.not_none(venue, "venue")
 
         self._subscriptions_venue_status_update.discard(venue)
 
-    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_status_update.discard(instrument_id)
 
-    cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_close.discard(instrument_id)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id):
         """
         Request `Instrument` data for the given instrument ID.
 
@@ -896,7 +896,7 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_instrument` method for this client.",  # pragma: no cover  # noqa
         )
 
-    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id) except *:
+    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id):
         """
         Request all `Instrument` data for the given venue.
 
@@ -918,9 +918,9 @@ cdef class MarketDataClient(DataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
-    ) except *:
+        datetime start = None,
+        datetime end = None,
+    ):
         """
         Request historical `QuoteTick` data.
 
@@ -932,9 +932,9 @@ cdef class MarketDataClient(DataClient):
             The limit for the number of returned ticks.
         correlation_id : UUID4
             The correlation ID for the request.
-        from_datetime : datetime, optional
+        start : datetime, optional
             The specified from datetime for the data.
-        to_datetime : datetime, optional
+        end : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
@@ -949,9 +949,9 @@ cdef class MarketDataClient(DataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
-    ) except *:
+        datetime start = None,
+        datetime end = None,
+    ):
         """
         Request historical `TradeTick` data.
 
@@ -963,9 +963,9 @@ cdef class MarketDataClient(DataClient):
             The limit for the number of returned ticks.
         correlation_id : UUID4
             The correlation ID for the request.
-        from_datetime : datetime, optional
+        start : datetime, optional
             The specified from datetime for the data.
-        to_datetime : datetime, optional
+        end : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
@@ -980,9 +980,9 @@ cdef class MarketDataClient(DataClient):
         BarType bar_type,
         int limit,
         UUID4 correlation_id,
-        datetime from_datetime = None,
-        datetime to_datetime = None,
-    ) except *:
+        datetime start = None,
+        datetime end = None,
+    ):
         """
         Request historical `Bar` data.
 
@@ -994,9 +994,9 @@ cdef class MarketDataClient(DataClient):
             The limit for the number of returned bars.
         correlation_id : UUID4
             The correlation ID for the request.
-        from_datetime : datetime, optional
+        start : datetime, optional
             The specified from datetime for the data.
-        to_datetime : datetime, optional
+        end : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
@@ -1034,10 +1034,10 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_data(self, Data data) except *:
+    cpdef void _handle_data(self, Data data):
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id) except *:
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument.venue,
@@ -1050,7 +1050,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id) except *:
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=venue,
@@ -1063,7 +1063,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument_id.venue,
@@ -1076,7 +1076,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument_id.venue,
@@ -1089,7 +1089,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *:
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=bar_type.instrument_id.venue,
@@ -1102,7 +1102,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id) except *:
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=self.venue,

@@ -16,23 +16,21 @@
 import asyncio
 from typing import Optional
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.queue import Queue
 from nautilus_trader.config import LiveDataEngineConfig
-
-from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.message cimport Command
-from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.data.messages cimport DataCommand
-from nautilus_trader.data.messages cimport DataRequest
-from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import Data
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.messages import DataCommand
+from nautilus_trader.data.messages import DataRequest
+from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.msgbus.bus import MessageBus
 
 
-cdef class LiveDataEngine(DataEngine):
+class LiveDataEngine(DataEngine):
     """
     Provides a high-performance asynchronous live data engine.
 
@@ -44,7 +42,7 @@ cdef class LiveDataEngine(DataEngine):
         The message bus for the engine.
     cache : Cache
         The cache for the engine.
-    clock : Clock
+    clock : LiveClock
         The clock for the engine.
     logger : Logger
         The logger for the engine.
@@ -56,20 +54,21 @@ cdef class LiveDataEngine(DataEngine):
     TypeError
         If `config` is not of type `LiveDataEngineConfig`.
     """
+
     _sentinel = None
 
     def __init__(
         self,
-        loop not None: asyncio.AbstractEventLoop,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        Logger logger not None,
+        loop: asyncio.AbstractEventLoop,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: Logger,
         config: Optional[LiveDataEngineConfig] = None,
-    ):
+    ) -> None:
         if config is None:
             config = LiveDataEngineConfig()
-        Condition.type(config, LiveDataEngineConfig, "config")
+        PyCondition.type(config, LiveDataEngineConfig, "config")
         super().__init__(
             msgbus=msgbus,
             cache=cache,
@@ -78,20 +77,20 @@ cdef class LiveDataEngine(DataEngine):
             config=config,
         )
 
-        self._loop = loop
-        self._cmd_queue = Queue(maxsize=config.qsize)
-        self._req_queue = Queue(maxsize=config.qsize)
-        self._res_queue = Queue(maxsize=config.qsize)
-        self._data_queue = Queue(maxsize=config.qsize)
+        self._loop: asyncio.AbstractEventLoop = loop
+        self._cmd_queue: Queue = Queue(maxsize=config.qsize)
+        self._req_queue: Queue = Queue(maxsize=config.qsize)
+        self._res_queue: Queue = Queue(maxsize=config.qsize)
+        self._data_queue: Queue = Queue(maxsize=config.qsize)
 
         # Async tasks
-        self._cmd_queue_task = None
-        self._req_queue_task = None
-        self._res_queue_task = None
-        self._data_queue_task = None
-        self.is_running = False
+        self._cmd_queue_task: Optional[asyncio.Task] = None
+        self._req_queue_task: Optional[asyncio.Task] = None
+        self._res_queue_task: Optional[asyncio.Task] = None
+        self._data_queue_task: Optional[asyncio.Task] = None
+        self._is_running: bool = False
 
-    def connect(self):
+    def connect(self) -> None:
         """
         Connect the engine by calling connect on all registered clients.
         """
@@ -99,7 +98,7 @@ cdef class LiveDataEngine(DataEngine):
         for client in self._clients.values():
             client.connect()
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
@@ -216,11 +215,11 @@ cdef class LiveDataEngine(DataEngine):
             self._log.debug(f"Canceling {self._data_queue_task.get_name()}...")
             self._data_queue_task.cancel()
             self._data_queue_task.done()
-        if self.is_running:
-            self.is_running = False  # Avoids sentinel messages for queues
+        if self._is_running:
+            self._is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, DataCommand command) except *:
+    def execute(self, command: DataCommand) -> None:
         """
         Execute the given data command.
 
@@ -238,7 +237,7 @@ cdef class LiveDataEngine(DataEngine):
         running on.
 
         """
-        Condition.not_none(command, "command")
+        PyCondition.not_none(command, "command")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
@@ -250,7 +249,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
 
-    cpdef void request(self, DataRequest request) except *:
+    def request(self, request: DataRequest) -> None:
         """
         Handle the given request.
 
@@ -268,7 +267,7 @@ cdef class LiveDataEngine(DataEngine):
         running on.
 
         """
-        Condition.not_none(request, "request")
+        PyCondition.not_none(request, "request")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
@@ -280,7 +279,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._req_queue.put(request))  # Blocking until qsize reduces
 
-    cpdef void response(self, DataResponse response) except *:
+    def response(self, response: DataResponse) -> None:
         """
         Handle the given response.
 
@@ -298,7 +297,7 @@ cdef class LiveDataEngine(DataEngine):
         running on.
 
         """
-        Condition.not_none(response, "response")
+        PyCondition.not_none(response, "response")
 
         try:
             self._res_queue.put_nowait(response)
@@ -309,7 +308,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._res_queue.put(response))  # Blocking until qsize reduces
 
-    cpdef void process(self, Data data) except *:
+    def process(self, data: Data) -> None:
         """
         Process the given data.
 
@@ -327,7 +326,7 @@ cdef class LiveDataEngine(DataEngine):
         running on.
 
         """
-        Condition.not_none(data, "data")
+        PyCondition.not_none(data, "data")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
@@ -339,20 +338,20 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._data_queue.put(data))  # Blocking until qsize reduces
 
-# -- INTERNAL -------------------------------------------------------------------------------------
+    # -- INTERNAL -------------------------------------------------------------------------------------
 
     def _enqueue_sentinels(self) -> None:
         self._cmd_queue.put_nowait(self._sentinel)
         self._req_queue.put_nowait(self._sentinel)
         self._res_queue.put_nowait(self._sentinel)
         self._data_queue.put_nowait(self._sentinel)
-        self._log.debug(f"Sentinel messages placed on queues.")
+        self._log.debug("Sentinel messages placed on queues.")
 
-    cpdef void _on_start(self) except *:
+    def _on_start(self) -> None:
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
-        self.is_running = True  # Queues will continue to process
+        self._is_running = True  # Queues will continue to process
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._res_queue_task = self._loop.create_task(self._run_req_queue(), name="req_queue")
         self._req_queue_task = self._loop.create_task(self._run_res_queue(), name="res_queue")
@@ -363,21 +362,20 @@ cdef class LiveDataEngine(DataEngine):
         self._log.debug(f"Scheduled {self._req_queue_task}")
         self._log.debug(f"Scheduled {self._data_queue_task}")
 
-    cpdef void _on_stop(self) except *:
-        if self.is_running:
-            self.is_running = False
+    def _on_stop(self) -> None:
+        if self._is_running:
+            self._is_running = False
             self._enqueue_sentinels()
 
-    async def _run_cmd_queue(self):
+    async def _run_cmd_queue(self) -> None:
         self._log.debug(
             f"DataCommand message queue processing starting (qsize={self.cmd_qsize()})...",
         )
-        cdef Command command
         try:
-            while self.is_running:
-                command = await self._cmd_queue.get()
-                if command is None:  # Sentinel message (fast C-level check)
-                    continue         # Returns to the top to check `self.is_running`
+            while self._is_running:
+                command: Optional[DataCommand] = await self._cmd_queue.get()
+                if command is None:  # Sentinel message
+                    continue  # Returns to the top to check `self._is_running`
                 self._execute_command(command)
         except asyncio.CancelledError:
             if not self._cmd_queue.empty():
@@ -388,16 +386,15 @@ cdef class LiveDataEngine(DataEngine):
             else:
                 self._log.debug("DataCommand message queue processing stopped.")
 
-    async def _run_req_queue(self):
+    async def _run_req_queue(self) -> None:
         self._log.debug(
             f"DataRequest message queue processing starting (qsize={self.req_qsize()})...",
         )
-        cdef DataRequest request
         try:
-            while self.is_running:
-                request = await self._req_queue.get()
-                if request is None:  # Sentinel message (fast C-level check)
-                    continue         # Returns to the top to check `self.is_running`
+            while self._is_running:
+                request: Optional[DataRequest] = await self._req_queue.get()
+                if request is None:  # Sentinel message
+                    continue  # Returns to the top to check `self._is_running`
                 self._handle_request(request)
         except asyncio.CancelledError:
             if not self._req_queue.empty():
@@ -408,16 +405,15 @@ cdef class LiveDataEngine(DataEngine):
             else:
                 self._log.debug("DataRequest message queue processing stopped.")
 
-    async def _run_res_queue(self):
+    async def _run_res_queue(self) -> None:
         self._log.debug(
             f"DataResponse message queue processing starting (qsize={self.req_qsize()})...",
         )
-        cdef DataResponse response
         try:
-            while self.is_running:
-                response = await self._res_queue.get()
-                if response is None:  # Sentinel message (fast C-level check)
-                    continue          # Returns to the top to check `self.is_running`
+            while self._is_running:
+                response: Optional[DataRequest] = await self._res_queue.get()
+                if response is None:  # Sentinel message
+                    continue  # Returns to the top to check `self._is_running`
                 self._handle_response(response)
         except asyncio.CancelledError:
             if not self._res_queue.empty():
@@ -428,20 +424,18 @@ cdef class LiveDataEngine(DataEngine):
             else:
                 self._log.debug("DataResponse message queue processing stopped.")
 
-    async def _run_data_queue(self):
+    async def _run_data_queue(self) -> None:
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
-        cdef Data data
         try:
-            while self.is_running:
-                data = await self._data_queue.get()
-                if data is None:  # Sentinel message (fast C-level check)
-                    continue      # Returns to the top to check `self.is_running`
+            while self._is_running:
+                data: Optional[Data] = await self._data_queue.get()
+                if data is None:  # Sentinel message
+                    continue  # Returns to the top to check `self._is_running`
                 self._handle_data(data)
         except asyncio.CancelledError:
             if not self._data_queue.empty():
                 self._log.warning(
-                    f"Data queue processing stopped "
-                    f"with {self.data_qsize()} item(s) on queue.",
+                    f"Data queue processing stopped " f"with {self.data_qsize()} item(s) on queue.",
                 )
             else:
                 self._log.debug("Data queue processing stopped.")

@@ -44,7 +44,7 @@ class PortfolioAnalyzer:
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
         self._realized_pnls: dict[Currency, pd.Series] = {}
-        self._returns = pd.Series(dtype=float64)
+        self._returns: pd.Series = pd.Series(dtype=float64)
 
     def register_statistic(self, statistic: PortfolioStatistic) -> None:
         """
@@ -83,7 +83,7 @@ class PortfolioAnalyzer:
         self._account_balances_starting = {}
         self._account_balances = {}
         self._realized_pnls = {}
-        self._returns = pd.DataFrame(dtype=float64)
+        self._returns = pd.Series(dtype=float64)
 
     def _get_max_length_name(self) -> int:
         max_length = 0
@@ -93,7 +93,7 @@ class PortfolioAnalyzer:
         return max_length
 
     @property
-    def currencies(self):
+    def currencies(self) -> list[Currency]:
         """
         Return the analyzed currencies.
 
@@ -225,7 +225,11 @@ class PortfolioAnalyzer:
 
         return self._realized_pnls.get(currency)
 
-    def total_pnl(self, currency: Currency = None) -> float:
+    def total_pnl(
+        self,
+        currency: Optional[Currency] = None,
+        unrealized_pnl: Optional[Money] = None,
+    ) -> float:
         """
         Return the total PnL for the portfolio.
 
@@ -235,6 +239,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency, optional
             The currency for the result.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the given currency.
 
         Returns
         -------
@@ -246,6 +252,8 @@ class PortfolioAnalyzer:
             If `currency` is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If `currency` is not contained in the tracked account balances.
+        ValueError
+            If `unrealized_pnl` is not ``None`` and currency is not equal to the given currency.
 
         """
         if not self._account_balances:
@@ -255,7 +263,9 @@ class PortfolioAnalyzer:
                 len(self._account_balances) == 1
             ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
-        assert currency in self._account_balances, "currency not found in account_balances"
+        assert (
+            unrealized_pnl is None or unrealized_pnl.currency == currency
+        ), f"unrealized PnL curreny is not {currency}"
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -263,9 +273,14 @@ class PortfolioAnalyzer:
         if account_balance is None:
             return 0.0
 
-        return float(account_balance - account_balance_starting)
+        unrealized_pnl_f64 = 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
+        return float(account_balance - account_balance_starting) + unrealized_pnl_f64
 
-    def total_pnl_percentage(self, currency: Currency = None) -> float:
+    def total_pnl_percentage(
+        self,
+        currency: Currency = None,
+        unrealized_pnl: Optional[Money] = None,
+    ) -> float:
         """
         Return the percentage change of the total PnL for the portfolio.
 
@@ -275,6 +290,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency, optional
             The currency for the result.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the given currency.
 
         Returns
         -------
@@ -286,6 +303,8 @@ class PortfolioAnalyzer:
             If `currency` is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If `currency` is not contained in the tracked account balances.
+        ValueError
+            If `unrealized_pnl` is not ``None`` and currency is not equal to the given currency.
 
         """
         if not self._account_balances:
@@ -295,7 +314,9 @@ class PortfolioAnalyzer:
                 len(self._account_balances) == 1
             ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
-        assert currency in self._account_balances, "currency not in account_balances"
+        assert (
+            unrealized_pnl is None or unrealized_pnl.currency == currency
+        ), f"unrealized PnL curreny is not {currency}"
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -307,15 +328,22 @@ class PortfolioAnalyzer:
             # Protect divide by zero
             return 0.0
 
-        current = account_balance
+        unrealized_pnl_f64 = 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
+
+        # Calculate percentage
+        current = account_balance + unrealized_pnl_f64
         starting = account_balance_starting
         difference = current - starting
 
         return float((difference / starting) * 100)
 
-    def get_performance_stats_pnls(self, currency: Currency = None) -> dict[str, float]:
+    def get_performance_stats_pnls(
+        self,
+        currency: Currency = None,
+        unrealized_pnl: Optional[Money] = None,
+    ) -> dict[str, float]:
         """
-        Return the `PnL` performance statistics.
+        Return the 'PnL' (profit and loss) performance statistics, optionally includes the unrealized PnL.
 
         Money objects are converted to floats.
 
@@ -323,6 +351,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency
             The currency for the performance.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the performance.
 
         Returns
         -------
@@ -332,8 +362,8 @@ class PortfolioAnalyzer:
         realized_pnls = self.realized_pnls(currency)
 
         output = {
-            "PnL": self.total_pnl(currency),
-            "PnL%": self.total_pnl_percentage(currency),
+            "PnL (total)": self.total_pnl(currency, unrealized_pnl),
+            "PnL% (total)": self.total_pnl_percentage(currency, unrealized_pnl),
         }
 
         for name, stat in self._statistics.items():
@@ -387,7 +417,11 @@ class PortfolioAnalyzer:
 
         return output
 
-    def get_stats_pnls_formatted(self, currency: Currency = None) -> list[str]:
+    def get_stats_pnls_formatted(
+        self,
+        currency: Currency = None,
+        unrealized_pnl: Optional[Money] = None,
+    ) -> list[str]:
         """
         Return the performance statistics from the last backtest run formatted
         for printing in the backtest run footer.
@@ -396,6 +430,8 @@ class PortfolioAnalyzer:
         ----------
         currency : Currency
             The currency for the performance.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the performance.
 
         Returns
         -------
@@ -403,7 +439,7 @@ class PortfolioAnalyzer:
 
         """
         max_length: int = self._get_max_length_name()
-        stats = self.get_performance_stats_pnls(currency)
+        stats = self.get_performance_stats_pnls(currency, unrealized_pnl)
 
         output = []
         for k, v in stats.items():

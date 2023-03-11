@@ -29,7 +29,7 @@ from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 
 
-cpdef ComponentState component_state_from_str(str value) except *:
+cpdef ComponentState component_state_from_str(str value):
     return component_state_from_cstr(pystr_to_cstr(value))
 
 
@@ -37,7 +37,7 @@ cpdef str component_state_to_str(ComponentState value):
     return cstr_to_pystr(component_state_to_cstr(value))
 
 
-cpdef ComponentTrigger component_trigger_from_str(str value) except *:
+cpdef ComponentTrigger component_trigger_from_str(str value):
     return component_trigger_from_cstr(pystr_to_cstr(value))
 
 
@@ -45,7 +45,7 @@ cpdef str component_trigger_to_str(ComponentTrigger value):
     return cstr_to_pystr(component_trigger_to_cstr(value))
 
 
-cpdef LogColor log_color_from_str(str value) except *:
+cpdef LogColor log_color_from_str(str value):
     return log_color_from_cstr(pystr_to_cstr(value))
 
 
@@ -53,7 +53,7 @@ cpdef str log_color_to_str(LogColor value):
     return cstr_to_pystr(log_color_to_cstr(value))
 
 
-cpdef LogLevel log_level_from_str(str value) except *:
+cpdef LogLevel log_level_from_str(str value):
     return log_level_from_cstr(pystr_to_cstr(value))
 
 

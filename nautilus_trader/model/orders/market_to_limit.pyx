@@ -166,7 +166,7 @@ cdef class MarketToLimitOrder(Order):
         self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
-    cdef void _updated(self, OrderUpdated event) except *:
+    cdef void _updated(self, OrderUpdated event):
         if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
@@ -176,16 +176,16 @@ cdef class MarketToLimitOrder(Order):
         if event.price is not None:
             self.price = event.price
 
-    cdef void _set_slippage(self) except *:
+    cdef void _set_slippage(self):
         if self.side == OrderSide.BUY:
             self.slippage = self.avg_px - self.price.as_f64_c()
         elif self.side == OrderSide.SELL:
             self.slippage = self.price.as_f64_c() - self.avg_px
 
-    cdef bint has_price_c(self) except *:
+    cdef bint has_price_c(self):
         return self.price is not None
 
-    cdef bint has_trigger_price_c(self) except *:
+    cdef bint has_trigger_price_c(self):
         return False
 
     @property

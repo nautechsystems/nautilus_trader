@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 
 
 def run_l3_test(book, feed):
@@ -27,6 +30,7 @@ def run_l3_test(book, feed):
     return book
 
 
+@pytest.mark.skip(reason="Takes too long")
 def test_orderbook_updates(benchmark):
     # We only care about the actual updates here, so instantiate orderbook and
     # load updates outside of benchmark
@@ -35,7 +39,8 @@ def test_orderbook_updates(benchmark):
         price_precision=5,
         size_precision=0,
     )
-    feed = TestDataStubs.l3_feed()
+    filename = TEST_DATA_DIR + "/L3_feed.json"
+    feed = TestDataStubs.l3_feed(filename)
     assert len(feed) == 100048  # 100k updates
 
     # benchmark something

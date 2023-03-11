@@ -30,8 +30,8 @@ cdef class TickScheme:
     cpdef Price next_bid_price(self, double value, int n=*)
 
 
-cpdef double round_down(double value, double base) except *
-cpdef double round_up(double value, double base) except *
+cpdef double round_down(double value, double base)
+cpdef double round_up(double value, double base)
 
-cpdef void register_tick_scheme(TickScheme tick_scheme) except *
+cpdef void register_tick_scheme(TickScheme tick_scheme)
 cpdef TickScheme get_tick_scheme(str name)

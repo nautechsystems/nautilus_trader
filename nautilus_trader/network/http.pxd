@@ -33,8 +33,8 @@ cdef class HttpClient:
     cdef int _sessions_len
     cdef object _latencies
 
-    cpdef uint64_t min_latency(self) except *
-    cpdef uint64_t max_latency(self) except *
-    cpdef uint64_t avg_latency(self) except *
+    cpdef uint64_t min_latency(self)
+    cpdef uint64_t max_latency(self)
+    cpdef uint64_t avg_latency(self)
     cdef object _get_session(self)
     cpdef str _prepare_params(self, dict params)

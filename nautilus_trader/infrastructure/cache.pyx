@@ -144,7 +144,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void flush(self) except *:
+    cpdef void flush(self):
         """
         Flush the database which clears all data.
 
@@ -623,7 +623,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         )
         return {k.decode('utf-8'): v for k, v in user_state.items()}
 
-    cpdef void delete_actor(self, ComponentId component_id) except *:
+    cpdef void delete_actor(self, ComponentId component_id):
         """
         Delete the given actor from the database.
 
@@ -660,7 +660,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         )
         return {k.decode('utf-8'): v for k, v in user_state.items()}
 
-    cpdef void delete_strategy(self, StrategyId strategy_id) except *:
+    cpdef void delete_strategy(self, StrategyId strategy_id):
         """
         Delete the given strategy from the database.
 
@@ -676,7 +676,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
 
-    cpdef void add(self, str key, bytes value) except *:
+    cpdef void add(self, str key, bytes value):
         """
         Add the given general object value to the database.
 
@@ -694,7 +694,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._redis.set(name=self._key_general + key, value=value)
         self._log.debug(f"Added general object {key}.")
 
-    cpdef void add_currency(self, Currency currency) except *:
+    cpdef void add_currency(self, Currency currency):
         """
         Add the given currency to the database.
 
@@ -721,7 +721,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added currency {currency.code}.")
 
-    cpdef void add_instrument(self, Instrument instrument) except *:
+    cpdef void add_instrument(self, Instrument instrument):
         """
         Add the given instrument to the database.
 
@@ -738,7 +738,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added instrument {instrument.id}.")
 
-    cpdef void add_account(self, Account account) except *:
+    cpdef void add_account(self, Account account):
         """
         Add the given account to the database.
 
@@ -763,7 +763,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {account}).")
 
-    cpdef void add_order(self, Order order) except *:
+    cpdef void add_order(self, Order order):
         """
         Add the given order to the database.
 
@@ -786,7 +786,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added Order(id={order.client_order_id.to_str()}).")
 
-    cpdef void add_position(self, Position position) except *:
+    cpdef void add_position(self, Position position):
         """
         Add the given position associated with the given strategy ID.
 
@@ -809,7 +809,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added Position(id={position.id.to_str()}).")
 
-    cpdef void add_submit_order_command(self, SubmitOrder command) except *:
+    cpdef void add_submit_order_command(self, SubmitOrder command):
         """
         Add the given submit order command to the database.
 
@@ -833,7 +833,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {command}.")
 
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
         """
         Add the given submit order list command to the database.
 
@@ -857,7 +857,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {command}.")
 
-    cpdef void update_actor(self, Actor actor) except *:
+    cpdef void update_actor(self, Actor actor):
         """
         Update the given actor state in the database.
 
@@ -884,7 +884,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Saved actor state for {actor.id.value}.")
 
-    cpdef void update_strategy(self, Strategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy):
         """
         Update the given strategy state in the database.
 
@@ -911,7 +911,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Saved strategy state for {strategy.id.value}.")
 
-    cpdef void update_account(self, Account account) except *:
+    cpdef void update_account(self, Account account):
         """
         Update the given account in the database.
 
@@ -927,7 +927,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Updated {account}.")
 
-    cpdef void update_order(self, Order order) except *:
+    cpdef void update_order(self, Order order):
         """
         Update the given order in the database.
 
@@ -948,7 +948,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Updated {order}.")
 
-    cpdef void update_position(self, Position position) except *:
+    cpdef void update_position(self, Position position):
         """
         Update the given position in the database.
 

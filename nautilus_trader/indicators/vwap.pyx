@@ -34,7 +34,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self._volume_total = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -57,7 +57,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         double price,
         double volume,
         datetime timestamp,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -90,7 +90,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self._volume_total += volume
         self.value = self._price_volume / self._volume_total
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._day = 0
         self._price_volume = 0
         self._volume_total = 0

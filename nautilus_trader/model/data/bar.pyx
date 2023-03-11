@@ -396,7 +396,7 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_information_aggregated_c(aggregation)
 
-    cpdef bint is_time_aggregated(self) except *:
+    cpdef bint is_time_aggregated(self):
         """
         Return a value indicating whether the aggregation method is time-driven.
 
@@ -414,7 +414,7 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_time_aggregated_c(self.aggregation)
 
-    cpdef bint is_threshold_aggregated(self) except *:
+    cpdef bint is_threshold_aggregated(self):
         """
         Return a value indicating whether the bar aggregation method is
         threshold-driven.
@@ -433,7 +433,7 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_threshold_aggregated_c(self.aggregation)
 
-    cpdef bint is_information_aggregated(self) except *:
+    cpdef bint is_information_aggregated(self):
         """
         Return a value indicating whether the aggregation method is
         information-driven.
@@ -625,7 +625,7 @@ cdef class BarType:
         """
         return BarType.from_str_c(value)
 
-    cpdef bint is_externally_aggregated(self) except *:
+    cpdef bint is_externally_aggregated(self):
         """
         Return a value indicating whether the bar aggregation source is ``EXTERNAL``.
 
@@ -636,7 +636,7 @@ cdef class BarType:
         """
         return self.aggregation_source == AggregationSource.EXTERNAL
 
-    cpdef bint is_internally_aggregated(self) except *:
+    cpdef bint is_internally_aggregated(self):
         """
         Return a value indicating whether the bar aggregation source is ``INTERNAL``.
 

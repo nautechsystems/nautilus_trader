@@ -90,7 +90,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         self._id_tag_strategy = strategy_id.get_tag()
         self.count = initial_count
 
-    cpdef void set_count(self, int count) except *:
+    cpdef void set_count(self, int count):
         """
         Set the internal counter to the given count.
 
@@ -121,7 +121,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
             f"{self.count}",
         )
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the ID generator.
 
@@ -164,7 +164,7 @@ cdef class OrderListIdGenerator(IdentifierGenerator):
         self._id_tag_strategy = strategy_id.get_tag()
         self.count = initial_count
 
-    cpdef void set_count(self, int count) except *:
+    cpdef void set_count(self, int count):
         """
         Set the internal counter to the given count.
 
@@ -195,7 +195,7 @@ cdef class OrderListIdGenerator(IdentifierGenerator):
             f"{self.count}",
         )
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the ID generator.
 
@@ -219,7 +219,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
         self._counts: dict[StrategyId, int] = {}
 
-    cpdef void set_count(self, StrategyId strategy_id, int count) except *:
+    cpdef void set_count(self, StrategyId strategy_id, int count):
         """
         Set the internal position count for the given strategy ID.
 
@@ -241,7 +241,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
         self._counts[strategy_id] = count
 
-    cpdef int get_count(self, StrategyId strategy_id) except *:
+    cpdef int get_count(self, StrategyId strategy_id):
         """
         Return the internal position count for the given strategy ID.
 
@@ -290,7 +290,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
             f"{count}{'F' if flipped else ''}",
         )
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self):
         """
         Reset the ID generator.
 

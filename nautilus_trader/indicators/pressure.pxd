@@ -29,4 +29,4 @@ cdef class Pressure(Indicator):
     cdef readonly double value_cumulative
     """The cumulative value.\n\n:returns: `int`"""
 
-    cpdef void update_raw(self, double high, double low, double close, double volume) except *
+    cpdef void update_raw(self, double high, double low, double close, double volume)

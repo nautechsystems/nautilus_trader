@@ -20,6 +20,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -80,8 +81,8 @@ class TestIdStubs:
 
         return betfair_instrument_id(
             market_id="1.179082386",
-            runner_id="50214",
-            runner_handicap=None,
+            selection_id="50214",
+            selection_handicap=None,
         )
 
     @staticmethod
@@ -91,3 +92,7 @@ class TestIdStubs:
     @staticmethod
     def venue_order_id() -> VenueOrderId:
         return VenueOrderId("1")
+
+    @staticmethod
+    def trade_id() -> TradeId:
+        return TradeId("1")

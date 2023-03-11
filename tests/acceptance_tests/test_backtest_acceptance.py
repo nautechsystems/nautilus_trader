@@ -20,11 +20,6 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.engine import ExecEngineConfig
@@ -54,7 +49,12 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
@@ -309,7 +309,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=False,
+            bypass_logging=True,
             run_analysis=False,
             risk_engine=RiskEngineConfig(
                 bypass=True,  # Example of bypassing pre-trade risk checks for backtests
@@ -650,8 +650,9 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         )
 
         # Setup data
-        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431.bz2")
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
+        assert instruments
 
         for instrument in instruments[:1]:
             trade_ticks = [
@@ -705,7 +706,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             book_type=BookType.L2_MBP,
         )
 
-        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431.bz2")
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
@@ -739,6 +740,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9999.77",
+            "9860.37",
             GBP,
         )

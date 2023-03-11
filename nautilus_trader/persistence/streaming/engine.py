@@ -75,7 +75,7 @@ class _StreamingBuffer:
 
 class _BufferIterator:
     """
-    Streams merged batches of nautilus objects from _StreamingBuffer objects
+    Streams merged batches of nautilus objects from _StreamingBuffer objects.
     """
 
     def __init__(
@@ -114,7 +114,7 @@ class _BufferIterator:
             self._remove_completed()
 
             if len(self._buffers) == 0:
-                return  # stop iterating
+                return  # Stop iterating
 
             yield self._remove_front()
 
@@ -145,8 +145,7 @@ class _BufferIterator:
 
 class StreamingEngine(_BufferIterator):
     """
-    Streams merged batches of nautilus objects from BacktestDataConfig objects
-
+    Streams merged batches of nautilus objects from BacktestDataConfig objects.
     """
 
     def __init__(

@@ -236,5 +236,5 @@ cdef class OrderFilled(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderFilled obj)
-    cdef bint is_buy_c(self) except *
-    cdef bint is_sell_c(self) except *
+    cdef bint is_buy_c(self)
+    cdef bint is_sell_c(self)

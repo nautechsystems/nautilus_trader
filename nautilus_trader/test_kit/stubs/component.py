@@ -55,6 +55,7 @@ class TestComponentStubs:
         return Logger(
             clock=TestComponentStubs.clock(),
             level_stdout=log_level_from_str(level),
+            bypass=True,
         )
 
     @staticmethod
@@ -66,10 +67,10 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def cache():
+    def cache(logger: Optional[Logger] = None):
         return Cache(
             database=None,
-            logger=TestComponentStubs.logger(),
+            logger=logger or TestComponentStubs.logger(),
         )
 
     @staticmethod

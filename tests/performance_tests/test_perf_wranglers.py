@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.performance import PerformanceBench
 from nautilus_trader.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 class TestDataWranglersPerformance(PerformanceHarness):
@@ -32,7 +32,7 @@ class TestDataWranglersPerformance(PerformanceHarness):
             # 1000 ticks in data
             wrangler.process(
                 data=provider.read_csv_ticks("truefx-usdjpy-ticks.csv"),
-                default_volume=1000000,
+                default_volume=1_000_000,
             )
 
         PerformanceBench.profile_function(

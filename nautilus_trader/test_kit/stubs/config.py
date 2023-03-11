@@ -15,7 +15,6 @@
 
 from typing import Optional
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -27,6 +26,7 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -72,11 +72,10 @@ class TestConfigStubs:
     @staticmethod
     def risk_engine_config() -> RiskEngineConfig:
         return RiskEngineConfig(
-            bypass=False,
-            deny_modify_pending_update=True,
+            bypass=True,
             max_order_submit_rate="100/00:00:01",
             max_order_modify_rate="100/00:00:01",
-            max_notional_per_order={"AAPL": "100000"},
+            max_notional_per_order={"AAPL": 100_000},
         )
 
     @staticmethod
@@ -100,7 +99,7 @@ class TestConfigStubs:
         allow_cash_position=True,
         persist=False,
         catalog: Optional[ParquetDataCatalog] = None,
-        strategies: list[ImportableStrategyConfig] = None,
+        strategies: Optional[list[ImportableStrategyConfig]] = None,
     ) -> BacktestEngineConfig:
         if persist:
             assert catalog is not None, "If `persist=True`, must pass `catalog`"

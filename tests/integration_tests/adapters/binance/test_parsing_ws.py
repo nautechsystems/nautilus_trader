@@ -18,7 +18,7 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 ETHUSDT = TestInstrumentProvider.ethusdt_binance()

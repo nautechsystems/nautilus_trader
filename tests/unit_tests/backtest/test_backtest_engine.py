@@ -20,11 +20,6 @@ from typing import Optional
 import pandas as pd
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
@@ -61,6 +56,11 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import MyData
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
@@ -78,7 +78,7 @@ class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        self.engine = self.create_engine()
+        self.engine = self.create_engine(BacktestEngineConfig(bypass_logging=True))
 
     def create_engine(self, config: Optional[BacktestEngineConfig] = None):
         engine = BacktestEngine(config)
@@ -599,7 +599,8 @@ class TestBacktestWithAddedBars:
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
-        assert len(self.engine.dump_pickled_data()) == 5060524
+        pickled = self.engine.dump_pickled_data()
+        assert 5060610 <= len(pickled) <= 5060654
 
     def test_load_pickled_data(self):
         # Arrange

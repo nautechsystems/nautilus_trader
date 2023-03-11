@@ -68,14 +68,14 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void apply(self, AccountState event) except *
-    cpdef void update_balances(self, list balances, bint allow_zero=*) except *
-    cpdef void update_commissions(self, Money commission) except *
+    cpdef void apply(self, AccountState event)
+    cpdef void update_balances(self, list balances, bint allow_zero=*)
+    cpdef void update_commissions(self, Money commission)
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
-    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *
-    cdef void _recalculate_balance(self, Currency currency) except *
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id)
+    cdef void _recalculate_balance(self, Currency currency)
 
     cpdef Money calculate_commission(
         self,

@@ -68,6 +68,18 @@ impl From<&str> for Price {
     }
 }
 
+impl From<Price> for f64 {
+    fn from(value: Price) -> f64 {
+        value.as_f64()
+    }
+}
+
+impl From<&Price> for f64 {
+    fn from(value: &Price) -> f64 {
+        value.as_f64()
+    }
+}
+
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state)

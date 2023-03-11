@@ -15,9 +15,9 @@
 
 | Platform          | Rust      | Python |
 |:------------------|:----------|:-------|
-| Linux (x86\_64)   | `1.67.1+` | `3.9+` |
-| macOS (x86\_64)   | `1.67.1+` | `3.9+` |
-| Windows (x86\_64) | `1.67.1+` | `3.9+` |
+| Linux (x86\_64)   | `1.68.0+` | `3.9+` |
+| macOS (x86\_64)   | `1.68.0+` | `3.9+` |
+| Windows (x86\_64) | `1.68.0+` | `3.9+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -218,6 +218,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make clean` -- Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
+- `make ruff` -- Runs ruff over all files using the pyproject.toml config
 - `make pytest` -- Runs all tests with `pytest` (except performance tests)
 - `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
 

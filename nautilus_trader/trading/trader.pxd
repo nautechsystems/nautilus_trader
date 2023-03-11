@@ -43,21 +43,21 @@ cdef class Trader(Component):
     cpdef list strategy_ids(self)
     cpdef dict actor_states(self)
     cpdef dict strategy_states(self)
-    cpdef void add_actor(self, Actor actor) except *
-    cpdef void add_actors(self, list actors) except *
-    cpdef void add_strategy(self, Strategy strategy) except *
-    cpdef void add_strategies(self, list strategies) except *
-    cpdef void clear_actors(self) except *
-    cpdef void clear_strategies(self) except *
-    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *
-    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cpdef void save(self) except *
-    cpdef void load(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
-    cpdef void check_residuals(self) except *
+    cpdef void add_actor(self, Actor actor)
+    cpdef void add_actors(self, list actors)
+    cpdef void add_strategy(self, Strategy strategy)
+    cpdef void add_strategies(self, list strategies)
+    cpdef void clear_actors(self)
+    cpdef void clear_strategies(self)
+    cpdef void subscribe(self, str topic, handler: Callable[[Any], None])
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None])
+    cpdef void start(self)
+    cpdef void stop(self)
+    cpdef void save(self)
+    cpdef void load(self)
+    cpdef void reset(self)
+    cpdef void dispose(self)
+    cpdef void check_residuals(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)
     cpdef object generate_positions_report(self)

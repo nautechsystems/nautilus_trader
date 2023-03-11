@@ -176,7 +176,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
-            if depth == 0:
+            if depth in (None, 0):
                 depth = (
                     5  # depth = 0 is default for Nautilus, but not handled by Interactive Brokers
                 )
@@ -201,9 +201,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         contract_details: ContractDetails = self.instrument_provider.contract_details[
             instrument_id.value
         ]
-        ticker = self._client.reqMktData(
-            contract=contract_details.contract,
-        )
+        ticker = self._client.reqMktData(contract=contract_details.contract)
         ticker.updateEvent += self._on_trade_ticker_update
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 

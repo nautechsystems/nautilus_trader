@@ -73,6 +73,8 @@ impl StateMachineImpl for OrderFsm {
             (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),  // Covers emulated and external orders
             (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),  // Covers emulated and external orders
             (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered), // Covers emulated and external orders
+            (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
+            (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
             (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
             (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),  // Covers FOK and IOC cases
             (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
@@ -129,6 +131,8 @@ impl StateMachineImpl for OrderFsm {
             (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
             (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
             (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
+            (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
+            (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
             (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
             (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
             (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),

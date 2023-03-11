@@ -20,14 +20,9 @@ from typing import Optional
 
 import fsspec
 import pandas as pd
-from fsspec.implementations.github import GithubFileSystem
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
-from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
-from nautilus_trader.backtest.data.loaders import ParquetBarDataLoader
-from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
@@ -50,6 +45,10 @@ from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.loaders import CSVBarDataLoader
+from nautilus_trader.persistence.loaders import CSVTickDataLoader
+from nautilus_trader.persistence.loaders import ParquetBarDataLoader
+from nautilus_trader.persistence.loaders import ParquetTickDataLoader
 
 
 class TestInstrumentProvider:
@@ -365,8 +364,10 @@ class TestInstrumentProvider:
         # Check tick precision of quote currency
         if quote_currency == "JPY":
             price_precision = 3
+            tick_scheme_name = "FOREX_3DECIMAL"
         else:
             price_precision = 5
+            tick_scheme_name = "FOREX_5DECIMAL"
 
         return CurrencyPair(
             instrument_id=instrument_id,
@@ -388,15 +389,16 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
+            tick_scheme_name=tick_scheme_name,
             ts_event=0,
             ts_init=0,
         )
 
     @staticmethod
-    def aapl_equity():
+    def equity(symbol: str = "AAPL", venue: str = "NASDAQ"):
         return Equity(
-            instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
-            native_symbol=Symbol("AAPL"),
+            instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
+            native_symbol=Symbol(symbol),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -406,6 +408,10 @@ class TestInstrumentProvider:
             ts_event=0,
             ts_init=0,
         )
+
+    @staticmethod
+    def aapl_equity():
+        return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
     @staticmethod
     def es_future():
@@ -447,7 +453,7 @@ class TestInstrumentProvider:
     def betting_instrument(
         market_id: str = "1.179082386",
         selection_id: str = "50214",
-        handicap: Optional[str] = None,
+        selection_handicap: Optional[str] = None,
     ) -> BettingInstrument:
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
@@ -464,7 +470,7 @@ class TestInstrumentProvider:
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap=handicap,
+            selection_handicap=selection_handicap,
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
@@ -519,7 +525,7 @@ class TestDataProvider:
     @staticmethod
     def _test_data_directory() -> Optional[str]:
         # Determine if the test data directory exists (i.e. this is a checkout of the source code).
-        source_root = pathlib.Path(__file__).parent.parent.parent
+        source_root = pathlib.Path(__file__).parent.parent
         assert source_root.stem == "nautilus_trader"
         test_data_dir = source_root.parent.joinpath("tests", "test_data")
         if test_data_dir.exists():
@@ -534,10 +540,13 @@ class TestDataProvider:
             self.fs = fsspec.filesystem("file")
         else:
             print("Couldn't find test data directory, test data will be pulled from GitHub")
-            self.root = "tests/test_kit/data"
+            self.root = "tests/test_data"
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
     def _make_uri(self, path: str):
+        # Moved here from top level import because GithubFileSystem has extra deps we may not have installed.
+        from fsspec.implementations.github import GithubFileSystem
+
         if isinstance(self.fs, LocalFileSystem):
             return f"file://{self.root}/{path}"
         elif isinstance(self.fs, GithubFileSystem):

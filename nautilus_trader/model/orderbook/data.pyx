@@ -477,7 +477,7 @@ cdef class BookOrder:
     def __repr__(self) -> str:
         return f"{BookOrder.__name__}({self.price}, {self.size}, {order_side_to_str(self.side)}, {self.order_id})"
 
-    cpdef void update_price(self, double price) except *:
+    cpdef void update_price(self, double price):
         """
         Update the orders price.
 
@@ -489,7 +489,7 @@ cdef class BookOrder:
         """
         self.price = price
 
-    cpdef void update_size(self, double size) except *:
+    cpdef void update_size(self, double size):
         """
         Update the orders size.
 
@@ -501,7 +501,7 @@ cdef class BookOrder:
         """
         self.size = size
 
-    cpdef void update_order_id(self, str value) except *:
+    cpdef void update_order_id(self, str value):
         """
         Update the orders ID.
 

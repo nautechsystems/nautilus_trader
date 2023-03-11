@@ -32,7 +32,7 @@ cdef class Condition:
     """
 
     @staticmethod
-    cdef void true(bint predicate, str fail_msg, ex_type = None) except *:
+    cdef void true(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is True.
 
@@ -61,7 +61,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void false(bint predicate, str fail_msg, ex_type = None) except *:
+    cdef void false(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is False.
 
@@ -90,7 +90,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void none(object argument, str param, ex_type = None) except *:
+    cdef void none(object argument, str param, ex_type = None):
         """
         Check the argument is ``None``.
 
@@ -119,7 +119,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_none(object argument, str param, ex_type = None) except *:
+    cdef void not_none(object argument, str param, ex_type = None):
         """
         Check the argument is not ``None``.
 
@@ -153,7 +153,7 @@ cdef class Condition:
         object expected,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the argument is of the specified type.
 
@@ -189,7 +189,7 @@ cdef class Condition:
         object expected,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the argument is of the specified type, or is ``None``.
 
@@ -216,7 +216,7 @@ cdef class Condition:
         Condition.type(argument, expected, param, ex_type)
 
     @staticmethod
-    cdef void callable(object argument, str param, ex_type = None) except *:
+    cdef void callable(object argument, str param, ex_type = None):
         """
         Check the object is of type `Callable`.
 
@@ -245,7 +245,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void callable_or_none(object argument, str param, ex_type = None) except *:
+    cdef void callable_or_none(object argument, str param, ex_type = None):
         """
         Check the object is of type `Callable` or ``None``.
 
@@ -276,7 +276,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the objects are equal.
 
@@ -317,7 +317,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the objects are not equal.
 
@@ -356,7 +356,7 @@ cdef class Condition:
         type expected_type,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the list only contains types of the given expected type.
 
@@ -396,7 +396,7 @@ cdef class Condition:
         type value_type,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -431,7 +431,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the element is contained within the specified collection.
 
@@ -473,7 +473,7 @@ cdef class Condition:
         str param1,
         str param2,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the element is not contained within the specified collection.
 
@@ -509,7 +509,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_empty(object collection, str param, ex_type = None) except *:
+    cdef void not_empty(object collection, str param, ex_type = None):
         """
         Check the collection is not empty.
 
@@ -540,7 +540,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void empty(object collection, str param, ex_type = None) except *:
+    cdef void empty(object collection, str param, ex_type = None):
         """
         Check the collection is empty.
 
@@ -571,7 +571,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void positive(double value, str param, ex_type = None) except *:
+    cdef void positive(double value, str param, ex_type = None):
         """
         Check the real number value is positive (> 0).
 
@@ -600,7 +600,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void positive_int(int value, str param, ex_type = None) except *:
+    cdef void positive_int(int value, str param, ex_type = None):
         """
         Check the integer value is a positive integer (> 0).
 
@@ -629,7 +629,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_negative(double value, str param, ex_type = None) except *:
+    cdef void not_negative(double value, str param, ex_type = None):
         """
         Check the real number value is not negative (< 0).
 
@@ -658,7 +658,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_negative_int(int value, str param, ex_type = None) except *:
+    cdef void not_negative_int(int value, str param, ex_type = None):
         """
         Check the integer value is not negative (< 0).
 
@@ -693,7 +693,7 @@ cdef class Condition:
         double end,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the real number value is within the specified range (inclusive).
 
@@ -733,7 +733,7 @@ cdef class Condition:
         int end,
         str param,
         ex_type = None,
-    ) except *:
+    ):
         """
         Check the integer value is within the specified range (inclusive).
 
@@ -767,7 +767,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void valid_string(str argument, str param, ex_type = None) except *:
+    cdef void valid_string(str argument, str param, ex_type = None):
         """
         Check the string argument is valid (not ``None``, empty or whitespace).
 

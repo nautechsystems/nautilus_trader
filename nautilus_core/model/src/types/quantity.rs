@@ -56,6 +56,18 @@ impl Quantity {
     }
 }
 
+impl From<Quantity> for f64 {
+    fn from(value: Quantity) -> f64 {
+        value.as_f64()
+    }
+}
+
+impl From<&Quantity> for f64 {
+    fn from(value: &Quantity) -> f64 {
+        value.as_f64()
+    }
+}
+
 impl From<&str> for Quantity {
     fn from(input: &str) -> Self {
         let float_from_input = input.parse::<f64>();

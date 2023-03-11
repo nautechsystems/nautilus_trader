@@ -67,7 +67,7 @@ cdef class KlingerVolumeOscillator(Indicator):
         self._previous_hlc3 = 0
         self.value = 0
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    cpdef void handle_bar(self, Bar bar):
         """
         Update the indicator with the given bar.
 
@@ -92,7 +92,7 @@ cdef class KlingerVolumeOscillator(Indicator):
         double low,
         double close,
         double volume,
-    ) except *:
+    ):
         """
         Update the indicator with the given raw values.
 
@@ -132,7 +132,7 @@ cdef class KlingerVolumeOscillator(Indicator):
 
         self._previous_hlc3 = self._hlc3
 
-    cpdef void _reset(self) except *:
+    cpdef void _reset(self):
         self._fast_ma.reset()
         self._slow_ma.reset()
         self._signal_ma.reset()

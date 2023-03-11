@@ -27,6 +27,6 @@ cdef class MovingAverage(Indicator):
     cdef readonly double value
     """The current output value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double value) except *
-    cpdef void _increment_count(self) except *
-    cpdef void _reset_ma(self) except *
+    cpdef void update_raw(self, double value)
+    cpdef void _increment_count(self)
+    cpdef void _reset_ma(self)
