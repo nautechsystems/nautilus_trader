@@ -90,6 +90,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.ACCEPTED, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.CANCELED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,  # Real world possibility
     (OrderStatus.CANCELED, OrderStatus.FILLED): OrderStatus.FILLED,  # Real world possibility
+    (OrderStatus.PENDING_UPDATE, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Real world possibility
     (OrderStatus.PENDING_UPDATE, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.CANCELED): OrderStatus.CANCELED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.EXPIRED): OrderStatus.EXPIRED,
@@ -98,6 +99,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PENDING_UPDATE, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.PENDING_UPDATE, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.FILLED): OrderStatus.FILLED,
+    (OrderStatus.PENDING_CANCEL, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Real world possibility
     (OrderStatus.PENDING_CANCEL, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,  # Allow multiple requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.CANCELED): OrderStatus.CANCELED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Allows failed cancel requests
