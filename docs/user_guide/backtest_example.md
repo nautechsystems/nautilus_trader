@@ -143,7 +143,7 @@ venues_config=[
         oms_type="HEDGING",
         account_type="MARGIN",
         base_currency="USD",
-        starting_balances=["1000000 USD"],
+        starting_balances=["1_000_000 USD"],
     )
 ]
 

@@ -15,6 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
+from decimal import Decimal
 
 import pandas as pd
 
@@ -78,7 +79,7 @@ if __name__ == "__main__":
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id.value,
-                max_trade_size=10,
+                max_trade_size=Decimal(10),
                 order_id_tag=instrument.selection_id,
             ),
         )
