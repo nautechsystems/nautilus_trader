@@ -123,15 +123,10 @@ repos:
           types-toml,
         ]
 
-  - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.254
     hooks:
-      - id: flake8
-        name: flake8
-        types_or: [python, cython]
-        entry: "flake8p"
-        additional_dependencies:
-          - Flake8-pyproject
+      - id: ruff
 
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.3.0
