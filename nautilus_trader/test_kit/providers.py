@@ -60,7 +60,7 @@ class TestDataProvider:
             self.fs = fsspec.filesystem("file")
         else:
             print("Couldn't find test data directory, test data will be pulled from GitHub")
-            self.root = "tests/test_kit/data"
+            self.root = "tests/test_data"
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
     def _make_uri(self, path: str):
