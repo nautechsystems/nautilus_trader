@@ -1,6 +1,6 @@
 # NautilusTrader 1.170.0 Beta
 
-Released on TBD (UTC).
+Released on 11th March 2023 (UTC).
 
 ### Breaking Changes
 - Moved `TestInstrumentProvider` to `backtest.providers`
