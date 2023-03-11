@@ -52,9 +52,7 @@ class TestPersistenceParsers:
 
     def test_line_preprocessor_post_process(self):
         obj = TestDataStubs.trade_tick_5decimal()
-        data = {
-            "ts_init": int(pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_datetime64()),
-        }
+        data = {"ts_init": pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").value}
         obj = self.line_preprocessor.post_process(obj=obj, state=data)
         assert obj.ts_init == 1624946651943000000
 
@@ -62,7 +60,7 @@ class TestPersistenceParsers:
         def block_parser(block: bytes):
             for raw in block.split(b"\\n"):
                 ts, line = raw.split(b" - ")
-                state = {"ts_init": int(pd.Timestamp(ts.decode(), tz="UTC").to_datetime64())}
+                state = {"ts_init": pd.Timestamp(ts.decode(), tz="UTC").value}
                 line = line.strip().replace(b"b'", b"")
                 msgspec.json.decode(line)
                 for obj in BetfairTestStubs.parse_betfair(
