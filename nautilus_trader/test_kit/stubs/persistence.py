@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections.abc import Generator
+
 import pandas as pd
 
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
@@ -24,7 +26,7 @@ from nautilus_trader.trading.filters import NewsImpact
 
 class TestPersistenceStubs:
     @staticmethod
-    def setup_news_event_persistence():
+    def setup_news_event_persistence() -> None:
         import pyarrow as pa
 
         def _news_event_to_dict(self):
@@ -63,7 +65,7 @@ class TestPersistenceStubs:
         )
 
     @staticmethod
-    def news_event_parser(df, state=None):
+    def news_event_parser(df, state=None) -> Generator[NewsEventData, None, None]:
         for _, row in df.iterrows():
             yield NewsEventData(
                 name=str(row["Name"]),

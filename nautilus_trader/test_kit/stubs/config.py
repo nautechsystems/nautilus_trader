@@ -79,7 +79,7 @@ class TestConfigStubs:
         )
 
     @staticmethod
-    def strategies_config():
+    def strategies_config() -> list[ImportableStrategyConfig]:
         return [
             ImportableStrategyConfig(
                 strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
@@ -127,7 +127,7 @@ class TestConfigStubs:
         catalog: ParquetDataCatalog,
         data_cls=QuoteTick,
         instrument_id: Optional[str] = None,
-    ):
+    ) -> BacktestDataConfig:
         return BacktestDataConfig(
             data_cls=data_cls.fully_qualified_name(),
             catalog_path=str(catalog.path),
@@ -142,7 +142,7 @@ class TestConfigStubs:
         instrument_ids: Optional[list[str]] = None,
         data_types: tuple[Data] = (QuoteTick,),
         venues: Optional[list[BacktestVenueConfig]] = None,
-    ):
+    ) -> BacktestRunConfig:
         instrument_ids = instrument_ids or [TestIdStubs.betting_instrument_id().value]
         run_config = BacktestRunConfig(
             engine=config,

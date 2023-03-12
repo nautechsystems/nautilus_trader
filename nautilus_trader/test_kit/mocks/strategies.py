@@ -33,7 +33,7 @@ class MockStrategy(Strategy):
         The bar type for the strategy.
     """
 
-    def __init__(self, bar_type: BarType):
+    def __init__(self, bar_type: BarType) -> None:
         super().__init__()
 
         self.store: list[object] = []
@@ -131,7 +131,7 @@ class KaboomStrategy(Strategy):
     Provides a mock trading strategy where every called method blows up.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         self._explode_on_start = True
