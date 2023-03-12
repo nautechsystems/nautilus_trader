@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 
 class TestIdStubs:
     @staticmethod
-    def uuid():
+    def uuid() -> UUID4:
         return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
 
     @staticmethod

@@ -15,6 +15,9 @@
 
 from typing import Optional
 
+from nautilus_trader.accounting.accounts.cash import BettingAccount
+from nautilus_trader.accounting.accounts.cash import CashAccount
+from nautilus_trader.accounting.accounts.cash import MarginAccount
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.enums import ContingencyType
@@ -37,19 +40,19 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 class TestExecStubs:
     @staticmethod
-    def cash_account(account_id: Optional[AccountId] = None):
+    def cash_account(account_id: Optional[AccountId] = None) -> CashAccount:
         return AccountFactory.create(
             TestEventStubs.cash_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
 
     @staticmethod
-    def margin_account(account_id: Optional[AccountId] = None):
+    def margin_account(account_id: Optional[AccountId] = None) -> MarginAccount:
         return AccountFactory.create(
             TestEventStubs.margin_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
 
     @staticmethod
-    def betting_account(account_id=None):
+    def betting_account(account_id=None) -> BettingAccount:
         return AccountFactory.create(
             TestEventStubs.betting_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
@@ -97,7 +100,7 @@ class TestExecStubs:
         strategy_id: Optional[StrategyId] = None,
         client_order_id: Optional[ClientOrderId] = None,
         time_in_force=None,
-    ) -> LimitOrder:
+    ) -> MarketOrder:
         return MarketOrder(
             trader_id=trader_id or TestIdStubs.trader_id(),
             strategy_id=strategy_id or TestIdStubs.strategy_id(),
@@ -121,9 +124,10 @@ class TestExecStubs:
         order: Optional[Order] = None,
         instrument_id=None,
         **order_kwargs,
-    ):
+    ) -> Order:
         order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
         submitted = TestEventStubs.order_submitted(order=order)
+        assert order
         order.apply(submitted)
         return order
 
@@ -134,7 +138,7 @@ class TestExecStubs:
         account_id: Optional[AccountId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
         **order_kwargs,
-    ) -> LimitOrder:
+    ) -> Order:
         order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
         submitted = TestExecStubs.make_submitted_order(order)
         accepted = TestEventStubs.order_accepted(
@@ -142,11 +146,12 @@ class TestExecStubs:
             account_id=account_id,
             venue_order_id=venue_order_id,
         )
+        assert order
         order.apply(accepted)
         return order
 
     @staticmethod
-    def make_filled_order(instrument, **kwargs) -> LimitOrder:
+    def make_filled_order(instrument, **kwargs) -> Order:
         order = TestExecStubs.make_accepted_order(instrument_id=instrument.id, **kwargs)
         fill = TestEventStubs.order_filled(order=order, instrument=instrument)
         order.apply(fill)

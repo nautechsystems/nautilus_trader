@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from datetime import datetime
 from typing import Optional
 
+import pandas as pd
+
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -66,7 +68,7 @@ class MockExecutionClient(ExecutionClient):
         clock,
         logger,
         config=None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             venue=venue,
@@ -80,8 +82,8 @@ class MockExecutionClient(ExecutionClient):
             config=config,
         )
 
-        self.calls = []
-        self.commands = []
+        self.calls: list[str] = []
+        self.commands: list[TradingCommand] = []
 
     def _start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -164,7 +166,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         cache,
         clock,
         logger,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=client_id,
@@ -184,8 +186,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self._trades_reports: dict[VenueOrderId, list[TradeReport]] = {}
         self._position_status_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
 
-        self.calls = []
-        self.commands = []
+        self.calls: list[str] = []
+        self.commands: list[TradingCommand] = []
 
     def connect(self) -> None:
         pass  # Do nothing
@@ -255,8 +257,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -280,8 +282,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
@@ -306,8 +308,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
