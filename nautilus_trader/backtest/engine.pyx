@@ -887,14 +887,14 @@ cdef class BacktestEngine:
             start = unix_nanos_to_dt(start_ns)
         else:
             start = pd.to_datetime(start, utc=True)
-            start_ns = int(start.to_datetime64())
+            start_ns = start.value
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
             end = unix_nanos_to_dt(end_ns)
         else:
             end = pd.to_datetime(end, utc=True)
-            end_ns = int(end.to_datetime64())
+            end_ns = end.value
         Condition.true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
 
