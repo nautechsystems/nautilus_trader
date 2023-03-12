@@ -219,8 +219,10 @@ class NautilusKernel:
                 f"environment {environment} not recognized",  # pragma: no cover (design-time error)
             )
 
+        # Setup the logger with a `LiveClock` initially,
+        # which is later swapped out for a `TestClock` in the `BacktestEngine`.
         self._logger = Logger(
-            clock=self._clock,
+            clock=self._clock if isinstance(self._clock, LiveClock) else LiveClock(),
             trader_id=self._trader_id,
             machine_id=self._machine_id,
             instance_id=self._instance_id,

@@ -479,7 +479,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = 0
         row = events.iloc[index]
-        cdef uint64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
+        cdef uint64_t ts_event = pd.Timestamp(events.index[index]).value
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
@@ -528,7 +528,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = -1
         row = events.iloc[index]
-        cdef uint64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
+        cdef uint64_t ts_event = pd.Timestamp(events.index[index]).value
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
