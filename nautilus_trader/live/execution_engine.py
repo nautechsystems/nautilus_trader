@@ -127,7 +127,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._cmd_queue_task: Optional[asyncio.Task] = None
         self._evt_queue_task: Optional[asyncio.Task] = None
         self._inflight_check_task: Optional[asyncio.Task] = None
-        self._is_running: bool = False
+        self._kill: bool = False
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -214,6 +214,8 @@ class LiveExecutionEngine(ExecutionEngine):
         Kill the engine by abruptly canceling the queue task and calling stop.
         """
         self._log.warning("Killing engine...")
+        self._kill = True
+        self.stop()
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
@@ -222,9 +224,6 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
             self._evt_queue_task.cancel()
             self._evt_queue_task.done()
-        if self._is_running:
-            self._is_running = False  # Avoids sentinel messages for queues
-            self.stop()
 
     def execute(self, command: TradingCommand) -> None:
         """
@@ -296,7 +295,6 @@ class LiveExecutionEngine(ExecutionEngine):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
-        self._is_running = True  # Queue will continue to process
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
         self._log.debug(f"Scheduled {self._cmd_queue_task}.")
@@ -307,50 +305,51 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug(f"Scheduled {self._inflight_check_task}.")
 
     def _on_stop(self) -> None:
-        if self._is_running:
-            self._is_running = False
-            self._enqueue_sentinel()
-
         if self._inflight_check_task:
             self._inflight_check_task.cancel()
+
+        if self._kill:
+            return  # Avoids queuing redundant sentinel messages
+        # This will stop the queues processing as soon as they see the sentinel message
+        self._enqueue_sentinel()
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
             f"Command message queue processing starting (qsize={self.cmd_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 command: Optional[TradingCommand] = await self._cmd_queue.get()
-                if command is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if command is self._sentinel:
+                    break
                 self._execute_command(command)
         except asyncio.CancelledError:
+            self._log.warning("Command message queue canceled.")
+        finally:
+            stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
-                self._log.warning(
-                    f"Command message queue processing canceled "
-                    f"with {self.cmd_qsize()} message(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue.")
             else:
-                self._log.debug("Command message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")
 
     async def _run_evt_queue(self) -> None:
         self._log.debug(
             f"Event message queue processing starting (qsize={self.evt_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 event: Optional[OrderEvent] = await self._evt_queue.get()
-                if event is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if event is self._sentinel:
+                    break
                 self._handle_event(event)
         except asyncio.CancelledError:
+            self._log.warning("Event message queue canceled.")
+        finally:
+            stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
-                self._log.warning(
-                    f"Event message queue processing canceled "
-                    f"with {self.evt_qsize()} message(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue.")
             else:
-                self._log.debug("Event message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")
 
     async def _inflight_check_loop(self) -> None:
         while True:
@@ -380,14 +379,16 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 self._execute_command(query)
 
+    # -- RECONCILIATION -------------------------------------------------------------------------------
+
     async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
         """
-        Reconcile the execution engines state with all execution clients.
+        Reconcile the internal execution state with all execution clients (external state).
 
         Parameters
         ----------
         timeout_secs : double, default 10.0
-            The seconds to allow for reconciliation before timing out.
+            The timeout (seconds) for reconciliation to complete.
 
         Returns
         -------
@@ -424,7 +425,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    def reconcile_report(self, report: ExecutionReport) -> None:
+    def reconcile_report(self, report: ExecutionReport) -> bool:
         """
         Check the given execution report.
 
@@ -433,28 +434,12 @@ class LiveExecutionEngine(ExecutionEngine):
         report : ExecutionReport
             The execution report to check.
 
-        """
-        PyCondition.not_none(report, "report")
-
-        self._reconcile_report(report)
-
-    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
-        """
-        Reconcile the given execution mass status report.
-
-        Parameters
-        ----------
-        report : ExecutionMassStatus
-            The execution mass status report to reconcile.
+        Returns
+        -------
+        bool
+            True if reconciliation successful, else False.
 
         """
-        PyCondition.not_none(report, "report")
-
-        self._reconcile_mass_status(report)
-
-    # -- RECONCILIATION -------------------------------------------------------------------------------
-
-    def _reconcile_report(self, report: ExecutionReport) -> bool:
         self._log.debug(f"[RECV][RPT] {report}.")
         self.report_count += 1
 
@@ -480,6 +465,18 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         return result
+
+    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
+        """
+        Reconcile the given execution mass status report.
+
+        Parameters
+        ----------
+        report : ExecutionMassStatus
+            The execution mass status report to reconcile.
+
+        """
+        self._reconcile_mass_status(report)
 
     def _reconcile_mass_status(self, mass_status: ExecutionMassStatus) -> bool:
         self._log.debug(f"[RECV][RPT] {mass_status}.")
@@ -551,7 +548,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if order.status == OrderStatus.INITIALIZED or order.status == OrderStatus.SUBMITTED:
             self._generate_order_accepted(order, report)
 
-        # Update order quantity and price deltas
+        # Update order quantity and price differences
         if self._should_update(order, report):
             self._generate_order_updated(order, report)
 
@@ -608,14 +605,14 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         if client_order_id is None:
             self._log.error(
-                "Cannot reconcile TradeReport: " f"client order ID {client_order_id} not found.",
+                "Cannot reconcile TradeReport: client order ID {client_order_id} not found.",
             )
             return False  # Failed
 
         order: Optional[Order] = self._cache.order(client_order_id)
         if order is None:
             self._log.error(
-                "Cannot reconcile TradeReport: " f"no order for client order ID {client_order_id}",
+                "Cannot reconcile TradeReport: no order for client order ID {client_order_id}",
             )
             return False  # Failed
 
@@ -659,7 +656,7 @@ class LiveExecutionEngine(ExecutionEngine):
         position: Optional[Position] = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
-                f"Cannot reconcile position: " f"position ID {report.venue_position_id} not found.",
+                f"Cannot reconcile position: position ID {report.venue_position_id} not found.",
             )
             return False  # Failed
         if position.net_qty != report.net_qty:
