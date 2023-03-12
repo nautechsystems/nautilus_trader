@@ -69,7 +69,7 @@ class PerformanceBench:
         minimum = min(results)  # In seconds
 
         if print_output:
-            result_milli = minimum * 1000  # 1,000ms in 1 second
+            result_milli = minimum * 1_000  # 1,000ms in 1 second
             result_micro = minimum * 1_000_000  # 1,000,000μs in 1 second
             result_nano = minimum * 1_000_000_000  # 1,000,000,000ns in 1 second
             print(f"\nPerformance test: {str(inspect.getmembers(target)[4][1])} ")
