@@ -15,9 +15,9 @@
 
 from typing import Optional
 
-from nautilus_trader.accounting.accounts.cash import BettingAccount
+from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.accounting.accounts.cash import CashAccount
-from nautilus_trader.accounting.accounts.cash import MarginAccount
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.enums import ContingencyType
