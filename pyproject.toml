@@ -99,7 +99,7 @@ pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
-pytest-xdist = { version = "^3.2.0", extras = ["psutil"] }
+pytest-xdist = { version = "^3.2.1", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
 optional = true
