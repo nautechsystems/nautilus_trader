@@ -66,7 +66,6 @@ from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
-from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -1515,8 +1514,8 @@ class TestDataEngine:
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
-        handler = ObjectStorer()
-        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
+        handler = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -1541,8 +1540,8 @@ class TestDataEngine:
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
-        handler = ObjectStorer()
-        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
+        handler = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -1554,7 +1553,7 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        self.msgbus.unsubscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
+        self.msgbus.unsubscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,

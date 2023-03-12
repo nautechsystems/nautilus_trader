@@ -292,8 +292,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderAccepted)
 
     def test_submit_sell_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -310,8 +310,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderAccepted)
 
     def test_submit_buy_market_order_with_no_market_rejects_order(self):
         # Arrange
@@ -327,8 +327,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderRejected)
 
     def test_submit_sell_market_order_with_no_market_rejects_order(self):
         # Arrange
@@ -344,8 +344,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderRejected)
 
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange: Prepare market
@@ -1859,9 +1859,9 @@ class TestSimulatedExchange:
         self.exchange.process(0)
         self.strategy.submit_order(reduce_order, position_id=position_id)
         self.exchange.process(0)
-        fill_event1 = self.strategy.object_storer.get_store()[2]
-        fill_event2 = self.strategy.object_storer.get_store()[6]
-        fill_event3 = self.strategy.object_storer.get_store()[10]
+        fill_event1 = self.strategy.store[2]
+        fill_event2 = self.strategy.store[6]
+        fill_event3 = self.strategy.store[10]
 
         # Assert
         assert order.status == OrderStatus.FILLED

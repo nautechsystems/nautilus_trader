@@ -20,7 +20,6 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -37,7 +36,7 @@ class MockStrategy(Strategy):
     def __init__(self, bar_type: BarType):
         super().__init__()
 
-        self.object_storer = ObjectStorer()
+        self.store: list[object] = []
         self.bar_type = bar_type
 
         self.ema1 = ExponentialMovingAverage(10)
@@ -54,23 +53,23 @@ class MockStrategy(Strategy):
 
     def on_instrument(self, instrument) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instrument)
+        self.store.append(instrument)
 
     def on_ticker(self, ticker):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(ticker)
+        self.store.append(ticker)
 
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(tick)
+        self.store.append(tick)
 
     def on_trade_tick(self, tick) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(tick)
+        self.store.append(tick)
 
     def on_bar(self, bar) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(bar)
+        self.store.append(bar)
 
         if bar.bar_type != self.bar_type:
             return
@@ -96,15 +95,15 @@ class MockStrategy(Strategy):
 
     def on_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(data)
+        self.store.append(data)
 
     def on_strategy_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(data)
+        self.store.append(data)
 
     def on_event(self, event) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(event)
+        self.store.append(event)
 
     def on_stop(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -121,7 +120,7 @@ class MockStrategy(Strategy):
 
     def on_load(self, state: dict[str, bytes]) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(state)
+        self.store.append(state)
 
     def on_dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
