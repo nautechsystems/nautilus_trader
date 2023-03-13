@@ -151,6 +151,7 @@ select = [
     "ICN",
     "PYI",
     "Q",
+    # "I",
     # "RSE",
     "TID",
     # "ARG",
@@ -166,57 +167,40 @@ select = [
 ]
 
 ignore = [
-    "E741",
-    "D100",
+    "E741",  # Ambiguous variable name (single char)
+    "D100",  # Missing docstring in public module  **fix**
     "D101",
-    "D102",
-    "D103",
-    "D104",
+    "D102",  # Missing docstring in public method  **fix**
+    "D103",  # Missing docstring in public function  **fix**
+    "D104",  # Missing docstring in public package  **fix**
     "D107",
     "D105",
-    "D200",
-    "D203",
-    "D205",
-    "D212",
-    "D400",
-    "D413",
-    "D415",
-    "D416",
+    "D200",  # One-line docstring should fit on one line with quotes (optional style)
+    "D203",  # 1 blank line required before class docstring (optional style)
+    "D205",  # 1 blank line required between summary line and description (optional style)
+    "D212",  # Multi-line docstring summary should start at the first line (optional style)
+    "D400",  # First line should end with a period (not always a first line)
+    "D413",  # Missing blank line after last section ('Parameters')
+    "D415",  # First line should end with a period, question mark, or exclamation point (not always a first line)
+    "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
     "S101",  # Use of assert detected (OK in test suite)
     "S105",  # Use of hardcoded password (spurious)
     "S106",  # Use of hardcoded password (spurious)
     "S113",  # Probable use of requests call without timeout **fix**
 ]
 
-# pydocstyle ignore reasons
-# -------------------------
-# D100: Missing docstring in public module  **fix**
-# D102: Missing docstring in public method  **fix**
-# D103: Missing docstring in public function  **fix**
-# D104: Missing docstring in public package  **fix**
-# D200: One-line docstring should fit on one line with quotes (optional style)
-# D203: 1 blank line required before class docstring (optional style)
-# D205: 1 blank line required between summary line and description (optional style)
-# D212: Multi-line docstring summary should start at the first line (optional style)
-# D400: First line should end with a period (not always a first line)
-# D413: Missing blank line after last section ('Parameters')
-# D415: First line should end with a period, question mark, or exclamation point (not always a first line)
-# D416: Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
-
 # Allow autofix for all enabled rules (when `--fix`) is provided
 fixable = ["A", "B", "C", "D", "E", "F"]
 unfixable = []
 
 exclude = [
+    ".benchmarks",
     ".eggs",
     ".git",
     ".mypy_cache",
-    ".pants.d",
-    ".pytype",
+    ".pytest_cache",
     ".ruff_cache",
     ".venv",
-    "__pypackages__",
-    "_build",
     "build",
     "dist",
     "venv",
@@ -228,6 +212,20 @@ line-length = 150  # Reduce to 100
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 target-version = "py39"
+
+# [tool.ruff.isort]
+# # py_version = "39"
+# # skip_glob = ["**/core/rust/*"]
+# combine-as-imports = true
+# # max-line-length = 100
+# # ensure_newline_before_comments = true
+# force-single-line = true
+# single-line-exclusions = ["typing"]
+# # include_trailing_comma = true
+# # multi_line_output = 3
+# lines-after-imports = 2
+# # use_parentheses = true
+# # filter_files = true
 
 [tool.ruff.mccabe]
 max-complexity = 10
