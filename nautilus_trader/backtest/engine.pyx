@@ -147,17 +147,9 @@ cdef class BacktestEngine:
         self._data_engine: DataEngine = self._kernel.data_engine
 
         # Setup engine logging
-        self._logger = Logger(
-            clock=LiveClock(),
-            trader_id=self.kernel.trader_id,
-            machine_id=self.kernel.machine_id,
-            instance_id=self.kernel.instance_id,
-            bypass=config.bypass_logging,
-        )
-
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
-            logger=self._logger,
+            logger=self._kernel.logger,
         )
 
     @property
@@ -836,6 +828,7 @@ cdef class BacktestEngine:
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
+        self._kernel.logger.change_clock(self._clock)
 
         self._log_post_run()
 
