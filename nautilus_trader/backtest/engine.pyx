@@ -143,7 +143,6 @@ cdef class BacktestEngine:
             bypass_logging=config.bypass_logging,
         )
 
-        cdef Trader trader = self._kernel.trader
         self._data_engine: DataEngine = self._kernel.data_engine
 
         # Setup engine logging

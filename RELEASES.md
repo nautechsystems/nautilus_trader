@@ -1,3 +1,18 @@
+# NautilusTrader 1.171.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Trading `CurrencyPair` instruments with a _single-currency_ `CASH` account type no longer permitted (unrealistic)
+
+### Enhancements
+None
+
+### Fixes
+- Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)
+
+---
+
 # NautilusTrader 1.170.0 Beta
 
 Released on 11th March 2023 (UTC).
