@@ -69,6 +69,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orderbook.data cimport OrderBookData
@@ -509,8 +510,18 @@ cdef class BacktestEngine:
                 f"Add the {instrument.id.venue} venue using the `add_venue` method."
             )
 
-        # TODO(cs): validate the instrument is correct for the venue
-        account_type: AccountType = self._venues[instrument.id.venue].account_type
+        # Validate instrument is correct for the venue
+        cdef SimulatedExchange venue = self._venues[instrument.id.venue]
+
+        if (
+            isinstance(instrument, CurrencyPair)
+            and venue.account_type == AccountType.CASH
+            and venue.base_currency is not None  # Single-currency account
+        ):
+            raise InvalidConfiguration(
+                f"Cannot add `CurrencyPair` instrument {instrument} "
+                "for a venue with a single-currency CASH account.",
+            )
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(instrument.id.venue)
