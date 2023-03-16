@@ -238,6 +238,34 @@ class TestBacktestEngine:
         assert engine2.kernel.instance_id.value != instance_id
 
 
+class TestBacktestEngineCashAccount:
+    def setup(self) -> None:
+        # Fixture Setup
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        self.engine = self.create_engine(BacktestEngineConfig(bypass_logging=True))
+
+    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
+        engine = BacktestEngine(config)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            fill_model=FillModel(),
+        )
+        return engine
+
+    def teardown(self):
+        self.engine.reset()
+        self.engine.dispose()
+
+    def test_adding_currency_pair_for_single_currency_cash_account_raises_exception(self):
+        # Arrange, Act, Assert
+        with pytest.raises(InvalidConfiguration):
+            self.engine.add_instrument(self.usdjpy)
+
+
 class TestBacktestEngineData:
     def setup(self):
         # Fixture Setup
@@ -258,7 +286,7 @@ class TestBacktestEngineData:
             fill_model=FillModel(),
         )
 
-    def test_add_generic_data_adds_to_engine(self, capsys):
+    def test_add_generic_data_adds_to_engine(self):
         # Arrange
         data_type = DataType(MyData, metadata={"news_wire": "hacks"})
 
@@ -300,7 +328,7 @@ class TestBacktestEngineData:
         with pytest.raises(InvalidConfiguration):
             engine.add_instrument(ETHUSDT_BINANCE)
 
-    def test_add_order_book_snapshots_adds_to_engine(self, capsys):
+    def test_add_order_book_snapshots_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(ETHUSDT_BINANCE)
 
@@ -330,7 +358,7 @@ class TestBacktestEngineData:
         assert self.engine.data[0] == snapshot1
         assert self.engine.data[1] == snapshot2
 
-    def test_add_order_book_deltas_adds_to_engine(self, capsys):
+    def test_add_order_book_deltas_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(AUDUSD_SIM)
         self.engine.add_instrument(ETHUSDT_BINANCE)
@@ -434,7 +462,7 @@ class TestBacktestEngineData:
         assert self.engine.data[0] == operations1
         assert self.engine.data[1] == operations2
 
-    def test_add_quote_ticks_adds_to_engine(self, capsys):
+    def test_add_quote_ticks_adds_to_engine(self):
         # Arrange, Setup data
         self.engine.add_instrument(AUDUSD_SIM)
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
@@ -447,7 +475,7 @@ class TestBacktestEngineData:
         # Assert
         assert len(self.engine.data) == 100000
 
-    def test_add_trade_ticks_adds_to_engine(self, capsys):
+    def test_add_trade_ticks_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(ETHUSDT_BINANCE)
 
@@ -461,7 +489,7 @@ class TestBacktestEngineData:
         # Assert
         assert len(self.engine.data) == 69806
 
-    def test_add_bars_adds_to_engine(self, capsys):
+    def test_add_bars_adds_to_engine(self):
         # Arrange
         bar_spec = BarSpecification(
             step=1,
@@ -489,7 +517,7 @@ class TestBacktestEngineData:
         # Assert
         assert len(self.engine.data) == 2000
 
-    def test_add_instrument_status_to_engine(self, capsys):
+    def test_add_instrument_status_to_engine(self):
         # Arrange
         data = [
             InstrumentStatusUpdate(
