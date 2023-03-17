@@ -499,6 +499,9 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The minimum log level to write to a log file.
     log_file_path : str, optional
         The optional log file path. If ``None`` then will not log to a file.
+    log_component_levels : dict[str, LogLevel]
+        The additional per component log level filters, where keys are component
+        IDs (e.g. actor/strategy IDs) and values are log levels.
     log_rate_limit : int, default 100_000
         The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
@@ -523,6 +526,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     log_level: str = "INFO"
     log_level_file: str = "DEBUG"
     log_file_path: Optional[str] = None
+    log_component_levels: Optional[dict[str, str]] = None
     log_rate_limit: int = 100_000
     bypass_logging: bool = False
 

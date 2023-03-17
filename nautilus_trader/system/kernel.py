@@ -168,6 +168,7 @@ class NautilusKernel:
         log_level: LogLevel = LogLevel.INFO,
         log_level_file: LogLevel = LogLevel.DEBUG,
         log_file_path: Optional[str] = None,
+        log_component_levels: Optional[dict[str, LogLevel]] = None,
         log_rate_limit: int = 100_000,
         bypass_logging: bool = False,
     ):
@@ -229,6 +230,7 @@ class NautilusKernel:
             level_stdout=log_level,
             level_file=log_level_file,
             file_path=log_file_path,
+            component_levels=log_component_levels,
             rate_limit=log_rate_limit,
             bypass=bypass_logging,
         )

@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::parsing::optional_bytes_to_json;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::ffi::c_char;
 use std::fs::File;
 use std::io::{Stderr, Stdout};
@@ -74,6 +77,7 @@ impl Logger {
         level_stdout: LogLevel,
         level_file: LogLevel,
         file_path: Option<PathBuf>,
+        _component_levels: Option<HashMap<String, Value>>,
         rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
@@ -353,6 +357,7 @@ pub unsafe extern "C" fn logger_new(
     level_stdout: LogLevel,
     level_file: LogLevel,
     file_path_ptr: *const c_char,
+    component_levels_ptr: *const c_char,
     rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
@@ -363,6 +368,7 @@ pub unsafe extern "C" fn logger_new(
         level_stdout,
         level_file,
         optional_cstr_to_string(file_path_ptr).map(PathBuf::from),
+        optional_bytes_to_json(component_levels_ptr),
         rate_limit,
         is_bypassed != 0,
     )))
@@ -430,6 +436,7 @@ mod tests {
             LogLevel::Debug,
             LogLevel::Debug,
             None,
+            None,
             100_000,
             false,
         );
@@ -445,6 +452,7 @@ mod tests {
             UUID4::new(),
             LogLevel::Info,
             LogLevel::Debug,
+            None,
             None,
             100_000,
             false,
