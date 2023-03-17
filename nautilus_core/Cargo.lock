@@ -971,6 +971,7 @@ dependencies = [
  "nautilus_core",
  "nautilus_model",
  "pyo3",
+ "serde",
  "serde_json",
  "strum",
 ]
