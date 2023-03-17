@@ -77,12 +77,28 @@ impl Logger {
         level_stdout: LogLevel,
         level_file: LogLevel,
         file_path: Option<PathBuf>,
-        _component_levels: Option<HashMap<String, Value>>,
+        component_levels: Option<HashMap<String, Value>>,
         rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
         let trader_id_clone = trader_id.value.to_string();
         let (tx, rx) = channel::<LogMessage>();
+
+        let mut level_filters = HashMap::<String, LogLevel>::new();
+
+        if let Some(component_levels_map) = component_levels {
+            for (key, value) in component_levels_map {
+                match serde_json::from_value::<LogLevel>(value) {
+                    Ok(level) => {
+                        level_filters.insert(key, level);
+                    }
+                    Err(e) => {
+                        // Handle the error, e.g. log a warning or ignore the entry
+                        eprintln!("Error parsing log level: {:?}", e);
+                    }
+                }
+            }
+        }
 
         thread::spawn(move || {
             Self::handle_messages(
@@ -90,6 +106,7 @@ impl Logger {
                 level_stdout,
                 level_file,
                 file_path,
+                level_filters,
                 rate_limit,
                 rx,
             )
@@ -112,6 +129,7 @@ impl Logger {
         level_stdout: LogLevel,
         level_file: LogLevel,
         file_path: Option<PathBuf>,
+        level_filters: HashMap<String, LogLevel>,
         rate_limit: usize,
         rx: Receiver<LogMessage>,
     ) {
@@ -141,6 +159,15 @@ impl Logger {
 
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
+            let component_level = level_filters.get(&log_msg.component);
+
+            // Check if the component exists in level_filters and if its level is greater than log_msg.level
+            if let Some(&filter_level) = component_level {
+                if log_msg.level < filter_level {
+                    continue;
+                }
+            }
+
             if log_msg.level >= LogLevel::Error {
                 (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
