@@ -22,6 +22,7 @@ pyo3 = "0.18.1"
 pyo3-macros = "0.18.1"
 rand = "0.8.5"
 rust-fsm = "0.6.1"
+serde_json = "1.0"
 strum = { version = "0.24.1", features = ["derive"] }
 thiserror = "1.0.38"
 uuid = { version = "1.2.2", features = ["v4"] }

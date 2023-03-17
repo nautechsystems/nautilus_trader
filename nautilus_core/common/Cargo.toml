@@ -14,6 +14,7 @@ crate-type = ["rlib", "staticlib"]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 chrono.workspace = true
+serde_json.workspace = true
 pyo3.workspace = true
 strum.workspace = true
 

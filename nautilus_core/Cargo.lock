@@ -964,6 +964,7 @@ dependencies = [
  "nautilus_core",
  "nautilus_model",
  "pyo3",
+ "serde_json",
  "strum",
 ]
 
@@ -977,6 +978,7 @@ dependencies = [
  "iai",
  "pyo3",
  "rstest",
+ "serde_json",
  "strum",
  "uuid",
 ]

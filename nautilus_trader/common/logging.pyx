@@ -45,6 +45,7 @@ from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
@@ -79,7 +80,10 @@ cdef class Logger:
     level_file : LogLevel, default ``DEBUG``
         The minimum log level to write to a file.
     file_path : str, optional
-        The optional log file path. If ``None`` will not log to a file.
+        The log file path. If ``None`` will not log to a file.
+    component_levels : dict[ComponentId, LogLevel]
+        The additional per component log level filters, where keys are component
+        IDs (e.g. actor/strategy IDs) and values are log levels.
     rate_limit : int, default 100_000
         The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
@@ -95,6 +99,7 @@ cdef class Logger:
         LogLevel level_stdout = LogLevel.INFO,
         LogLevel level_file = LogLevel.DEBUG,
         str file_path = None,
+        dict component_levels: dict[ComponentId, LogLevel] = None,
         int rate_limit = 100_000,
         bint bypass = False,
     ):
@@ -116,6 +121,7 @@ cdef class Logger:
             level_stdout,
             level_file,
             pystr_to_cstr(file_path) if file_path else NULL,
+            pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
             rate_limit,
             bypass,
         )
