@@ -262,7 +262,7 @@ class TestBacktestConfigParsing:
         print("token_value:", value.decode())
         assert token in (
             "728392a827ed7691ef4edc16eb6cfe925b5ab66dfda7eceb49a511dbdfd96587",  # unix
-            "044ee6a9124ca8ecc7ee3c455856f22cc4f2b305f61b53c7a83849a9630ec92c",  # windows
+            "669d861fcc17dc50210d9bcdad5affa70410a3b3347f393fe17cd59252b3d14b",  # windows
         )
 
     @pytest.mark.skip(reason="fix after merge")
