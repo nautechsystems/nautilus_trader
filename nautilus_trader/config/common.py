@@ -498,7 +498,10 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     log_level_file : str, default "DEBUG"
         The minimum log level to write to a log file.
     log_file_path : str, optional
-        The optional log file path. If ``None`` then will not log to a file.
+        The log file path. If ``None`` then will not log to a file.
+    log_file_format : str { 'JSON' }, optional
+        The log file format. If ``None`` (default) then will log in plain text.
+        If set to 'JSON' then logs will be in JSON format.
     log_component_levels : dict[str, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
@@ -526,6 +529,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     log_level: str = "INFO"
     log_level_file: str = "DEBUG"
     log_file_path: Optional[str] = None
+    log_file_format: Optional[str] = None
     log_component_levels: Optional[dict[str, str]] = None
     log_rate_limit: int = 100_000
     bypass_logging: bool = False

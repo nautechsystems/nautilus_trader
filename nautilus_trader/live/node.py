@@ -82,6 +82,7 @@ class TradingNode:
             log_level=log_level_from_str(config.log_level.upper()),
             log_level_file=log_level_from_str(config.log_level_file.upper()),
             log_file_path=config.log_file_path,
+            log_file_format=config.log_file_format,
             log_component_levels=config.log_component_levels,
             log_rate_limit=config.log_rate_limit,
         )
