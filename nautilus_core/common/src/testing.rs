@@ -13,9 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-pub mod logging;
-pub mod msgbus;
-pub mod testing;
-pub mod timer;
+use std::thread;
+use std::time::{Duration, Instant};
+
+pub fn wait_until<F>(mut condition: F, timeout: Duration)
+where
+    F: FnMut() -> bool,
+{
+    let start_time = Instant::now();
+
+    loop {
+        if condition() {
+            break;
+        }
+
+        if start_time.elapsed() > timeout {
+            panic!("Timeout waiting for condition");
+        }
+
+        thread::sleep(Duration::from_millis(100));
+    }
+}

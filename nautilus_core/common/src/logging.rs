@@ -72,7 +72,7 @@ pub struct LogMessage {
 /// per second).
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    fn new(
+    pub fn new(
         trader_id: TraderId,
         machine_id: String,
         instance_id: UUID4,
@@ -481,12 +481,16 @@ pub unsafe extern "C" fn logger_log(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::testing::wait_until;
+
     use super::*;
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
+    use std::fs;
+    use tempfile::NamedTempFile;
 
     #[test]
-    fn log_message_serialization_skips_color() {
+    fn log_message_serialization() {
         let log_message = LogMessage {
             timestamp_ns: 1_000_000_000,
             level: LogLevel::Info,
@@ -545,5 +549,132 @@ mod tests {
                 String::from("This is a test."),
             )
             .expect("Error while logging");
+    }
+
+    #[test]
+    fn test_logging_to_file() {
+        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
+        let log_file_path = temp_log_file.path();
+
+        let mut logger = Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            LogLevel::Debug,
+            Some(log_file_path.to_path_buf()),
+            None,
+            None,
+            100_000,
+            false,
+        );
+
+        logger
+            .info(
+                1650000000000000,
+                LogColor::Normal,
+                String::from("RiskEngine"),
+                String::from("This is a test."),
+            )
+            .expect("Error while logging");
+
+        let mut log_contents = String::new();
+
+        wait_until(
+            || {
+                log_contents =
+                    fs::read_to_string(log_file_path).expect("Error while reading log file");
+                !log_contents.is_empty()
+            },
+            Duration::from_secs(3),
+        );
+
+        assert_eq!(
+            log_contents,
+            "1970-01-20T02:20:00.000000000Z [INF] TRADER-001.RiskEngine: This is a test.\n"
+        );
+    }
+
+    #[test]
+    fn test_log_component_level_filtering() {
+        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
+        let log_file_path = temp_log_file.path();
+
+        let component_levels = HashMap::from_iter(std::iter::once((
+            String::from("RiskEngine"),
+            Value::from("ERROR"), // <-- This should be filtered
+        )));
+
+        let mut logger = Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            LogLevel::Debug,
+            Some(log_file_path.to_path_buf()),
+            None,
+            Some(component_levels),
+            100_000,
+            false,
+        );
+
+        logger
+            .info(
+                1650000000000000,
+                LogColor::Normal,
+                String::from("RiskEngine"),
+                String::from("This is a test."),
+            )
+            .expect("Error while logging");
+
+        thread::sleep(Duration::from_secs(1));
+
+        assert!(fs::read_to_string(log_file_path)
+            .expect("Error while reading log file")
+            .is_empty());
+    }
+
+    #[test]
+    fn test_logging_to_file_in_json_format() {
+        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
+        let log_file_path = temp_log_file.path();
+
+        let mut logger = Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            LogLevel::Debug,
+            Some(log_file_path.to_path_buf()),
+            Some("JSON".to_string()),
+            None,
+            100_000,
+            false,
+        );
+
+        logger
+            .info(
+                1650000000000000,
+                LogColor::Normal,
+                String::from("RiskEngine"),
+                String::from("This is a test."),
+            )
+            .expect("Error while logging");
+
+        let mut log_contents = String::new();
+
+        wait_until(
+            || {
+                log_contents =
+                    fs::read_to_string(log_file_path).expect("Error while reading log file");
+                !log_contents.is_empty()
+            },
+            Duration::from_secs(3),
+        );
+
+        assert_eq!(
+            log_contents,
+            "{\"timestamp_ns\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"msg\":\"This is a test.\"}\n"
+        );
     }
 }
