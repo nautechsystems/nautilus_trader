@@ -24,6 +24,7 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -39,6 +40,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef Cache _cache
     cdef AccountsManager _accounts
 
+    cdef Venue venue
     cdef dict _unrealized_pnls
     cdef dict _net_positions
     cdef set _pending_calcs
