@@ -140,7 +140,7 @@ class TestConfigStubs:
         catalog: ParquetDataCatalog,
         config: Optional[BacktestEngineConfig] = None,
         instrument_ids: Optional[list[str]] = None,
-        data_types: tuple[Data] = (QuoteTick,),
+        data_types: tuple[Data, ...] = (QuoteTick,),
         venues: Optional[list[BacktestVenueConfig]] = None,
     ) -> BacktestRunConfig:
         instrument_ids = instrument_ids or [TestIdStubs.betting_instrument_id().value]

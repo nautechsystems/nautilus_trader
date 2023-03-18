@@ -198,7 +198,7 @@ class TestBacktestConfigParsing:
         self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
         self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)
 
-    def test_run_config_to_json(self):
+    def test_run_config_to_json(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
             instrument_ids=[self.instrument.id.value],
@@ -213,9 +213,9 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (854, 858)  # unix, windows sizes
+        assert result in (882, 886)  # unix, windows sizes
 
-    def test_run_config_parse_obj(self):
+    def test_run_config_parse_obj(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
             instrument_ids=[self.instrument.id.value],
@@ -233,9 +233,9 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (641, 643)  # unix, windows sizes
+        assert len(raw) in (662, 664)  # unix, windows sizes
 
-    def test_backtest_data_config_to_dict(self):
+    def test_backtest_data_config_to_dict(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
             instrument_ids=[self.instrument.id.value],
@@ -253,16 +253,16 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1718, 1726)  # unix, windows
+        assert result in (1746, 1754)  # unix, windows
 
-    def test_backtest_run_config_id(self):
+    def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
         print("token:", token)
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
         assert token in (
-            "f36364e423ae67307b08a68feb7cf18353d2983fc8a2f1b9683c44bd707007b3",  # unix
-            "4b985813f597118e367ccc462bcd19a4752fbeff7b73c71ff518dbdef8ef2a47",  # windows
+            "728392a827ed7691ef4edc16eb6cfe925b5ab66dfda7eceb49a511dbdfd96587",  # unix
+            "044ee6a9124ca8ecc7ee3c455856f22cc4f2b305f61b53c7a83849a9630ec92c",  # windows
         )
 
     @pytest.mark.skip(reason="fix after merge")
@@ -316,12 +316,12 @@ class TestBacktestConfigParsing:
             ),
         ],
     )
-    def test_tokenize_config(self, config_func, keys, kw, expected):
+    def test_tokenize_config(self, config_func, keys, kw, expected) -> None:
         config = config_func(**{k: getattr(self, k) for k in keys}, **kw)
         token = tokenize_config(config.dict())
         assert token in expected
 
-    def test_backtest_main_cli(self, mocker):
+    def test_backtest_main_cli(self, mocker) -> None:
         # Arrange
         from nautilus_trader.backtest.__main__ import main
 
@@ -351,7 +351,7 @@ class TestBacktestConfigParsing:
         assert result.exception is None
         assert result.exit_code == 0
 
-    def test_simulation_modules(self):
+    def test_simulation_modules(self) -> None:
         # Arrange
         interest_rate_data = TestDataProvider().read_csv("short-term-interest.csv")
         run_config = TestConfigStubs.backtest_run_config(
