@@ -442,6 +442,7 @@ class TestMessageBus:
         # Assert
         assert self.msgbus.pub_count == 2
         assert len(subscriber) == 2
+        assert subscriber == ["DUMMY EVENT", "TRADER EVENT"]
 
 
 @pytest.mark.parametrize(
