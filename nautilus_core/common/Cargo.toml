@@ -19,6 +19,9 @@ serde_json.workspace = true
 pyo3.workspace = true
 strum.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [features]
 extension-module = [
     "pyo3/extension-module",
