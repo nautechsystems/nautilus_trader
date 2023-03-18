@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::parsing::optional_bytes_to_json;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::c_char;
@@ -54,10 +55,11 @@ pub struct Logger {
     pub is_bypassed: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogMessage {
     timestamp_ns: UnixNanos,
     level: LogLevel,
+    #[serde(skip_serializing)]
     color: LogColor,
     component: String,
     msg: String,
@@ -77,6 +79,7 @@ impl Logger {
         level_stdout: LogLevel,
         level_file: LogLevel,
         file_path: Option<PathBuf>,
+        file_format: Option<String>,
         component_levels: Option<HashMap<String, Value>>,
         rate_limit: usize,
         is_bypassed: bool,
@@ -106,6 +109,7 @@ impl Logger {
                 level_stdout,
                 level_file,
                 file_path,
+                file_format,
                 level_filters,
                 rate_limit,
                 rx,
@@ -129,6 +133,7 @@ impl Logger {
         level_stdout: LogLevel,
         level_file: LogLevel,
         file_path: Option<PathBuf>,
+        file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
         rate_limit: usize,
         rx: Receiver<LogMessage>,
@@ -147,11 +152,23 @@ impl Logger {
         });
         let mut file_buf = file.map(BufWriter::new);
 
-        // Setup templates
+        // Setup templates and formatting
         let template_console = String::from(
             "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
         );
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
+
+        let is_json_format = match file_format.as_ref().map(|s| s.to_lowercase()) {
+            Some(ref format) if format == "json" => true,
+            None => false,
+            Some(ref unrecognized) => {
+                eprintln!(
+                    "Error: Unrecognized log file format: {}. Using plain text format as default.",
+                    unrecognized
+                );
+                false
+            }
+        };
 
         // Setup rate limiting
         let mut msg_count = 0;
@@ -181,7 +198,8 @@ impl Logger {
             }
 
             if log_msg.level >= level_file {
-                let line = Self::format_log_line_file(&log_msg, trader_id, &template_file);
+                let line =
+                    Self::format_log_line_file(&log_msg, trader_id, &template_file, is_json_format);
                 Self::write_file(&mut file_buf, &line);
                 Self::flush_file(&mut file_buf);
             }
@@ -221,13 +239,24 @@ impl Logger {
             .replace("{msg}", &log_msg.msg)
     }
 
-    fn format_log_line_file(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
-        template
-            .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-            .replace("{level}", &log_msg.level.to_string())
-            .replace("{trader_id}", trader_id)
-            .replace("{component}", &log_msg.component)
-            .replace("{msg}", &log_msg.msg)
+    fn format_log_line_file(
+        log_msg: &LogMessage,
+        trader_id: &str,
+        template: &str,
+        is_json_format: bool,
+    ) -> String {
+        if is_json_format {
+            let json_string =
+                serde_json::to_string(log_msg).expect("Error serializing log message to string");
+            format!("{}\n", json_string)
+        } else {
+            template
+                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
+                .replace("{level}", &log_msg.level.to_string())
+                .replace("{trader_id}", trader_id)
+                .replace("{component}", &log_msg.component)
+                .replace("{msg}", &log_msg.msg)
+        }
     }
 
     fn write_stdout(out_buf: &mut BufWriter<Stdout>, line: &str) {
@@ -384,6 +413,7 @@ pub unsafe extern "C" fn logger_new(
     level_stdout: LogLevel,
     level_file: LogLevel,
     file_path_ptr: *const c_char,
+    file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
     rate_limit: usize,
     is_bypassed: u8,
@@ -395,6 +425,7 @@ pub unsafe extern "C" fn logger_new(
         level_stdout,
         level_file,
         optional_cstr_to_string(file_path_ptr).map(PathBuf::from),
+        optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
         rate_limit,
         is_bypassed != 0,
@@ -450,9 +481,28 @@ pub unsafe extern "C" fn logger_log(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::logging::{LogColor, LogLevel, Logger};
+    use super::*;
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
+
+    #[test]
+    fn log_message_serialization_skips_color() {
+        let log_message = LogMessage {
+            timestamp_ns: 1_000_000_000,
+            level: LogLevel::Info,
+            color: LogColor::Normal,
+            component: "Portfolio".to_string(),
+            msg: "This is a log message".to_string(),
+        };
+
+        let serialized_json = serde_json::to_string(&log_message).unwrap();
+        let deserialized_value: Value = serde_json::from_str(&serialized_json).unwrap();
+
+        assert_eq!(deserialized_value["timestamp_ns"], 1_000_000_000);
+        assert_eq!(deserialized_value["level"], "INFO");
+        assert_eq!(deserialized_value["component"], "Portfolio");
+        assert_eq!(deserialized_value["msg"], "This is a log message");
+    }
 
     #[test]
     fn test_new_logger() {
@@ -462,6 +512,7 @@ mod tests {
             UUID4::new(),
             LogLevel::Debug,
             LogLevel::Debug,
+            None,
             None,
             None,
             100_000,
@@ -479,6 +530,7 @@ mod tests {
             UUID4::new(),
             LogLevel::Info,
             LogLevel::Debug,
+            None,
             None,
             None,
             100_000,

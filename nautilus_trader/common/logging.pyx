@@ -81,6 +81,9 @@ cdef class Logger:
         The minimum log level to write to a file.
     file_path : str, optional
         The log file path. If ``None`` will not log to a file.
+    file_format : str { 'JSON' }, optional
+        The log file format. If ``None`` (default) then will log in plain text.
+        If set to 'JSON' then logs will be in JSON format.
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
@@ -99,6 +102,7 @@ cdef class Logger:
         LogLevel level_stdout = LogLevel.INFO,
         LogLevel level_file = LogLevel.DEBUG,
         str file_path = None,
+        str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
         int rate_limit = 100_000,
         bint bypass = False,
@@ -121,6 +125,7 @@ cdef class Logger:
             level_stdout,
             level_file,
             pystr_to_cstr(file_path) if file_path else NULL,
+            pystr_to_cstr(file_format) if file_format else NULL,
             pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
             rate_limit,
             bypass,

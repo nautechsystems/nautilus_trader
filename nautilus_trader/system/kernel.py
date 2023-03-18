@@ -123,16 +123,22 @@ class NautilusKernel:
         If strategy state should be loaded on start.
     save_state : bool, default False
         If strategy state should be saved on stop.
-    log_level : LogLevel, default LogLevel.INFO
-        The minimum log level for write to stdout.
-    log_level_file : LogLevel, default LogLevel.DEBUG
+    log_level : LogLevel, default "INFO"
+        The minimum log level to write to stdout.
+    log_level_file : LogLevel, default "DEBUG"
         The minimum log level to write to a log file.
     log_file_path : str, optional
-        The optional log file path. If ``None`` then will not log to a file.
+        The log file path. If ``None`` then will not log to a file.
+    log_file_format : str { 'JSON' }, optional
+        The log file format. If ``None`` (default) then will log in plain text.
+        If set to 'JSON' then logs will be in JSON format.
+    log_component_levels : dict[str, LogLevel]
+        The additional per component log level filters, where keys are component
+        IDs (e.g. actor/strategy IDs) and values are log levels.
     log_rate_limit : int, default 100_000
         The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
-        If logging to stdout should be bypassed.
+        If all logging should be bypassed.
 
     Raises
     ------
@@ -168,6 +174,7 @@ class NautilusKernel:
         log_level: LogLevel = LogLevel.INFO,
         log_level_file: LogLevel = LogLevel.DEBUG,
         log_file_path: Optional[str] = None,
+        log_file_format: Optional[str] = None,
         log_component_levels: Optional[dict[str, LogLevel]] = None,
         log_rate_limit: int = 100_000,
         bypass_logging: bool = False,
@@ -230,6 +237,7 @@ class NautilusKernel:
             level_stdout=log_level,
             level_file=log_level_file,
             file_path=log_file_path,
+            file_format=log_file_format,
             component_levels=log_component_levels,
             rate_limit=log_rate_limit,
             bypass=bypass_logging,
