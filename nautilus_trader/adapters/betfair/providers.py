@@ -80,14 +80,14 @@ class BetfairInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: Optional[dict] = None,
     ) -> None:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     async def load_async(
         self,
         instrument_id: InstrumentId,
         filters: Optional[dict] = None,
     ):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @classmethod
     def from_instruments(

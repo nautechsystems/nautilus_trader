@@ -88,7 +88,7 @@ def _build_rust_libs() -> None:
         print("Compiling Rust libraries...")
         build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
         print(build_cmd)
-        os.system(build_cmd)  # noqa
+        os.system(build_cmd)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running cargo: {e.stderr.decode()}",
@@ -159,7 +159,7 @@ def _build_extensions() -> list[Extension]:
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
             sources=[str(pyx)],
-            include_dirs=[np.get_include()] + RUST_INCLUDES,
+            include_dirs=[np.get_include(), *RUST_INCLUDES],
             define_macros=define_macros,
             language="c",
             extra_link_args=extra_link_args,
@@ -259,7 +259,7 @@ def _get_rustc_version() -> str:
 
 
 def build() -> None:
-    """Construct the extensions and distribution."""  # noqa
+    """Construct the extensions and distribution."""
     _build_rust_libs()
     _copy_rust_dylibs_to_project()
 

@@ -689,10 +689,10 @@ class BetfairDataProvider:
 
     @staticmethod
     def market_sample():
-        np.random.seed(0)
+        rng = np.random.default_rng()
         navigation = BetfairResponses.navigation_list_navigation()
         markets = list(flatten_tree(navigation))
-        return np.random.choice(markets, size=int(len(markets) * 0.05))
+        return rng.choice(markets, size=int(len(markets) * 0.05))
 
     @staticmethod
     def market_catalogue_short():
