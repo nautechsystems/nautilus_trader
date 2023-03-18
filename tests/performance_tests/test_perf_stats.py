@@ -26,7 +26,7 @@ class TestFunctionPerformance(PerformanceHarness):
     def test_np_mean(self):
         self.benchmark.pedantic(
             target=np.mean,
-            args=(np.random.rand(10),),
+            args=(np.random.default_rng(10),),
             iterations=10_000,
             rounds=1,
         )
@@ -36,7 +36,7 @@ class TestFunctionPerformance(PerformanceHarness):
     def test_np_std(self):
         self.benchmark.pedantic(
             target=np.std,
-            args=(np.random.rand(10),),
+            args=(np.random.default_rng(10),),
             iterations=10_000,
             rounds=1,
         )
@@ -46,7 +46,7 @@ class TestFunctionPerformance(PerformanceHarness):
     def test_fast_mean(self):
         self.benchmark.pedantic(
             target=fast_mean,
-            args=(np.random.rand(10),),
+            args=(np.random.default_rng(10),),
             iterations=100_000,
             rounds=1,
         )
@@ -56,7 +56,7 @@ class TestFunctionPerformance(PerformanceHarness):
     def test_fast_std(self):
         self.benchmark.pedantic(
             target=fast_std,
-            args=(np.random.rand(10),),
+            args=(np.random.default_rng(10),),
             iterations=100_000,
             rounds=1,
         )

@@ -461,7 +461,7 @@ class TestDataStubs:
                 if not isinstance(updates[0], list):
                     updates = [updates]
             else:
-                raise KeyError()
+                raise KeyError
             if isinstance(updates, int):
                 print("Err", updates)
                 return
