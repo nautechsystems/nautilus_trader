@@ -6,7 +6,9 @@ Released on TBD (UTC).
 - Trading `CurrencyPair` instruments with a _single-currency_ `CASH` account type no longer permitted (unrealistic)
 
 ### Enhancements
-None
+- Added `NautilusKernelConfig.log_component_levels` for per component log level filtering
+- Added `NautilusKernelConfig.log_file_format` option for different output formats (plain text, and JSON)
+- Added `BacktestVenueConfig.bar_execution` to control whether bar data moves the matching engine markets (reinstated)
 
 ### Fixes
 - Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)

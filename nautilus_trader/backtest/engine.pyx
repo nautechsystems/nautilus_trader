@@ -362,6 +362,7 @@ cdef class BacktestEngine:
         book_type: BookType = BookType.L1_TBBO,
         routing: bool = False,
         frozen_account: bool = False,
+        bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
     ) -> None:
@@ -397,6 +398,8 @@ cdef class BacktestEngine:
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
+        bar_execution : bool, default True
+            If bars should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -443,6 +446,7 @@ cdef class BacktestEngine:
             clock=self.kernel.clock,
             logger=self.kernel.logger,
             frozen_account=frozen_account,
+            bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
         )

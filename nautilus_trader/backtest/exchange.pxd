@@ -77,6 +77,8 @@ cdef class SimulatedExchange:
     """The latency model for the exchange.\n\n:returns: `LatencyModel`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
+    cdef readonly bint bar_execution
+    """If bars should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
