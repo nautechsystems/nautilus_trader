@@ -17,15 +17,17 @@ use std::collections::HashMap;
 use std::ffi::c_char;
 use std::fs::File;
 use std::io::{Stderr, Stdout};
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
-use std::time::{Duration, Instant};
 use std::{
     io::{self, BufWriter, Write},
     ops::{Deref, DerefMut},
     thread,
 };
 
+use governor::clock::{Clock, DefaultClock};
+use governor::{Quota, RateLimiter};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::parsing::optional_bytes_to_json;
 use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
@@ -171,8 +173,9 @@ impl Logger {
         };
 
         // Setup rate limiting
-        let mut msg_count = 0;
-        let mut btime = Instant::now();
+        let quota = Quota::per_second(NonZeroU32::new(rate_limit as u32).unwrap());
+        let clock = DefaultClock::default();
+        let limiter = RateLimiter::direct(quota);
 
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
@@ -186,12 +189,32 @@ impl Logger {
             }
 
             if log_msg.level >= LogLevel::Error {
-                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
+                // Check rate limiter
+                loop {
+                    match limiter.check() {
+                        Ok(()) => break,
+                        Err(minimum_time) => {
+                            let wait_time = minimum_time.wait_time_from(clock.now());
+                            thread::sleep(wait_time);
+                        }
+                    }
+                }
+
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
             } else if log_msg.level >= level_stdout {
-                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
+                // Check rate limiter
+                loop {
+                    match limiter.check() {
+                        Ok(()) => break,
+                        Err(minimum_time) => {
+                            let wait_time = minimum_time.wait_time_from(clock.now());
+                            thread::sleep(wait_time);
+                        }
+                    }
+                }
+
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
@@ -204,29 +227,10 @@ impl Logger {
                 Self::flush_file(&mut file_buf);
             }
         }
-
         // Finally ensure remaining buffers are flushed
         Self::flush_stderr(&mut err_buf);
         Self::flush_stdout(&mut out_buf);
         Self::flush_file(&mut file_buf);
-    }
-
-    fn rate_limit_logging(
-        mut btime: Instant,
-        mut msg_count: usize,
-        rate_limit: usize,
-    ) -> (usize, Instant) {
-        while msg_count >= rate_limit {
-            if btime.elapsed().as_secs() >= 1 {
-                msg_count = 0;
-                btime = Instant::now();
-            } else {
-                thread::sleep(Duration::from_millis(10));
-            }
-        }
-
-        msg_count += 1;
-        (msg_count, btime)
     }
 
     fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
@@ -486,7 +490,7 @@ mod tests {
     use super::*;
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
-    use std::fs;
+    use std::{fs, time::Duration};
     use tempfile::NamedTempFile;
 
     #[test]
