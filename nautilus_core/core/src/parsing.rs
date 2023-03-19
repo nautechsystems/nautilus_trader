@@ -18,8 +18,9 @@ use std::{
     ffi::{c_char, CStr},
 };
 
-use crate::string::cstr_to_string;
 use serde_json::{Result, Value};
+
+use crate::string::cstr_to_string;
 
 /// Convert a C bytes pointer into an owned `Option<HashMap<String, Value>>`.
 ///

@@ -13,13 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::prelude::*;
-
 use std::ffi::c_char;
 use std::fmt::Debug;
 use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use pyo3::prelude::*;
 use strum::{Display, EnumString, FromRepr};
 
 #[pyclass]
