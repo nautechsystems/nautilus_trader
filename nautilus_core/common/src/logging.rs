@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::parsing::optional_bytes_to_json;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::c_char;
 use std::fs::File;
@@ -30,10 +27,13 @@ use std::{
 };
 
 use nautilus_core::datetime::unix_nanos_to_iso8601;
+use nautilus_core::parsing::optional_bytes_to_json;
 use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::enums::{LogColor, LogLevel};
 
