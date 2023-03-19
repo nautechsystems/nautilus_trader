@@ -17,6 +17,7 @@ pyo3.workspace = true
 rust-fsm.workspace = true
 strum.workspace = true
 thiserror.workspace = true
+lazy_static = "1.4.0"
 
 [features]
 extension-module = [
