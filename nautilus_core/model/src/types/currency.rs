@@ -16,7 +16,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use nautilus_core::correctness;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
@@ -27,10 +27,10 @@ use crate::enums::CurrencyType;
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct Currency {
-    pub code: Box<Rc<String>>,
+    pub code: Box<Arc<String>>,
     pub precision: u8,
     pub iso4217: u16,
-    pub name: Box<Rc<String>>,
+    pub name: Box<Arc<String>>,
     pub currency_type: CurrencyType,
 }
 
@@ -48,10 +48,10 @@ impl Currency {
         correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
 
         Currency {
-            code: Box::new(Rc::new(code.to_string())),
+            code: Box::new(Arc::new(code.to_string())),
             precision,
             iso4217,
-            name: Box::new(Rc::new(name.to_string())),
+            name: Box::new(Arc::new(name.to_string())),
             currency_type,
         }
     }
@@ -74,10 +74,10 @@ pub unsafe extern "C" fn currency_from_py(
     currency_type: CurrencyType,
 ) -> Currency {
     Currency {
-        code: Box::from(Rc::new(cstr_to_string(code_ptr))),
+        code: Box::from(Arc::new(cstr_to_string(code_ptr))),
         precision,
         iso4217,
-        name: Box::from(Rc::new(cstr_to_string(name_ptr))),
+        name: Box::from(Arc::new(cstr_to_string(name_ptr))),
         currency_type,
     }
 }

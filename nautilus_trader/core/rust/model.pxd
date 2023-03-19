@@ -182,6 +182,9 @@ cdef extern from "../includes/model.h":
         MARK_PRICE # = 8,
         INDEX_PRICE # = 9,
 
+    cdef struct Arc_String:
+        pass
+
     cdef struct BTreeMap_BookPrice__Level:
         pass
 
@@ -296,10 +299,10 @@ cdef extern from "../includes/model.h":
         uint64_t ts_last;
 
     cdef struct Currency_t:
-        Rc_String *code;
+        Arc_String *code;
         uint8_t precision;
         uint16_t iso4217;
-        Rc_String *name;
+        Arc_String *name;
         CurrencyType currency_type;
 
     cdef struct Money_t:

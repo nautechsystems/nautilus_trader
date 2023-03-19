@@ -237,12 +237,11 @@ pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::CurrencyType;
+    use crate::currencies::{BTC, USD};
 
     #[test]
     fn test_money_new_usd() {
-        let usd = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
-        let money = Money::new(1000.0, usd);
+        let money = Money::new(1000.0, USD.clone());
         assert_eq!(money.currency.code.as_str(), "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
@@ -250,8 +249,7 @@ mod tests {
 
     #[test]
     fn test_money_new_btc() {
-        let btc = Currency::new("BTC", 8, 0, "Bitcoin", CurrencyType::Fiat);
-        let money = Money::new(10.3, btc);
+        let money = Money::new(10.3, BTC.clone());
         assert_eq!(money.currency.code.as_str(), "BTC");
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");

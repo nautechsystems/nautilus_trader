@@ -13,10 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![recursion_limit = "256"]
+#[macro_use]
+extern crate lazy_static;
+
 use crate::enums::PriceType;
 use pyo3::prelude::*;
 use pyo3::{PyResult, Python};
 
+pub mod currencies;
 pub mod data;
 pub mod enums;
 pub mod events;
