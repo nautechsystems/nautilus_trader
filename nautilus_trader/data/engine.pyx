@@ -1316,6 +1316,9 @@ cdef class DataEngine(Component):
                     if bar.ts_event == last_bar.ts_event:
                         # Replace `last_bar`, previously cached bar will fall out of scope
                         self._cache._bars.get(bar_type)[0] = bar  # noqa
+                    elif bar.ts_event > last_bar.ts_event:
+                        # Bar is latest, consider as new bar
+                        self._cache.add_bar(bar)
                     else:
                         self._log.warning(
                             f"Bar revision {bar} was not at last bar `ts_event` {last_bar.ts_event}.",

@@ -1797,6 +1797,58 @@ class TestDataEngine:
         assert handler == [bar1, bar2]
         assert self.cache.bar(bar_type) == bar2
 
+    def test_process_bar_when_revision_is_set_but_is_actually_new_bar(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
+
+        handler = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        bar1 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            1,
+            1,
+        )
+
+        bar2 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1053.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1051.00000"),
+            Quantity.from_int(100),
+            2,
+            2,
+            is_revision=True,  # <- Important
+        )
+
+        # Act
+        self.data_engine.process(bar1)
+        self.data_engine.process(bar2)
+
+        # Assert
+        assert handler == [bar1, bar2]
+        assert self.cache.bar(bar_type) == bar2
+
     def test_request_instrument_reaches_client(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
