@@ -23,6 +23,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
@@ -147,15 +148,16 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, ClientId client_id, DataType data_type)
-    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*)
-    cpdef void request_instruments(self, Venue venue, ClientId client_id=*)
+    cpdef void request_data(self, ClientId client_id, DataType data_type, UUID4 request_id=*)
+    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*, UUID4 request_id=*)
+    cpdef void request_instruments(self, Venue venue, ClientId client_id=*, UUID4 request_id=*)
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
+        UUID4 request_id=*,
     )
     cpdef void request_trade_ticks(
         self,
@@ -163,6 +165,7 @@ cdef class Actor(Component):
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
+        UUID4 request_id= *,
     )
     cpdef void request_bars(
         self,
@@ -170,6 +173,7 @@ cdef class Actor(Component):
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
+        UUID4 request_id= *,
     )
 
 # -- HANDLERS -------------------------------------------------------------------------------------
