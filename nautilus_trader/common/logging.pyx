@@ -79,8 +79,11 @@ cdef class Logger:
         The minimum log level to write to stdout.
     level_file : LogLevel, default ``DEBUG``
         The minimum log level to write to a file.
-    file_path : str, optional
-        The log file path. If ``None`` will not log to a file.
+    file_auto : bool, default False
+        If automatic file naming and daily rotation should be used.
+    file_name : str, optional
+        The custom log file name (will always use a '.log' suffix).
+        If ``None`` will not log to a file (unless `file_auto` is True).
     file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
         If set to 'JSON' then logs will be in JSON format.
@@ -101,7 +104,8 @@ cdef class Logger:
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
         LogLevel level_file = LogLevel.DEBUG,
-        str file_path = None,
+        bint file_auto = False,
+        str file_name = None,
         str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
         int rate_limit = 100_000,
@@ -124,13 +128,13 @@ cdef class Logger:
             pystr_to_cstr(instance_id_str),
             level_stdout,
             level_file,
-            pystr_to_cstr(file_path) if file_path else NULL,
+            file_auto,
+            pystr_to_cstr(file_name) if file_name else NULL,
             pystr_to_cstr(file_format) if file_format else NULL,
             pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
             rate_limit,
             bypass,
         )
-        self._file_path = file_path
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
@@ -171,18 +175,6 @@ cdef class Logger:
 
         """
         return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
-
-    @property
-    def file_path(self) -> Optional[str]:
-        """
-        Return the optional file path for logging.
-
-        Returns
-        -------
-        str or ``None``
-
-        """
-        return self._file_path
 
     @property
     def is_bypassed(self) -> bool:

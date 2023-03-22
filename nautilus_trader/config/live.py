@@ -165,16 +165,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
-    strategies : list[ImportableStrategyConfig]
-        The strategy configurations for the node.
-    load_state : bool, default True
-        If trading strategy state should be loaded from the database on start.
-    save_state : bool, default True
-        If trading strategy state should be saved to the database on stop.
-    log_level : str, default "INFO"
-        The stdout log level for the node.
-    loop_debug : bool, default False
-        If the asyncio event loop should be in debug mode.
     timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.
     timeout_reconciliation : PositiveFloat (seconds)
