@@ -32,5 +32,6 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
    instruments.md
    orders.md
    adapters.md
+   logging.md
    advanced/index.md
 ```
