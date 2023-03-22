@@ -493,12 +493,17 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If trading strategy state should be saved to the database on stop.
     loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
+    log_file_auto : bool, default False
+        If automatic file naming and daily rotation should be used.
     log_level : str, default "INFO"
         The minimum log level to write to stdout.
     log_level_file : str, default "DEBUG"
         The minimum log level to write to a log file.
-    log_file_path : str, optional
-        The log file path. If ``None`` then will not log to a file.
+    log_file_auto : bool, default False
+        If automatic file naming and daily rotation should be used.
+    log_file_name : str, optional
+        The custom log file name (will always use a '.log' suffix).
+        If ``None`` will not log to a file (unless `log_file_auto` is True).
     log_file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
         If set to 'JSON' then logs will be in JSON format.
@@ -528,7 +533,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     loop_debug: bool = False
     log_level: str = "INFO"
     log_level_file: str = "DEBUG"
-    log_file_path: Optional[str] = None
+    log_file_auto: bool = False
+    log_file_name: Optional[str] = None
     log_file_format: Optional[str] = None
     log_component_levels: Optional[dict[str, str]] = None
     log_rate_limit: int = 100_000

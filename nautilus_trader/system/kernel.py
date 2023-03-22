@@ -127,8 +127,11 @@ class NautilusKernel:
         The minimum log level to write to stdout.
     log_level_file : LogLevel, default "DEBUG"
         The minimum log level to write to a log file.
-    log_file_path : str, optional
-        The log file path. If ``None`` then will not log to a file.
+    log_file_auto : bool, default False
+        If automatic file naming and daily rotation should be used.
+    log_file_name : str, optional
+        The custom log file name (will always use a '.log' suffix).
+        If ``None`` will not log to a file (unless `log_file_auto` is True).
     log_file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
         If set to 'JSON' then logs will be in JSON format.
@@ -173,7 +176,8 @@ class NautilusKernel:
         save_state: bool = False,
         log_level: LogLevel = LogLevel.INFO,
         log_level_file: LogLevel = LogLevel.DEBUG,
-        log_file_path: Optional[str] = None,
+        log_file_auto: bool = False,
+        log_file_name: Optional[str] = None,
         log_file_format: Optional[str] = None,
         log_component_levels: Optional[dict[str, LogLevel]] = None,
         log_rate_limit: int = 100_000,
@@ -236,7 +240,8 @@ class NautilusKernel:
             instance_id=self._instance_id,
             level_stdout=log_level,
             level_file=log_level_file,
-            file_path=log_file_path,
+            file_auto=log_file_auto,
+            file_name=log_file_name,
             file_format=log_file_format,
             component_levels=log_component_levels,
             rate_limit=log_rate_limit,
