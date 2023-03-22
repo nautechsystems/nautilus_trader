@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_common"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib", "staticlib", "cdylib"]
 proc-macro = true
 
 [dependencies]
