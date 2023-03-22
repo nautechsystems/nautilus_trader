@@ -13,6 +13,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)
+- Fixed `close_position` order event publishing and cache persistence for `MarketOrder` and `SubmitOrder`, thanks for reporting @rsmb7z
 
 ---
 
