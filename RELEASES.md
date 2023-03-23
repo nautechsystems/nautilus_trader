@@ -3,15 +3,14 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- `NautilusKernelConfig` removed all `log_*` config options (replaced by `logging` with `LoggingConfig`)
 - Trading `CurrencyPair` instruments with a _single-currency_ `CASH` account type no longer permitted (unrealistic)
 - Renamed `NautilusKernelConfig.log_file_path` config option to `log_file_name` (more accurate description)
 
 ### Enhancements
-- Added `NautilusKernelConfig.log_component_levels` for per component log level filtering
-- Added `NautilusKernelConfig.log_file_format` option for different output formats (plain text, and JSON)
+- Added `LoggingConfig` to consolidate logging configs, offering various file options and per component level filters
 - Added `BacktestVenueConfig.bar_execution` to control whether bar data moves the matching engine markets (reinstated)
 - Added optional `request_id` for actor data requests (aids processing responses), thanks @rsmb7z
-- Added `NautilusKernelConfig.log_file_auto` config option for automatic log file naming and rotation
 
 ### Fixes
 - Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)
