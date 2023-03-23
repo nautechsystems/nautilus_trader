@@ -105,7 +105,7 @@ class InteractiveBrokersGateway:
     def container(self):
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
-            self._container = all_containers.get(self.CONTAINER_NAME)
+            self._container = all_containers.get(f"{self.CONTAINER_NAME}-{self.port}")
         return self._container
 
     @staticmethod
@@ -141,14 +141,16 @@ class InteractiveBrokersGateway:
             self.log.debug(f"{status=}, removing existing container")
             self.stop()
         elif status in (ContainerStatus.READY, ContainerStatus.CONTAINER_STARTING):
-            raise ContainerExists
+            self.log.info(f"{status=}, using existing container")
+            return
 
         self.log.debug("Starting new container")
         self._container = self._docker.containers.run(
             image=self.IMAGE,
-            name=self.CONTAINER_NAME,
+            name=f"{self.CONTAINER_NAME}-{self.port}",
+            restart_policy={"Name": "always"},
             detach=True,
-            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
+            ports={str(self.port): self.PORTS[self.trading_mode], str(self.port + 100): "5900"},
             platform="amd64",
             environment={
                 "TWS_USERID": self.username,
@@ -157,7 +159,7 @@ class InteractiveBrokersGateway:
                 "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
             },
         )
-        self.log.info("Container starting, waiting for ready")
+        self.log.info(f"Container `{self.CONTAINER_NAME}-{self.port}` starting, waiting for ready")
 
         if wait is not None:
             for _ in range(wait):
@@ -169,7 +171,9 @@ class InteractiveBrokersGateway:
             else:
                 raise GatewayLoginFailure
 
-        self.log.info("Gateway ready")
+        self.log.info(
+            f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port+100}",
+        )
 
     def safe_start(self, wait: int = 90):
         try:

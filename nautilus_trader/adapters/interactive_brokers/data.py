@@ -19,13 +19,12 @@ from typing import Any, Optional, Union
 
 import pandas as pd
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
@@ -41,7 +40,11 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+# fmt: on
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
@@ -188,6 +191,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
+        if isinstance(instrument, CurrencyPair):
+            self._log.error(
+                "InteractiveBrokers doesn't support Trade Ticks for CurrencyPair.",
+            )
+            return
+
         await self._client.subscribe_ticks(
             instrument_id=instrument_id,
             contract=IBContract(**instrument.info["contract"]),
@@ -274,7 +283,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         if not (instrument := self._cache.instrument(instrument_id)):
-            await self.instrument_provider.load(instrument_id)
+            await self.instrument_provider.load_async(instrument_id)
             if instrument := self.instrument_provider.find(instrument_id):
                 self._handle_data(instrument)
             else:
@@ -325,6 +334,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
                 f"Cannot request TradeTicks for {instrument_id}, Instrument not found.",
+            )
+            return
+
+        if isinstance(instrument, CurrencyPair):
+            self._log.error(
+                "InteractiveBrokers doesn't support Trade Ticks for CurrencyPair.",
             )
             return
 
@@ -405,7 +420,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not end:
             end = pd.Timestamp.utcnow()
 
-        duration_str = "7 D"  # TODO: Calculate to avoid too many and too large requests
+        if bar_type.spec.timedelta.total_seconds() >= 60:
+            duration_str = "7 D"
+        else:
+            duration_str = "1 D"
         bars: list[Bar] = []
         while (start and end > start) or (len(bars) < limit):
             self._log.info(f"{start=}", LogColor.MAGENTA)

@@ -19,22 +19,22 @@ from typing import Optional, Union
 import pandas as pd
 from ibapi.contract import ContractDetails
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
-from nautilus_trader.adapters.interactive_brokers.config import (
-    InteractiveBrokersInstrumentProviderConfig,
-)
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-    instrument_id_to_ib_contract,
-)
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
+
+
+# fmt: on
 
 
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):
@@ -97,14 +97,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 (InstrumentId.from_str(i) if isinstance(i, str) else i)
                 for i in self._load_ids_on_start
             ]:
-                await self.load(instrument_id)
+                self.load(instrument_id)
         # Load IBContracts
         if self._load_contracts_on_start:
             for contract in [
                 (IBContract(**c) if isinstance(c, dict) else c)
                 for c in self._load_contracts_on_start
             ]:
-                await self.load(contract)
+                await self.load_async(contract)
 
     async def get_contract_details(
         self,
@@ -242,7 +242,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         # Finally we need to match the conId with underlying because results may include other securities
         return details
 
-    async def load(
+    async def load_async(
         self,
         instrument_id: Union[InstrumentId, IBContract],
         filters: Optional[dict] = None,
@@ -275,9 +275,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         if not (contract_details := await self.get_contract_details(contract)):
             return
         for details in copy.deepcopy(contract_details):
-            self._log.debug(f"Attempting to create instrument from {details}")
             details.contract = IBContract(**details.contract.__dict__)
             details = IBContractDetails(**details.__dict__)
+            self._log.debug(f"Attempting to create instrument from {details}")
             instrument: Instrument = parse_instrument(
                 contract_details=details,
             )
@@ -290,9 +290,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self.contract_details[instrument.id.value] = details
             self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
 
-    async def find_with_contract_id(self, contract_id: int) -> InstrumentId:
+    async def find_with_contract_id(self, contract_id: int) -> Instrument:
         instrument_id = self.contract_id_to_instrument_id.get(contract_id)
         if not instrument_id:
-            await self.load(IBContract(conId=contract_id))
+            await self.load_async(IBContract(conId=contract_id))
             instrument_id = self.contract_id_to_instrument_id.get(contract_id)
-        return instrument_id
+        instrument = self.find(instrument_id)
+        return instrument

@@ -4,9 +4,12 @@ from typing import Annotated, Any, Callable, Optional, Union
 
 import msgspec
 
+# fmt: off
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 
+
+# fmt: on
 
 IBPosition = namedtuple("IBPosition", ["account", "contract", "quantity", "avg_cost"])
 
@@ -53,7 +56,7 @@ class Base:
         self._req_id_to_cancel: dict[int, Callable] = {}
 
     def __repr__(self):
-        return f"{self.__class__.__name__}:\n{repr([self.get(req_id=k) for k in self._req_id_to_name.keys()])}"
+        return f"{self.__class__.__name__}:\n{[self.get(req_id=k) for k in self._req_id_to_name.keys()]!r}"
 
     def _name_to_req_id(self, name: Any):
         try:
@@ -78,7 +81,7 @@ class Base:
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)
-        for d in [x for x in [attr for attr in dir(self)] if x.startswith("_req_id_to_")]:
+        for d in [x for x in list(dir(self)) if x.startswith("_req_id_to_")]:
             getattr(self, d).pop(req_id, None)
 
     def get_all(self):

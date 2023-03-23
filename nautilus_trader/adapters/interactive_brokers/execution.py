@@ -15,7 +15,6 @@
 
 import asyncio
 import json
-from decimal import Decimal
 from typing import Any, Optional
 
 import pandas as pd
@@ -26,6 +25,7 @@ from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -35,12 +35,8 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_o
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_order_type
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_time_in_force
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_trigger_method
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
-    order_side_to_order_action,
-)
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import order_side_to_order_action
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -87,6 +83,8 @@ from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOr
 from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 
+
+# fmt: on
 
 ib_to_nautilus_trigger_method = dict(zip(map_trigger_method.values(), map_trigger_method.keys()))
 ib_to_nautilus_time_in_force = dict(zip(map_time_in_force.values(), map_time_in_force.keys()))
@@ -163,7 +161,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._account_summary: dict[str, dict[str, Any]] = {}
-        self._client_order_id_to_ib_order_id: dict[ClientOrderId, int] = {}
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
@@ -189,7 +186,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Event hooks
         account = self.account_id.get_id()
-        self._client.registered_nautilus_clients.add(account)
+        self._client.registered_nautilus_clients.add(self.id)
         self._client.subscribe_event(f"accountSummary-{account}", self._on_account_summary)
         self._client.subscribe_event(f"openOrder-{account}", self._on_open_order)
         self._client.subscribe_event(f"orderStatus-{account}", self._on_order_status)
@@ -199,10 +196,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.subscribe_account_summary()
         await self._account_summary_loaded.wait()
 
+        self._set_connected(True)
+
     async def _disconnect(self):
-        self._client.registered_nautilus_clients.remove(self.id)
-        if self._client.is_running() and self._client.registered_nautilus_clients == set():
+        self._client.registered_nautilus_clients.discard(self.id)
+        if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
+        self._set_connected(False)
 
     async def generate_order_status_report(
         self,
@@ -210,9 +210,107 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        self._log.warning("Cannot generate `IBOrderStatusReport`: not yet implemented.")
+        """
+        Generate an `OrderStatusReport` for the given order identifier parameter(s).
+        If the order is not found, or an error occurs, then logs and returns ``None``.
 
-        return None  # TODO: I see single order can return. What if multiple orders for same Instrument?
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the report.
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID for the report.
+
+        Returns
+        -------
+        OrderStatusReport or ``None``
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
+        """
+        PyCondition.type_or_none(client_order_id, ClientOrderId, "client_order_id")
+        PyCondition.type_or_none(venue_order_id, VenueOrderId, "venue_order_id")
+        if not (client_order_id or venue_order_id):
+            self._log.debug("Both `client_order_id` and `venue_order_id` cannot be None.")
+            return None
+
+        report = None
+        ib_orders = await self._client.get_open_orders(self.account_id.get_id())
+        for ib_order in ib_orders:
+            if (client_order_id and client_order_id.value == ib_order.orderRef) or (
+                venue_order_id
+                and venue_order_id.value
+                == str(
+                    ib_order.orderId,
+                )
+            ):
+                report = await self._parse_ib_order_to_order_status_report(ib_order)
+                break
+        if report is None:  # TODO: Further testing
+            self._log.warning(
+                f"Order {client_order_id=}, {venue_order_id} not found, Cancelling...",
+            )
+            self._on_order_status(
+                order_ref=client_order_id.value,
+                order_status="Cancelled",
+                reason="Not found in query",
+            )
+        return report
+
+    async def _parse_ib_order_to_order_status_report(self, ib_order: IBOrder):
+        self._log.debug(f"Trying OrderStatusReport for {ib_order}")
+        instrument = await self.instrument_provider.find_with_contract_id(
+            ib_order.contract.conId,
+        )
+
+        total_qty = (
+            Quantity.from_int(0)
+            if ib_order.totalQuantity == UNSET_DECIMAL
+            else Quantity.from_str(str(ib_order.totalQuantity))
+        )
+        filled_qty = (
+            Quantity.from_int(0)
+            if ib_order.filledQuantity == UNSET_DECIMAL
+            else Quantity.from_str(str(ib_order.filledQuantity))
+        )
+        if total_qty.as_double() > filled_qty.as_double() > 0:
+            order_status = OrderStatus.PARTIALLY_FILLED
+        else:
+            order_status = map_order_status[ib_order.order_state.status]
+        ts_init = self._clock.timestamp_ns()
+        price = (
+            None if ib_order.lmtPrice == UNSET_DOUBLE else Price.from_str(str(ib_order.lmtPrice))
+        )
+        # TODO: Testing for advanced Open orders
+        order_status = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            venue_order_id=VenueOrderId(str(ib_order.orderId)),
+            order_side=ib_to_nautilus_order_side[ib_order.action],
+            order_type=ib_to_nautilus_order_type[ib_order.orderType],
+            time_in_force=ib_to_nautilus_time_in_force[ib_order.tif],
+            order_status=order_status,
+            quantity=total_qty,
+            filled_qty=filled_qty,
+            report_id=UUID4(),
+            ts_accepted=ts_init,
+            ts_last=ts_init,
+            ts_init=ts_init,
+            client_order_id=ClientOrderId(ib_order.orderRef),
+            # order_list_id=,
+            # contingency_type=,
+            # expire_time=,
+            price=price,
+            trigger_price=Price.from_str(str(ib_order.auxPrice)),
+            trigger_type=TriggerType.BID_ASK,
+            # limit_offset=,
+            # trailing_offset=,
+        )
+        self._log.debug(f"Received {order_status!r}")
+        return order_status
 
     async def generate_order_status_reports(
         self,
@@ -221,6 +319,25 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
+        """
+        Generate a list of `OrderStatusReport`s with optional query filters.
+        The returned list may be empty if no orders match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : pd.Timestamp, optional
+            The start datetime query filter.
+        end : pd.Timestamp, optional
+            The end datetime query filter.
+        open_only : bool, default False
+            If the query is for open orders only.
+
+        Returns
+        -------
+        list[OrderStatusReport]
+        """
         report = []
         # Create the Filled OrderStatusReport from Open Positions
         positions: list[IBPosition] = await self._client.get_positions(self.account_id.get_id())
@@ -232,87 +349,40 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             elif position.quantity < 0:
                 order_side = OrderSide.SELL
             else:
+                order_side = OrderSide.NO_ORDER_SIDE
                 continue  # Skip, IB may continue to display closed positions
 
-            instrument_id = await self.instrument_provider.find_with_contract_id(
+            instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
-            quantity = Quantity.from_str(str(abs(position.quantity)))
+            avg_px = instrument.make_price(
+                position.avg_cost / instrument.multiplier,
+            ).as_decimal()
+            quantity = Quantity.from_str(str(position.quantity.copy_abs()))
             order_status = OrderStatusReport(
                 account_id=self.account_id,
-                instrument_id=instrument_id,
-                venue_order_id=VenueOrderId(str(instrument_id.value)),
+                instrument_id=instrument.id,
+                venue_order_id=VenueOrderId(instrument.id.value),
                 order_side=order_side,
                 order_type=OrderType.MARKET,
                 time_in_force=TimeInForce.FOK,
                 order_status=OrderStatus.FILLED,
                 quantity=quantity,
                 filled_qty=quantity,
-                avg_px=Decimal(position.avg_cost),
+                avg_px=avg_px,
                 report_id=UUID4(),
                 ts_accepted=ts_init,
                 ts_last=ts_init,
                 ts_init=ts_init,
-                client_order_id=ClientOrderId(instrument_id.value),
+                client_order_id=ClientOrderId(instrument.id.value),
             )
-            self._log.debug(f"Received {repr(order_status)}")
+            self._log.debug(f"Received {order_status!r}")
             report.append(order_status)
 
         # Create the Open OrderStatusReport from Open Orders
         ib_orders = await self._client.get_open_orders(self.account_id.get_id())
         for ib_order in ib_orders:
-            self._log.debug(f"Trying OrderStatusReport for {ib_order}")
-            instrument_id = await self.instrument_provider.find_with_contract_id(
-                ib_order.contract.conId,
-            )
-
-            # Use quantity ignoring precision
-            total_qty = (
-                Quantity.from_int(0)
-                if ib_order.totalQuantity == UNSET_DECIMAL
-                else Quantity.from_str(str(ib_order.totalQuantity))
-            )
-            filled_qty = (
-                Quantity.from_int(0)
-                if ib_order.filledQuantity == UNSET_DECIMAL
-                else Quantity.from_str(str(ib_order.filledQuantity))
-            )
-            if total_qty.as_double() > filled_qty.as_double() > 0:
-                order_status = OrderStatus.PARTIALLY_FILLED
-            else:
-                order_status = map_order_status[ib_order.order_state.status]
-            ts_init = self._clock.timestamp_ns()
-            price = (
-                None
-                if ib_order.lmtPrice == UNSET_DOUBLE
-                else Price.from_str(str(ib_order.lmtPrice))
-            )
-            # TODO: Testing for advanced Open orders
-            order_status = OrderStatusReport(
-                account_id=self.account_id,
-                instrument_id=instrument_id,
-                venue_order_id=VenueOrderId(str(ib_order.orderId)),
-                order_side=ib_to_nautilus_order_side[ib_order.action],
-                order_type=ib_to_nautilus_order_type[ib_order.orderType],
-                time_in_force=ib_to_nautilus_time_in_force[ib_order.tif],
-                order_status=order_status,
-                quantity=total_qty,
-                filled_qty=filled_qty,
-                report_id=UUID4(),
-                ts_accepted=ts_init,
-                ts_last=ts_init,
-                ts_init=ts_init,
-                client_order_id=ClientOrderId(ib_order.orderRef),
-                # order_list_id=,
-                # contingency_type=,
-                # expire_time=,
-                price=price,
-                trigger_price=Price.from_str(str(ib_order.auxPrice)),
-                trigger_type=TriggerType.BID_ASK,
-                # limit_offset=,
-                # trailing_offset=,
-            )
-            self._log.debug(f"Received {repr(order_status)}")
+            order_status = await self._parse_ib_order_to_order_status_report(ib_order)
             report.append(order_status)
         return report
 
@@ -323,6 +393,25 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
+        """
+        Generate a list of `TradeReport`s with optional query filters.
+        The returned list may be empty if no trades match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+        start : pd.Timestamp, optional
+            The start datetime query filter.
+        end : pd.Timestamp, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[TradeReport]
+        """
         self._log.warning("Cannot generate `list[TradeReport]`: not yet implemented.")
 
         return []  # TODO: Implement
@@ -333,6 +422,23 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
+        """
+        Generate a list of `PositionStatusReport`s with optional query filters.
+        The returned list may be empty if no positions match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : pd.Timestamp, optional
+            The start datetime query filter.
+        end : pd.Timestamp, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[PositionStatusReport]
+        """
         report = []
         positions: list[IBPosition] = await self._client.get_positions(self.account_id.get_id())
         for position in positions:
@@ -344,20 +450,24 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             else:
                 continue  # Skip, IB may continue to display closed positions
 
-            instrument_id = await self.instrument_provider.find_with_contract_id(
+            instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+            if not self._cache.instrument(instrument.id):
+                self._msgbus.send(endpoint="DataEngine.process", msg=instrument)
+
             position_status = PositionStatusReport(
                 account_id=self.account_id,
-                instrument_id=instrument_id,
+                instrument_id=instrument.id,
                 position_side=side,
                 quantity=Quantity.from_str(str(abs(position.quantity))),
                 report_id=UUID4(),
                 ts_last=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._log.debug(f"Received {repr(position_status)}")
+            self._log.debug(f"Received {position_status!r}")
             report.append(position_status)
+
         return report
 
     def _transform_order(self, order: Order) -> IBOrder:
@@ -404,10 +514,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._log.warning(
                 f"{order.client_order_id} {order.tags=} ignored, must be valid IBOrderTags.value",
             )
+            return ib_order
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
-
         # Reject the non-compliant orders.
         # These conditions are based on available info and can be relaxed if there is use case.
         reject_reason = None
@@ -415,7 +525,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             TrailingOffsetType.PRICE,
             None,
         ]:
-            reject_reason = f"{repr(command.order.trailing_offset_type)} not implemented"
+            reject_reason = f"{command.order.trailing_offset_type!r} not implemented"
         elif getattr(command.order, "is_post_only", None) is True:
             reject_reason = (
                 "post_only=True, `Marketing making` not supported by InteractiveBrokers."
@@ -430,7 +540,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         ib_order: IBOrder = self._transform_order(command.order)
         ib_order.orderId = self._client.next_order_id()
-        self._client_order_id_to_ib_order_id[ib_order.orderRef] = ib_order.orderId
         self._client.place_order(ib_order)
         self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
 
@@ -458,7 +567,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Map the Parent Order Ids
             if parent_id := order_id_map.get(ib_order.parentId):
                 ib_order.parentId = parent_id
-            self._client_order_id_to_ib_order_id[ib_order.orderRef] = ib_order.orderId
             # Place orders
             order_ref = ib_order.orderRef
             self._client.place_order(ib_order)
@@ -469,34 +577,50 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         PyCondition.not_none(command, "command")
-        if not (command.quantity or command.price):
+        if not (command.quantity or command.price or command.trigger_price):
             return
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
+        self._log.info(f"Nautilus order status is {nautilus_order.status!r}", LogColor.GREEN)
         ib_order: IBOrder = self._transform_order(nautilus_order)
         ib_order.orderId = int(command.venue_order_id.value)
+        if ib_order.parentId:
+            parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
+            if parent_nautilus_order:
+                ib_order.parentId = int(parent_nautilus_order.venue_order_id.value)
+            else:
+                ib_order.parentId = 0
         if command.quantity and command.quantity != ib_order.totalQuantity:
             ib_order.totalQuantity = command.quantity.as_double()
         if command.price and command.price.as_double() != getattr(ib_order, "lmtPrice", None):
             ib_order.lmtPrice = command.price.as_double()
+        if command.trigger_price and command.trigger_price.as_double() != getattr(
+            ib_order,
+            "auxPrice",
+            None,
+        ):
+            ib_order.auxPrice = command.trigger_price.as_double()
+        self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")
 
-        venue_order_id = (
-            command.venue_order_id
-        )  # or self._client_order_id_to_ib_order_id.get(command.client_order_id.value)
-        self._client.cancel_order(venue_order_id)
+        venue_order_id = command.venue_order_id
+        if venue_order_id:
+            self._client.cancel_order(int(venue_order_id.value))
+        else:
+            self._log.error(f"VenueOrderId not found for {command.client_order_id}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        for odrder in self._cache.orders_open(
+        for order in self._cache.orders_open(
             instrument_id=command.instrument_id,
-        ):  # TODO: Query orders from IB
-            venue_order_id = (
-                odrder.venue_order_id
-            )  # or self._client_order_id_to_ib_order_id.get(command.client_order_id.value)
-            self._client.cancel_order(venue_order_id)
+        ):
+            venue_order_id = order.venue_order_id
+            if venue_order_id:
+                self._client.cancel_order(int(venue_order_id.value))
+            else:
+                self._log.error(f"VenueOrderId not found for {order.client_order_id}")
 
     def _on_account_summary(self, tag: str, value: str, currency: str):
         if not self._account_summary.get(currency):
@@ -510,14 +634,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if not currency:
                 continue
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
-                free = max(
-                    self._account_summary[currency]["FullAvailableFunds"],
-                    0,
-                )  # Maybe negative
+                self._log.info(f"{self._account_summary}", LogColor.GREEN)
+                free = self._account_summary[currency]["FullAvailableFunds"]
                 locked = self._account_summary[currency]["FullMaintMarginReq"]
-                self._log.info(f"{free=}, {locked=}", LogColor.GREEN)
+                # total = self._account_summary[currency]["NetLiquidation"]
+                total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
+                free = total - locked
                 account_balance = AccountBalance(
-                    total=Money(free + locked, Currency.from_str(currency)),
+                    total=Money(total, Currency.from_str(currency)),
                     free=Money(free, Currency.from_str(currency)),
                     locked=Money(locked, Currency.from_str(currency)),
                 )
@@ -560,8 +684,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                # TODO: We should have VenueOrderId here to record as soon submit event
-                # venue_order_id=VenueOrderId(str(order_id)),
                 ts_event=self._clock.timestamp_ns(),
             )
         elif status == OrderStatus.ACCEPTED:
@@ -614,10 +736,41 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=nautilus_order,
                 reason=json.dumps({"whatIf": order_state.__dict__}),
             )
-        elif nautilus_order.status != OrderStatus.ACCEPTED and order_state.status in [
+        elif order_state.status in [
             "PreSubmitted",
             "Submitted",
-        ]:
+        ]:  # nautilus_order.status != OrderStatus.ACCEPTED and
+            instrument = self.instrument_provider.find(nautilus_order.instrument_id)
+            total_qty = (
+                Quantity.from_int(0)
+                if order.totalQuantity == UNSET_DECIMAL
+                else Quantity.from_str(str(order.totalQuantity))
+            )
+            price = (
+                None if order.lmtPrice == UNSET_DOUBLE else instrument.make_price(order.lmtPrice)
+            )
+            trigger_price = (
+                None if order.auxPrice == UNSET_DOUBLE else instrument.make_price(order.auxPrice)
+            )
+            if (
+                nautilus_order.venue_order_id is None
+                or nautilus_order.venue_order_id != VenueOrderId(str(order.orderId))
+            ):
+                venue_order_id_modified = True
+            else:
+                venue_order_id_modified = False
+            if total_qty != nautilus_order.quantity or price or trigger_price:
+                self.generate_order_updated(
+                    strategy_id=nautilus_order.strategy_id,
+                    instrument_id=nautilus_order.instrument_id,
+                    client_order_id=nautilus_order.client_order_id,
+                    venue_order_id=VenueOrderId(str(order.orderId)),
+                    quantity=total_qty,
+                    price=price,
+                    trigger_price=trigger_price,
+                    ts_event=self._clock.timestamp_ns(),
+                    venue_order_id_modified=venue_order_id_modified,
+                )
             self._handle_order_event(
                 status=OrderStatus.ACCEPTED,
                 order=nautilus_order,

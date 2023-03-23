@@ -68,7 +68,7 @@ map_order_type: dict[int, str] = {
 
 map_order_fields: set[tuple[str, str, Callable]] = {
     # ref: (nautilus_order_field, ib_order_field, value_fn)
-    ("client_order_id", "orderRef", lambda x: str(x)),
+    ("client_order_id", "orderRef", lambda x: x.value),
     ("display_qty", "displaySize", lambda x: x.as_double()),
     ("expire_time", "goodTillDate", lambda x: x.strftime("%Y%m%d %H:%M:%S %Z")),
     ("limit_offset", "lmtPriceOffset", lambda x: float(x)),

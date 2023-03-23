@@ -16,7 +16,6 @@
 from decimal import Decimal
 from typing import Literal, Optional
 
-import msgspec
 from ibapi.common import UNSET_DECIMAL
 
 from nautilus_trader.config.common import NautilusConfig
@@ -47,7 +46,7 @@ TickTypeMapping = {
 }
 
 
-class ComboLeg(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
+class ComboLeg(NautilusConfig, frozen=True, omit_defaults=True, repr_omit_defaults=True):
     """
     Class representing a leg within combo orders.
     """
@@ -63,7 +62,7 @@ class ComboLeg(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
     exemptCode: int = -1
 
 
-class DeltaNeutralContract(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
+class DeltaNeutralContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     Delta-Neutral Contract.
     """
@@ -73,7 +72,7 @@ class DeltaNeutralContract(NautilusConfig, omit_defaults=True):  # repr_omit_def
     price: float = 0.0
 
 
-class IBContract(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
+class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     Class describing an instrument's definition with additional fields for options/futures.
 
@@ -99,7 +98,7 @@ class IBContract(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
         Filters the options_chain and futures_chain specific for this expiry date
     """
 
-    secType: Literal["CASH", "STK", "OPT", "FUT", "FOP", "CONTFUT", ""] = ""
+    secType: Literal["CASH", "STK", "OPT", "FUT", "FOP", "CONTFUT", "CRYPTO", ""] = ""
     conId: int = 0
     exchange: str = ""
     primaryExchange: str = ""
@@ -137,12 +136,8 @@ class IBContract(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
     min_expiry_days: Optional[int] = None
     max_expiry_days: Optional[int] = None
 
-    def __repr__(self):  # Remove once repr_omit_defaults is available in msgspec next release
-        kwargs = ", ".join(f"{k}={v!r}" for k, v in msgspec.json.decode(self.json()).items())
-        return f"IBContract({kwargs})"
 
-
-class IBOrderTags(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
+class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     Used to attach to Nautilus Order Tags for IB specific order parameters.
     """
@@ -175,7 +170,7 @@ class IBOrderTags(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=Tru
         return self.value
 
 
-class IBContractDetails(NautilusConfig, omit_defaults=True):  # repr_omit_defaults=True
+class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     ContractDetails class to be used internally in Nautilus for ease of encoding/decoding.
     """

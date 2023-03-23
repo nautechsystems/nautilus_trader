@@ -13,31 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import gzip
 import pathlib
 import pickle
-from typing import Optional
+from decimal import Decimal
 
 import msgspec
 import pandas as pd
-from ib_insync import AccountValue
-from ib_insync import Execution
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
-from ib_insync import LimitOrder as IBLimitOrder
-from ib_insync import Order as IBOrder
-from ib_insync import OrderStatus
-from ib_insync import Trade
-from ib_insync import TradeLogEntry
+from ibapi.commission_report import CommissionReport
 from ibapi.common import BarData
 from ibapi.contract import Contract  # We use this for the expected response from IB
 from ibapi.contract import ContractDetails
+from ibapi.execution import Execution
 from ibapi.tag_value import TagValue
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.option import Option
@@ -84,7 +80,7 @@ class IBTestProviderStubs:
         details.underSymbol = ""
         details.underSecType = ""
         details.marketRuleIds = (
-            "26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26"  # noqa
+            "26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26"
         )
         details.secIdList = [TagValue(tag="ISIN", value="US0378331005")]
         details.realExpirationDate = ""
@@ -242,7 +238,7 @@ class IBTestProviderStubs:
         details.marketName = "TSLA"
         details.minTick = 0.01
         details.orderTypes = "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,AVGCOST,BASKET,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,OPENCLOSE,SCALE,SCALERST,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,WHATIF"  # noqa
-        details.validExchanges = "SMART,AMEX,CBOE,PHLX,PSE,ISE,BOX,BATS,NASDAQOM,CBOE2,NASDAQBX,MIAX,GEMINI,EDGX,MERCURY,PEARL,EMERALD"  # noqa
+        details.validExchanges = "SMART,AMEX,CBOE,PHLX,PSE,ISE,BOX,BATS,NASDAQOM,CBOE2,NASDAQBX,MIAX,GEMINI,EDGX,MERCURY,PEARL,EMERALD"
         details.priceMagnifier = 1
         details.underConId = 76792991
         details.longName = "TESLA INC"
@@ -287,11 +283,15 @@ class IBTestProviderStubs:
     @staticmethod
     def aapl_instrument() -> Equity:
         contract_details = IBTestProviderStubs.aapl_equity_contract_details()
+        contract_details.contract = IBContract(**contract_details.contract.__dict__)
+        contract_details = IBContractDetails(**contract_details.__dict__)
         return parse_instrument(contract_details=contract_details)
 
     @staticmethod
     def eurusd_instrument() -> CurrencyPair:
         contract_details = IBTestProviderStubs.eurusd_forex_contract_details()
+        contract_details.contract = IBContract(**contract_details.contract.__dict__)
+        contract_details = IBContractDetails(**contract_details.__dict__)
         return parse_instrument(contract_details=contract_details)
 
 
@@ -301,10 +301,10 @@ class IBTestDataStubs:
         return IBContract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
 
     @staticmethod
-    def account_values(fn: str = "account_values.json") -> list[AccountValue]:
+    def account_values(fn: str = "account_values.json") -> list[dict]:
         with open(RESPONSES_PATH / fn, "rb") as f:
             raw = msgspec.json.decode(f.read())
-            return [AccountValue(**acc) for acc in raw]
+            return raw
 
     @staticmethod
     def market_depth(name: str = "eurusd"):
@@ -342,318 +342,347 @@ class IBTestDataStubs:
         with gzip.open(RESPONSES_PATH / "historic/bars.json.gz", "rb") as f:
             for line in f:
                 data = msgspec.json.decode(line)
-                data["date"] = pd.Timestamp(data["date"]).to_pydatetime()
-                tick = BarData(**data)
+                data["date"] = str(pd.Timestamp(data["date"]).to_pydatetime())
+                tick = BarData()
+                for key, value in data.items():
+                    setattr(tick, key, value)
                 trades.append(tick)
         return trades
 
 
 class IBTestExecStubs:
+    # @staticmethod
+    # def create_order(
+    #     order_id: int = 1,
+    #     client_id: int = 1,
+    #     permId: int = 0,
+    #     kind: str = "LIMIT",
+    #     action: str = "BUY",
+    #     quantity: int = 100000,
+    #     limit_price: float = 105.0,
+    #     client_order_id: ClientOrderId = ClientOrderId("C-1"),
+    #     account: str = 'DU123456',
+    # ):
+    #     if kind == "LIMIT":
+    #         return IBLimitOrder(
+    #             orderId=order_id,
+    #             clientId=client_id,
+    #             action=action,
+    #             totalQuantity=quantity,
+    #             lmtPrice=limit_price,
+    #             permId=permId,
+    #             orderRef=client_order_id.value,
+    #         )
+    #     else:
+    #         raise RuntimeError
+    #
+    # @staticmethod
+    # def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
+    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
+    #     order = order or IBTestExecStubs.create_order()
+    #     return Trade(
+    #         contract=contract,
+    #         order=order,
+    #         orderStatus=OrderStatus(
+    #             orderId=41,
+    #             status="PendingSubmit",
+    #             filled=0.0,
+    #             remaining=0.0,
+    #             avgFillPrice=0.0,
+    #             permId=0,
+    #             parentId=0,
+    #             lastFillPrice=0.0,
+    #             clientId=0,
+    #             whyHeld="",
+    #             mktCapPrice=0.0,
+    #         ),
+    #         fills=[],
+    #         log=[
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     5,
+    #                     3,
+    #                     6,
+    #                     23,
+    #                     492613,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PendingSubmit",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #         ],
+    #     )
+    #
+    # @staticmethod
+    # def trade_pre_submit(
+    #     contract=None,
+    #     order: IBOrder = None,
+    #     client_order_id: Optional[ClientOrderId] = None,
+    # ) -> Trade:
+    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
+    #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
+    #     return Trade(
+    #         contract=contract,
+    #         order=order,
+    #         orderStatus=OrderStatus(
+    #             orderId=41,
+    #             status="PreSubmitted",
+    #             filled=0.0,
+    #             remaining=1.0,
+    #             avgFillPrice=0.0,
+    #             permId=189868420,
+    #             parentId=0,
+    #             lastFillPrice=0.0,
+    #             clientId=1,
+    #             whyHeld="",
+    #             mktCapPrice=0.0,
+    #         ),
+    #         fills=[],
+    #         log=[
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     5,
+    #                     3,
+    #                     6,
+    #                     23,
+    #                     492613,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PendingSubmit",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     5,
+    #                     3,
+    #                     6,
+    #                     26,
+    #                     871811,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PreSubmitted",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #         ],
+    #     )
+    #
+    # @staticmethod
+    # def trade_submitted(
+    #     contract=None,
+    #     order: IBOrder = None,
+    #     client_order_id: Optional[ClientOrderId] = None,
+    # ) -> Trade:
+    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
+    #     order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
+    #     from ibapi.order import Order as IBOrder
+    #     from ibapi.order_state import OrderState as IBOrderState
+    #
+    #     return Trade(
+    #         contract=contract,
+    #         order=order,
+    #         orderStatus=OrderStatus(
+    #             orderId=41,
+    #             status="Submitted",
+    #             filled=0.0,
+    #             remaining=1.0,
+    #             avgFillPrice=0.0,
+    #             permId=order.permId,
+    #             parentId=0,
+    #             lastFillPrice=0.0,
+    #             clientId=1,
+    #             whyHeld="",
+    #             mktCapPrice=0.0,
+    #         ),
+    #         fills=[],
+    #         log=[
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     5,
+    #                     3,
+    #                     6,
+    #                     23,
+    #                     492613,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PendingSubmit",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     5,
+    #                     3,
+    #                     6,
+    #                     26,
+    #                     871811,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PreSubmitted",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     5,
+    #                     3,
+    #                     6,
+    #                     28,
+    #                     378175,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="Submitted",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #         ],
+    #     )
+    #
+    # @staticmethod
+    # def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
+    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
+    #     order = order or IBTestExecStubs.create_order()
+    #     return Trade(
+    #         contract=contract,
+    #         order=order,
+    #         orderStatus=OrderStatus(
+    #             orderId=41,
+    #             status="PendingCancel",
+    #             filled=0.0,
+    #             remaining=1.0,
+    #             avgFillPrice=0.0,
+    #             permId=189868420,
+    #             parentId=0,
+    #             lastFillPrice=0.0,
+    #             clientId=1,
+    #             whyHeld="",
+    #             mktCapPrice=0.0,
+    #         ),
+    #         fills=[],
+    #         log=[
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     6,
+    #                     2,
+    #                     17,
+    #                     18,
+    #                     455087,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PendingCancel",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #         ],
+    #     )
+    #
+    # @staticmethod
+    # def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
+    #     contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
+    #     order = order or IBTestExecStubs.create_order()
+    #     return Trade(
+    #         contract=contract,
+    #         order=order,
+    #         orderStatus=OrderStatus(
+    #             orderId=41,
+    #             status="Cancelled",
+    #             filled=0.0,
+    #             remaining=1.0,
+    #             avgFillPrice=0.0,
+    #             permId=order.permId,
+    #             parentId=0,
+    #             lastFillPrice=0.0,
+    #             clientId=1,
+    #             whyHeld="",
+    #             mktCapPrice=0.0,
+    #         ),
+    #         fills=[],
+    #         log=[
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(
+    #                     2022,
+    #                     3,
+    #                     6,
+    #                     2,
+    #                     17,
+    #                     18,
+    #                     455087,
+    #                     tzinfo=datetime.timezone.utc,
+    #                 ),
+    #                 status="PendingCancel",
+    #                 message="",
+    #                 errorCode=0,
+    #             ),
+    #             TradeLogEntry(
+    #                 time=datetime.datetime(2022, 3, 6, 2, 23, 2, 847, tzinfo=datetime.timezone.utc),
+    #                 status="Cancelled",
+    #                 message="Error 10148, reqId 45: OrderId 45 that needs to be cancelled cannot be cancelled, state: PendingCancel.",
+    #                 errorCode=10148,
+    #             ),
+    #         ],
+    #     )
+
     @staticmethod
-    def create_order(
-        order_id: int = 1,
-        client_id: int = 1,
-        permId: int = 0,
-        kind: str = "LIMIT",
-        action: str = "BUY",
-        quantity: int = 100000,
-        limit_price: float = 105.0,
+    def execution(
         client_order_id: ClientOrderId = ClientOrderId("C-1"),
-    ):
-        if kind == "LIMIT":
-            return IBLimitOrder(
-                orderId=order_id,
-                clientId=client_id,
-                action=action,
-                totalQuantity=quantity,
-                lmtPrice=limit_price,
-                permId=permId,
-                orderRef=client_order_id.value,
-            )
-        else:
-            raise RuntimeError
+        venue_order_id: VenueOrderId = VenueOrderId("101"),
+        account: str = "DU123456",
+    ) -> Execution:
+        params = {
+            "execId": "1",
+            "time": "19700101 00:00:00 America/New_York",
+            "acctNumber": account,
+            "exchange": "NYSE",
+            "side": "BOT",
+            "shares": Decimal(100),
+            "price": 50.0,
+            "permId": 0,
+            "clientId": 1,
+            "orderId": int(venue_order_id.value),
+            "liquidation": 0,
+            "cumQty": Decimal(100),
+            "avgPrice": 50.0,
+            "orderRef": f"{client_order_id.value}:{venue_order_id.value}",
+            "evRule": "",
+            "evMultiplier": 0.0,
+            "modelCode": "",
+            "lastLiquidity": 0,
+        }
+        execution = Execution()
+        for key, value in params.items():
+            setattr(execution, key, value)
+        return execution
 
     @staticmethod
-    def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order()
-        return Trade(
-            contract=contract,
-            order=order,
-            orderStatus=OrderStatus(
-                orderId=41,
-                status="PendingSubmit",
-                filled=0.0,
-                remaining=0.0,
-                avgFillPrice=0.0,
-                permId=0,
-                parentId=0,
-                lastFillPrice=0.0,
-                clientId=0,
-                whyHeld="",
-                mktCapPrice=0.0,
-            ),
-            fills=[],
-            log=[
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        5,
-                        3,
-                        6,
-                        23,
-                        492613,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PendingSubmit",
-                    message="",
-                    errorCode=0,
-                ),
-            ],
-        )
-
-    @staticmethod
-    def trade_pre_submit(
-        contract=None,
-        order: IBOrder = None,
-        client_order_id: Optional[ClientOrderId] = None,
-    ) -> Trade:
-        contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
-        return Trade(
-            contract=contract,
-            order=order,
-            orderStatus=OrderStatus(
-                orderId=41,
-                status="PreSubmitted",
-                filled=0.0,
-                remaining=1.0,
-                avgFillPrice=0.0,
-                permId=189868420,
-                parentId=0,
-                lastFillPrice=0.0,
-                clientId=1,
-                whyHeld="",
-                mktCapPrice=0.0,
-            ),
-            fills=[],
-            log=[
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        5,
-                        3,
-                        6,
-                        23,
-                        492613,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PendingSubmit",
-                    message="",
-                    errorCode=0,
-                ),
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        5,
-                        3,
-                        6,
-                        26,
-                        871811,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PreSubmitted",
-                    message="",
-                    errorCode=0,
-                ),
-            ],
-        )
-
-    @staticmethod
-    def trade_submitted(
-        contract=None,
-        order: IBOrder = None,
-        client_order_id: Optional[ClientOrderId] = None,
-    ) -> Trade:
-        contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order(client_order_id=client_order_id)
-        return Trade(
-            contract=contract,
-            order=order,
-            orderStatus=OrderStatus(
-                orderId=41,
-                status="Submitted",
-                filled=0.0,
-                remaining=1.0,
-                avgFillPrice=0.0,
-                permId=order.permId,
-                parentId=0,
-                lastFillPrice=0.0,
-                clientId=1,
-                whyHeld="",
-                mktCapPrice=0.0,
-            ),
-            fills=[],
-            log=[
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        5,
-                        3,
-                        6,
-                        23,
-                        492613,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PendingSubmit",
-                    message="",
-                    errorCode=0,
-                ),
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        5,
-                        3,
-                        6,
-                        26,
-                        871811,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PreSubmitted",
-                    message="",
-                    errorCode=0,
-                ),
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        5,
-                        3,
-                        6,
-                        28,
-                        378175,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="Submitted",
-                    message="",
-                    errorCode=0,
-                ),
-            ],
-        )
-
-    @staticmethod
-    def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order()
-        return Trade(
-            contract=contract,
-            order=order,
-            orderStatus=OrderStatus(
-                orderId=41,
-                status="PendingCancel",
-                filled=0.0,
-                remaining=1.0,
-                avgFillPrice=0.0,
-                permId=189868420,
-                parentId=0,
-                lastFillPrice=0.0,
-                clientId=1,
-                whyHeld="",
-                mktCapPrice=0.0,
-            ),
-            fills=[],
-            log=[
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        6,
-                        2,
-                        17,
-                        18,
-                        455087,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PendingCancel",
-                    message="",
-                    errorCode=0,
-                ),
-            ],
-        )
-
-    @staticmethod
-    def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestProviderStubs.aapl_equity_contract_details().contract
-        order = order or IBTestExecStubs.create_order()
-        return Trade(
-            contract=contract,
-            order=order,
-            orderStatus=OrderStatus(
-                orderId=41,
-                status="Cancelled",
-                filled=0.0,
-                remaining=1.0,
-                avgFillPrice=0.0,
-                permId=order.permId,
-                parentId=0,
-                lastFillPrice=0.0,
-                clientId=1,
-                whyHeld="",
-                mktCapPrice=0.0,
-            ),
-            fills=[],
-            log=[
-                TradeLogEntry(
-                    time=datetime.datetime(
-                        2022,
-                        3,
-                        6,
-                        2,
-                        17,
-                        18,
-                        455087,
-                        tzinfo=datetime.timezone.utc,
-                    ),
-                    status="PendingCancel",
-                    message="",
-                    errorCode=0,
-                ),
-                TradeLogEntry(
-                    time=datetime.datetime(2022, 3, 6, 2, 23, 2, 847, tzinfo=datetime.timezone.utc),
-                    status="Cancelled",
-                    message="Error 10148, reqId 45: OrderId 45 that needs to be cancelled cannot be cancelled, state: PendingCancel.",
-                    errorCode=10148,
-                ),
-            ],
-        )
-
-    @staticmethod
-    def execution() -> Execution:
-        return Execution(
-            execId="1",
-            time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
-            acctNumber="111",
-            exchange="NYSE",
-            side="BUY",
-            shares=100,
-            price=50.0,
-            permId=0,
-            clientId=0,
-            orderId=0,
-            liquidation=0,
-            cumQty=100,
-            avgPrice=50.0,
-            orderRef="",
-            evRule="",
-            evMultiplier=0.0,
-            modelCode="",
-            lastLiquidity=0,
-        )
+    def commission() -> CommissionReport:
+        params = {
+            "execId": "1",
+            "commission": 1.0,
+            "currency": "USD",
+            "realizedPNL": 0.0,
+            "yield_": 0.0,
+            "yieldRedemptionDate": 0,
+        }
+        commission = CommissionReport()
+        for key, value in params.items():
+            setattr(commission, key, value)
+        return commission
 
 
 def filter_out_options(instrument) -> bool:

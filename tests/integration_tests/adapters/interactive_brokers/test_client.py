@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 
 
@@ -169,7 +169,7 @@ class TestInteractiveBrokersClient(InteractiveBrokersTestBase):
     #     self.client.subscriptions.add(req_id, 'EUR.USD', self.client.subscribe_ticks, dict(instrument_id=self.instrument, contract=IBContract(conId=1234), tick_type='BidAsk'))  # noqa
     #
     #     # Act
-    #     self.client.error(req_id, 10189, 'Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.')  # noqa
+    #     self.client.error(req_id, 10189, 'Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.')
     #
     #     # Assert
     #     assert not self.client.is_ib_ready.is_set()

@@ -15,26 +15,25 @@
 # -------------------------------------------------------------------------------------------------
 
 
+# fmt: off
+
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
-from nautilus_trader.adapters.interactive_brokers.config import (
-    InteractiveBrokersInstrumentProviderConfig,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
 from nautilus_trader.live.node import TradingNode
 
+
+# fmt: on
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
@@ -68,7 +67,7 @@ gateway = InteractiveBrokersGatewayConfig(
 
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="INFO",
+    logging=LoggingConfig(log_level="INFO"),
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             ibg_host="127.0.0.1",
@@ -82,8 +81,8 @@ config_node = TradingNodeConfig(
                 build_options_chain=False,
                 min_expiry_days=10,
                 max_expiry_days=60,
-                load_ids=("EUR/USD.IDEALPRO", "BTC/USD.PAXOS", "SPY.ARCA", "ABC.NYSE"),
-                load_contracts=tuple(ib_contracts),
+                load_ids=frozenset(["EUR/USD.IDEALPRO", "BTC/USD.PAXOS", "SPY.ARCA", "ABC.NYSE"]),
+                load_contracts=frozenset(ib_contracts),
             ),
             gateway=gateway,
         ),

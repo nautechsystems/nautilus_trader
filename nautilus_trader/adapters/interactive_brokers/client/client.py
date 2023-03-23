@@ -6,6 +6,8 @@ from inspect import iscoroutinefunction
 from typing import Callable, Optional, Union
 
 import pandas as pd
+
+# fmt: off
 from ibapi import comm
 from ibapi import decoder
 from ibapi.account_summary_tags import AccountSummaryTags
@@ -41,9 +43,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-    ib_contract_to_instrument_id,
-)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
@@ -58,6 +58,9 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+# fmt: on
 
 
 class InteractiveBrokersClient(Component, EWrapper):
@@ -138,7 +141,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._client.sendMsg = self.sendMsg
         self._client.logRequest = self.logRequest
 
-    def sendMsg(self, msg):  # noqa: Override the logging for ibapi EClient.sendMsg
+    def sendMsg(self, msg):  # : Override the logging for ibapi EClient.sendMsg
         full_msg = comm.make_msg(msg)
         self._log.debug(f"SENDING {current_fn_name(1)} {full_msg}")
         self._client.conn.sendMsg(full_msg)
@@ -147,7 +150,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         fnName,
         fnParams,
-    ):  # noqa: Override the logging for ibapi EClient.logRequest
+    ):  # : Override the logging for ibapi EClient.logRequest
         if "self" in fnParams:
             prms = dict(fnParams)
             del prms["self"]
@@ -155,7 +158,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             prms = fnParams
         self._log.debug(f"REQUEST {fnName} {prms}")
 
-    def logAnswer(self, fnName, fnParams):  # noqa: Override the logging for EWrapper.logAnswer
+    def logAnswer(self, fnName, fnParams):  # : Override the logging for EWrapper.logAnswer
         if "self" in fnParams:
             prms = dict(fnParams)
             del prms["self"]
@@ -226,7 +229,7 @@ class InteractiveBrokersClient(Component, EWrapper):
     ) -> None:
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
             )
         else:
             if actions:
@@ -235,7 +238,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 except Exception as e:
                     self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
-                        f"{repr(e)}",
+                        f"{e!r}",
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)
@@ -266,27 +269,31 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._accounts = set()
 
     def _stop(self):
+        self.is_ready.clear()
+        self._accounts = set()
+
         if not self.registered_nautilus_clients == set():
             self._log.warning(
                 f"Any registered Clients from {self.registered_nautilus_clients} will disconnect.",
             )
+
         # Cancel tasks
-        if self._watch_dog_task:
-            self._log.debug("Canceling `watch_dog` task...")
-            self._watch_dog_task.cancel()
-            # self._watch_dog_task.done()
-        if self._outgoing_msg_queue_task:
-            self._log.debug("Canceling `outgoing_msg_queue` task...")
-            self._outgoing_msg_queue_task.cancel()
-            # self._outgoing_msg_queue_task.done()
-        if self._incoming_msg_reader_task:
-            self._log.debug("Canceling `incoming_msg_reader` task...")
-            self._incoming_msg_reader_task.cancel()
-            # self._incoming_msg_reader_task.done()
-        if self._incoming_msg_queue_task:
-            self._log.debug("Canceling `incoming_msg_queue` task...")
-            self._incoming_msg_queue_task.cancel()
-            # self._msg_queue_task.done()
+        # if self._watch_dog_task:
+        #     self._log.debug("Canceling `watch_dog` task...")
+        #     self._watch_dog_task.cancel()
+        #     # self._watch_dog_task.done()
+        # if self._outgoing_msg_queue_task:
+        #     self._log.debug("Canceling `outgoing_msg_queue` task...")
+        #     self._outgoing_msg_queue_task.cancel()
+        #     # self._outgoing_msg_queue_task.done()
+        # if self._incoming_msg_reader_task:
+        #     self._log.debug("Canceling `incoming_msg_reader` task...")
+        #     self._incoming_msg_reader_task.cancel()
+        #     # self._incoming_msg_reader_task.done()
+        # if self._incoming_msg_queue_task:
+        #     self._log.debug("Canceling `incoming_msg_queue` task...")
+        #     self._incoming_msg_queue_task.cancel()
+        #     # self._msg_queue_task.done()
 
         self._client.disconnect()
 
@@ -306,9 +313,15 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # 2104, 2158, 2106: Data connectivity restored
         if not req_id == -1:
+            # TODO: Order events & Cleanup/split the Error method
+            # Error 10147 req_id=195: OrderId 195 that needs to be cancelled is not found.  # Send cancel event
+            # Warning 202 req_id=2078: Order Canceled - reason:  # Send cancel event
+            # fields %s(b'4', b'2', b'10019', b'162', b'Historical Market Data Service error message:Trading TWS session is connected from a different IP address', b'')  # noqa
+            # fields %s(b'4', b'2', b'10036', b'10190', b'Max number of tick-by-tick requests has been reached.', b'')
+            # 10187: Failed to request historical ticks:No market data permissions for ISLAND STK
             if subscription := self.subscriptions.get(req_id=req_id):
                 if error_code in [10189, 366, 102]:
-                    # --> 10189: Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.  # noqa
+                    # --> 10189: Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.
                     # --> 366: No historical data query found for ticker id
                     # --> 102: Duplicate ticker ID.
                     # Although 10189 is triggered when the specified PriceType is actually not available.
@@ -333,7 +346,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 self._end_request(req_id, success=False)
             elif req_id in self._order_id_to_order.keys():
                 if error_code == 321:
-                    # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.  # noqa
+                    # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
                     order = self._order_id_to_order.get(req_id, None)
                     if order:
                         name = f"orderStatus-{order.account}"
@@ -343,6 +356,19 @@ class InteractiveBrokersClient(Component, EWrapper):
                                     0
                                 ],
                                 order_status="Rejected",
+                                reason=error_string,
+                            )
+                elif error_code == 202:
+                    # --> Warning 202 req_id= Order Canceled - reason
+                    order = self._order_id_to_order.get(req_id, None)
+                    if order:
+                        name = f"orderStatus-{order.account}"
+                        if handler := self._event_subscriptions.get(name, None):
+                            handler(
+                                order_ref=self._order_id_to_order[req_id].orderRef.rsplit(":", 1)[
+                                    0
+                                ],
+                                order_status="Cancelled",
                                 reason=error_string,
                             )
             else:
@@ -552,7 +578,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                     while len(buf) > 0:
                         (size, msg, buf) = comm.read_msg(buf)
                         # self._log.debug(f"resp {buf.decode('ascii')}")
-                        self._log.debug(f"size:{size} msg.size:{len(msg)} msg:|{str(buf)}| buf:||")
+                        self._log.debug(f"size:{size} msg.size:{len(msg)} msg:|{buf!s}| buf:||")
                         if msg:
                             self._incoming_msg_queue.put_nowait(msg)
                         else:
@@ -645,7 +671,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.to_str(market_data_type)}")
         self._client.reqMarketDataType(market_data_type)
 
-    def marketDataType(self, req_id: int, market_data_type: int):  # noqa: Override the EWrapper
+    def marketDataType(self, req_id: int, market_data_type: int):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if market_data_type == MarketDataTypeEnum.REALTIME:
             self._log.debug(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
@@ -690,7 +716,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             self._client.cancelTickByTickData(subscription.req_id)
             self._log.debug(f"Unsubscribed for {subscription}")
 
-    def tickByTickBidAsk(  # noqa: Override the EWrapper
+    def tickByTickBidAsk(  # : Override the EWrapper
         self,
         req_id: int,
         time: int,
@@ -721,7 +747,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         )
         self._handle_data(quote_tick)
 
-    def tickByTickAllLast(  # noqa: Override the EWrapper
+    def tickByTickAllLast(  # : Override the EWrapper
         self,
         req_id: int,
         tick_type: int,
@@ -778,7 +804,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         )
         # self._client.reqGlobalCancel()
 
-    def openOrder(  # noqa: Override the EWrapper
+    def openOrder(  # : Override the EWrapper
         self,
         order_id: int,
         contract: IBContract,
@@ -786,12 +812,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         order_state: IBOrderState,
     ):
         self.logAnswer(current_fn_name(), vars())
+        # Handle response to on-demand request
         if request := self.requests.get(name="OpenOrders"):
             order.contract = IBContract(**contract.__dict__)
             order.order_state = order_state
             order.orderRef = order.orderRef.rsplit(":", 1)[0]
             request.result.append(order)
+            return
 
+        # Handle event based response
         name = f"openOrder-{order.account}"
         if handler := self._event_subscriptions.get(name, None):
             handler(
@@ -805,7 +834,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         if request := self.requests.get(name="OpenOrders"):
             self._end_request(request.req_id)
 
-    def orderStatus(  # noqa: Override the EWrapper
+    def orderStatus(  # : Override the EWrapper
         self,
         order_id: int,
         status: str,
@@ -856,7 +885,7 @@ class InteractiveBrokersClient(Component, EWrapper):
     #     self.subscriptions.remove(name=name)
     #     self._event_subscriptions.pop(name, None)
 
-    def accountSummary(  # noqa: Override the EWrapper
+    def accountSummary(  # : Override the EWrapper
         self,
         req_id: int,
         account: str,
@@ -877,14 +906,14 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._client.reqIds(-1)
         return oid
 
-    def nextValidId(self, order_id: int):  # noqa: Override the EWrapper
+    def nextValidId(self, order_id: int):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
         if self.accounts() and not self.is_ib_ready.is_set():
             self._log.info("`is_ib_ready` set by nextValidId", LogColor.BLUE)
             self.is_ib_ready.set()
 
-    def execDetails(  # noqa: Override the EWrapper
+    def execDetails(  # : Override the EWrapper
         self,
         req_id: int,
         contract: IBContract,
@@ -899,17 +928,15 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         name = f"execDetails-{execution.acctNumber}"
         if handler := self._event_subscriptions.get(name, None):
-            try:
+            if cache.get("commission_report"):
                 handler(
                     order_ref=cache["order_ref"],
                     execution=cache["execution"],
                     commission_report=cache["commission_report"],
                 )
                 cache.pop(execution.execId, None)
-            except KeyError:
-                pass  # result not ready
 
-    def commissionReport(  # noqa: Override the EWrapper
+    def commissionReport(  # : Override the EWrapper
         self,
         commission_report: CommissionReport,
     ):
@@ -919,7 +946,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             cache = self._exec_id_details[commission_report.execId]
         cache["commission_report"] = commission_report
 
-        if account := getattr(cache["execution"], "acctNumber", None):
+        if cache.get("execution") and (account := getattr(cache["execution"], "acctNumber", None)):
             name = f"execDetails-{account}"
             if handler := self._event_subscriptions.get(name, None):
                 handler(
@@ -967,7 +994,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 orders.append(order)
         return orders
 
-    def position(  # noqa: Override the EWrapper
+    def position(  # : Override the EWrapper
         self,
         account: str,
         contract: IBContract,
@@ -978,7 +1005,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         if request := self.requests.get(name="OpenPositions"):
             request.result.append(IBPosition(account, contract, position, avg_cost))
 
-    def positionEnd(self):  # noqa: Override the EWrapper
+    def positionEnd(self):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if request := self.requests.get(name="OpenPositions"):
             self._end_request(request.req_id)
@@ -1002,7 +1029,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         else:
             return await self._await_request(request, 10)
 
-    def contractDetails(  # noqa: Override the EWrapper
+    def contractDetails(  # : Override the EWrapper
         self,
         req_id: int,
         contract_details: ContractDetails,
@@ -1012,7 +1039,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             return
         request.result.append(contract_details)
 
-    def contractDetailsEnd(self, req_id: int):  # noqa: Override the EWrapper
+    def contractDetailsEnd(self, req_id: int):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
 
@@ -1022,7 +1049,7 @@ class InteractiveBrokersClient(Component, EWrapper):
     def accounts(self):
         return self._accounts.copy()
 
-    def managedAccounts(self, accounts_list: str):  # noqa: Override the EWrapper
+    def managedAccounts(self, accounts_list: str):  # : Override the EWrapper
         """Received once the connection is established."""
         self.logAnswer(current_fn_name(), vars())
         self._accounts = {a for a in accounts_list.split(",") if a}
@@ -1067,7 +1094,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         else:
             self._log.info(f"Request already exist for {request}")
 
-    def historicalData(self, req_id: int, bar: BarData):  # noqa: Override the EWrapper
+    def historicalData(self, req_id: int, bar: BarData):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if request := self.requests.get(req_id=req_id):
             is_request = True
@@ -1088,7 +1115,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         elif bar:
             self._handle_data(bar)
 
-    def historicalDataEnd(self, req_id: int, start: str, end: str):  # noqa: Override the EWrapper
+    def historicalDataEnd(self, req_id: int, start: str, end: str):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
         if req_id == 1 and not self.is_ib_ready.is_set():  # probe successful
@@ -1150,7 +1177,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             self._client.cancelHistoricalData(subscription.req_id)
             self._log.debug(f"Unsubscribed for {subscription}")
 
-    def historicalDataUpdate(self, req_id: int, bar: BarData):  # noqa: Override the EWrapper
+    def historicalDataUpdate(self, req_id: int, bar: BarData):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if not (subscription := self.subscriptions.get(req_id=req_id)):
             return
@@ -1331,7 +1358,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             self._client.cancelRealTimeBars(subscription.req_id)
             self._log.debug(f"Unsubscribed for {subscription}")
 
-    def realtimeBar(  # noqa: Override the EWrapper
+    def realtimeBar(  # : Override the EWrapper
         self,
         req_id: int,
         time: int,
@@ -1367,7 +1394,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     # -- Display Groups ----------------------------------------------------------------------------------
     async def get_option_chains(self, underlying: IBContract):
-        name = f"OptionChains-{str(underlying)}"
+        name = f"OptionChains-{underlying!s}"
         if not (request := self.requests.get(name=name)):
             req_id = self._next_req_id()
             request = self.requests.add(
@@ -1387,7 +1414,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         else:
             self._log.info(f"Request already exist for {request}")
 
-    def securityDefinitionOptionParameter(  # noqa: Override the EWrapper
+    def securityDefinitionOptionParameter(  # : Override the EWrapper
         self,
         req_id: int,
         exchange: str,
@@ -1401,7 +1428,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         if request := self.requests.get(req_id=req_id):
             request.result.append((exchange, expirations))
 
-    def securityDefinitionOptionParameterEnd(self, req_id: int):  # noqa: Override the EWrapper
+    def securityDefinitionOptionParameterEnd(self, req_id: int):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         self._end_request(req_id)
 
@@ -1423,7 +1450,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         else:
             self._log.info(f"Request already exist for {request}")
 
-    def symbolSamples(  # noqa: Override the EWrapper
+    def symbolSamples(  # : Override the EWrapper
         self,
         req_id: int,
         contract_descriptions: list,
@@ -1440,7 +1467,7 @@ class InteractiveBrokersClient(Component, EWrapper):
     def _handle_data(self, data: Data):
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    def connectionClosed(self):  # noqa: Override the EWrapper
+    def connectionClosed(self):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         error = ConnectionError("Socket disconnect")
         for future in self.requests.get_futures():

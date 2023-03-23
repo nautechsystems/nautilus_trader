@@ -24,7 +24,7 @@ from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config.common import NautilusConfig
 
 
-class InteractiveBrokersGatewayConfig(NautilusConfig):
+class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
     """
     Configuration for `InteractiveBrokersGateway` setup.
 
@@ -54,7 +54,7 @@ class InteractiveBrokersGatewayConfig(NautilusConfig):
     timeout: int = 300
 
 
-class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig):
+class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
     """
     Configuration for ``InteractiveBrokersInstrumentProvider`` instances.
 

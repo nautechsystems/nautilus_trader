@@ -16,6 +16,7 @@
 import datetime
 from decimal import Decimal
 
+# fmt: off
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar_aggregation import BarAggregation
@@ -24,6 +25,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
 
+
+# fmt: on
 
 MKT_DEPTH_OPERATIONS = {
     0: BookAction.ADD,
@@ -72,7 +75,7 @@ def bar_spec_to_bar_size(bar_spec: BarSpecification) -> str:
         return f"{step} week"
     else:
         raise ValueError(
-            f"InteractiveBrokers doesn't support subscription for {repr(bar_spec)}",
+            f"InteractiveBrokers doesn't support subscription for {bar_spec!r}",
         )
 
 
