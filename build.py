@@ -48,15 +48,15 @@ if platform.system() != "Darwin":
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
 
-TARGET_DIR = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
+TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{TARGET_DIR}"
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + os.pathsep + str(TARGET_DIR)
     RUST_LIB_PFX = ""
     RUST_STATIC_LIB_EXT = "lib"
     RUST_DYLIB_EXT = "dll"
-    TARGET_DIR = TARGET_DIR.replace(BUILD_MODE, "x86_64-pc-windows-msvc/" + BUILD_MODE)
+    TARGET_DIR = TARGET_DIR.with_name("x86_64-pc-windows-msvc") / BUILD_MODE
 elif platform.system() == "Darwin":
     RUST_LIB_PFX = "lib"
     RUST_STATIC_LIB_EXT = "a"
@@ -194,15 +194,15 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
 def _copy_build_dir_to_project(cmd: build_ext) -> None:
     # Copy built extensions back to the project tree
     for output in cmd.get_outputs():
-        relative_extension = os.path.relpath(output, cmd.build_lib)
-        if not os.path.exists(output):
+        relative_extension = Path(output).relative_to(cmd.build_lib)
+        if not Path(output).exists():
             continue
 
         # Copy the file and set permissions
         shutil.copyfile(output, relative_extension)
-        mode = os.stat(relative_extension).st_mode
+        mode = relative_extension.stat().st_mode
         mode |= (mode & 0o444) >> 2
-        os.chmod(relative_extension, mode)
+        relative_extension.chmod(mode)
 
     print("Copied all compiled dynamic library files into source")
 
@@ -210,8 +210,8 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 def _copy_rust_dylibs_to_project() -> None:
     # https://pyo3.rs/latest/building_and_distribution#manual-builds
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    src = f"{TARGET_DIR}/{RUST_LIB_PFX}nautilus_pyo3.{RUST_DYLIB_EXT}"
-    dst = f"nautilus_trader/core/nautilus_pyo3{ext_suffix}"
+    src = Path(TARGET_DIR) / f"{RUST_LIB_PFX}nautilus_pyo3.{RUST_DYLIB_EXT}"
+    dst = Path("nautilus_trader/core") / f"nautilus_pyo3{ext_suffix}"
     shutil.copyfile(src=src, dst=dst)
 
     print(f"Copied {src} to {dst}")
