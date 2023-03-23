@@ -770,19 +770,19 @@ testing = ["pre-commit"]
 
 [[package]]
 name = "filelock"
-version = "3.10.0"
+version = "3.10.2"
 description = "A platform independent file lock."
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "filelock-3.10.0-py3-none-any.whl", hash = "sha256:e90b34656470756edf8b19656785c5fea73afa1953f3e1b0d645cef11cab3182"},
-    {file = "filelock-3.10.0.tar.gz", hash = "sha256:3199fd0d3faea8b911be52b663dfccceb84c95949dd13179aa21436d1a79c4ce"},
+    {file = "filelock-3.10.2-py3-none-any.whl", hash = "sha256:eb8f0f2d37ed68223ea63e3bddf2fac99667e4362c88b3f762e434d160190d18"},
+    {file = "filelock-3.10.2.tar.gz", hash = "sha256:75997740323c5f12e18f10b494bc11c03e42843129f980f17c04352cc7b09d40"},
 ]
 
 [package.extras]
 docs = ["furo (>=2022.12.7)", "sphinx (>=6.1.3)", "sphinx-autodoc-typehints (>=1.22,!=1.23.4)"]
-testing = ["covdefaults (>=2.3)", "coverage (>=7.2.1)", "pytest (>=7.2.2)", "pytest-cov (>=4)", "pytest-timeout (>=2.1)"]
+testing = ["covdefaults (>=2.3)", "coverage (>=7.2.2)", "pytest (>=7.2.2)", "pytest-cov (>=4)", "pytest-timeout (>=2.1)"]
 
 [[package]]
 name = "frozendict"
@@ -2227,14 +2227,14 @@ files = [
 
 [[package]]
 name = "redis"
-version = "4.5.2"
+version = "4.5.3"
 description = "Python client for Redis database and key-value store"
 category = "main"
 optional = true
 python-versions = ">=3.7"
 files = [
-    {file = "redis-4.5.2-py3-none-any.whl", hash = "sha256:4b12b3a1e9bfb43dc533330ec6d142329d0c27ea6bb6716a9d0389e8f2038a4e"},
-    {file = "redis-4.5.2.tar.gz", hash = "sha256:d8ae1a4f725eea6e3958411870fdf944c587b00ea12be28d3bd5575d8f26430c"},
+    {file = "redis-4.5.3-py3-none-any.whl", hash = "sha256:7df17a0a2b72a4c8895b462dd07616c51b1dcb48fdd7ecb7b6f4bf39ecb2e94e"},
+    {file = "redis-4.5.3.tar.gz", hash = "sha256:56732e156fe31801c4f43396bd3ca0c2a7f6f83d7936798531b9848d103381aa"},
 ]
 
 [package.dependencies]
@@ -2268,29 +2268,29 @@ use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
 [[package]]
 name = "ruff"
-version = "0.0.257"
+version = "0.0.258"
 description = "An extremely fast Python linter, written in Rust."
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "ruff-0.0.257-py3-none-macosx_10_7_x86_64.whl", hash = "sha256:7280640690c1d0046b20e0eb924319a89d8e22925d7d232180ce31196e7478f8"},
-    {file = "ruff-0.0.257-py3-none-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl", hash = "sha256:4582b73da61ab410ffda35b2987a6eacb33f18263e1c91810f0b9779ec4f41a9"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5acae9878f1136893e266348acdb9d30dfae23c296d3012043816432a5abdd51"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:d9f0912d045eee15e8e02e335c16d7a7f9fb6821aa5eb1628eeb5bbfa3d88908"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:4a9542c34ee5298b31be6c6ba304f14b672dcf104846ee65adb2466d3e325870"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:3464f1ad4cea6c4b9325da13ae306bd22bf15d226e18d19c52db191b1f4355ac"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:5a54bfd559e558ee0df2a2f3756423fe6a9de7307bc290d807c3cdf351cb4c24"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:3438fd38446e1a0915316f4085405c9feca20fe00a4b614995ab7034dbfaa7ff"},
-    {file = "ruff-0.0.257-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:358cc2b547bd6451dcf2427b22a9c29a2d9c34e66576c693a6381c5f2ed3011d"},
-    {file = "ruff-0.0.257-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:783390f1e94a168c79d7004426dae3e4ae2999cc85f7d00fdd86c62262b71854"},
-    {file = "ruff-0.0.257-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:aaa3b5b6929c63a854b6bcea7a229453b455ab26337100b2905fae4523ca5667"},
-    {file = "ruff-0.0.257-py3-none-musllinux_1_2_i686.whl", hash = "sha256:4ecd7a84db4816df2dcd0f11c5365a9a2cf4fa70a19b3ac161b7b0bfa592959d"},
-    {file = "ruff-0.0.257-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:3db8d77d5651a2c0d307102d717627a025d4488d406f54c2764b21cfbe11d822"},
-    {file = "ruff-0.0.257-py3-none-win32.whl", hash = "sha256:d2c8755fa4f6c5e5ec032ad341ca3beeecd16786e12c3f26e6b0cc40418ae998"},
-    {file = "ruff-0.0.257-py3-none-win_amd64.whl", hash = "sha256:3cec07d6fecb1ebbc45ea8eeb1047b929caa2f7dfb8dd4b0e1869ff789326da5"},
-    {file = "ruff-0.0.257-py3-none-win_arm64.whl", hash = "sha256:352f1bdb9b433b3b389aee512ffb0b82226ae1e25b3d92e4eaf0e7be6b1b6f6a"},
-    {file = "ruff-0.0.257.tar.gz", hash = "sha256:fedfd06a37ddc17449203c3e38fc83fb68de7f20b5daa0ee4e60d3599b38bab0"},
+    {file = "ruff-0.0.258-py3-none-macosx_10_7_x86_64.whl", hash = "sha256:180dd0bc1b228532eb899259f72b84779ef10fdaa0fe3695bc28611266db1036"},
+    {file = "ruff-0.0.258-py3-none-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl", hash = "sha256:b4d0de61317188f2e25875c41fcd5c8dba20252730d8543e43c747e9b54cf3ff"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e8bab2372605a70ae94f8a19207e2b78df12b5a2ddb45890d6073913addd5aca"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:5b2e48a5c577605ec60f6384d8733a5d3e183109786ba2b60de2520d42594680"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:7cef73434774a43b19c40f228dae5837d9530b08bb3b7fd3233c695572553f19"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:8680dfa67946c8d8e2f17d68e44e2da9e3a1a12435cacb8c871653ed81a6030f"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:e8ee0a7ab66c1286fd5943dc9024eb76377b35dc3380ac378626b37b23a8a802"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:92205eb9ca54b30d89c34ba5e370961389cfde0c9ec6d4736ba0cce2bb83c150"},
+    {file = "ruff-0.0.258-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:76cba6d3991a488ac5eef0efa30937603ce312bb71d5e05a517819e95c1837fe"},
+    {file = "ruff-0.0.258-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:05f7c26e60abb5fd0a8acad41e97dfaa0bafef978ef6c2406010267ef3106e1f"},
+    {file = "ruff-0.0.258-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:4b442b55981ffe8a826b6b7d31c76f93f693730f66c0948555f341ebe1e72249"},
+    {file = "ruff-0.0.258-py3-none-musllinux_1_2_i686.whl", hash = "sha256:7ecdfc38cc77fbc28cb875fe67107771ccee5fc414ccbb681f78c0ea76cb112a"},
+    {file = "ruff-0.0.258-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:2bc3f6e7dc0ff0c916573f36aa54b671036951959f14e56956fb9bd348935ac0"},
+    {file = "ruff-0.0.258-py3-none-win32.whl", hash = "sha256:cc9d8f7831a59d957274e24645fa57acebda1280878c2fa8e46a8c3f6284a727"},
+    {file = "ruff-0.0.258-py3-none-win_amd64.whl", hash = "sha256:7e20d7209c9e51f2d6fe19e04ed674331e5fed56b819442f6ecab4a78c15890a"},
+    {file = "ruff-0.0.258-py3-none-win_arm64.whl", hash = "sha256:7a2f74f9239407e4a88846f50142045cb2bead701cc4edae196367ce2e498e85"},
+    {file = "ruff-0.0.258.tar.gz", hash = "sha256:cb389a8428484d25cf1225804b44e5393e061e0c425ce3fb1f6e935d5acba74b"},
 ]
 
 [[package]]
@@ -2682,14 +2682,14 @@ files = [
 
 [[package]]
 name = "types-redis"
-version = "4.5.2.0"
+version = "4.5.3.0"
 description = "Typing stubs for redis"
 category = "dev"
 optional = false
 python-versions = "*"
 files = [
-    {file = "types-redis-4.5.2.0.tar.gz", hash = "sha256:f3243339702cde2966e21f7fc34f8e9be1b55b407e8242ba204a42360f248678"},
-    {file = "types_redis-4.5.2.0-py3-none-any.whl", hash = "sha256:54964b1b18b7c868c543011eafab7aafd3d57e5285075ae1b574288535d93b4e"},
+    {file = "types-redis-4.5.3.0.tar.gz", hash = "sha256:f23415e448ca25ec5028c24fdf3717a13f0c905eb1933733e8a8a7d4952f6908"},
+    {file = "types_redis-4.5.3.0-py3-none-any.whl", hash = "sha256:7c1d5fdb0a2d5fd92eac37ce382fdb47d99a69889e7d6c2bc4479148ac646c73"},
 ]
 
 [package.dependencies]
@@ -2698,14 +2698,14 @@ types-pyOpenSSL = "*"
 
 [[package]]
 name = "types-requests"
-version = "2.28.11.15"
+version = "2.28.11.16"
 description = "Typing stubs for requests"
 category = "dev"
 optional = false
 python-versions = "*"
 files = [
-    {file = "types-requests-2.28.11.15.tar.gz", hash = "sha256:fc8eaa09cc014699c6b63c60c2e3add0c8b09a410c818b5ac6e65f92a26dde09"},
-    {file = "types_requests-2.28.11.15-py3-none-any.whl", hash = "sha256:a05e4c7bc967518fba5789c341ea8b0c942776ee474c7873129a61161978e586"},
+    {file = "types-requests-2.28.11.16.tar.gz", hash = "sha256:9d4002056df7ebc4ec1f28fd701fba82c5c22549c4477116cb2656aa30ace6db"},
+    {file = "types_requests-2.28.11.16-py3-none-any.whl", hash = "sha256:a86921028335fdcc3aaf676c9d3463f867db6af2303fc65aa309b13ae1e6dd53"},
 ]
 
 [package.dependencies]
@@ -3002,4 +3002,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "f7e80106db944df68aae682fd3d607a63848a5ab4f7230ed0ae20b131ea4c792"
+content-hash = "d6680a8737de45b080e0ae2cc1f69343611e84f378d156494258028b1155da71"
