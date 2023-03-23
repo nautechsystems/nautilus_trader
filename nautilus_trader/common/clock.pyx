@@ -769,7 +769,7 @@ cdef class LiveClock(Clock):
         )
 
         if now < timer.next_time_ns:
-            timer.iterate_next_time(self.timer.next_time_ns)
+            timer.iterate_next_time(timer.next_time_ns)
         else:
             timer.iterate_next_time(now)
 
