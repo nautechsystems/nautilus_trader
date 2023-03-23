@@ -24,6 +24,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -78,7 +79,9 @@ class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        self.engine = self.create_engine(BacktestEngineConfig(bypass_logging=True))
+        self.engine = self.create_engine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
 
     def create_engine(self, config: Optional[BacktestEngineConfig] = None):
         engine = BacktestEngine(config)
@@ -107,7 +110,7 @@ class TestBacktestEngine:
         self.engine.dispose()
 
     def test_initialization(self):
-        engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
 
         # Arrange, Act, Assert
         assert engine.run_id is None
@@ -191,7 +194,7 @@ class TestBacktestEngine:
             engine = self.create_engine(
                 config=BacktestEngineConfig(
                     streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
-                    bypass_logging=True,
+                    logging=LoggingConfig(bypass_logging=True),
                 ),
             )
             engine.add_strategy(strategy)
@@ -205,7 +208,7 @@ class TestBacktestEngine:
         engine = self.create_engine(
             config=BacktestEngineConfig(
                 streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
-                bypass_logging=True,
+                logging=LoggingConfig(bypass_logging=True),
             ),
         )
         engine.add_strategy(strategy)
@@ -226,15 +229,20 @@ class TestBacktestEngine:
         instance_id = UUID4().value
 
         # Act
-        engine = self.create_engine(
-            config=BacktestEngineConfig(instance_id=instance_id, bypass_logging=True),
+        engine1 = self.create_engine(
+            config=BacktestEngineConfig(
+                instance_id=instance_id,
+                logging=LoggingConfig(bypass_logging=True),
+            ),
         )
         engine2 = self.create_engine(
-            config=BacktestEngineConfig(bypass_logging=True),
+            config=BacktestEngineConfig(
+                logging=LoggingConfig(bypass_logging=True),
+            ),
         )  # Engine sets instance id
 
         # Assert
-        assert engine.kernel.instance_id.value == instance_id
+        assert engine1.kernel.instance_id.value == instance_id
         assert engine2.kernel.instance_id.value != instance_id
 
 
@@ -242,7 +250,9 @@ class TestBacktestEngineCashAccount:
     def setup(self) -> None:
         # Fixture Setup
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        self.engine = self.create_engine(BacktestEngineConfig(bypass_logging=True))
+        self.engine = self.create_engine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
 
     def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
         engine = BacktestEngine(config)
@@ -269,7 +279,9 @@ class TestBacktestEngineCashAccount:
 class TestBacktestEngineData:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        self.engine = BacktestEngine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
         self.engine.add_venue(
             venue=Venue("BINANCE"),
             oms_type=OmsType.NETTING,
@@ -322,7 +334,7 @@ class TestBacktestEngineData:
 
     def test_add_instrument_when_no_venue_raises_exception(self):
         # Arrange
-        engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
 
         # Act, Assert
         with pytest.raises(InvalidConfiguration):
@@ -547,7 +559,7 @@ class TestBacktestWithAddedBars:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            logging=LoggingConfig(bypass_logging=True),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)

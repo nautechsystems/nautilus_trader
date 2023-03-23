@@ -23,6 +23,7 @@ from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -104,8 +105,7 @@ class TestConfigStubs:
         if persist:
             assert catalog is not None, "If `persist=True`, must pass `catalog`"
         return BacktestEngineConfig(
-            log_level=log_level,
-            bypass_logging=bypass_logging,
+            logging=LoggingConfig(log_level=log_level, bypass_logging=bypass_logging),
             exec_engine=ExecEngineConfig(allow_cash_positions=allow_cash_position),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=TestConfigStubs.streaming_config(catalog=catalog) if persist else None,

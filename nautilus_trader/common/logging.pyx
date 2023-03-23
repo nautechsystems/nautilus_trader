@@ -79,10 +79,13 @@ cdef class Logger:
         The minimum log level to write to stdout.
     level_file : LogLevel, default ``DEBUG``
         The minimum log level to write to a file.
-    file_auto : bool, default False
-        If automatic file naming and daily rotation should be used.
+    file_logging : bool, default False
+        If logging to a file is enabled.
+    directory : str, optional
+        The path to the log file directory.
+        If ``None`` then will write to the current working directory.
     file_name : str, optional
-        The custom log file name (will always use a '.log' suffix).
+        The custom log file name (will use a '.log' suffix for plain text or '.json' for JSON).
         If ``None`` will not log to a file (unless `file_auto` is True).
     file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
@@ -104,7 +107,8 @@ cdef class Logger:
         UUID4 instance_id = None,
         LogLevel level_stdout = LogLevel.INFO,
         LogLevel level_file = LogLevel.DEBUG,
-        bint file_auto = False,
+        bint file_logging = False,
+        str directory = None,
         str file_name = None,
         str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
@@ -128,7 +132,8 @@ cdef class Logger:
             pystr_to_cstr(instance_id_str),
             level_stdout,
             level_file,
-            file_auto,
+            file_logging,
+            pystr_to_cstr(directory) if directory else NULL,
             pystr_to_cstr(file_name) if file_name else NULL,
             pystr_to_cstr(file_format) if file_format else NULL,
             pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,

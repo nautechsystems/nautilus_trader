@@ -26,6 +26,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 )
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
 from nautilus_trader.live.node import TradingNode
@@ -54,7 +55,7 @@ instrument_filters = [
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="DEBUG",
+    logging=LoggingConfig(log_level="INFO"),
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=InstrumentProviderConfig(

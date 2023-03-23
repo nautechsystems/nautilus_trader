@@ -50,6 +50,7 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.data import OrderBookData
@@ -234,8 +235,7 @@ class BetfairTestStubs:
         flush_interval_ms: int = None,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            log_level="INFO",
-            bypass_logging=True,
+            logging=LoggingConfig(bypass_logging=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(
                 catalog_path=catalog_path,

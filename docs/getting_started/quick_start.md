@@ -233,6 +233,7 @@ user packages. In this instance, our `MACDStrategy` is defined in the current mo
 ```python
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
 
 engine = BacktestEngineConfig(
     strategies=[
@@ -246,7 +247,7 @@ engine = BacktestEngineConfig(
             ),
         )
     ],
-    log_level="ERROR",  # Lower to `INFO` to see more logging about orders, events, etc.
+    logging=LoggingConfig(log_level="ERROR"),  # Lower to `INFO` to see more logging about orders, events, etc.
 )
 ```
 

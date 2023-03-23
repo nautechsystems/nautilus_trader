@@ -19,15 +19,8 @@ from datetime import timedelta
 from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.common import Environment
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import CacheDatabaseConfig
-from nautilus_trader.config import LiveDataEngineConfig
-from nautilus_trader.config import LiveExecEngineConfig
-from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
@@ -62,30 +55,10 @@ class TradingNode:
 
         # Build core system kernel
         self.kernel = NautilusKernel(
-            environment=Environment.LIVE,
             name=type(self).__name__,
-            trader_id=TraderId(config.trader_id),
-            instance_id=config.instance_id,
-            cache_config=config.cache or CacheConfig(),
-            cache_database_config=config.cache_database or CacheDatabaseConfig(),
-            data_config=config.data_engine or LiveDataEngineConfig(),
-            risk_config=config.risk_engine or LiveRiskEngineConfig(),
-            exec_config=config.exec_engine or LiveExecEngineConfig(),
-            streaming_config=config.streaming,
-            actor_configs=config.actors,
-            strategy_configs=config.strategies,
+            config=config,
             loop=loop,
-            loop_debug=config.loop_debug,
-            load_state=config.load_state,
-            save_state=config.save_state,
             loop_sig_callback=self._loop_sig_handler,
-            log_level=log_level_from_str(config.log_level.upper()),
-            log_level_file=log_level_from_str(config.log_level_file.upper()),
-            log_file_auto=config.log_file_auto,
-            log_file_name=config.log_file_name,
-            log_file_format=config.log_file_format,
-            log_component_levels=config.log_component_levels,
-            log_rate_limit=config.log_rate_limit,
         )
 
         self._builder = TradingNodeBuilder(

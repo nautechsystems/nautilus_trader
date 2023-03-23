@@ -19,9 +19,8 @@ import platform
 import signal
 import socket
 import time
-from asyncio import AbstractEventLoop
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
@@ -31,24 +30,21 @@ from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.config import ActorFactory
-from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
-from nautilus_trader.config import ImportableActorConfig
-from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
-from nautilus_trader.config import OrderEmulatorConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
-from nautilus_trader.config.common import DataCatalogConfig
+from nautilus_trader.config.common import LoggingConfig
+from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.uuid import UUID4
@@ -87,66 +83,17 @@ class NautilusKernel:
 
     Parameters
     ----------
-    environment : Environment { ``BACKTEST``, ``SANDBOX``, ``LIVE`` }
-        The environment context for the kernel.
     name : str
         The name for the kernel (will prepend all log messages).
-    trader_id : str
-        The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
-    cache_config : CacheConfig
-        The cache configuration for the kernel.
-    cache_database_config : CacheDatabaseConfig
-        The cache database configuration for the kernel.
-    data_config : Union[DataEngineConfig, LiveDataEngineConfig]
-        The live data engine configuration for the kernel.
-    risk_config : Union[RiskEngineConfig, LiveRiskEngineConfig]
-        The risk engine configuration for the kernel.
-    exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
-        The execution engine configuration for the kernel.
-    emulator_config : Union[ExecEngineConfig, LiveExecEngineConfig]
-        The order emulator configuration for the kernel.
-    streaming_config : StreamingConfig, optional
-        The configuration for streaming to feather files.
-    catalog_config : DataCatalogConfig, optional
-        The data catalog configuration.
-    actor_configs : list[ImportableActorConfig], optional
-        The list of importable actor configs.
-    strategy_configs : list[ImportableStrategyConfig], optional
-        The list of importable strategy configs.
-    loop : AbstractEventLoop, optional
+    config : NautilusKernelConfig
+        The configuration for the kernel instance.
+    loop : asyncio.AbstractEventLoop, optional
         The event loop for the kernel.
     loop_sig_callback : Callable, optional
         The callback for the signal handler.
-    loop_debug : bool, default False
-        If the event loop should run in debug mode.
-    load_state : bool, default False
-        If strategy state should be loaded on start.
-    save_state : bool, default False
-        If strategy state should be saved on stop.
-    log_level : LogLevel, default "INFO"
-        The minimum log level to write to stdout.
-    log_level_file : LogLevel, default "DEBUG"
-        The minimum log level to write to a log file.
-    log_file_auto : bool, default False
-        If automatic file naming and daily rotation should be used.
-    log_file_name : str, optional
-        The custom log file name (will always use a '.log' suffix).
-        If ``None`` will not log to a file (unless `log_file_auto` is True).
-    log_file_format : str { 'JSON' }, optional
-        The log file format. If ``None`` (default) then will log in plain text.
-        If set to 'JSON' then logs will be in JSON format.
-    log_component_levels : dict[str, LogLevel]
-        The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
-    log_rate_limit : int, default 100_000
-        The maximum messages per second which can be flushed to stdout or stderr.
-    bypass_logging : bool, default False
-        If all logging should be bypassed.
 
     Raises
     ------
-    TypeError
-        If `environment` is not of type `Environment`.
     ValueError
         If `name` is not a valid string.
     TypeError
@@ -155,69 +102,23 @@ class NautilusKernel:
 
     def __init__(  # noqa (too complex)
         self,
-        environment: Environment,
         name: str,
-        trader_id: TraderId,
-        cache_config: CacheConfig,
-        cache_database_config: CacheDatabaseConfig,
-        data_config: Union[DataEngineConfig, LiveDataEngineConfig],
-        risk_config: Union[RiskEngineConfig, LiveRiskEngineConfig],
-        exec_config: Union[ExecEngineConfig, LiveExecEngineConfig],
-        instance_id: Optional[UUID4] = None,
-        emulator_config: Optional[OrderEmulatorConfig] = None,
-        streaming_config: Optional[StreamingConfig] = None,
-        catalog_config: Optional[DataCatalogConfig] = None,
-        actor_configs: Optional[list[ImportableActorConfig]] = None,
-        strategy_configs: Optional[list[ImportableStrategyConfig]] = None,
-        loop: Optional[AbstractEventLoop] = None,
+        config: NautilusKernelConfig,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
-        loop_debug: bool = False,
-        load_state: bool = False,
-        save_state: bool = False,
-        log_level: LogLevel = LogLevel.INFO,
-        log_level_file: LogLevel = LogLevel.DEBUG,
-        log_file_auto: bool = False,
-        log_file_name: Optional[str] = None,
-        log_file_format: Optional[str] = None,
-        log_component_levels: Optional[dict[str, LogLevel]] = None,
-        log_rate_limit: int = 100_000,
-        bypass_logging: bool = False,
     ):
-        PyCondition.not_none(environment, "environment")
-        PyCondition.not_none(name, "name")
-        PyCondition.not_none(trader_id, "trader_id")
-        PyCondition.not_none(cache_config, "cache_config")
-        PyCondition.not_none(cache_database_config, "cache_database_config")
-        PyCondition.not_none(data_config, "data_config")
-        PyCondition.not_none(risk_config, "risk_config")
-        PyCondition.not_none(exec_config, "exec_config")
-        if actor_configs is None:
-            actor_configs = []
-        if strategy_configs is None:
-            strategy_configs = []
-        PyCondition.type(environment, Environment, "environment")
         PyCondition.valid_string(name, "name")
-        PyCondition.type(cache_config, CacheConfig, "cache_config")
-        PyCondition.type(cache_database_config, CacheDatabaseConfig, "cache_database_config")
-        if environment == Environment.BACKTEST:
-            PyCondition.type(data_config, DataEngineConfig, "data_config")
-            PyCondition.type(risk_config, RiskEngineConfig, "risk_config")
-            PyCondition.type(exec_config, ExecEngineConfig, "exec_config")
-        else:
-            PyCondition.type(data_config, LiveDataEngineConfig, "data_config")
-            PyCondition.type(risk_config, LiveRiskEngineConfig, "risk_config")
-            PyCondition.type(exec_config, LiveExecEngineConfig, "exec_config")
-        PyCondition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
+        PyCondition.type(config, NautilusKernelConfig, "config")
 
-        self._environment = environment
-        self._load_state = load_state
-        self._save_state = save_state
+        self._environment = config.environment
+        self._load_state = config.load_state
+        self._save_state = config.save_state
 
         # Identifiers
         self._name = name
-        self._trader_id = trader_id
+        self._trader_id = TraderId(config.trader_id)
         self._machine_id = socket.gethostname()
-        self._instance_id = UUID4(instance_id) if instance_id is not None else UUID4()
+        self._instance_id = UUID4(config.instance_id) if config.instance_id is not None else UUID4()
         self._ts_created = time.time_ns()
 
         # Components
@@ -225,11 +126,12 @@ class NautilusKernel:
             self._clock = TestClock()
         elif self.environment in (Environment.SANDBOX, Environment.LIVE):
             self._clock = LiveClock(loop=loop)
-            bypass_logging = False  # Safety measure so live logging is visible
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
-                f"environment {environment} not recognized",  # pragma: no cover (design-time error)
+                f"environment {self._environment} not recognized",  # pragma: no cover (design-time error)
             )
+
+        logging: LoggingConfig = config.logging or LoggingConfig()
 
         # Setup the logger with a `LiveClock` initially,
         # which is later swapped out for a `TestClock` in the `BacktestEngine`.
@@ -238,14 +140,17 @@ class NautilusKernel:
             trader_id=self._trader_id,
             machine_id=self._machine_id,
             instance_id=self._instance_id,
-            level_stdout=log_level,
-            level_file=log_level_file,
-            file_auto=log_file_auto,
-            file_name=log_file_name,
-            file_format=log_file_format,
-            component_levels=log_component_levels,
-            rate_limit=log_rate_limit,
-            bypass=bypass_logging,
+            level_stdout=log_level_from_str(logging.log_level),
+            level_file=log_level_from_str(logging.log_level_file)
+            if logging.log_level_file is not None
+            else LogLevel.DEBUG,
+            file_logging=True if logging.log_level_file is not None else False,
+            directory=logging.log_directory,
+            file_name=logging.log_file_name,
+            file_format=logging.log_file_format,
+            component_levels=logging.log_component_levels,
+            rate_limit=logging.log_rate_limit,
+            bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
         )
 
         # Setup logging
@@ -258,27 +163,27 @@ class NautilusKernel:
         self.log.info("Building system kernel...")
 
         # Setup loop (if sandbox live)
-        self._loop: Optional[AbstractEventLoop] = None
-        if environment != Environment.BACKTEST:
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        if self._environment != Environment.BACKTEST:
             self._loop = loop or asyncio.get_running_loop()
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
                 self._loop.set_default_executor(self.executor)
-                self._loop.set_debug(loop_debug)
+                self._loop.set_debug(config.loop_debug)
                 self._loop_sig_callback = loop_sig_callback
                 if platform.system() != "Windows":
                     # Windows does not support signal handling
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
 
-        if cache_database_config is None or cache_database_config.type == "in-memory":
+        if config.cache_database is None or config.cache_database.type == "in-memory":
             cache_db = None
-        elif cache_database_config.type == "redis":
+        elif config.cache_database.type == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=self._trader_id,
                 logger=self._logger,
                 serializer=MsgPackSerializer(timestamps_as_str=True),
-                config=cache_database_config,
+                config=config.cache_database,
             )
         else:
             raise ValueError(
@@ -298,7 +203,7 @@ class NautilusKernel:
         self._cache = Cache(
             database=cache_db,
             logger=self._logger,
-            config=cache_config,
+            config=config.cache,
         )
 
         self._portfolio = Portfolio(
@@ -311,28 +216,28 @@ class NautilusKernel:
         ########################################################################
         # Data components
         ########################################################################
-        if isinstance(data_config, LiveDataEngineConfig):
+        if isinstance(config.data_engine, LiveDataEngineConfig):
             self._data_engine = LiveDataEngine(
                 loop=self.loop,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
-                config=data_config,
+                config=config.data_engine,
             )
-        elif isinstance(data_config, DataEngineConfig):
+        elif isinstance(config.data_engine, DataEngineConfig):
             self._data_engine = DataEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
-                config=data_config,
+                config=config.data_engine,
             )
 
         ########################################################################
         # Risk components
         ########################################################################
-        if isinstance(risk_config, LiveRiskEngineConfig):
+        if isinstance(config.risk_engine, LiveRiskEngineConfig):
             self._risk_engine = LiveRiskEngine(
                 loop=self.loop,
                 portfolio=self._portfolio,
@@ -340,40 +245,40 @@ class NautilusKernel:
                 cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
-                config=risk_config,
+                config=config.risk_engine,
             )
-        elif isinstance(risk_config, RiskEngineConfig):
+        elif isinstance(config.risk_engine, RiskEngineConfig):
             self._risk_engine = RiskEngine(
                 portfolio=self._portfolio,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
-                config=risk_config,
+                config=config.risk_engine,
             )
 
         ########################################################################
         # Execution components
         ########################################################################
-        if isinstance(exec_config, LiveExecEngineConfig):
+        if isinstance(config.exec_engine, LiveExecEngineConfig):
             self._exec_engine = LiveExecutionEngine(
                 loop=self.loop,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
-                config=exec_config,
+                config=config.exec_engine,
             )
-        elif isinstance(exec_config, ExecEngineConfig):
+        elif isinstance(config.exec_engine, ExecEngineConfig):
             self._exec_engine = ExecutionEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
-                config=exec_config,
+                config=config.exec_engine,
             )
 
-        if exec_config.load_cache:
+        if config.exec_engine and config.exec_engine.load_cache:
             self.exec_engine.load_cache()
 
         self._emulator = OrderEmulator(
@@ -382,7 +287,7 @@ class NautilusKernel:
             cache=self._cache,
             clock=self._clock,
             logger=self._logger,
-            config=emulator_config,
+            config=None,  # No configuration for now
         )
 
         ########################################################################
@@ -406,29 +311,29 @@ class NautilusKernel:
 
         # Setup stream writer
         self._writer: Optional[StreamingFeatherWriter] = None
-        if streaming_config:
-            self._setup_streaming(config=streaming_config)
+        if config.streaming:
+            self._setup_streaming(config=config.streaming)
 
         # Setup data catalog
         self._catalog: Optional[ParquetDataCatalog] = None
-        if catalog_config:
+        if config.catalog:
             self._catalog = ParquetDataCatalog(
-                path=catalog_config.path,
-                fs_protocol=catalog_config.fs_protocol,
-                fs_storage_options=catalog_config.fs_storage_options,
+                path=config.catalog.path,
+                fs_protocol=config.catalog.fs_protocol,
+                fs_storage_options=config.catalog.fs_storage_options,
             )
             self._data_engine.register_catalog(
                 catalog=self._catalog,
-                use_rust=catalog_config.use_rust,
+                use_rust=config.catalog.use_rust,
             )
 
         # Create importable actors
-        for actor_config in actor_configs:
+        for actor_config in config.actors:
             actor: Actor = ActorFactory.create(actor_config)
             self._trader.add_actor(actor)
 
         # Create importable strategies
-        for strategy_config in strategy_configs:
+        for strategy_config in config.strategies:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
 
