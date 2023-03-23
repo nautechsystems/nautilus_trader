@@ -33,6 +33,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 )
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -135,7 +136,7 @@ class TestTradingNodeConfiguration:
         # Arrange
         config = TradingNodeConfig(
             trader_id="TESTER-001",
-            log_level="DEBUG",
+            logging=LoggingConfig(bypass_logging=True),
             data_clients={
                 "IB": InteractiveBrokersDataClientConfig(),
             },

@@ -16,9 +16,8 @@ Infrastructure such as [vector](https://github.com/vectordotdev/vector) can be c
 
 ## Configuration
 
+Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` or higher are written to stdout/stderr.
-
-Writers can be configured separately via a `NautilusKernelConfig` (e.g., `BacktestEngineConfig` and `TradingNodeConfig`).
 
 Log levels include:
 - 'DEBUG' or 'DBG'
@@ -27,14 +26,13 @@ Log levels include:
 - 'ERROR' or 'ERR'
 
 ```{tip}
-See the `NautilusKernelConfig` [API Reference](../api_reference/config.md) for further details.
+See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
 ```
 
 Logging can be configured in the following ways:
 - Minimum LogLevel for stdout/stderr
 - Minimum LogLevel for log files
-- Automatic log file naming and daily rotation
-- Custom log file name
+- Automatic log file naming and daily rotation or custom log file name
 - Plain text or JSON log file formatting
 - Bypass logging completely
 
@@ -43,21 +41,22 @@ The stdout/stderr writers log events to the console, and the minimum log level c
 
 ### File logging
 
-Log files will be written to the current working directory. If a `log_file_name` is provided then the suffix will always be '.log' (no need to include a suffix).
+Log files will be written to the current working directory unless you provide `log_directory`. 
+If a `log_file_name` is provided then the suffix will be '.log' for plain text, or '.json' for JSON (no need to include a suffix).
 
-When log_file_auto mode is set to true, log files use the following naming convention:
+If a `log_file_name` is _not_ provided then log files will be automatically named as follows:
 - Trader ID
 - Instance ID
 - ISO 8601 datetime
 - If the log file is the latest active (`_rCURRENT` discriminant)
 - The log format suffix
 
-```bash
+```
 {trader_id}_{instance_id}_{ISO 8601 datetime}_{discriminant}.{log | json}
 ```
 e.g. `TESTER-001_635a4539-4fe2-4cb1-9be3-3079ba8d879e_2023-03-22_15-51-48_rCURRENT.json`
 
-Auto mode also handles daily log rotation.
+Automatically named files will also be rotated daily.
 
 ### Component filtering
 
@@ -68,13 +67,14 @@ Here is an example trading node logging configuration, showing some of the above
 ```python
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="INFO",
-    log_level_file="DEBUG",
-    log_file_auto=True,
-    log_file_format="json",
-    log_component_levels={ "Portfolio": "INFO" },
+    logging=LoggingConfig(
+        log_level="INFO",
+        log_level_file="DEBUG",
+        log_file_format="json",
+        log_component_levels={ "Portfolio": "INFO" },
+    ),
     ... # Omitted
-    )
+)
 ```
 
 For backtesting, simply replace the config class with `BacktestEngineConfig`, as the same options are available.

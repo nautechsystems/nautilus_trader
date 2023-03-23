@@ -53,7 +53,7 @@ pub struct Logger {
     /// The minimum log level to write to stdout.
     pub level_stdout: LogLevel,
     /// The minimum log level to write to a log file.
-    pub level_file: LogLevel,
+    pub level_file: Option<LogLevel>,
     /// The maximum messages per second which can be flushed to stdout or stderr.
     pub rate_limit: usize,
     /// If logging is bypassed.
@@ -82,8 +82,8 @@ impl Logger {
         machine_id: String,
         instance_id: UUID4,
         level_stdout: LogLevel,
-        level_file: LogLevel,
-        file_auto: bool,
+        level_file: Option<LogLevel>,
+        directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
         component_levels: Option<HashMap<String, Value>>,
@@ -116,7 +116,7 @@ impl Logger {
                 &instance_id_clone,
                 level_stdout,
                 level_file,
-                file_auto,
+                directory,
                 file_name,
                 file_format,
                 level_filters,
@@ -141,8 +141,8 @@ impl Logger {
         trader_id: &str,
         instance_id: &str,
         level_stdout: LogLevel,
-        level_file: LogLevel,
-        file_auto: bool,
+        level_file: Option<LogLevel>,
+        directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
@@ -176,23 +176,33 @@ impl Logger {
             }
         };
 
-        if file_auto || file_name.is_some() {
-            if file_auto {
+        if level_file.is_some() {
+            if let Some(file_name) = file_name {
+                let suffix = if is_json_format { "json" } else { "log" };
+                let mut file_spec = FileSpec::default()
+                    .basename(file_name)
+                    .use_timestamp(false)
+                    .suffix(suffix);
+                if let Some(directory) = directory {
+                    file_spec = file_spec.directory(directory)
+                }
+                flexi_logger_builder = flexi_logger_builder
+                    .format_for_files(formatter)
+                    .log_to_file(file_spec)
+            } else {
                 let basename = format!("{}_{}", trader_id, instance_id);
                 let suffix = if is_json_format { "json" } else { "log" };
-                let file_spec = FileSpec::default()
+                let mut file_spec = FileSpec::default()
                     .basename(basename)
                     .use_timestamp(true)
                     .suffix(suffix);
+                if let Some(directory) = directory {
+                    file_spec = file_spec.directory(directory)
+                }
                 flexi_logger_builder = flexi_logger_builder
                     .format_for_files(formatter)
                     .log_to_file(file_spec)
                     .rotate(Criterion::Age(Age::Day), Naming::Timestamps, Cleanup::Never);
-            } else if let Some(file_name) = file_name {
-                let file_spec = FileSpec::default().basename(file_name).use_timestamp(false);
-                flexi_logger_builder = flexi_logger_builder
-                    .format_for_files(formatter)
-                    .log_to_file(file_spec)
             }
 
             flexi_logger_builder.start().expect("Error building logger");
@@ -254,10 +264,16 @@ impl Logger {
                 Self::flush_stdout(&mut out_buf);
             }
 
-            if log_msg.level >= level_file {
-                let line =
-                    Self::format_log_line_file(&log_msg, trader_id, &template_file, is_json_format);
-                info!("{}", line);
+            if let Some(level_file) = level_file {
+                if log_msg.level >= level_file {
+                    let line = Self::format_log_line_file(
+                        &log_msg,
+                        trader_id,
+                        &template_file,
+                        is_json_format,
+                    );
+                    info!("{}", line);
+                }
             }
         }
         // Finally ensure remaining buffers are flushed
@@ -426,7 +442,8 @@ pub unsafe extern "C" fn logger_new(
     instance_id_ptr: *const c_char,
     level_stdout: LogLevel,
     level_file: LogLevel,
-    file_auto: u8,
+    file_logging: u8,
+    directory_ptr: *const c_char,
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
@@ -438,8 +455,12 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
-        level_file,
-        file_auto != 0,
+        if file_logging != 0 {
+            Some(level_file)
+        } else {
+            None
+        },
+        optional_cstr_to_string(directory_ptr),
         optional_cstr_to_string(file_name_ptr),
         optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
@@ -531,8 +552,8 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Debug,
-            LogLevel::Debug,
-            false,
+            Some(LogLevel::Debug),
+            None,
             None,
             None,
             None,
@@ -550,8 +571,8 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
-            LogLevel::Debug,
-            false,
+            Some(LogLevel::Debug),
+            None,
             None,
             None,
             None,
@@ -586,9 +607,9 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
-            LogLevel::Debug,
-            false,
+            Some(LogLevel::Debug),
             Some(log_file_path.to_str().unwrap().to_string()),
+            None,
             None,
             None,
             100_000,
@@ -643,9 +664,9 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
-            LogLevel::Debug,
-            false,
+            Some(LogLevel::Debug),
             Some(log_file_path.to_str().unwrap().to_string()),
+            None,
             None,
             Some(component_levels),
             100_000,
@@ -687,8 +708,8 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
-            LogLevel::Debug,
-            false,
+            Some(LogLevel::Debug),
+            None,
             Some(log_file_path.to_str().unwrap().to_string()),
             Some("json".to_string()),
             None,

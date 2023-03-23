@@ -26,6 +26,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -998,7 +999,7 @@ class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            logging=LoggingConfig(bypass_logging=True),
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
         )

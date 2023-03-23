@@ -28,7 +28,8 @@ When debugging and seeking to understand a complex system such as NautilusTrader
 quite helpful to step through the code with a debugger. However, with this not being available
 for the Cython part of the codebase, there are a few things which can help:
 
-- Ensure `LogLevel.DEBUG` is configured for the backtesting or live system you are debugging. This is available on `BacktestEngineConfig(log_level="DEBUG")` or `TradingNodeConfig(log_level="DEBUG")`.
+- Ensure `LogLevel.DEBUG` is configured for the backtesting or live system you are debugging.
+  This is available on `BacktestEngineConfig(logging=LoggingConfig(log_level="DEBUG"))` or `TradingNodeConfig(logging=LoggingConfig=log_level="DEBUG"))`.
   With `DEBUG` mode active you will see more granular and verbose log traces which could be what you need to understand the flow.
 - Beyond this, if you still require more granular visibility around a part of the system, we recommend some well-placed calls
   to a components logger (normally `self._log.debug(f"HERE {variable}"` is enough).

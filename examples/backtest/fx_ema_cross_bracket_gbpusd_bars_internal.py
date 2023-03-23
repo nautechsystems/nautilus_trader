@@ -24,6 +24,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
@@ -41,7 +42,7 @@ if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
-        log_level="INFO",
+        logging=LoggingConfig(log_level="INFO"),
         risk_engine=RiskEngineConfig(
             bypass=True,  # Example of bypassing pre-trade risk checks for backtests
         ),

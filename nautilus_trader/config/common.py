@@ -459,6 +459,45 @@ class StrategyFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
+class LoggingConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for standard output and file logging for a ``NautilusKernel`` instance.
+
+    Parameters
+    ----------
+    log_level : str, default "INFO"
+        The minimum log level to write to stdout.
+        Will always write ERROR level logs to stderr (unless `bypass_logging` is True).
+    log_level_file : str, optional
+        The minimum log level to write to a log file.
+        If ``None`` then no file logging will occur.
+    log_directory : str, optional
+        The path to the log file directory.
+        If ``None`` then will write to the current working directory.
+    log_file_name : str, optional
+        The custom log file name (will use a '.log' suffix for plain text or '.json' for JSON).
+        This will override automatic naming, and no daily file rotation will occur.
+    log_file_format : str { 'JSON' }, optional
+        The log file format. If ``None`` (default) then will log in plain text.
+    log_component_levels : dict[str, LogLevel]
+        The additional per component log level filters, where keys are component
+        IDs (e.g. actor/strategy IDs) and values are log levels.
+    log_rate_limit : int, default 100_000
+        The maximum messages per second which can be flushed to stdout or stderr.
+    bypass_logging : bool, default False
+        If all logging should be bypassed.
+    """
+
+    log_level: str = "INFO"
+    log_level_file: Optional[str] = None
+    log_directory: Optional[str] = None
+    log_file_name: Optional[str] = None
+    log_file_format: Optional[str] = None
+    log_component_levels: Optional[dict[str, str]] = None
+    log_rate_limit: int = 100_000
+    bypass_logging: bool = False
+
+
 class NautilusKernelConfig(NautilusConfig, frozen=True):
     """
     Configuration for a ``NautilusKernel`` core system instance.
@@ -493,27 +532,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If trading strategy state should be saved to the database on stop.
     loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
-    log_file_auto : bool, default False
-        If automatic file naming and daily rotation should be used.
-    log_level : str, default "INFO"
-        The minimum log level to write to stdout.
-    log_level_file : str, default "DEBUG"
-        The minimum log level to write to a log file.
-    log_file_auto : bool, default False
-        If automatic file naming and daily rotation should be used.
-    log_file_name : str, optional
-        The custom log file name (will always use a '.log' suffix).
-        If ``None`` will not log to a file (unless `log_file_auto` is True).
-    log_file_format : str { 'JSON' }, optional
-        The log file format. If ``None`` (default) then will log in plain text.
-        If set to 'JSON' then logs will be in JSON format.
-    log_component_levels : dict[str, LogLevel]
-        The additional per component log level filters, where keys are component
-        IDs (e.g. actor/strategy IDs) and values are log levels.
-    log_rate_limit : int, default 100_000
-        The maximum messages per second which can be flushed to stdout or stderr.
-    bypass_logging : bool, default False
-        If all logging should be bypassed.
     """
 
     environment: Environment
@@ -531,14 +549,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     load_state: bool = False
     save_state: bool = False
     loop_debug: bool = False
-    log_level: str = "INFO"
-    log_level_file: str = "DEBUG"
-    log_file_auto: bool = False
-    log_file_name: Optional[str] = None
-    log_file_format: Optional[str] = None
-    log_component_levels: Optional[dict[str, str]] = None
-    log_rate_limit: int = 100_000
-    bypass_logging: bool = False
+    logging: Optional[LoggingConfig] = None
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):

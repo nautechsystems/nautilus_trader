@@ -122,30 +122,7 @@ cdef class BacktestEngine:
         self._backtest_end: Optional[datetime] = None
 
         # Build core system kernel
-        self._kernel = NautilusKernel(
-            environment=Environment.BACKTEST,
-            name=type(self).__name__,
-            trader_id=TraderId(config.trader_id),
-            instance_id=config.instance_id,
-            cache_config=config.cache or CacheConfig(),
-            cache_database_config=config.cache_database or CacheDatabaseConfig(),
-            data_config=config.data_engine or DataEngineConfig(),
-            risk_config=config.risk_engine or RiskEngineConfig(),
-            exec_config=config.exec_engine or ExecEngineConfig(),
-            streaming_config=config.streaming,
-            actor_configs=config.actors,
-            strategy_configs=config.strategies,
-            load_state=config.load_state,
-            save_state=config.save_state,
-            log_level=log_level_from_str(config.log_level.upper()),
-            log_level_file=log_level_from_str(config.log_level_file.upper()),
-            log_file_auto=config.log_file_auto,
-            log_file_name=config.log_file_name,
-            log_file_format=config.log_file_format,
-            log_component_levels=config.log_component_levels,
-            log_rate_limit=config.log_rate_limit,
-            bypass_logging=config.bypass_logging,
-        )
+        self._kernel = NautilusKernel(name=type(self).__name__, config=config)
 
         self._data_engine: DataEngine = self._kernel.data_engine
 
