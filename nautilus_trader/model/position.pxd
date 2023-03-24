@@ -113,6 +113,7 @@ cdef class Position:
 
     @staticmethod
     cdef PositionSide side_from_order_side_c(OrderSide side)
+    cpdef signed_decimal_qty(self)
     cpdef bint is_opposite_side(self, OrderSide side)
 
     cpdef void apply(self, OrderFilled fill)

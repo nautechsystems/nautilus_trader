@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
@@ -378,6 +380,21 @@ cdef class Position:
 
         """
         return Position.side_from_order_side_c(side)
+
+    cpdef signed_decimal_qty(self):
+        """
+        Return a signed decimal representation of the position quantity.
+
+         - If the position is LONG, the value is positive (e.g. Decimal('10.25'))
+         - If the position is SHORT, the value is negative (e.g. Decimal('-10.25'))
+         - If the position is FLAT, the value is zero (e.g. Decimal('0'))
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Decimal(f"{self.net_qty:.{self.size_precision}}")
 
     cpdef bint is_opposite_side(self, OrderSide side):
         """
