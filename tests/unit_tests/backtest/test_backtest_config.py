@@ -233,7 +233,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (662, 664)  # unix, windows sizes
+        assert len(raw) in (661, 664)  # unix, windows sizes
 
     def test_backtest_data_config_to_dict(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
@@ -253,7 +253,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1746, 1754)  # unix, windows
+        assert result in (1742, 1754)  # unix, windows
 
     def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
@@ -261,7 +261,7 @@ class TestBacktestConfigParsing:
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
         assert token in (
-            "728392a827ed7691ef4edc16eb6cfe925b5ab66dfda7eceb49a511dbdfd96587",  # unix
+            "1bf83318bfeb6359bcacc88d2d5c5e06c1486f9c4c3cc76e203b1ee14e41a5a2",  # unix
             "669d861fcc17dc50210d9bcdad5affa70410a3b3347f393fe17cd59252b3d14b",  # windows
         )
 

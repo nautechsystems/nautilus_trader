@@ -2266,7 +2266,12 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response):
-        self.handle_data(response.data)
+        cdef Data data
+        if isinstance(response.data, list):
+            for data in response.data:
+                self.handle_data(response.data)
+        else:
+            self.handle_data(response.data)
 
     cpdef void _handle_instrument_response(self, DataResponse response):
         self.handle_instrument(response.data)
