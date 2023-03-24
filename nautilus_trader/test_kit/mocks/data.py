@@ -17,6 +17,8 @@ from collections.abc import Generator
 from functools import partial
 from pathlib import Path
 
+import pandas as pd
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -79,7 +81,7 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
     def parse_csv_tick(df, instrument_id):
         yield instrument
         for r in df.values:
-            ts = r[0].value
+            ts = pd.Timestamp(r[0], tz="UTC").value
             tick = QuoteTick(
                 instrument_id=instrument_id,
                 bid=Price(r[1], 5),
