@@ -1192,6 +1192,14 @@ cdef class DataEngine(Component):
                 as_nautilus=True,
                 use_rust=False,  # Until implemented
             )
+        elif request.data_type.type == InstrumentClose:
+            data = self._catalog.instrument_closes(
+                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                start=start_ns,
+                end=end_ns,
+                as_nautilus=True,
+                use_rust=False,  # Until implemented
+            )
         else:
             data = self._catalog.generic_data(
                 cls=request.data_type.type,
