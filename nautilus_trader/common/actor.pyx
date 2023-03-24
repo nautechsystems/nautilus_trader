@@ -2269,7 +2269,7 @@ cdef class Actor(Component):
         cdef Data data
         if isinstance(response.data, list):
             for data in response.data:
-                self.handle_data(response.data)
+                self.handle_data(data)
         else:
             self.handle_data(response.data)
 
