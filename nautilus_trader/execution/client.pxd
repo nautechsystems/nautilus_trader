@@ -94,6 +94,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         uint64_t ts_event,
+        VenueOrderId venue_order_id=*,
     )
     cpdef void generate_order_rejected(
         self,

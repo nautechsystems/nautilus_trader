@@ -310,6 +310,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         uint64_t ts_event,
+        VenueOrderId venue_order_id = None,
     ):
         """
         Generate an `OrderSubmitted` event and send it to the `ExecutionEngine`.
@@ -324,7 +325,8 @@ cdef class ExecutionClient(Component):
             The client order ID.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order submitted event occurred.
-
+        venue_order_id : VenueOrderId, Optional at this stage
+            The venue order ID (assigned by the venue).
         """
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(

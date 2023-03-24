@@ -515,6 +515,8 @@ cdef class OrderSubmitted(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order submitted event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    venue_order_id : VenueOrderId, Optional at this stage
+        The venue order ID (assigned by the venue).
     """
 
     def __init__(
@@ -527,13 +529,14 @@ cdef class OrderSubmitted(OrderEvent):
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
+        VenueOrderId venue_order_id = None,
     ):
         super().__init__(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
-            None,  # Pending accepted
+            venue_order_id,
             account_id,
             event_id,
             ts_event,
