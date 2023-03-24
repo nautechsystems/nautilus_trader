@@ -48,9 +48,9 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
-from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.data import OrderBookData

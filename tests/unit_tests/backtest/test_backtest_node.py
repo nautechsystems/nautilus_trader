@@ -23,7 +23,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config.common import LoggingConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader

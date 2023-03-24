@@ -21,8 +21,8 @@ from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.common import LoggingConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
