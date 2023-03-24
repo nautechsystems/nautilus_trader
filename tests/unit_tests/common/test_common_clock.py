@@ -824,7 +824,6 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 2
 
 
-@pytest.mark.skip(reason="investigate")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
