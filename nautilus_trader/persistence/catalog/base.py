@@ -24,6 +24,7 @@ from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
@@ -99,6 +100,17 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     ):
         return self.query(
             cls=InstrumentStatusUpdate,
+            instrument_ids=instrument_ids,
+            **kwargs,
+        )
+
+    def instrument_closes(
+        self,
+        instrument_ids: Optional[list[str]] = None,
+        **kwargs,
+    ):
+        return self.query(
+            cls=InstrumentClose,
             instrument_ids=instrument_ids,
             **kwargs,
         )
