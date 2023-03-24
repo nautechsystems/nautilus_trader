@@ -2269,9 +2269,9 @@ cdef class Actor(Component):
         cdef Data data
         if isinstance(response.data, list):
             for data in response.data:
-                self.handle_data(data)
+                self.handle_historical_data(data)
         else:
-            self.handle_data(response.data)
+            self.handle_historical_data(response.data)
 
     cpdef void _handle_instrument_response(self, DataResponse response):
         self.handle_instrument(response.data)
