@@ -11,6 +11,8 @@ Released on TBD (UTC).
 - Added `LoggingConfig` to consolidate logging configs, offering various file options and per component level filters
 - Added `BacktestVenueConfig.bar_execution` to control whether bar data moves the matching engine markets (reinstated)
 - Added optional `request_id` for actor data requests (aids processing responses), thanks @rsmb7z
+- Added `Position.signed_decimal_qty`
+- Now using above signed quantity for `Portfolio` net position calculation, and `LiveExecutionEngine` reconciliation comparisons
 
 ### Fixes
 - Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)
