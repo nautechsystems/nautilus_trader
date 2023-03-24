@@ -26,9 +26,9 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 )
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
