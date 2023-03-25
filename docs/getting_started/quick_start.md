@@ -4,7 +4,7 @@ This guide explains how to get up and running with NautilusTrader backtesting wi
 FX data. The Nautilus maintainers have pre-loaded some test data using the standard Nautilus persistence 
 format (Parquet) for this guide.
 
-For more details on how to load data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
+For more details on how to load data into Nautilus, see [Backtest Example](../guides/backtest_example.md).
 
 ## Running in docker
 A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
