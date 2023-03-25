@@ -52,11 +52,9 @@ TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + os.pathsep + str(TARGET_DIR)
     RUST_LIB_PFX = ""
     RUST_STATIC_LIB_EXT = "lib"
     RUST_DYLIB_EXT = "dll"
-    TARGET_DIR = TARGET_DIR.with_name("x86_64-pc-windows-msvc") / BUILD_MODE
 elif platform.system() == "Darwin":
     RUST_LIB_PFX = "lib"
     RUST_STATIC_LIB_EXT = "a"
@@ -79,12 +77,8 @@ RUST_LIBS = [
 def _build_rust_libs() -> None:
     try:
         # Build the Rust libraries using Cargo
-        build_options = ""
+        build_options = " --release" if BUILD_MODE == "release" else ""
         extra_flags = ""
-        if platform.system() == "Windows":
-            extra_flags = " --target x86_64-pc-windows-msvc"
-
-        build_options += " --release" if BUILD_MODE == "release" else ""
         print("Compiling Rust libraries...")
         build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
         print(build_cmd)
