@@ -12,14 +12,14 @@ There are two configurable writers for logging:
 - stdout/stderr writer
 - log file writer
 
-Infrastructure such as [vector](https://github.com/vectordotdev/vector) can be configured to collect there log events.
+Infrastructure such as [vector](https://github.com/vectordotdev/vector) can be configured to collect these log events.
 
 ## Configuration
 
 Logging can be configured by importing the `LoggingConfig` object.
-By default, log events with an 'INFO' `LogLevel` or higher are written to stdout/stderr.
+By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
-Log levels include:
+Log level (`LogLevel`) values include:
 - 'DEBUG' or 'DBG'
 - 'INFO' or 'INF'
 - 'WARNING' or 'WRN'
@@ -30,8 +30,8 @@ See the `LoggingConfig` [API Reference](../api_reference/config.md) for further 
 ```
 
 Logging can be configured in the following ways:
-- Minimum LogLevel for stdout/stderr
-- Minimum LogLevel for log files
+- Minimum `LogLevel` for stdout/stderr
+- Minimum `LogLevel` for log files
 - Automatic log file naming and daily rotation, or custom log file name
 - Plain text or JSON log file formatting
 - Bypass logging completely
@@ -42,6 +42,7 @@ Log messages are written to the console via stdout/stderr writers. The minimum l
 ### File logging
 
 Log files are written to the current working directory with automatic naming and daily rotation by default. 
+
 You can specify a custom log directory using the `log_directory` parameter and/or a custom log file name using the `log_file_name` parameter. 
 The log files will be suffixed with '.log' for plain text or '.json' for JSON (no need to include a suffix in file names).
 
@@ -52,8 +53,8 @@ If a `log_file_name` is _not_ provided then log files will be automatically name
 - If the log file is the latest active (`_rCURRENT` discriminant)
 - The log format suffix
 
-```
-{trader_id}_{instance_id}_{ISO-8601-datetime}_{discriminant}.{log | json}
+```bash
+{trader_id}_{instance_id}_{"ISO 8601 datetime"}_{discriminant}.{log | json}
 ```
 e.g. `TESTER-001_635a4539-4fe2-4cb1-9be3-3079ba8d879e_2023-03-22_15-51-48_rCURRENT.json`
 
