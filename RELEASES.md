@@ -4,15 +4,15 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed all position `net_qty` fields and parameters to `signed_qty` (more accurate naming)
-- Renamed `NautilusKernelConfig.log_file_path` config option to `log_file_name` (more accurate description)
 - `NautilusKernelConfig` removed all `log_*` config options (replaced by `logging` with `LoggingConfig`)
 - Trading `CurrencyPair` instruments with a _single-currency_ `CASH` account type no longer permitted (unrealistic)
+- Changed `PositionEvent` parquet schemas (renamed `net_qty` field to `signed_qty`)
 
 ### Enhancements
 - Added `LoggingConfig` to consolidate logging configs, offering various file options and per component level filters
 - Added `BacktestVenueConfig.bar_execution` to control whether bar data moves the matching engine markets (reinstated)
 - Added optional `request_id` for actor data requests (aids processing responses), thanks @rsmb7z
-- Added `Position.signed_decimal_qty`
+- Added `Position.signed_decimal_qty()`
 - Now using above signed quantity for `Portfolio` net position calculation, and `LiveExecutionEngine` reconciliation comparisons
 
 ### Fixes
