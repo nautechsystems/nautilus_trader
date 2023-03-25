@@ -61,7 +61,7 @@ e.g. `TESTER-001_635a4539-4fe2-4cb1-9be3-3079ba8d879e_2023-03-22_15-51-48_rCURRE
 ### Component filtering
 
 The `log_component_levels` parameter can be used to set log levels for each component individually.
-A dictionary of component ID strings to log level strings should be passed in the following format: `dict[str, str]`.
+The input value should be a dictionary of component ID strings to log level strings: `dict[str, str]`.
 
 Below is an example of a trading node logging configuration that includes some of the options mentioned above:
 
