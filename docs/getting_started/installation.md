@@ -1,6 +1,6 @@
 # Installation
 
-The package is tested against Python 3.9 to 3.11 on 64-bit Linux, macOS and Windows. 
+The package is tested against Python 3.9, 3.10, 3.11 on 64-bit Linux, macOS and Windows. 
 We recommend running the platform with the latest stable version of Python, and 
 in a virtual environment to isolate the dependencies.
 
