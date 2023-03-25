@@ -994,7 +994,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Position position
         for position in positions_open:
-            net_position += position.net_qty
+            net_position += position.signed_qty
 
         cdef double existing_position = self._net_positions.get(instrument_id, 0.0)
         if existing_position is None or existing_position != net_position:
