@@ -1,8 +1,8 @@
 # Logging
 
-Logging for the platform is provided uniformly for both backtesting and live trading.
-A high-performance logger, implemented in Rust, operates in a separate thread, receiving log messages across a multi-producer single consumer (MPSC) channel.
-This keeps the main thread free from log string formatting and file I/O operations.
+The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
+The logger operates in a separate thread and uses a multi-producer single consumer (MPSC) channel to receive log messages.
+This design ensures that the main thread is not blocked by log string formatting or file I/O operations.
 
 ```{note}
 The latest stable Rust MPSC channel is used, which is now based on the `crossbeam` implementation.
@@ -12,7 +12,7 @@ There are two configurable writers for logging:
 - stdout/stderr writer
 - log file writer
 
-Infrastructure such as [vector](https://github.com/vectordotdev/vector) can be configured to collect log events from these writers.
+Infrastructure such as [vector](https://github.com/vectordotdev/vector) can be configured to collect there log events.
 
 ## Configuration
 
@@ -32,17 +32,18 @@ See the `LoggingConfig` [API Reference](../api_reference/config.md) for further 
 Logging can be configured in the following ways:
 - Minimum LogLevel for stdout/stderr
 - Minimum LogLevel for log files
-- Automatic log file naming and daily rotation or custom log file name
+- Automatic log file naming and daily rotation, or custom log file name
 - Plain text or JSON log file formatting
 - Bypass logging completely
 
 ### Standard output logging
-The stdout/stderr writers log events to the console, and the minimum log level can be configured with the `log_level` parameter.
+Log messages are written to the console via stdout/stderr writers. The minimum log level can be configured using the `log_level` parameter.
 
 ### File logging
 
-Log files will be written to the current working directory unless you provide `log_directory`. 
-If a `log_file_name` is provided then the suffix will be '.log' for plain text, or '.json' for JSON (no need to include a suffix).
+Log files are written to the current working directory with automatic naming and daily rotation by default. 
+You can specify a custom log directory using the `log_directory` parameter and/or a custom log file name using the `log_file_name` parameter. 
+The log files will be suffixed with '.log' for plain text or '.json' for JSON (no need to include a suffix in file names).
 
 If a `log_file_name` is _not_ provided then log files will be automatically named as follows:
 - Trader ID
@@ -52,17 +53,16 @@ If a `log_file_name` is _not_ provided then log files will be automatically name
 - The log format suffix
 
 ```
-{trader_id}_{instance_id}_{ISO 8601 datetime}_{discriminant}.{log | json}
+{trader_id}_{instance_id}_{ISO-8601-datetime}_{discriminant}.{log | json}
 ```
 e.g. `TESTER-001_635a4539-4fe2-4cb1-9be3-3079ba8d879e_2023-03-22_15-51-48_rCURRENT.json`
 
-Automatically named files will also be rotated daily.
-
 ### Component filtering
 
-Per component log levels can be set via the `log_component_levels` parameter. Pass a dictionary of component ID strings to log level strings dict[str, str].
+The `log_component_levels` parameter can be used to set log levels for each component individually.
+A dictionary of component ID strings to log level strings should be passed in the following format: `dict[str, str]`.
 
-Here is an example trading node logging configuration, showing some of the above options:
+Below is an example of a trading node logging configuration that includes some of the options mentioned above:
 
 ```python
 config_node = TradingNodeConfig(
@@ -77,4 +77,4 @@ config_node = TradingNodeConfig(
 )
 ```
 
-For backtesting, simply replace the config class with `BacktestEngineConfig`, as the same options are available.
+For backtesting, the `BacktestEngineConfig` class can be used instead of `TradingNodeConfig`, as the same options are available.
