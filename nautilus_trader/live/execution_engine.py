@@ -15,6 +15,7 @@
 
 import asyncio
 import math
+from decimal import Decimal
 from typing import Any, Optional
 
 from nautilus_trader.cache.cache import Cache
@@ -659,11 +660,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 f"Cannot reconcile position: position ID {report.venue_position_id} not found.",
             )
             return False  # Failed
-        if position.net_qty != report.net_qty:
+        position_signed_decimal_qty: Decimal = position.signed_decimal_qty()
+        if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
                 f"Cannot reconcile position: "
                 f"position ID {report.venue_position_id} "
-                f"net qty {position.net_qty} != reported {report.net_qty}. "
+                f"position signed qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}. "
                 f"{report}.",
             )
             return False  # Failed
@@ -675,14 +677,14 @@ class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
-        net_qty: float = 0.0  # TODO(cs): Why are we using float comparisons here??
+        position_signed_decimal_qty: Decimal = Decimal()
         for position in positions_open:
-            net_qty += position.net_qty
-        if net_qty != report.net_qty:
+            position_signed_decimal_qty += position.signed_decimal_qty()
+        if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
                 f"Cannot reconcile position: "
                 f"{report.instrument_id} "
-                f"net qty {net_qty} != reported {report.net_qty}.",
+                f"position signed decimal qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}.",
             )
             return False  # Failed
 

@@ -32,7 +32,7 @@ def try_float(x):
 def serialize(event: PositionEvent):
     data = {k: v for k, v in event.to_dict(event).items() if k not in ("order_fill",)}
     caster = {
-        "net_qty": float,
+        "signed_qty": float,
         "quantity": float,
         "peak_qty": float,
         "avg_px_open": float,

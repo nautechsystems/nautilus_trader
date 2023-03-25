@@ -61,8 +61,8 @@ cdef class PositionEvent(Event):
         The position entry order side.
     side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The current position side.
-    net_qty : double
-        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    signed_qty : double
+        The current signed quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
     peak_qty : Quantity
@@ -112,7 +112,7 @@ cdef class PositionEvent(Event):
         ClientOrderId closing_order_id: Optional[ClientOrderId],
         OrderSide entry,
         PositionSide side,
-        double net_qty,
+        double signed_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
@@ -141,7 +141,7 @@ cdef class PositionEvent(Event):
         self.closing_order_id = closing_order_id
         self.entry = entry
         self.side = side
-        self.net_qty = net_qty
+        self.signed_qty = signed_qty
         self.quantity = quantity
         self.peak_qty = peak_qty
         self.last_qty = last_qty
@@ -166,7 +166,7 @@ cdef class PositionEvent(Event):
             f"closing_order_id={self.closing_order_id}, "  # Can be None
             f"entry={order_side_to_str(self.entry)}, "
             f"side={position_side_to_str(self.side)}, "
-            f"net_qty={self.net_qty}, "
+            f"signed_qty={self.signed_qty}, "
             f"quantity={self.quantity.to_str()}, "
             f"peak_qty={self.peak_qty.to_str()}, "
             f"currency={self.currency.code}, "
@@ -193,7 +193,7 @@ cdef class PositionEvent(Event):
             f"closing_order_id={self.closing_order_id}, "  # Can be None
             f"entry={order_side_to_str(self.entry)}, "
             f"side={position_side_to_str(self.side)}, "
-            f"net_qty={self.net_qty}, "
+            f"signed_qty={self.signed_qty}, "
             f"quantity={self.quantity.to_str()}, "
             f"peak_qty={self.peak_qty.to_str()}, "
             f"currency={self.currency.code}, "
@@ -234,8 +234,8 @@ cdef class PositionOpened(PositionEvent):
         The position entry order side.
     side : PositionSide {``LONG``, ``SHORT``}
         The current position side.
-    net_qty : double
-        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    signed_qty : double
+        The current signed quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
     peak_qty : Quantity
@@ -268,7 +268,7 @@ cdef class PositionOpened(PositionEvent):
         ClientOrderId opening_order_id not None,
         OrderSide entry,
         PositionSide side,
-        double net_qty,
+        double signed_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
@@ -291,7 +291,7 @@ cdef class PositionOpened(PositionEvent):
             None,  # Position is still open
             entry,
             side,
-            net_qty,
+            signed_qty,
             quantity,
             peak_qty,
             last_qty,
@@ -330,7 +330,7 @@ cdef class PositionOpened(PositionEvent):
             opening_order_id=position.opening_order_id,
             entry=position.entry,
             side=position.side,
-            net_qty=position.net_qty,
+            signed_qty=position.signed_qty,
             quantity=position.quantity,
             peak_qty=position.peak_qty,
             last_qty=fill.last_qty,
@@ -355,7 +355,7 @@ cdef class PositionOpened(PositionEvent):
             opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=order_side_from_str(values["entry"]),
             side=position_side_from_str(values["side"]),
-            net_qty=values["net_qty"],
+            signed_qty=values["signed_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
@@ -381,7 +381,7 @@ cdef class PositionOpened(PositionEvent):
             "opening_order_id": obj.opening_order_id.to_str(),
             "entry": order_side_to_str(obj.entry),
             "side": position_side_to_str(obj.side),
-            "net_qty": obj.net_qty,
+            "signed_qty": obj.signed_qty,
             "quantity": str(obj.quantity),
             "peak_qty": str(obj.peak_qty),
             "last_qty": str(obj.last_qty),
@@ -477,8 +477,8 @@ cdef class PositionChanged(PositionEvent):
         The position entry order side.
     side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The current position side.
-    net_qty : double
-        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    signed_qty : double
+        The current signed quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
     peak_qty : Quantity
@@ -519,7 +519,7 @@ cdef class PositionChanged(PositionEvent):
         ClientOrderId opening_order_id not None,
         OrderSide entry,
         PositionSide side,
-        double net_qty,
+        double signed_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
@@ -546,7 +546,7 @@ cdef class PositionChanged(PositionEvent):
             None,  # Position is still open
             entry,
             side,
-            net_qty,
+            signed_qty,
             quantity,
             peak_qty,
             last_qty,
@@ -585,7 +585,7 @@ cdef class PositionChanged(PositionEvent):
             opening_order_id=position.opening_order_id,
             entry=position.entry,
             side=position.side,
-            net_qty=position.net_qty,
+            signed_qty=position.signed_qty,
             quantity=position.quantity,
             peak_qty=position.peak_qty,
             last_qty=fill.last_qty,
@@ -614,7 +614,7 @@ cdef class PositionChanged(PositionEvent):
             opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=order_side_from_str(values["entry"]),
             side=position_side_from_str(values["side"]),
-            net_qty=values["net_qty"],
+            signed_qty=values["signed_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
@@ -644,7 +644,7 @@ cdef class PositionChanged(PositionEvent):
             "opening_order_id": obj.opening_order_id.to_str(),
             "entry": order_side_to_str(obj.entry),
             "side": position_side_to_str(obj.side),
-            "net_qty": obj.net_qty,
+            "signed_qty": obj.signed_qty,
             "quantity": str(obj.quantity),
             "peak_qty": str(obj.peak_qty),
             "last_qty": str(obj.last_qty),
@@ -745,8 +745,8 @@ cdef class PositionClosed(PositionEvent):
         The position entry order side.
     side : PositionSide {``FLAT``}
         The current position side.
-    net_qty : double
-        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    signed_qty : double
+        The current signed quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
     peak_qty : Quantity
@@ -788,7 +788,7 @@ cdef class PositionClosed(PositionEvent):
         ClientOrderId closing_order_id not None,
         OrderSide entry,
         PositionSide side,
-        double net_qty,
+        double signed_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
@@ -815,7 +815,7 @@ cdef class PositionClosed(PositionEvent):
             closing_order_id,
             entry,
             side,
-            net_qty,
+            signed_qty,
             quantity,
             peak_qty,
             last_qty,
@@ -855,7 +855,7 @@ cdef class PositionClosed(PositionEvent):
             closing_order_id=position.closing_order_id,
             entry=position.entry,
             side=position.side,
-            net_qty=position.net_qty,
+            signed_qty=position.signed_qty,
             quantity=position.quantity,
             peak_qty=position.peak_qty,
             last_qty=fill.last_qty,
@@ -885,7 +885,7 @@ cdef class PositionClosed(PositionEvent):
             closing_order_id=ClientOrderId(values["closing_order_id"]),
             entry=order_side_from_str(values["entry"]),
             side=position_side_from_str(values["side"]),
-            net_qty=values["net_qty"],
+            signed_qty=values["signed_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
@@ -916,7 +916,7 @@ cdef class PositionClosed(PositionEvent):
             "closing_order_id": obj.closing_order_id.to_str(),
             "entry": order_side_to_str(obj.entry),
             "side": position_side_to_str(obj.side),
-            "net_qty": obj.net_qty,
+            "signed_qty": obj.signed_qty,
             "quantity": str(obj.quantity),
             "peak_qty": str(obj.peak_qty),
             "last_qty": str(obj.last_qty),
