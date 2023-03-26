@@ -36,6 +36,20 @@ cdef extern from "Python.h":
     # The caller is not responsible for deallocating the buffer
     const char* PyUnicode_AsUTF8AndSize(object unicode, Py_ssize_t *size)  # noqa
 
+    # Return true if the object o is a string object or an instance of
+    # a subtype of the string type.
+    bint PyBytes_Check(object o)
+
+    # Return a NUL-terminated representation of the contents of
+    # string. The pointer refers to the internal buffer of string, not
+    # a copy. The data must not be modified in any way, unless the
+    # string was just created using PyBytes_FromStringAndSize(NULL,
+    # size). It must not be deallocated. If string is a Unicode
+    # object, this function computes the default encoding of string
+    # and operates on that. If string is not a string object at all,
+    # PyBytes_AsString() returns NULL and raises TypeError.
+    char* PyBytes_AsString(object string) except NULL
+
 
 cdef inline str cstr_to_pystr(const char* ptr):
     cdef str obj = PyUnicode_FromString(ptr)
@@ -48,3 +62,9 @@ cdef inline str cstr_to_pystr(const char* ptr):
 
 cdef inline const char* pystr_to_cstr(str value):
     return PyUnicode_AsUTF8AndSize(value, NULL)
+
+
+cdef inline const char* pybytes_to_cstr(bytes value):
+    if not PyBytes_Check(value):
+        raise TypeError("expected a bytes object")
+    return PyBytes_AsString(value)

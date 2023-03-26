@@ -1,36 +1,62 @@
-# NautilusTrader 1.170.0 Beta
+# NautilusTrader 1.171.0 Beta
 
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Renamed all position `net_qty` fields and parameters to `signed_qty` (more accurate naming)
+- `NautilusKernelConfig` removed all `log_*` config options (replaced by `logging` with `LoggingConfig`)
+- Trading `CurrencyPair` instruments with a _single-currency_ `CASH` account type no longer permitted (unrealistic)
+- Changed `PositionEvent` parquet schemas (renamed `net_qty` field to `signed_qty`)
+
+### Enhancements
+- Added `LoggingConfig` to consolidate logging configs, offering various file options and per component level filters
+- Added `BacktestVenueConfig.bar_execution` to control whether bar data moves the matching engine markets (reinstated)
+- Added optional `request_id` for actor data requests (aids processing responses), thanks @rsmb7z
+- Added `Position.signed_decimal_qty()`
+- Now using above signed quantity for `Portfolio` net position calculation, and `LiveExecutionEngine` reconciliation comparisons
+
+### Fixes
+- Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)
+- Fixed `close_position` order event publishing and cache persistence for `MarketOrder` and `SubmitOrder`, thanks for reporting @rsmb7z
+
+---
+
+# NautilusTrader 1.170.0 Beta
+
+Released on 11th March 2023 (UTC).
+
+### Breaking Changes
+- Moved `backtest.data.providers` to `test_kit.providers`
+- Moved `backtest.data.wranglers` to `persistence.wranglers` (to be consolidated)
+- Moved `backtest.data.loaders` to `persistence.loaders` (to be consolidated)
 - Renamed `from_datetime` to `start` across data request methods and properties
 - Renamed `to_datetime` to `end` across data request methods and properties
-- Change parquet catalog schema dictionary integer key widths/types
 - Removed `RiskEngineConfig.deny_modify_pending_update` (as now redundant with new pending event sequencing)
 - Removed redundant log sink machinery
-- All pickled data due Cython 3.0.0b1
+- Changed parquet catalog schema dictionary integer key widths/types
+- Invalidated all pickled data due to Cython 3.0.0b1 upgrade
 
 ### Enhancements
 - Added logging to file at core Rust level
 - Added `DataCatalogConfig` for more cohesive data catalog configuration
 - Added `DataEngine.register_catalog` to support historical data requests
 - Added `catalog_config` field to base `NautilusKernelConfig`
+- Changed to immediately caching orders and order lists in `Strategy`
+- Changed to checking duplicate `client_order_id` and `order_list_id` in `Strategy`
+- Changed generating and applying `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
 - `PortfolioAnalyzer` PnL statistics now take optional `unrealized_pnl`
 - Backtest performance statistics now include unrealized PnL in total PnL
-- Now immediately caching orders and order lists in `Strategy`
-- Now checking duplicate `client_order_id` and `order_list_id` in `Strategy`
-- Now generates and applies `OrderPendingUpdate` and `OrderPendingCancel` in `Strategy`
-- Upgrade Cython to `3.0.0b1`
 
 ### Fixes
 - Fixed Binance Futures trigger type parsing
 - Fixed `DataEngine` bar subscribe and unsubscribe logic, thanks for reporting @rsmb7z
 - Fixed `Actor` handling of bars, thanks @limx0
+- Fixed `CancelAllOrders` command handling for contingent orders not yet in matching core
 - Fixed `TrailingStopMarketOrder` slippage calculation when no `trigger_price`, thanks for reporting @rsmb7z
 - Fixed `BinanceSpotInstrumentProvider` parsing of quote asset (was using base), thanks for reporting @logogin
 - Fixed undocumented Binance time in force 'GTE\_GTC', thanks for reporting @graceyangfan
-- Fixed `CancelAllOrders` command handling for contingent orders not yet in matching core
 - Fixed `Position` calculation of `last_qty` when commission currency was equal to base currency, thanks for reporting @rsmb7z
+- Fixed `BacktestEngine` post backtest run PnL performance statistics for currencies traded per venue, thanks for reporting @rsmb7z
 
 ---
 

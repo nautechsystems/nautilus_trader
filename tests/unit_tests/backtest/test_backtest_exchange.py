@@ -18,7 +18,6 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -26,8 +25,8 @@ from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.config.common import ExecEngineConfig
-from nautilus_trader.config.common import RiskEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
@@ -60,6 +59,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -292,8 +292,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderAccepted)
 
     def test_submit_sell_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -310,8 +310,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderAccepted)
 
     def test_submit_buy_market_order_with_no_market_rejects_order(self):
         # Arrange
@@ -327,8 +327,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderRejected)
 
     def test_submit_sell_market_order_with_no_market_rejects_order(self):
         # Arrange
@@ -344,8 +344,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert self.strategy.object_storer.count == 3
-        assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
+        assert len(self.strategy.store) == 3
+        assert isinstance(self.strategy.store[2], OrderRejected)
 
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange: Prepare market
@@ -1859,9 +1859,9 @@ class TestSimulatedExchange:
         self.exchange.process(0)
         self.strategy.submit_order(reduce_order, position_id=position_id)
         self.exchange.process(0)
-        fill_event1 = self.strategy.object_storer.get_store()[2]
-        fill_event2 = self.strategy.object_storer.get_store()[6]
-        fill_event3 = self.strategy.object_storer.get_store()[10]
+        fill_event1 = self.strategy.store[2]
+        fill_event2 = self.strategy.store[6]
+        fill_event3 = self.strategy.store[10]
 
         # Assert
         assert order.status == OrderStatus.FILLED

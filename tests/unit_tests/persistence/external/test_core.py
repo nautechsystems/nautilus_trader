@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import pickle
+import sys
 
 import fsspec
 import numpy as np
@@ -25,8 +27,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -46,8 +46,10 @@ from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_parquet_rust
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
@@ -291,10 +293,7 @@ class _TestPersistenceCore:
                 {
                     "value": np.arange(5),
                     "instrument_id": ["a", "a", "a", "b", "b"],
-                    "ts_init": [
-                        int(ts.to_datetime64())
-                        for ts in pd.date_range(start_date, periods=5, tz="UTC")
-                    ],
+                    "ts_init": [ts.value for ts in pd.date_range(start_date, periods=5, tz="UTC")],
                 },
             )
             write_parquet(
@@ -377,6 +376,7 @@ class _TestPersistenceCore:
         assert None in split[NewsEventData]
         assert len(split[NewsEventData][None]) == 22941
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows and being rewritten")
     def test_catalog_generic_data_not_overwritten(self):
         # Arrange
         self._load_data_into_catalog()

@@ -25,7 +25,7 @@ repos:
       - id: check-yaml
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.2
+    rev: v2.2.4
     hooks:
       - id: codespell
         description: Checks for common misspellings.
@@ -68,19 +68,6 @@ repos:
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.3.1
-    hooks:
-      - id: pyupgrade
-        name: pyupgrade (ensure latest syntax)
-        args: ["--py39-plus"]
-
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v2.1.3
-    hooks:
-      - id: pycln
-        name: pycln (remove unused imports)
-
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v2.4.0
     hooks:
@@ -106,7 +93,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.0.1
+    rev: v1.1.1
     hooks:
       - id: mypy
         args: [
@@ -123,43 +110,12 @@ repos:
           types-toml,
         ]
 
-  - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.256
     hooks:
-      - id: flake8
-        name: flake8
-        types_or: [python, cython]
-        entry: "flake8p"
-        additional_dependencies:
-          - Flake8-pyproject
-
-  - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.3.0
-    hooks:
-      - id: pydocstyle
-        files: ^nautilus_trader/
-        exclude: "nautilus_trader/test_kit"
-        args:
-        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415,D416"
-        additional_dependencies:
-          - toml
+      - id: ruff
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.6.1
     hooks:
       - id: nbstripout
-
-# pydocstyle ignore reasons
-# -------------------------
-# D100: Missing docstring in public module  **fix**
-# D102: Missing docstring in public method  **fix**
-# D103: Missing docstring in public function  **fix**
-# D104: Missing docstring in public package  **fix**
-# D200: One-line docstring should fit on one line with quotes (optional style)
-# D203: 1 blank line required before class docstring (optional style)
-# D205: 1 blank line required between summary line and description (optional style)
-# D212: Multi-line docstring summary should start at the first line (optional style)
-# D400: First line should end with a period (not always a first line)
-# D413: Missing blank line after last section ('Parameters')
-# D415: First line should end with a period, question mark, or exclamation point (not always a first line)
-# D416: Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)

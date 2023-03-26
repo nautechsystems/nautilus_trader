@@ -724,7 +724,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 f"Skipping order_accept as order exists: venue_order_id={unmatched_order.id}",
             )
         else:
-            raise RuntimeError()
+            raise RuntimeError
             # self.generate_order_accepted(
             #     strategy_id=order.strategy_id,
             #     instrument_id=instrument.id,

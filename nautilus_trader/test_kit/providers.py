@@ -23,10 +23,6 @@ import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
-from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
-from nautilus_trader.backtest.data.loaders import ParquetBarDataLoader
-from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
@@ -49,6 +45,10 @@ from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.loaders import CSVBarDataLoader
+from nautilus_trader.persistence.loaders import CSVTickDataLoader
+from nautilus_trader.persistence.loaders import ParquetBarDataLoader
+from nautilus_trader.persistence.loaders import ParquetTickDataLoader
 
 
 class TestInstrumentProvider:
@@ -383,8 +383,8 @@ class TestInstrumentProvider:
             min_quantity=Quantity.from_str("1000"),
             max_price=None,
             min_price=None,
-            max_notional=Money(50000000.00, USD),
-            min_notional=Money(1000.00, USD),
+            max_notional=Money(50_000_000.00, USD),
+            min_notional=Money(1_000.00, USD),
             margin_init=Decimal("0.03"),
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
@@ -395,10 +395,10 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_equity():
+    def equity(symbol: str = "AAPL", venue: str = "NASDAQ"):
         return Equity(
-            instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
-            native_symbol=Symbol("AAPL"),
+            instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
+            native_symbol=Symbol(symbol),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -408,6 +408,10 @@ class TestInstrumentProvider:
             ts_event=0,
             ts_init=0,
         )
+
+    @staticmethod
+    def aapl_equity():
+        return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
     @staticmethod
     def es_future():
@@ -521,7 +525,7 @@ class TestDataProvider:
     @staticmethod
     def _test_data_directory() -> Optional[str]:
         # Determine if the test data directory exists (i.e. this is a checkout of the source code).
-        source_root = pathlib.Path(__file__).parent.parent.parent
+        source_root = pathlib.Path(__file__).parent.parent
         assert source_root.stem == "nautilus_trader"
         test_data_dir = source_root.parent.joinpath("tests", "test_data")
         if test_data_dir.exists():
@@ -536,7 +540,7 @@ class TestDataProvider:
             self.fs = fsspec.filesystem("file")
         else:
             print("Couldn't find test data directory, test data will be pulled from GitHub")
-            self.root = "tests/test_kit/data"
+            self.root = "tests/test_data"
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
     def _make_uri(self, path: str):

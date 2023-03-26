@@ -240,7 +240,7 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled["clearedOrders"][0]
-    ts_event = int(pd.Timestamp(fill["lastMatchedDate"]).to_datetime64())
+    ts_event = pd.Timestamp(fill["lastMatchedDate"]).value
     return [
         TradeReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],

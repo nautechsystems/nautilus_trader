@@ -18,9 +18,9 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price, Quantity
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode, BacktestVenueConfig, BacktestDataConfig, BacktestRunConfig, BacktestEngineConfig
-from nautilus_trader.config.common import ImportableStrategyConfig
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import process_files, write_objects
 from nautilus_trader.persistence.external.readers import TextReader
@@ -143,7 +143,7 @@ venues_config=[
         oms_type="HEDGING",
         account_type="MARGIN",
         base_currency="USD",
-        starting_balances=["1000000 USD"],
+        starting_balances=["1_000_000 USD"],
     )
 ]
 

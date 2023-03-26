@@ -18,7 +18,6 @@ from datetime import timedelta
 
 import pytest
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
@@ -47,6 +46,7 @@ from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -863,7 +863,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_instrument_when_running_sends_to_on_instrument(self):
         # Arrange
@@ -882,7 +882,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_instrument"]
-        assert actor.object_storer.get_store()[0] == AUDUSD_SIM
+        assert actor.store[0] == AUDUSD_SIM
 
     def test_handle_instruments_when_running_sends_to_on_instruments(self):
         # Arrange
@@ -901,7 +901,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_instrument"]
-        assert actor.object_storer.get_store()[0] == AUDUSD_SIM
+        assert actor.store[0] == AUDUSD_SIM
 
     def test_handle_instruments_when_not_running_does_not_send_to_on_instrument(self):
         # Arrange
@@ -918,7 +918,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_ticker_when_not_running_does_not_send_to_on_quote_tick(self):
         # Arrange
@@ -937,7 +937,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_ticker_when_running_sends_to_on_quote_tick(self):
         # Arrange
@@ -958,7 +958,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_ticker"]
-        assert actor.object_storer.get_store()[0] == ticker
+        assert actor.store[0] == ticker
 
     def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self):
         # Arrange
@@ -977,7 +977,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_quote_tick_when_running_sends_to_on_quote_tick(self):
         # Arrange
@@ -998,7 +998,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_quote_tick"]
-        assert actor.object_storer.get_store()[0] == tick
+        assert actor.store[0] == tick
 
     def test_handle_trade_tick_when_not_running_does_not_send_to_on_trade_tick(self):
         # Arrange
@@ -1017,7 +1017,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_trade_tick_when_running_sends_to_on_trade_tick(self):
         # Arrange
@@ -1038,7 +1038,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_trade_tick"]
-        assert actor.object_storer.get_store()[0] == tick
+        assert actor.store == [tick]
 
     def test_handle_bar_when_not_running_does_not_send_to_on_bar(self):
         # Arrange
@@ -1057,7 +1057,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_bar_when_running_sends_to_on_bar(self):
         # Arrange
@@ -1078,7 +1078,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_bar"]
-        assert actor.object_storer.get_store()[0] == bar
+        assert actor.store[0] == bar
 
     def test_handle_bars(self):
         # Arrange
@@ -1125,7 +1125,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == []
-        assert actor.object_storer.get_store() == []
+        assert actor.store == []
 
     def test_handle_data_when_running_sends_to_on_data(self):
         # Arrange
@@ -1152,7 +1152,7 @@ class TestActor:
 
         # Assert
         assert actor.calls == ["on_start", "on_data"]
-        assert actor.object_storer.get_store()[0] == data
+        assert actor.store[0] == data
 
     def test_subscribe_custom_data(self):
         # Arrange

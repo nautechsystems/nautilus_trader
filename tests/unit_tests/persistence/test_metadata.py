@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 import fsspec
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 

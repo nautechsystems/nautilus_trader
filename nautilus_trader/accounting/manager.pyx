@@ -91,9 +91,6 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
-        if not self._log.is_bypassed:
-            self._log.debug(f"Called `update_balances`: {account}, {instrument}, {fill}")
-
         # Determine any position
         cdef PositionId position_id = fill.position_id
         if position_id is None:
@@ -187,9 +184,6 @@ cdef class AccountsManager:
         list orders_open,
         uint64_t ts_event,
     ):
-        if not self._log.is_bypassed:
-            self._log.debug(f"Called `_update_balance_locked`: {account=}, {instrument=}, {orders_open=}")
-
         if not orders_open:
             account.clear_balance_locked(instrument.id)
             return self._generate_account_state(
@@ -285,9 +279,6 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(orders_open, "orders_open")
 
-        if not self._log.is_bypassed:
-            self._log.debug(f"Called `_update_margin_init`: {account=}, {instrument=}, {orders_open=}")
-
         if not orders_open:
             account.clear_margin_init(instrument.id)
             return self._generate_account_state(
@@ -381,9 +372,6 @@ cdef class AccountsManager:
         Condition.not_none(account, "account")
         Condition.not_none(instrument, "instrument")
         Condition.not_none(positions_open, "positions_open")
-
-        if not self._log.is_bypassed:
-            self._log.debug(f"Called `update_positions`: {account=}, {instrument=}, {positions_open=}")
 
         if not positions_open:
             account.clear_margin_maint(instrument.id)

@@ -27,10 +27,19 @@ jobs:
         uses: actions/checkout@v3
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain
+      - name: Set up Rust tool-chain (Liux/Windows)
+        if: runner.os != 'macOS'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Set up Rust tool-chain (macOS)
+        if: runner.os == 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
           components: rustfmt, clippy
 
       # Python setup
@@ -78,17 +87,8 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.3.2
 
       # Setup Poetry caching
-      - name: Set output (Linux)
-        if: runner.os == 'Linux'
+      - name: Set output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (macOS)
-        if: runner.os == 'macOS'
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (Windows)
-        if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
@@ -159,17 +159,8 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.3.2
 
       # Setup Poetry caching
-      - name: Set output (Linux)
-        if: runner.os == 'Linux'
+      - name: Set output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (macOS)
-        if: runner.os == 'macOS'
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (Windows)
-        if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
@@ -231,10 +222,19 @@ jobs:
         uses: actions/checkout@v3
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain
+      - name: Set up Rust tool-chain (Liux/Windows)
+        if: runner.os != 'macOS'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Set up Rust tool-chain (macOS)
+        if: runner.os == 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
           components: rustfmt, clippy
 
       # Python setup

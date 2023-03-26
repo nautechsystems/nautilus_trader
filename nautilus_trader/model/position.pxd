@@ -57,8 +57,8 @@ cdef class Position:
     """The position entry order side.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
-    cdef readonly double net_qty
-    """The current net quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `double`"""
+    cdef readonly double signed_qty
+    """The current signed quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `double`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
@@ -113,6 +113,7 @@ cdef class Position:
 
     @staticmethod
     cdef PositionSide side_from_order_side_c(OrderSide side)
+    cpdef signed_decimal_qty(self)
     cpdef bint is_opposite_side(self, OrderSide side)
 
     cpdef void apply(self, OrderFilled fill)

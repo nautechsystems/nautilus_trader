@@ -1,0 +1,184 @@
+[
+  {
+    "account": "DU1xxxxxx",
+    "tag": "AccountOrGroup",
+    "value": "DU1xxxxxx",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "FullAvailableFunds",
+    "value": "1020194.83",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "NetLiquidation",
+    "value": "1020194.83",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "CashBalance",
+    "value": "1019624.57",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "CorporateBondValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "Cryptocurrency",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "Currency",
+    "value": "USD",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "ExchangeRate",
+    "value": "1.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "FundValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "FutureOptionValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "FuturesPNL",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "FxCashBalance",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "IssuerOptionValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "MoneyMarketFundValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "MutualFundValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "NetDividend",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "NetLiquidationByCurrency",
+    "value": "1020194.83",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "OptionMarketValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "RealCurrency",
+    "value": "USD",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "RealizedPnL",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "StockMarketValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "TBillValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "TBondValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "TotalCashBalance",
+    "value": "1019624.57",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "UnrealizedPnL",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU1xxxxxx",
+    "tag": "WarrantValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  }
+]

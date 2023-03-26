@@ -87,7 +87,7 @@ class LiveRiskEngine(RiskEngine):
         # Async tasks
         self._cmd_queue_task: Optional[asyncio.Task] = None
         self._evt_queue_task: Optional[asyncio.Task] = None
-        self._is_running: bool = False
+        self._kill: bool = False
 
     def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
         """
@@ -140,6 +140,8 @@ class LiveRiskEngine(RiskEngine):
         Kill the engine by abruptly canceling the queue task and calling stop.
         """
         self._log.warning("Killing engine...")
+        self._kill = True
+        self.stop()
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
@@ -148,9 +150,6 @@ class LiveRiskEngine(RiskEngine):
             self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
             self._evt_queue_task.cancel()
             self._evt_queue_task.done()
-        if self._is_running:
-            self._is_running = False  # Avoids sentinel messages for queues
-            self.stop()
 
     def execute(self, command: Command) -> None:
         """
@@ -221,7 +220,6 @@ class LiveRiskEngine(RiskEngine):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
-        self._is_running = True  # Queue will continue to process
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
 
@@ -229,40 +227,45 @@ class LiveRiskEngine(RiskEngine):
         self._log.debug(f"Scheduled {self._evt_queue_task}")
 
     def _on_stop(self) -> None:
-        if self._is_running:
-            self._is_running = False
-            self._enqueue_sentinel()
+        if self._kill:
+            return  # Avoids queuing redundant sentinel messages
+        # This will stop the queues processing as soon as they see the sentinel message
+        self._enqueue_sentinel()
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
-            f"Command message queue processing starting (qsize={self.cmd_qsize()})...",
+            f"Command message queue processing (qsize={self.cmd_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 command: Optional[Command] = await self._cmd_queue.get()
-                if command is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if command is self._sentinel:
+                    break
                 self._execute_command(command)
         except asyncio.CancelledError:
+            self._log.warning("Command message queue canceled.")
+        finally:
+            stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
-                self._log.warning(f"Running canceled with {self.cmd_qsize()} message(s) on queue.")
+                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue.")
             else:
-                self._log.debug("Command message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")
 
     async def _run_evt_queue(self) -> None:
         self._log.debug(
             f"Event message queue processing starting (qsize={self.evt_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 event: Optional[Event] = await self._evt_queue.get()
-                if event is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if event is self._sentinel:
+                    break
                 self._handle_event(event)
         except asyncio.CancelledError:
+            self._log.warning("Event message queue canceled.")
+        finally:
+            stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
-                self._log.warning(
-                    f"Running canceled with {self.evt_qsize()} message(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue.")
             else:
-                self._log.debug("Event message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")

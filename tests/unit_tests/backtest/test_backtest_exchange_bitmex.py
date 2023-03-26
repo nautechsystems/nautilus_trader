@@ -15,7 +15,6 @@
 
 from decimal import Decimal
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -38,6 +37,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -194,7 +194,7 @@ class TestBitmexExchange:
 
         # Assert
         assert order_limit.avg_px == 11492.5
-        assert self.strategy.object_storer.get_store()[2].liquidity_side == LiquiditySide.TAKER
-        assert self.strategy.object_storer.get_store()[7].liquidity_side == LiquiditySide.MAKER
-        assert self.strategy.object_storer.get_store()[2].commission == Money(0.00652543, BTC)
-        assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217533, BTC)
+        assert self.strategy.store[2].liquidity_side == LiquiditySide.TAKER
+        assert self.strategy.store[7].liquidity_side == LiquiditySide.MAKER
+        assert self.strategy.store[2].commission == Money(0.00652543, BTC)
+        assert self.strategy.store[7].commission == Money(-0.00217533, BTC)

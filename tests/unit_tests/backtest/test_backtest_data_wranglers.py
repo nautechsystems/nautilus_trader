@@ -15,18 +15,18 @@
 
 import os
 
-from nautilus_trader.backtest.data.loaders import TardisQuoteDataLoader
-from nautilus_trader.backtest.data.loaders import TardisTradeDataLoader
-from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.loaders import TardisQuoteDataLoader
+from nautilus_trader.persistence.loaders import TardisTradeDataLoader
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR

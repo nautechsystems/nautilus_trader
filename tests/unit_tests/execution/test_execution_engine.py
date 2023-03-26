@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
@@ -53,6 +52,7 @@ from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -1696,8 +1696,8 @@ class TestExecutionEngine:
         position_id_flipped = PositionId("P-19700101-000-None-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
-        assert position_flipped.net_qty == -50000
-        assert position_flipped.last_event.last_qty == 50000
+        assert position_flipped.signed_qty == -50_000
+        assert position_flipped.last_event.last_qty == 50_000
         assert self.cache.position_exists(position_id)
         assert self.cache.position_exists(position_id_flipped)
         assert self.cache.is_position_closed(position_id)
@@ -1775,8 +1775,8 @@ class TestExecutionEngine:
         position_id_flipped = PositionId("P-19700101-000-None-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
-        assert position_flipped.net_qty == 50000
-        assert position_flipped.last_event.last_qty == 50000
+        assert position_flipped.signed_qty == 50_000
+        assert position_flipped.last_event.last_qty == 50_000
         assert self.cache.position_exists(position_id)
         assert self.cache.position_exists(position_id_flipped)
         assert self.cache.is_position_closed(position_id)
@@ -1866,7 +1866,7 @@ class TestExecutionEngine:
         self.exec_engine.process(
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
-        assert position.net_qty == 0
+        assert position.signed_qty == 0
 
         # Reuse same position_id
         self.risk_engine.execute(submit_order3)

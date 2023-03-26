@@ -18,7 +18,6 @@ from typing import Any
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
-from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 
 
 class MockActorConfig(ActorConfig):
@@ -37,7 +36,7 @@ class MockActor(Actor):
     def __init__(self, config: ActorConfig = None):
         super().__init__(config)
 
-        self.object_storer = ObjectStorer()
+        self.store: list[object] = []
 
         self.calls: list[str] = []
         self._user_state: dict[str, Any] = {}
@@ -69,39 +68,39 @@ class MockActor(Actor):
 
     def on_instrument(self, instrument) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instrument)
+        self.store.append(instrument)
 
     def on_instruments(self, instruments) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instruments)
+        self.store.append(instruments)
 
     def on_ticker(self, ticker):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(ticker)
+        self.store.append(ticker)
 
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(tick)
+        self.store.append(tick)
 
     def on_trade_tick(self, tick) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(tick)
+        self.store.append(tick)
 
     def on_bar(self, bar) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(bar)
+        self.store.append(bar)
 
     def on_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(data)
+        self.store.append(data)
 
     def on_strategy_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(data)
+        self.store.append(data)
 
     def on_event(self, event) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(event)
+        self.store.append(event)
 
 
 class KaboomActor(Actor):

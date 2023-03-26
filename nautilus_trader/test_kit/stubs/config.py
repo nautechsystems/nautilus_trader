@@ -15,18 +15,19 @@
 
 from typing import Optional
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -79,7 +80,7 @@ class TestConfigStubs:
         )
 
     @staticmethod
-    def strategies_config():
+    def strategies_config() -> list[ImportableStrategyConfig]:
         return [
             ImportableStrategyConfig(
                 strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
@@ -104,8 +105,7 @@ class TestConfigStubs:
         if persist:
             assert catalog is not None, "If `persist=True`, must pass `catalog`"
         return BacktestEngineConfig(
-            log_level=log_level,
-            bypass_logging=bypass_logging,
+            logging=LoggingConfig(log_level=log_level, bypass_logging=bypass_logging),
             exec_engine=ExecEngineConfig(allow_cash_positions=allow_cash_position),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=TestConfigStubs.streaming_config(catalog=catalog) if persist else None,
@@ -127,7 +127,7 @@ class TestConfigStubs:
         catalog: ParquetDataCatalog,
         data_cls=QuoteTick,
         instrument_id: Optional[str] = None,
-    ):
+    ) -> BacktestDataConfig:
         return BacktestDataConfig(
             data_cls=data_cls.fully_qualified_name(),
             catalog_path=str(catalog.path),
@@ -140,9 +140,9 @@ class TestConfigStubs:
         catalog: ParquetDataCatalog,
         config: Optional[BacktestEngineConfig] = None,
         instrument_ids: Optional[list[str]] = None,
-        data_types: tuple[Data] = (QuoteTick,),
+        data_types: tuple[Data, ...] = (QuoteTick,),
         venues: Optional[list[BacktestVenueConfig]] = None,
-    ):
+    ) -> BacktestRunConfig:
         instrument_ids = instrument_ids or [TestIdStubs.betting_instrument_id().value]
         run_config = BacktestRunConfig(
             engine=config,

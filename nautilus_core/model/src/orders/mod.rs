@@ -17,6 +17,11 @@
 
 use std::rc::Rc;
 
+use nautilus_core::time::UnixNanos;
+use nautilus_core::uuid::UUID4;
+use rust_fsm::*;
+use thiserror::Error;
+
 use crate::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     TriggerType,
@@ -35,10 +40,6 @@ use crate::identifiers::venue_order_id::VenueOrderId;
 use crate::types::fixed::fixed_i64_to_f64;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
-use rust_fsm::*;
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum OrderError {

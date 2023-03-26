@@ -13,23 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
 use std::ffi::c_char;
-use std::fs::File;
 use std::io::{Stderr, Stdout};
-use std::path::PathBuf;
+use std::num::NonZeroU32;
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
-use std::time::{Duration, Instant};
 use std::{
     io::{self, BufWriter, Write},
     ops::{Deref, DerefMut},
     thread,
 };
 
+use flexi_logger::{
+    Age, Cleanup, Criterion, DeferredNow, FileSpec, FormatFunction, LogSpecification,
+    Logger as FlexiLogger, Naming, Record, WriteMode,
+};
+use governor::clock::{Clock, DefaultClock};
+use governor::{Quota, RateLimiter};
+use log::info;
 use nautilus_core::datetime::unix_nanos_to_iso8601;
+use nautilus_core::parsing::optional_bytes_to_json;
 use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::enums::{LogColor, LogLevel};
 
@@ -44,17 +53,18 @@ pub struct Logger {
     /// The minimum log level to write to stdout.
     pub level_stdout: LogLevel,
     /// The minimum log level to write to a log file.
-    pub level_file: LogLevel,
+    pub level_file: Option<LogLevel>,
     /// The maximum messages per second which can be flushed to stdout or stderr.
     pub rate_limit: usize,
     /// If logging is bypassed.
     pub is_bypassed: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogMessage {
     timestamp_ns: UnixNanos,
     level: LogLevel,
+    #[serde(skip_serializing)]
     color: LogColor,
     component: String,
     msg: String,
@@ -67,25 +77,49 @@ pub struct LogMessage {
 /// per second).
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    fn new(
+    pub fn new(
         trader_id: TraderId,
         machine_id: String,
         instance_id: UUID4,
         level_stdout: LogLevel,
-        level_file: LogLevel,
-        file_path: Option<PathBuf>,
+        level_file: Option<LogLevel>,
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+        component_levels: Option<HashMap<String, Value>>,
         rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
-        let trader_id_clone = trader_id.value.to_string();
         let (tx, rx) = channel::<LogMessage>();
+        let mut level_filters = HashMap::<String, LogLevel>::new();
+
+        if let Some(component_levels_map) = component_levels {
+            for (key, value) in component_levels_map {
+                match serde_json::from_value::<LogLevel>(value) {
+                    Ok(level) => {
+                        level_filters.insert(key, level);
+                    }
+                    Err(e) => {
+                        // Handle the error, e.g. log a warning or ignore the entry
+                        eprintln!("Error parsing log level: {:?}", e);
+                    }
+                }
+            }
+        }
+
+        let trader_id_clone = trader_id.value.to_string();
+        let instance_id_clone = instance_id.value.to_string();
 
         thread::spawn(move || {
             Self::handle_messages(
                 &trader_id_clone,
+                &instance_id_clone,
                 level_stdout,
                 level_file,
-                file_path,
+                directory,
+                file_name,
+                file_format,
+                level_filters,
                 rate_limit,
                 rx,
             )
@@ -105,9 +139,13 @@ impl Logger {
 
     fn handle_messages(
         trader_id: &str,
+        instance_id: &str,
         level_stdout: LogLevel,
-        level_file: LogLevel,
-        file_path: Option<PathBuf>,
+        level_file: Option<LogLevel>,
+        directory: Option<String>,
+        file_name: Option<String>,
+        file_format: Option<String>,
+        level_filters: HashMap<String, LogLevel>,
         rate_limit: usize,
         rx: Receiver<LogMessage>,
     ) {
@@ -115,69 +153,132 @@ impl Logger {
         let mut out_buf = BufWriter::new(io::stdout());
         let mut err_buf = BufWriter::new(io::stderr());
 
-        // Setup log file
-        let file = file_path.map(|path| {
-            File::options()
-                .create(true)
-                .append(true)
-                .open(path)
-                .expect("Error creating log file")
-        });
-        let mut file_buf = file.map(BufWriter::new);
+        let formatter: FormatFunction =
+            |write: &mut dyn std::io::Write,
+             _now: &mut DeferredNow,
+             record: &Record|
+             -> Result<(), std::io::Error> { write!(write, "{}", record.args()) };
 
-        // Setup templates
+        // Setup log file
+        let log_spec = LogSpecification::info();
+        let mut flexi_logger_builder =
+            FlexiLogger::with(log_spec).write_mode(WriteMode::BufferAndFlush);
+
+        let is_json_format = match file_format.as_ref().map(|s| s.to_lowercase()) {
+            Some(ref format) if format == "json" => true,
+            None => false,
+            Some(ref unrecognized) => {
+                eprintln!(
+                    "Error: Unrecognized log file format: {}. Using plain text format as default.",
+                    unrecognized
+                );
+                false
+            }
+        };
+
+        if level_file.is_some() {
+            if let Some(file_name) = file_name {
+                let suffix = if is_json_format { "json" } else { "log" };
+                let mut file_spec = FileSpec::default()
+                    .basename(file_name)
+                    .use_timestamp(false)
+                    .suffix(suffix);
+                if let Some(directory) = directory {
+                    file_spec = file_spec.directory(directory)
+                }
+                flexi_logger_builder = flexi_logger_builder
+                    .format_for_files(formatter)
+                    .log_to_file(file_spec)
+            } else {
+                let basename = format!("{}_{}", trader_id, instance_id);
+                let suffix = if is_json_format { "json" } else { "log" };
+                let mut file_spec = FileSpec::default()
+                    .basename(basename)
+                    .use_timestamp(true)
+                    .suffix(suffix);
+                if let Some(directory) = directory {
+                    file_spec = file_spec.directory(directory)
+                }
+                flexi_logger_builder = flexi_logger_builder
+                    .format_for_files(formatter)
+                    .log_to_file(file_spec)
+                    .rotate(Criterion::Age(Age::Day), Naming::Timestamps, Cleanup::Never);
+            }
+
+            flexi_logger_builder.start().expect("Error building logger");
+        };
+
+        // Setup templates and formatting
         let template_console = String::from(
             "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
         );
-        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
+        // The newline is not necessary for the file template because flexi_logger handles this
+        // already.
+        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}");
 
         // Setup rate limiting
-        let mut msg_count = 0;
-        let mut btime = Instant::now();
+        let quota = Quota::per_second(NonZeroU32::new(rate_limit as u32).unwrap());
+        let clock = DefaultClock::default();
+        let limiter = RateLimiter::direct(quota);
 
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
+            let component_level = level_filters.get(&log_msg.component);
+
+            // Check if the component exists in level_filters and if its level is greater than log_msg.level
+            if let Some(&filter_level) = component_level {
+                if log_msg.level < filter_level {
+                    continue;
+                }
+            }
+
             if log_msg.level >= LogLevel::Error {
-                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
+                // Check rate limiter
+                loop {
+                    match limiter.check() {
+                        Ok(()) => break,
+                        Err(minimum_time) => {
+                            let wait_time = minimum_time.wait_time_from(clock.now());
+                            thread::sleep(wait_time);
+                        }
+                    }
+                }
+
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
             } else if log_msg.level >= level_stdout {
-                (msg_count, btime) = Self::rate_limit_logging(btime, msg_count, rate_limit);
+                // Check rate limiter
+                loop {
+                    match limiter.check() {
+                        Ok(()) => break,
+                        Err(minimum_time) => {
+                            let wait_time = minimum_time.wait_time_from(clock.now());
+                            thread::sleep(wait_time);
+                        }
+                    }
+                }
+
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
             }
 
-            if log_msg.level >= level_file {
-                let line = Self::format_log_line_file(&log_msg, trader_id, &template_file);
-                Self::write_file(&mut file_buf, &line);
-                Self::flush_file(&mut file_buf);
+            if let Some(level_file) = level_file {
+                if log_msg.level >= level_file {
+                    let line = Self::format_log_line_file(
+                        &log_msg,
+                        trader_id,
+                        &template_file,
+                        is_json_format,
+                    );
+                    info!("{}", line);
+                }
             }
         }
-
         // Finally ensure remaining buffers are flushed
         Self::flush_stderr(&mut err_buf);
         Self::flush_stdout(&mut out_buf);
-        Self::flush_file(&mut file_buf);
-    }
-
-    fn rate_limit_logging(
-        mut btime: Instant,
-        mut msg_count: usize,
-        rate_limit: usize,
-    ) -> (usize, Instant) {
-        while msg_count >= rate_limit {
-            if btime.elapsed().as_secs() >= 1 {
-                msg_count = 0;
-                btime = Instant::now();
-            } else {
-                thread::sleep(Duration::from_millis(10));
-            }
-        }
-
-        msg_count += 1;
-        (msg_count, btime)
     }
 
     fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
@@ -190,13 +291,22 @@ impl Logger {
             .replace("{msg}", &log_msg.msg)
     }
 
-    fn format_log_line_file(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
-        template
-            .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-            .replace("{level}", &log_msg.level.to_string())
-            .replace("{trader_id}", trader_id)
-            .replace("{component}", &log_msg.component)
-            .replace("{msg}", &log_msg.msg)
+    fn format_log_line_file(
+        log_msg: &LogMessage,
+        trader_id: &str,
+        template: &str,
+        is_json_format: bool,
+    ) -> String {
+        if is_json_format {
+            serde_json::to_string(log_msg).expect("Error serializing log message to string")
+        } else {
+            template
+                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
+                .replace("{level}", &log_msg.level.to_string())
+                .replace("{trader_id}", trader_id)
+                .replace("{component}", &log_msg.component)
+                .replace("{msg}", &log_msg.msg)
+        }
     }
 
     fn write_stdout(out_buf: &mut BufWriter<Stdout>, line: &str) {
@@ -224,26 +334,6 @@ impl Logger {
         match err_buf.flush() {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
-        }
-    }
-
-    fn write_file(file_buf: &mut Option<BufWriter<File>>, line: &str) {
-        match file_buf {
-            Some(file) => match file.write_all(line.as_bytes()) {
-                Ok(_) => {}
-                Err(e) => eprintln!("Error writing to file: {e:?}"),
-            },
-            None => {}
-        }
-    }
-
-    fn flush_file(file_buf: &mut Option<BufWriter<File>>) {
-        match file_buf {
-            Some(file) => match file.flush() {
-                Ok(_) => {}
-                Err(e) => eprintln!("Error writing to file: {e:?}"),
-            },
-            None => {}
         }
     }
 
@@ -352,7 +442,11 @@ pub unsafe extern "C" fn logger_new(
     instance_id_ptr: *const c_char,
     level_stdout: LogLevel,
     level_file: LogLevel,
-    file_path_ptr: *const c_char,
+    file_logging: u8,
+    directory_ptr: *const c_char,
+    file_name_ptr: *const c_char,
+    file_format_ptr: *const c_char,
+    component_levels_ptr: *const c_char,
     rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
@@ -361,8 +455,15 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
-        level_file,
-        optional_cstr_to_string(file_path_ptr).map(PathBuf::from),
+        if file_logging != 0 {
+            Some(level_file)
+        } else {
+            None
+        },
+        optional_cstr_to_string(directory_ptr),
+        optional_cstr_to_string(file_name_ptr),
+        optional_cstr_to_string(file_format_ptr),
+        optional_bytes_to_json(component_levels_ptr),
         rate_limit,
         is_bypassed != 0,
     )))
@@ -417,9 +518,32 @@ pub unsafe extern "C" fn logger_log(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::logging::{LogColor, LogLevel, Logger};
+    use crate::testing::wait_until;
+
+    use super::*;
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
+    use std::{cell::RefCell, fs, path::PathBuf, time::Duration};
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn log_message_serialization() {
+        let log_message = LogMessage {
+            timestamp_ns: 1_000_000_000,
+            level: LogLevel::Info,
+            color: LogColor::Normal,
+            component: "Portfolio".to_string(),
+            msg: "This is a log message".to_string(),
+        };
+
+        let serialized_json = serde_json::to_string(&log_message).unwrap();
+        let deserialized_value: Value = serde_json::from_str(&serialized_json).unwrap();
+
+        assert_eq!(deserialized_value["timestamp_ns"], 1_000_000_000);
+        assert_eq!(deserialized_value["level"], "INFO");
+        assert_eq!(deserialized_value["component"], "Portfolio");
+        assert_eq!(deserialized_value["msg"], "This is a log message");
+    }
 
     #[test]
     fn test_new_logger() {
@@ -428,7 +552,10 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Debug,
-            LogLevel::Debug,
+            Some(LogLevel::Debug),
+            None,
+            None,
+            None,
             None,
             100_000,
             false,
@@ -444,7 +571,10 @@ mod tests {
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
-            LogLevel::Debug,
+            Some(LogLevel::Debug),
+            None,
+            None,
+            None,
             None,
             100_000,
             false,
@@ -458,5 +588,158 @@ mod tests {
                 String::from("This is a test."),
             )
             .expect("Error while logging");
+    }
+
+    #[ignore]
+    #[test]
+    fn test_logging_to_file() {
+        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
+        let log_file_path = temp_log_file.path();
+
+        // Add the ".log" suffix to the log file path
+        let mut log_file_path_with_suffix = PathBuf::from(log_file_path);
+        log_file_path_with_suffix.set_extension("log");
+        let log_file_path_with_suffix_str =
+            RefCell::new(log_file_path_with_suffix.to_str().unwrap().to_string());
+
+        let mut logger = Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            Some(LogLevel::Debug),
+            Some(log_file_path.to_str().unwrap().to_string()),
+            None,
+            None,
+            None,
+            100_000,
+            false,
+        );
+
+        logger
+            .info(
+                1650000000000000,
+                LogColor::Normal,
+                String::from("RiskEngine"),
+                String::from("This is a test."),
+            )
+            .expect("Error while logging");
+
+        let mut log_contents = String::new();
+
+        wait_until(
+            || {
+                log_contents = fs::read_to_string(log_file_path_with_suffix_str.borrow().clone())
+                    .expect("Error while reading log file");
+                !log_contents.is_empty()
+            },
+            Duration::from_secs(3),
+        );
+
+        assert_eq!(
+            log_contents,
+            "1970-01-20T02:20:00.000000000Z [INF] TRADER-001.RiskEngine: This is a test.\n"
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_log_component_level_filtering() {
+        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
+        let log_file_path = temp_log_file.path();
+
+        // Add the ".log" suffix to the log file path
+        let mut log_file_path_with_suffix = PathBuf::from(log_file_path);
+        log_file_path_with_suffix.set_extension("log");
+        let log_file_path_with_suffix_str =
+            RefCell::new(log_file_path_with_suffix.to_str().unwrap().to_string());
+
+        let component_levels = HashMap::from_iter(std::iter::once((
+            String::from("RiskEngine"),
+            Value::from("ERROR"), // <-- This should be filtered
+        )));
+
+        let mut logger = Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            Some(LogLevel::Debug),
+            Some(log_file_path.to_str().unwrap().to_string()),
+            None,
+            None,
+            Some(component_levels),
+            100_000,
+            false,
+        );
+
+        logger
+            .info(
+                1650000000000000,
+                LogColor::Normal,
+                String::from("RiskEngine"),
+                String::from("This is a test."),
+            )
+            .expect("Error while logging");
+
+        thread::sleep(Duration::from_secs(1));
+
+        assert!(
+            fs::read_to_string(log_file_path_with_suffix_str.borrow().clone())
+                .expect("Error while reading log file")
+                .is_empty()
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_logging_to_file_in_json_format() {
+        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
+        let log_file_path = temp_log_file.path();
+
+        // Add the ".log" suffix to the log file path
+        let mut log_file_path_with_suffix = PathBuf::from(log_file_path);
+        log_file_path_with_suffix.set_extension("json");
+        let log_file_path_with_suffix_str =
+            RefCell::new(log_file_path_with_suffix.to_str().unwrap().to_string());
+
+        let mut logger = Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            Some(LogLevel::Debug),
+            None,
+            Some(log_file_path.to_str().unwrap().to_string()),
+            Some("json".to_string()),
+            None,
+            100_000,
+            false,
+        );
+
+        logger
+            .info(
+                1650000000000000,
+                LogColor::Normal,
+                String::from("RiskEngine"),
+                String::from("This is a test."),
+            )
+            .expect("Error while logging");
+
+        let mut log_contents = String::new();
+
+        wait_until(
+            || {
+                log_contents = fs::read_to_string(log_file_path_with_suffix_str.borrow().clone())
+                    .expect("Error while reading log file");
+                !log_contents.is_empty()
+            },
+            Duration::from_secs(3),
+        );
+
+        assert_eq!(
+            log_contents,
+            "{\"timestamp_ns\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"msg\":\"This is a test.\"}\n"
+        );
     }
 }

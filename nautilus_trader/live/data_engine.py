@@ -88,7 +88,7 @@ class LiveDataEngine(DataEngine):
         self._req_queue_task: Optional[asyncio.Task] = None
         self._res_queue_task: Optional[asyncio.Task] = None
         self._data_queue_task: Optional[asyncio.Task] = None
-        self._is_running: bool = False
+        self._kill: bool = False
 
     def connect(self) -> None:
         """
@@ -199,6 +199,8 @@ class LiveDataEngine(DataEngine):
         Kill the engine by abruptly canceling the queue tasks and calling stop.
         """
         self._log.warning("Killing engine...")
+        self._kill = True
+        self.stop()
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
@@ -215,9 +217,6 @@ class LiveDataEngine(DataEngine):
             self._log.debug(f"Canceling {self._data_queue_task.get_name()}...")
             self._data_queue_task.cancel()
             self._data_queue_task.done()
-        if self._is_running:
-            self._is_running = False  # Avoids sentinel messages for queues
-            self.stop()
 
     def execute(self, command: DataCommand) -> None:
         """
@@ -351,91 +350,92 @@ class LiveDataEngine(DataEngine):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
-        self._is_running = True  # Queues will continue to process
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
-        self._res_queue_task = self._loop.create_task(self._run_req_queue(), name="req_queue")
         self._req_queue_task = self._loop.create_task(self._run_res_queue(), name="res_queue")
+        self._res_queue_task = self._loop.create_task(self._run_req_queue(), name="req_queue")
         self._data_queue_task = self._loop.create_task(self._run_data_queue(), name="data_queue")
 
         self._log.debug(f"Scheduled {self._cmd_queue_task}")
-        self._log.debug(f"Scheduled {self._res_queue_task}")
         self._log.debug(f"Scheduled {self._req_queue_task}")
+        self._log.debug(f"Scheduled {self._res_queue_task}")
         self._log.debug(f"Scheduled {self._data_queue_task}")
 
     def _on_stop(self) -> None:
-        if self._is_running:
-            self._is_running = False
-            self._enqueue_sentinels()
+        if self._kill:
+            return  # Avoids queuing redundant sentinel messages
+        # This will stop the queues processing as soon as they see the sentinel message
+        self._enqueue_sentinels()
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
             f"DataCommand message queue processing starting (qsize={self.cmd_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 command: Optional[DataCommand] = await self._cmd_queue.get()
-                if command is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if command is self._sentinel:
+                    break
                 self._execute_command(command)
         except asyncio.CancelledError:
+            self._log.warning("DataCommand message queue canceled.")
+        finally:
+            stopped_msg = "DataCommand message queue stopped"
             if not self._cmd_queue.empty():
-                self._log.warning(
-                    f"DataCommand message queue processing stopped "
-                    f"with {self.cmd_qsize()} message(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue.")
             else:
-                self._log.debug("DataCommand message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")
 
     async def _run_req_queue(self) -> None:
         self._log.debug(
             f"DataRequest message queue processing starting (qsize={self.req_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 request: Optional[DataRequest] = await self._req_queue.get()
-                if request is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if request is self._sentinel:
+                    break
                 self._handle_request(request)
         except asyncio.CancelledError:
+            self._log.warning("DataRequest message queue canceled.")
+        finally:
+            stopped_msg = "DataRequest message queue stopped"
             if not self._req_queue.empty():
-                self._log.warning(
-                    f"DataRequest message queue processing stopped "
-                    f"with {self.req_qsize()} message(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.req_qsize()} message(s) on queue.")
             else:
-                self._log.debug("DataRequest message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")
 
     async def _run_res_queue(self) -> None:
         self._log.debug(
-            f"DataResponse message queue processing starting (qsize={self.req_qsize()})...",
+            f"DataResponse message queue processing starting (qsize={self.res_qsize()})...",
         )
         try:
-            while self._is_running:
+            while True:
                 response: Optional[DataRequest] = await self._res_queue.get()
-                if response is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if response is self._sentinel:
+                    break
                 self._handle_response(response)
         except asyncio.CancelledError:
+            self._log.warning("DataResponse message queue canceled.")
+        finally:
+            stopped_msg = "DataResponse message queue stopped"
             if not self._res_queue.empty():
-                self._log.warning(
-                    f"DataResponse message queue processing stopped "
-                    f"with {self.res_qsize()} message(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.res_qsize()} message(s) on queue.")
             else:
-                self._log.debug("DataResponse message queue processing stopped.")
+                self._log.debug(stopped_msg + ".")
 
     async def _run_data_queue(self) -> None:
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
         try:
-            while self._is_running:
+            while True:
                 data: Optional[Data] = await self._data_queue.get()
-                if data is None:  # Sentinel message
-                    continue  # Returns to the top to check `self._is_running`
+                if data is self._sentinel:
+                    break
                 self._handle_data(data)
         except asyncio.CancelledError:
+            self._log.warning("Data message queue canceled.")
+        finally:
+            stopped_msg = "Data message queue stopped"
             if not self._data_queue.empty():
-                self._log.warning(
-                    f"Data queue processing stopped " f"with {self.data_qsize()} item(s) on queue.",
-                )
+                self._log.warning(f"{stopped_msg} with {self.data_qsize()} message(s) on queue.")
             else:
-                self._log.debug("Data queue processing stopped.")
+                self._log.debug(stopped_msg + ".")

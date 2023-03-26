@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.dema import DoubleExponentialMovingAverage
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.average.hma import HullMovingAverage
@@ -23,6 +22,7 @@ from nautilus_trader.indicators.average.rma import WilderMovingAverage
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

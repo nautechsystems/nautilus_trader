@@ -69,6 +69,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orderbook.data cimport OrderBookData
@@ -121,43 +122,14 @@ cdef class BacktestEngine:
         self._backtest_end: Optional[datetime] = None
 
         # Build core system kernel
-        self._kernel = NautilusKernel(
-            environment=Environment.BACKTEST,
-            name=type(self).__name__,
-            trader_id=TraderId(config.trader_id),
-            instance_id=config.instance_id,
-            cache_config=config.cache or CacheConfig(),
-            cache_database_config=config.cache_database or CacheDatabaseConfig(),
-            data_config=config.data_engine or DataEngineConfig(),
-            risk_config=config.risk_engine or RiskEngineConfig(),
-            exec_config=config.exec_engine or ExecEngineConfig(),
-            streaming_config=config.streaming,
-            actor_configs=config.actors,
-            strategy_configs=config.strategies,
-            load_state=config.load_state,
-            save_state=config.save_state,
-            log_level=log_level_from_str(config.log_level.upper()),
-            log_level_file=log_level_from_str(config.log_level_file.upper()),
-            log_file_path=config.log_file_path,
-            log_rate_limit=config.log_rate_limit,
-            bypass_logging=config.bypass_logging,
-        )
+        self._kernel = NautilusKernel(name=type(self).__name__, config=config)
 
-        cdef Trader trader = self._kernel.trader
         self._data_engine: DataEngine = self._kernel.data_engine
 
         # Setup engine logging
-        self._logger = Logger(
-            clock=LiveClock(),
-            trader_id=self.kernel.trader_id,
-            machine_id=self.kernel.machine_id,
-            instance_id=self.kernel.instance_id,
-            bypass=config.bypass_logging,
-        )
-
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
-            logger=self._logger,
+            logger=self._kernel.logger,
         )
 
     @property
@@ -368,6 +340,7 @@ cdef class BacktestEngine:
         book_type: BookType = BookType.L1_TBBO,
         routing: bool = False,
         frozen_account: bool = False,
+        bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
     ) -> None:
@@ -403,6 +376,8 @@ cdef class BacktestEngine:
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
+        bar_execution : bool, default True
+            If bars should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -449,6 +424,7 @@ cdef class BacktestEngine:
             clock=self.kernel.clock,
             logger=self.kernel.logger,
             frozen_account=frozen_account,
+            bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
         )
@@ -518,8 +494,18 @@ cdef class BacktestEngine:
                 f"Add the {instrument.id.venue} venue using the `add_venue` method."
             )
 
-        # TODO(cs): validate the instrument is correct for the venue
-        account_type: AccountType = self._venues[instrument.id.venue].account_type
+        # Validate instrument is correct for the venue
+        cdef SimulatedExchange venue = self._venues[instrument.id.venue]
+
+        if (
+            isinstance(instrument, CurrencyPair)
+            and venue.account_type == AccountType.CASH
+            and venue.base_currency is not None  # Single-currency account
+        ):
+            raise InvalidConfiguration(
+                f"Cannot add `CurrencyPair` instrument {instrument} "
+                "for a venue with a single-currency CASH account.",
+            )
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(instrument.id.venue)
@@ -836,6 +822,7 @@ cdef class BacktestEngine:
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
+        self._kernel.logger.change_clock(self._clock)
 
         self._log_post_run()
 
@@ -887,14 +874,14 @@ cdef class BacktestEngine:
             start = unix_nanos_to_dt(start_ns)
         else:
             start = pd.to_datetime(start, utc=True)
-            start_ns = int(start.to_datetime64())
+            start_ns = start.value
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
             end = unix_nanos_to_dt(end_ns)
         else:
             end = pd.to_datetime(end, utc=True)
-            end_ns = int(end.to_datetime64())
+            end_ns = end.value
         Condition.true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
 
@@ -1086,15 +1073,18 @@ cdef class BacktestEngine:
         if not self._config.run_analysis:
             return
 
-        for exchange in self._venues.values():
-            account = exchange.exec_client.get_account()
+        cdef:
+            list venue_positions
+            set venue_currencies
+        for venue in self._venues.values():
+            account = venue.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
+            self._log.info(f"\033[36m SimulatedVenue {venue.id}")
             self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
             self._log.info("\033[36m-----------------------------------------------------------------")
             unrealized_pnls: Optional[dict[Currency, Money]] = None
-            if exchange.is_frozen_account:
+            if venue.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 if account is None:
@@ -1112,7 +1102,7 @@ cdef class BacktestEngine:
                     self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
                 self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs (included in totals):")
-                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value))
+                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(venue.id.value))
                 if not unrealized_pnls:
                     self._log.info("None")
                 else:
@@ -1120,24 +1110,28 @@ cdef class BacktestEngine:
                         self._log.info(b.to_str())
 
             # Log output diagnostics for all simulation modules
-            for module in exchange.modules:
+            for module in venue.modules:
                 module.log_diagnostics(self._log)
 
             self._log.info("\033[36m=================================================================")
             self._log.info("\033[36m PORTFOLIO PERFORMANCE")
             self._log.info("\033[36m=================================================================")
 
-            # Find all positions for venue
-            exchange_positions = []
+            # Collect all positions and currencies for venue
+            venue_positions = []
+            venue_currencies = set()
             for position in positions:
-                if position.instrument_id.venue == exchange.id:
-                    exchange_positions.append(position)
+                if position.instrument_id.venue == venue.id:
+                    venue_positions.append(position)
+                    venue_currencies.add(position.quote_currency)
+                    if position.base_currency is not None:
+                        venue_currencies.add(position.base_currency)
 
             # Calculate statistics
-            self._kernel.portfolio.analyzer.calculate_statistics(account, exchange_positions)
+            self._kernel.portfolio.analyzer.calculate_statistics(account, venue_positions)
 
             # Present PnL performance stats per asset
-            for currency in account.currencies():
+            for currency in sorted(list(venue_currencies), key=lambda x: x.code):
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
                 unrealized_pnl = unrealized_pnls.get(currency) if unrealized_pnls else None

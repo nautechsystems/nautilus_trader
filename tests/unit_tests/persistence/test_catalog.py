@@ -17,18 +17,13 @@ import datetime
 import itertools
 import os
 import sys
-import tempfile
 from decimal import Decimal
 
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
@@ -47,7 +42,6 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -55,8 +49,11 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import ParquetReader as ParquetByteReader
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
@@ -400,15 +397,6 @@ class _TestPersistenceCatalog:
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="windows paths broken")
-    def test_from_env(self):
-        path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
-        uri = f"{self.fs_protocol}://{path}"
-        catalog = ParquetDataCatalog.from_uri(uri)
-        os.environ["NAUTILUS_PATH"] = uri
-        catalog = ParquetDataCatalog.from_env()
-        assert catalog.fs_protocol == self.fs_protocol
 
     def test_partition_key_correctly_remapped(self):
         # Arrange

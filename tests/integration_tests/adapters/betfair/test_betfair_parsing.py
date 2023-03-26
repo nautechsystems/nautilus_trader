@@ -50,7 +50,6 @@ from nautilus_trader.adapters.betfair.parsing.streaming import (
 from nautilus_trader.adapters.betfair.parsing.streaming import (
     market_definition_to_instrument_status_updates,
 )
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
@@ -75,6 +74,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs

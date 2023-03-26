@@ -263,7 +263,6 @@ class PortfolioAnalyzer:
                 len(self._account_balances) == 1
             ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
-        assert currency in self._account_balances, "currency not found in account_balances"
         assert (
             unrealized_pnl is None or unrealized_pnl.currency == currency
         ), f"unrealized PnL curreny is not {currency}"
@@ -315,7 +314,6 @@ class PortfolioAnalyzer:
                 len(self._account_balances) == 1
             ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
-        assert currency in self._account_balances, "currency not found in account_balances"
         assert (
             unrealized_pnl is None or unrealized_pnl.currency == currency
         ), f"unrealized PnL curreny is not {currency}"

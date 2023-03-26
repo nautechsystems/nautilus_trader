@@ -20,6 +20,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -27,7 +28,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 
 class TestIdStubs:
     @staticmethod
-    def uuid():
+    def uuid() -> UUID4:
         return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
 
     @staticmethod
@@ -91,3 +92,7 @@ class TestIdStubs:
     @staticmethod
     def venue_order_id() -> VenueOrderId:
         return VenueOrderId("1")
+
+    @staticmethod
+    def trade_id() -> TradeId:
+        return TradeId("1")

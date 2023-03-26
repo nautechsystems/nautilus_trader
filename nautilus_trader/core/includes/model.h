@@ -213,6 +213,8 @@ typedef enum TriggerType {
     INDEX_PRICE = 9,
 } TriggerType;
 
+typedef struct Arc_String Arc_String;
+
 typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
@@ -351,10 +353,10 @@ typedef struct OrderBook {
 } OrderBook;
 
 typedef struct Currency_t {
-    struct Rc_String *code;
+    struct Arc_String *code;
     uint8_t precision;
     uint16_t iso4217;
-    struct Rc_String *name;
+    struct Arc_String *name;
     enum CurrencyType currency_type;
 } Currency_t;
 

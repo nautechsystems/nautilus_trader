@@ -737,7 +737,7 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled[0]
-    ts_event = int(pd.Timestamp(fill.lastMatchedDate).to_datetime64())
+    ts_event = pd.Timestamp(fill.lastMatchedDate).value
     return [
         TradeReport(
             account_id=AccountId("BETFAIR"),

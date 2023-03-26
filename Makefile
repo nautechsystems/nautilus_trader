@@ -30,6 +30,9 @@ format:
 pre-commit: format
 	pre-commit run --all-files
 
+ruff:
+	ruff check . --fix
+
 update:
 	(cd nautilus_core && cargo update)
 	poetry update

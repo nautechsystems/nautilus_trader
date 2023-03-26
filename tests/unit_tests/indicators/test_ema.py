@@ -15,9 +15,9 @@
 
 from decimal import Decimal
 
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
