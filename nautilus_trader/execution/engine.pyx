@@ -355,9 +355,14 @@ cdef class ExecutionEngine(Component):
         exec_algorithm : ExecAlgorithm
             The execution algorithm to register.
 
+        Raises
+        ------
+        ValueError
+            If `exec_algorithm` is already registered with the execution engine.
+
         """
         Condition.not_none(exec_algorithm, "exec_algorithm")
-        Condition.is_in(exec_algorithm.id, self._exec_algorithms, "exec_algorithm.id", "self._exec_algorithms")
+        Condition.not_in(exec_algorithm.id, self._exec_algorithms, "exec_algorithm.id", "self._exec_algorithms")
 
         self._exec_algorithms[exec_algorithm.id] = exec_algorithm
 

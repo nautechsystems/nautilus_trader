@@ -21,9 +21,9 @@ from nautilus_trader.config import ImportableExecAlgorithmConfig
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
@@ -57,16 +57,14 @@ cdef class ExecAlgorithm(Actor):
 
         super().__init__()
         # Assign Execution Algorithm ID after base class initialized
-        self.id = type(self).__name__ if config.exec_algorithm_id is None else config.exec_algorithm_id
+        component_id = type(self).__name__ if config.exec_algorithm_id is None else config.exec_algorithm_id
+        self.id = ExecAlgorithmId(component_id)
 
         # Configuration
         self.config = config
 
         # Public components
-        self.clock = self._clock
-        self.cache = None          # Initialized when registered
-        self.portfolio = None      # Initialized when registered
-        self.order_factory = None  # Initialized when registered
+        self.portfolio = None  # Initialized when registered
 
     def to_importable_config(self) -> ImportableExecAlgorithmConfig:
         """
@@ -131,13 +129,7 @@ cdef class ExecAlgorithm(Actor):
             logger=logger,
         )
 
-        self.portfolio = portfolio  # Assigned as PortfolioFacade
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            clock=self.clock,
-        )
+        self.portfolio = portfolio
 
         # Required subscriptions
         # self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
