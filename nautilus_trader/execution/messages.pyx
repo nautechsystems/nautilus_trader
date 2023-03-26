@@ -21,7 +21,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
+from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.model.enums_c cimport order_side_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -932,3 +932,48 @@ cdef class QueryOrder(TradingCommand):
 
         """
         return QueryOrder.to_dict_c(obj)
+
+
+cdef class ExecAlgorithmSpecification:
+    """
+    Represents the execution algorithm specification for the order.
+
+    Parameters
+    ----------
+    client_order_id : ClientOrderId
+        The client order ID for the order being executed.
+    exec_algorithm_id : ExecAlgorithmId
+        The execution algorithm ID.
+    params : dict[str, Any], optional
+        The execution algorithm parameters for the order (must be serializable primitives).
+        If ``None`` then no parameters will be passed to any execution algorithm.
+    """
+
+    def __init__(
+        self,
+        ClientOrderId client_order_id not None,
+        ExecAlgorithmId exec_algorithm_id not None,
+        dict params: Optional[dict[str, Any]] = None,
+    ) -> None:
+        self.client_order_id = client_order_id
+        self.exec_algorithm_id = exec_algorithm_id
+        self.params = params
+        self._key = frozenset(params.items())
+
+    def __eq__(self, ExecAlgorithmSpecification other) -> bool:
+        return (
+            self.client_order_id == other.client_order_id
+            and self.exec_algorithm_id == other.exec_algorithm_id
+            and self._key == other._key
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.client_order_id.to_str(), self.exec_algorithm_id.to_str(), self._key))
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}"
+            f"(client_order_id={self.client_order_id.to_str()}, "
+            f"exec_algorithm_id={self.exec_algorithm_id.to_str()}, "
+            f"params={self.params})"
+        )

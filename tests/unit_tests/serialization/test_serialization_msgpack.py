@@ -24,8 +24,8 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList

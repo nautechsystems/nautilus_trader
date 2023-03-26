@@ -19,6 +19,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.portfolio.portfolio cimport Portfolio
@@ -35,20 +36,27 @@ cdef class Trader(Component):
     cdef ExecutionEngine _exec_engine
     cdef list _actors
     cdef list _strategies
+    cdef list _exec_algorithms
 
     cpdef list actors(self)
     cpdef list strategies(self)
+    cpdef list exec_algorithms(self)
 
     cpdef list actor_ids(self)
     cpdef list strategy_ids(self)
+    cpdef list exec_algorithm_ids(self)
     cpdef dict actor_states(self)
     cpdef dict strategy_states(self)
+    cpdef dict exec_algorithm_states(self)
     cpdef void add_actor(self, Actor actor)
     cpdef void add_actors(self, list actors)
     cpdef void add_strategy(self, Strategy strategy)
     cpdef void add_strategies(self, list strategies)
+    cpdef void add_exec_algorithm(self, ExecAlgorithm exec_algorithm)
+    cpdef void add_exec_algorithms(self, list exec_algorithms)
     cpdef void clear_actors(self)
     cpdef void clear_strategies(self)
+    cpdef void clear_exec_algorithms(self)
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None])
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None])
     cpdef void start(self)

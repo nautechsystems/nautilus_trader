@@ -15,50 +15,130 @@
 
 from typing import Any, Optional
 
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecAlgorithmId
+from nautilus_trader.config import ExecAlgorithmConfig
+from nautilus_trader.config import ImportableExecAlgorithmConfig
+
+from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.factories cimport OrderFactory
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
-cdef class ExecAlgorithmSpecification:
+cdef class ExecAlgorithm(Actor):
     """
-    Represents the execution algorithm specification for the order.
+    The base class for all execution algorithms.
+
+    This class allows traders to implement their own customized execution algorithms.
 
     Parameters
     ----------
-    client_order_id : ClientOrderId
-        The client order ID for the order being executed.
-    exec_algorithm_id : ExecAlgorithmId
-        The execution algorithm ID.
-    params : dict[str, Any], optional
-        The execution algorithm parameters for the order (must be serializable primitives).
-        If ``None`` then no parameters will be passed to any execution algorithm.
+    config : ExecAlgorithmConfig, optional
+        The execution algorithm configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ExecAlgorithmConfig`.
+
+    Warnings
+    --------
+    This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(
+    def __init__(self, config: Optional[ExecAlgorithmConfig] = None):
+        if config is None:
+            config = ExecAlgorithmConfig()
+        Condition.type(config, ExecAlgorithmConfig, "config")
+
+        super().__init__()
+        # Assign Execution Algorithm ID after base class initialized
+        self.id = type(self).__name__ if config.exec_algorithm_id is None else config.exec_algorithm_id
+
+        # Configuration
+        self.config = config
+
+        # Public components
+        self.clock = self._clock
+        self.cache = None          # Initialized when registered
+        self.portfolio = None      # Initialized when registered
+        self.order_factory = None  # Initialized when registered
+
+    def to_importable_config(self) -> ImportableExecAlgorithmConfig:
+        """
+        Returns an importable configuration for this execution algorithm.
+
+        Returns
+        -------
+        ImportableExecAlgorithmConfig
+
+        """
+        return ImportableExecAlgorithmConfig(
+            exec_algorithm_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
+
+# -- REGISTRATION ---------------------------------------------------------------------------------
+
+    cpdef void register(
         self,
-        ClientOrderId client_order_id not None,
-        ExecAlgorithmId exec_algorithm_id not None,
-        dict params: Optional[dict[str, Any]] = None,
-    ) -> None:
-        self.client_order_id = client_order_id
-        self.exec_algorithm_id = exec_algorithm_id
-        self.params = params
-        self._key = frozenset(params.items())
+        TraderId trader_id,
+        PortfolioFacade portfolio,
+        MessageBus msgbus,
+        CacheFacade cache,
+        Clock clock,
+        Logger logger,
+    ):
+        """
+        Register the execution algorithm with a trader.
 
-    def __eq__(self, ExecAlgorithmSpecification other) -> bool:
-        return (
-            self.client_order_id == other.client_order_id
-            and self.exec_algorithm_id == other.exec_algorithm_id
-            and self._key == other._key
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader ID for the execution algorithm.
+        portfolio : PortfolioFacade
+            The read-only portfolio for the execution algorithm.
+        msgbus : MessageBus
+            The message bus for the execution algorithm.
+        cache : CacheFacade
+            The read-only cache for the execution algorithm.
+        clock : Clock
+            The clock for the execution algorithm.
+        logger : Logger
+            The logger for the execution algorithm.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(trader_id, "trader_id")
+        Condition.not_none(portfolio, "portfolio")
+        Condition.not_none(msgbus, "msgbus")
+        Condition.not_none(cache, "cache")
+        Condition.not_none(clock, "clock")
+        Condition.not_none(logger, "logger")
+
+        self.register_base(
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
         )
 
-    def __hash__(self) -> int:
-        return hash((self.client_order_id.to_str(), self.exec_algorithm_id.to_str(), self._key))
+        self.portfolio = portfolio  # Assigned as PortfolioFacade
 
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}"
-            f"(client_order_id={self.client_order_id.to_str()}, "
-            f"exec_algorithm_id={self.exec_algorithm_id.to_str()}, "
-            f"params={self.params})"
+        self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            clock=self.clock,
         )
+
+        # Required subscriptions
+        # self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
+        # self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
