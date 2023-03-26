@@ -16,7 +16,6 @@
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -24,10 +23,9 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class ExecAlgorithm(Actor):
+
     cdef readonly PortfolioFacade portfolio
-    """The read-only portfolio for the execution algorithm.\n\n:returns: `PortfolioFacade`"""
-    cdef readonly OrderFactory order_factory
-    """The order factory for the execution algorithm.\n\n:returns: `OrderFactory`"""
+    """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
