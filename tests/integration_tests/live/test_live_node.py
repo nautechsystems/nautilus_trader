@@ -43,7 +43,6 @@ RAW_CONFIG = msgspec.json.encode(
     {
         "environment": "live",
         "trader_id": "Test-111",
-        "log_level": "INFO",
         "exec_engine": {
             "reconciliation_lookback_mins": 1440,
         },

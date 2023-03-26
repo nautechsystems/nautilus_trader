@@ -43,12 +43,14 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
@@ -336,6 +338,10 @@ class NautilusKernel:
         for strategy_config in config.strategies:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
+
+        for exec_algorithm_config in config.exec_algorithms:
+            exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
+            self._trader.add_exec_algorithm(exec_algorithm)
 
         build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
         self.log.info(f"Initialized in {build_time_ms}ms.")

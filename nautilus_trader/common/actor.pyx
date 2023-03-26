@@ -66,7 +66,6 @@ from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
@@ -114,6 +113,7 @@ cdef class Actor(Component):
         self._warning_events: set[type] = set()
         self._signal_classes: dict[str, type] = {}
 
+        # Configuration
         self.config = config
 
         self.trader_id = None  # Initialized when registered

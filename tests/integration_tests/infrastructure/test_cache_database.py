@@ -31,8 +31,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase

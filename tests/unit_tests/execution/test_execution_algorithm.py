@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
+from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 
