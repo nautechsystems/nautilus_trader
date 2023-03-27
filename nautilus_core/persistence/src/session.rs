@@ -1,12 +1,9 @@
-use std::collections::HashMap;
 use std::vec::IntoIter;
-
-use std::ops::Deref;
 
 use datafusion::error::Result;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::prelude::*;
-use futures::executor::{block_on, block_on_stream, BlockingStream};
+use futures::executor::block_on;
 use futures::{Stream, StreamExt};
 use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
@@ -16,7 +13,7 @@ use pyo3::types::PyCapsule;
 use pyo3_asyncio::tokio::get_runtime;
 
 use crate::kmerge_batch::{DataTsInit, KMerge, TsInitComparator};
-use crate::parquet::{DecodeFromRecordBatch, ParquetType};
+use crate::parquet::DecodeFromRecordBatch;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
@@ -154,101 +151,62 @@ impl<T> Iterator for QueryResult<T> {
 /// Store the data fusion session context
 #[pyclass]
 #[derive(Default)]
-pub struct PersistenceSession {
-    session_ctx: SessionContext,
-    query_result: Option<PersistenceQuery>,
-}
+pub struct PythonCatalog(PersistenceCatalog<QuoteTick>);
 
-/// Store the result stream created by executing a query
-///
-/// The async stream has been wrapped into a blocking stream. The nautilus
-/// engine is a CPU intensive process so it will process the events in one
-/// batch and then request more. We want to block the thread until it
-/// receives more events to consume.
-pub struct PersistenceQuery {
-    result: BlockingStream<SendableRecordBatchStream>,
-    metadata: HashMap<String, String>,
-    parquet_type: ParquetType,
-    current_chunk: Option<CVec>,
-}
+// Note: Intended to be used on a single python thread
+unsafe impl<T> Send for PersistenceCatalog<T> {}
 
-impl Deref for PersistenceSession {
-    type Target = SessionContext;
-
-    fn deref(&self) -> &Self::Target {
-        &self.session_ctx
-    }
-}
-
-impl PersistenceSession {
-    pub fn new() -> Self {
-        let session_ctx = SessionContext::new();
-        PersistenceSession {
-            session_ctx,
-            query_result: None,
-        }
-    }
-
-    /// Takes an sql query and creates a data frame
-    ///
-    /// The data frame is the logical plan that can be executed on the
-    /// data sources registered with the context. The async stream
-    /// is wrapped into a blocking stream.
-    pub async fn query(&self, sql: &str) -> Result<BlockingStream<SendableRecordBatchStream>> {
-        let df = self.sql(sql).await?;
-        let stream = df.execute_stream().await?;
-        Ok(block_on_stream(stream))
-    }
-}
-
-/// Persistence session methods exposed to Python
-///
-/// session_ctx has all the methods needed to manipulate the session
-/// context. However we expose only limited or relevant  methods
-/// through python.
-///
-/// Creating a session also initialized a tokio runtime so that
-/// the query solver can use the runtime. This can be moved to
-/// a different entry point later.
 #[pymethods]
-impl PersistenceSession {
+impl PythonCatalog {
     #[new]
     pub fn new_session() -> Self {
         // initialize runtime here
         get_runtime();
-        Self::new()
+        Self::default()
     }
 
-    pub fn new_query(
-        mut slf: PyRefMut<'_, Self>,
-        sql: String,
-        metadata: HashMap<String, String>,
-        parquet_type: ParquetType,
-    ) {
+    pub fn add_file(mut slf: PyRefMut<'_, Self>, table_name: &str, file_path: &str) {
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        match block_on(slf.query(&sql)) {
-            Ok(result) => {
-                let query = PersistenceQuery {
-                    result,
-                    metadata,
-                    parquet_type,
-                    current_chunk: None,
-                };
-                slf.query_result = Some(query);
-            }
+        match block_on(slf.0.add_file(table_name, file_path)) {
+            Ok(_) => (),
             Err(err) => panic!("failed new_query with error {}", err),
         }
     }
 
-    pub fn register_parquet_file(slf: PyRef<'_, Self>, table_name: String, path: String) {
-        match block_on(slf.register_parquet(&table_name, &path, ParquetReadOptions::default())) {
+    pub fn add_file_with_query(
+        mut slf: PyRefMut<'_, Self>,
+        table_name: &str,
+        file_path: &str,
+        sql_query: &str,
+    ) {
+        let rt = get_runtime();
+        let _guard = rt.enter();
+
+        match block_on(slf.0.add_file_with_query(table_name, file_path, sql_query)) {
             Ok(_) => (),
-            Err(err) => panic!("failed register_parquet_file with error {}", err),
+            Err(err) => panic!("failed new_query with error {}", err),
         }
     }
 
+    pub fn to_query_result(mut slf: PyRefMut<'_, Self>) -> PythonQueryResult {
+        let rt = get_runtime();
+        let _guard = rt.enter();
+
+        let query_result = slf.0.to_query_result();
+        PythonQueryResult::new(query_result)
+    }
+}
+
+#[pyclass]
+pub struct PythonQueryResult {
+    result: QueryResult<QuoteTick>,
+    chunk: Option<CVec>,
+}
+
+#[pymethods]
+impl PythonQueryResult {
     /// The reader implements an iterator.
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
@@ -256,64 +214,41 @@ impl PersistenceSession {
 
     /// Each iteration returns a chunk of values read from the parquet file.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
+        slf.drop_chunk();
+
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        let query_result = slf
-            .query_result
-            .as_mut()
-            .expect("Session needs a query to iterate");
-        query_result.drop_chunk();
-
-        let chunk: Option<CVec> = match query_result.parquet_type {
-            ParquetType::QuoteTick => {
-                if let Some(Ok(batch)) = query_result.result.next() {
-                    Some(QuoteTick::decode_batch(&query_result.metadata, batch).into())
-                } else {
-                    None
-                }
-            }
-            // TODO implement decode batch for trade tick
-            ParquetType::TradeTick => None,
-        };
-
-        // Leak reader value back otherwise it will be dropped after this function
-        query_result.current_chunk = chunk;
-        match chunk {
-            Some(cvec) => Python::with_gil(|py| {
-                Some(PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
-            }),
-            None => None,
-        }
+        slf.result.next().map(|chunk| {
+            let cvec = chunk.into();
+            Python::with_gil(|py| PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
+        })
     }
 }
 
-impl PersistenceQuery {
+// Note: Intended to be used on a single python thread
+unsafe impl Send for PythonQueryResult {}
+
+impl PythonQueryResult {
+    fn new(result: QueryResult<QuoteTick>) -> Self {
+        Self {
+            result,
+            chunk: None,
+        }
+    }
     /// Chunks generated by iteration must be dropped after use, otherwise
     /// it will leak memory. Current chunk is held by the reader,
     /// drop if exists and reset the field.
     fn drop_chunk(&mut self) {
-        if let Some(CVec { ptr, len, cap }) = self.current_chunk {
-            match self.parquet_type {
-                ParquetType::QuoteTick => {
-                    let data: Vec<QuoteTick> =
-                        unsafe { Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap) };
-                    drop(data);
-                }
-                ParquetType::TradeTick => {
-                    let data: Vec<TradeTick> =
-                        unsafe { Vec::from_raw_parts(ptr as *mut TradeTick, len, cap) };
-                    drop(data);
-                }
-            }
-
-            // reset current chunk field
-            self.current_chunk = None;
-        };
+        if let Some(CVec { ptr, len, cap }) = self.chunk.take() {
+            let data: Vec<QuoteTick> =
+                unsafe { Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap) };
+            drop(data);
+        }
     }
 }
 
-impl Drop for PersistenceQuery {
+impl Drop for PythonQueryResult {
     fn drop(&mut self) {
         self.drop_chunk();
     }

@@ -26,7 +26,7 @@ use parquet::{
 };
 use pyo3::types::PyBytes;
 use pyo3::{prelude::*, types::PyCapsule};
-use session::PersistenceSession;
+use session::{PythonCatalog, PythonQueryResult};
 
 #[pyclass(name = "ParquetReader")]
 struct PythonParquetReader {
@@ -319,6 +319,7 @@ pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonParquetWriter>()?;
     m.add_class::<ParquetType>()?;
     m.add_class::<ParquetReaderType>()?;
-    m.add_class::<PersistenceSession>()?;
+    m.add_class::<PythonCatalog>()?;
+    m.add_class::<PythonQueryResult>()?;
     Ok(())
 }

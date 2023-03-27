@@ -20,25 +20,20 @@ from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
-from nautilus_trader.core.nautilus_pyo3.persistence import PersistenceSession
+from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 
 
-def test_python_persistence_reader():
+def test_python_catalog():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
-    session = PersistenceSession()
-    session.register_parquet_file("quote_ticks", parquet_data_path)
+    session = PythonCatalog()
+    session.add_file("quote_ticks", parquet_data_path)
+    result = session.to_query_result()
 
-    metadata = {
-        "instrument_id": "EUR/USD.SIM",
-        "price_precision": "5",
-        "size_precision": "0",
-    }
-    session.new_query("SELECT * FROM quote_ticks SORT BY ts_init", metadata, ParquetType.QuoteTick)
     total_count = 0
     print("query result")
-    for chunk in session:
+    for chunk in result:
         tick_list = QuoteTick.list_from_capsule(chunk)
         total_count += len(tick_list)
 
