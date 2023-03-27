@@ -23,6 +23,8 @@ use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 
+use nautilus_core::time::UnixNanos;
+use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
 pub use crate::parquet::reader::{GroupFilterArg, ParquetReader};
@@ -44,11 +46,39 @@ pub enum ParquetReaderType {
     Buffer = 1,
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub enum Data {
+    Trade(TradeTick),
+    Quote(QuoteTick),
+}
+
+impl Data {
+    pub fn get_ts_init(&self) -> UnixNanos {
+        match self {
+            Data::Trade(t) => t.ts_init,
+            Data::Quote(q) => q.ts_init,
+        }
+    }
+}
+
+impl From<QuoteTick> for Data {
+    fn from(value: QuoteTick) -> Self {
+        Self::Quote(value)
+    }
+}
+
+impl From<TradeTick> for Data {
+    fn from(value: TradeTick) -> Self {
+        Self::Trade(value)
+    }
+}
+
 pub trait DecodeFromRecordBatch
 where
     Self: Sized,
 {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self>;
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
 }
 

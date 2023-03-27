@@ -28,7 +28,7 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{DecodeFromChunk, DecodeFromRecordBatch, EncodeToChunk};
+use crate::parquet::{Data, DecodeFromChunk, DecodeFromRecordBatch, EncodeToChunk};
 
 impl EncodeToChunk for QuoteTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
@@ -170,7 +170,7 @@ impl DecodeFromChunk for QuoteTick {
 }
 
 impl DecodeFromRecordBatch for QuoteTick {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
         let instrument_id = InstrumentId::from(metadata.get("instrument_id").unwrap().as_str());
         let price_precision = metadata
             .get("price_precision")
@@ -202,14 +202,17 @@ impl DecodeFromRecordBatch for QuoteTick {
             .zip(ts_event_values.iter())
             .zip(ts_init_values.iter())
             .map(
-                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| QuoteTick {
-                    instrument_id: instrument_id.clone(),
-                    bid: Price::from_raw(bid.unwrap(), price_precision),
-                    ask: Price::from_raw(ask.unwrap(), price_precision),
-                    bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
-                    ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
-                    ts_event: ts_event.unwrap(),
-                    ts_init: ts_init.unwrap(),
+                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| {
+                    QuoteTick {
+                        instrument_id: instrument_id.clone(),
+                        bid: Price::from_raw(bid.unwrap(), price_precision),
+                        ask: Price::from_raw(ask.unwrap(), price_precision),
+                        bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
+                        ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
+                        ts_event: ts_event.unwrap(),
+                        ts_init: ts_init.unwrap(),
+                    }
+                    .into()
                 },
             );
 

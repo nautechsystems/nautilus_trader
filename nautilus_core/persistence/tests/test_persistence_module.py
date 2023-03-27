@@ -28,7 +28,7 @@ from nautilus_trader.model.data.tick import TradeTick
 def test_python_catalog():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
     session = PythonCatalog()
-    session.add_file("quote_ticks", parquet_data_path)
+    session.add_file("quote_ticks", parquet_data_path, ParquetType.QuoteTick)
     result = session.to_query_result()
 
     total_count = 0

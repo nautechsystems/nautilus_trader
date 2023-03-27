@@ -3,15 +3,13 @@ use std::{task::Poll, vec::IntoIter};
 use binary_heap_plus::BinaryHeap;
 use compare::Compare;
 use futures::{ready, FutureExt, Stream, StreamExt};
-use nautilus_core::time::UnixNanos;
-use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pin_project_lite::pin_project;
 
 pub struct PeekElementBatchStream<S, I>
 where
     S: Stream<Item = IntoIter<I>>,
 {
-    item: I,
+    pub item: I,
     batch: S::Item,
     stream: S,
 }
@@ -39,41 +37,8 @@ where
     }
 }
 
-#[derive(Debug, Default)]
-pub struct TsInitComparator;
-
-pub trait DataTsInit {
-    fn get_ts_init(&self) -> UnixNanos;
-}
-
-impl DataTsInit for QuoteTick {
-    fn get_ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl DataTsInit for TradeTick {
-    fn get_ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl<S, I> Compare<PeekElementBatchStream<S, I>> for TsInitComparator
-where
-    S: Stream<Item = IntoIter<I>>,
-    I: DataTsInit,
-{
-    fn compare(
-        &self,
-        l: &PeekElementBatchStream<S, I>,
-        r: &PeekElementBatchStream<S, I>,
-    ) -> std::cmp::Ordering {
-        l.item.get_ts_init().cmp(&r.item.get_ts_init()).reverse()
-    }
-}
-
 pin_project! {
-    pub struct KMerge<S, I, C = TsInitComparator>
+    pub struct KMerge<S, I, C>
     where
         S: Stream<Item = IntoIter<I>>,
     {

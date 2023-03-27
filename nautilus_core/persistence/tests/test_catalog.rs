@@ -1,41 +1,47 @@
 use nautilus_model::data::tick::QuoteTick;
-use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
+use nautilus_persistence::{
+    parquet::Data,
+    session::{PersistenceCatalog, QueryResult},
+};
 
 #[tokio::test]
 async fn test_quote_ticks() {
     let mut catalog = PersistenceCatalog::default();
     catalog
-        .add_file(
+        .add_file::<QuoteTick>(
             "quote_tick",
             "../../tests/test_data/quote_tick_data.parquet",
         )
         .await
         .unwrap();
     catalog
-        .add_file(
+        .add_file::<QuoteTick>(
             "quote_tick_2",
             "../../tests/test_data/quote_tick_data.parquet",
         )
         .await
         .unwrap();
-    let query_result: QueryResult<QuoteTick> = catalog.to_query_result();
+    let query_result: QueryResult<Data> = catalog.to_query_result();
 
     // NOTE: is_sorted_by_key is unstable otherwise use
     // ticks.is_sorted_by_key(|tick| tick.ts_init)
     // https://github.com/rust-lang/rust/issues/53485
-    let is_ascending_by_init = |ticks: &Vec<QuoteTick>| {
+    let is_ascending_by_init = |ticks: &Vec<Data>| {
         for i in 1..ticks.len() {
             // previous tick is more recent than current tick
             // this is not ascending order
-            if ticks[i - 1].ts_init > ticks[i].ts_init {
+            if ticks[i - 1].get_ts_init() > ticks[i].get_ts_init() {
                 return false;
             }
         }
         true
     };
 
-    let ticks: Vec<QuoteTick> = query_result.flatten().collect();
-    assert_eq!("EUR/USD.SIM", ticks[0].instrument_id.to_string());
+    let ticks: Vec<Data> = query_result.flatten().collect();
+    match &ticks[0] {
+        Data::Trade(_) => assert!(false),
+        Data::Quote(q) => assert_eq!("EUR/USD.SIM", q.instrument_id.to_string()),
+    }
     assert_eq!(ticks.len(), 19000);
     assert!(is_ascending_by_init(&ticks));
 }

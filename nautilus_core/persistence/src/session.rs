@@ -1,68 +1,48 @@
 use std::vec::IntoIter;
 
+use compare::Compare;
 use datafusion::error::Result;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::prelude::*;
 use futures::executor::block_on;
 use futures::{Stream, StreamExt};
 use nautilus_core::cvec::CVec;
-use nautilus_core::time::UnixNanos;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 use pyo3_asyncio::tokio::get_runtime;
 
-use crate::kmerge_batch::{DataTsInit, KMerge, TsInitComparator};
-use crate::parquet::DecodeFromRecordBatch;
+use crate::kmerge_batch::{KMerge, PeekElementBatchStream};
+use crate::parquet::{Data, DecodeFromRecordBatch, ParquetType};
 
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-enum Data {
-    Trade(TradeTick),
-    Quote(QuoteTick),
-}
+#[derive(Debug, Default)]
+pub struct TsInitComparator;
 
-impl DataTsInit for Data {
-    fn get_ts_init(&self) -> UnixNanos {
-        match self {
-            Data::Trade(t) => t.get_ts_init(),
-            Data::Quote(q) => q.get_ts_init(),
-        }
-    }
-}
-
-impl From<QuoteTick> for Data {
-    fn from(value: QuoteTick) -> Self {
-        Self::Quote(value)
-    }
-}
-
-impl From<TradeTick> for Data {
-    fn from(value: TradeTick) -> Self {
-        Self::Trade(value)
-    }
-}
-
-pub struct PersistenceCatalog<T> {
-    session_ctx: SessionContext,
-    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<T>> + Unpin>>,
-}
-
-impl<T> Default for PersistenceCatalog<T> {
-    fn default() -> Self {
-        Self {
-            session_ctx: Default::default(),
-            batch_streams: Default::default(),
-        }
-    }
-}
-
-impl<T> PersistenceCatalog<T>
+impl<S> Compare<PeekElementBatchStream<S, Data>> for TsInitComparator
 where
-    T: DecodeFromRecordBatch + 'static,
+    S: Stream<Item = IntoIter<Data>>,
 {
+    fn compare(
+        &self,
+        l: &PeekElementBatchStream<S, Data>,
+        r: &PeekElementBatchStream<S, Data>,
+    ) -> std::cmp::Ordering {
+        l.item.get_ts_init().cmp(&r.item.get_ts_init()).reverse()
+    }
+}
+
+#[derive(Default)]
+pub struct PersistenceCatalog {
+    session_ctx: SessionContext,
+    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
+}
+
+impl PersistenceCatalog {
     // query a file for all it's records
-    pub async fn add_file(&mut self, table_name: &str, file_path: &str) -> Result<()> {
+    pub async fn add_file<T>(&mut self, table_name: &str, file_path: &str) -> Result<()>
+    where
+        T: DecodeFromRecordBatch + Into<Data>,
+    {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
             ..Default::default()
@@ -78,19 +58,22 @@ where
             .execute_stream()
             .await?;
 
-        self.add_batch_stream(batch_stream);
+        self.add_batch_stream::<T>(batch_stream);
         Ok(())
     }
 
     // query a file for all it's records with a custom query
     // The query should ensure the records are ordered by the
     // ts_init field in ascending order
-    pub async fn add_file_with_query(
+    pub async fn add_file_with_query<T>(
         &mut self,
         table_name: &str,
         file_path: &str,
         sql_query: &str,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T: DecodeFromRecordBatch + Into<Data>,
+    {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
             ..Default::default()
@@ -106,11 +89,14 @@ where
             .execute_stream()
             .await?;
 
-        self.add_batch_stream(batch_stream);
+        self.add_batch_stream::<T>(batch_stream);
         Ok(())
     }
 
-    fn add_batch_stream(&mut self, stream: SendableRecordBatchStream) {
+    fn add_batch_stream<T>(&mut self, stream: SendableRecordBatchStream)
+    where
+        T: DecodeFromRecordBatch + Into<Data>,
+    {
         let transform = stream.map(|result| match result {
             Ok(batch) => T::decode_batch(batch.schema().metadata(), batch).into_iter(),
             Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
@@ -119,12 +105,9 @@ where
         self.batch_streams.push(Box::new(transform));
     }
 
-    pub fn to_query_result(&mut self) -> QueryResult<T>
-    where
-        T: DataTsInit,
-    {
+    pub fn to_query_result(&mut self) -> QueryResult<Data> {
         // TODO: No need to kmerge if there is only one batch stream
-        let mut kmerge: KMerge<_, _> = KMerge::new(TsInitComparator);
+        let mut kmerge: KMerge<_, _, _> = KMerge::new(TsInitComparator);
 
         Iterator::for_each(self.batch_streams.drain(..), |batch_stream| {
             block_on(kmerge.push_stream(batch_stream));
@@ -151,10 +134,10 @@ impl<T> Iterator for QueryResult<T> {
 /// Store the data fusion session context
 #[pyclass]
 #[derive(Default)]
-pub struct PythonCatalog(PersistenceCatalog<QuoteTick>);
+pub struct PythonCatalog(PersistenceCatalog);
 
 // Note: Intended to be used on a single python thread
-unsafe impl<T> Send for PersistenceCatalog<T> {}
+unsafe impl Send for PersistenceCatalog {}
 
 #[pymethods]
 impl PythonCatalog {
@@ -165,13 +148,28 @@ impl PythonCatalog {
         Self::default()
     }
 
-    pub fn add_file(mut slf: PyRefMut<'_, Self>, table_name: &str, file_path: &str) {
+    pub fn add_file(
+        mut slf: PyRefMut<'_, Self>,
+        table_name: &str,
+        file_path: &str,
+        parquet_type: ParquetType,
+    ) {
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        match block_on(slf.0.add_file(table_name, file_path)) {
-            Ok(_) => (),
-            Err(err) => panic!("failed new_query with error {}", err),
+        match parquet_type {
+            ParquetType::QuoteTick => {
+                match block_on(slf.0.add_file::<QuoteTick>(table_name, file_path)) {
+                    Ok(_) => (),
+                    Err(err) => panic!("failed new_query with error {}", err),
+                }
+            }
+            ParquetType::TradeTick => {
+                match block_on(slf.0.add_file::<TradeTick>(table_name, file_path)) {
+                    Ok(_) => (),
+                    Err(err) => panic!("failed new_query with error {}", err),
+                }
+            }
         }
     }
 
@@ -180,13 +178,30 @@ impl PythonCatalog {
         table_name: &str,
         file_path: &str,
         sql_query: &str,
+        parquet_type: ParquetType,
     ) {
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        match block_on(slf.0.add_file_with_query(table_name, file_path, sql_query)) {
-            Ok(_) => (),
-            Err(err) => panic!("failed new_query with error {}", err),
+        match parquet_type {
+            ParquetType::QuoteTick => {
+                match block_on(
+                    slf.0
+                        .add_file_with_query::<QuoteTick>(table_name, file_path, sql_query),
+                ) {
+                    Ok(_) => (),
+                    Err(err) => panic!("failed new_query with error {}", err),
+                }
+            }
+            ParquetType::TradeTick => {
+                match block_on(
+                    slf.0
+                        .add_file_with_query::<TradeTick>(table_name, file_path, sql_query),
+                ) {
+                    Ok(_) => (),
+                    Err(err) => panic!("failed new_query with error {}", err),
+                }
+            }
         }
     }
 
@@ -201,7 +216,7 @@ impl PythonCatalog {
 
 #[pyclass]
 pub struct PythonQueryResult {
-    result: QueryResult<QuoteTick>,
+    result: QueryResult<Data>,
     chunk: Option<CVec>,
 }
 
@@ -230,7 +245,7 @@ impl PythonQueryResult {
 unsafe impl Send for PythonQueryResult {}
 
 impl PythonQueryResult {
-    fn new(result: QueryResult<QuoteTick>) -> Self {
+    fn new(result: QueryResult<Data>) -> Self {
         Self {
             result,
             chunk: None,
