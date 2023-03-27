@@ -1,8 +1,8 @@
 use nautilus_model::data::tick::QuoteTick;
 use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn test_quote_ticks() {
     let mut catalog = PersistenceCatalog::default();
     catalog
         .add_file(

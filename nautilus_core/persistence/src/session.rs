@@ -1,73 +1,77 @@
-use std::pin::Pin;
-use std::{collections::HashMap, marker::PhantomData};
+use std::collections::HashMap;
+use std::vec::IntoIter;
 
 use std::ops::Deref;
 
-use datafusion::arrow::datatypes::ArrowNativeTypeOp;
 use datafusion::error::Result;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::prelude::*;
-use futures::{
-    executor::{block_on, block_on_stream, BlockingStream},
-    stream,
-};
+use futures::executor::{block_on, block_on_stream, BlockingStream};
 use futures::{Stream, StreamExt};
 use nautilus_core::cvec::CVec;
+use nautilus_core::time::UnixNanos;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 use pyo3_asyncio::tokio::get_runtime;
-use stream_kmerge::{kmerge, kmerge_by, KWayMerge};
 
+use crate::kmerge_batch::{DataTsInit, KMerge, TsInitComparator};
 use crate::parquet::{DecodeFromRecordBatch, ParquetType};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 enum Data {
-    Quote(QuoteTick),
     Trade(TradeTick),
+    Quote(QuoteTick),
 }
 
-impl PartialOrd for Data {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        None
-    }
-}
-
-impl Ord for Data {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use Data::{Quote, Trade};
-        match (self, other) {
-            (Quote(d1), Quote(d2)) => d1.ts_init.compare(d2.ts_init),
-            (Trade(d1), Trade(d2)) => d1.ts_init.compare(d2.ts_init),
-            (Trade(d1), Quote(d2)) => d1.ts_init.compare(d2.ts_init),
-            (Quote(d1), Quote(d2)) => d1.ts_init.compare(d2.ts_init),
+impl DataTsInit for Data {
+    fn get_ts_init(&self) -> UnixNanos {
+        match self {
+            Data::Trade(t) => t.get_ts_init(),
+            Data::Quote(q) => q.get_ts_init(),
         }
     }
 }
 
-pub struct PersistenceCatalog {
+impl From<QuoteTick> for Data {
+    fn from(value: QuoteTick) -> Self {
+        Self::Quote(value)
+    }
+}
+
+impl From<TradeTick> for Data {
+    fn from(value: TradeTick) -> Self {
+        Self::Trade(value)
+    }
+}
+
+pub struct PersistenceCatalog<T> {
     session_ctx: SessionContext,
-    batch_streams: Vec<SendableRecordBatchStream>,
+    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<T>> + Unpin>>,
 }
 
-impl PersistenceCatalog {
-    fn new() -> Self {
-        let session_ctx = SessionContext::new();
-        PersistenceCatalog {
-            session_ctx,
-            batch_streams: Vec::new(),
+impl<T> Default for PersistenceCatalog<T> {
+    fn default() -> Self {
+        Self {
+            session_ctx: Default::default(),
+            batch_streams: Default::default(),
         }
     }
+}
 
+impl<T> PersistenceCatalog<T>
+where
+    T: DecodeFromRecordBatch + 'static,
+{
     // query a file for all it's records
-    async fn add_file(&mut self, table_name: &String, file_path: &String) -> Result<()> {
+    pub async fn add_file(&mut self, table_name: &str, file_path: &str) -> Result<()> {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
             ..Default::default()
         };
         self.session_ctx
-            .register_parquet(&table_name, &file_path, parquet_options)
+            .register_parquet(table_name, file_path, parquet_options)
             .await?;
 
         let batch_stream = self
@@ -77,81 +81,70 @@ impl PersistenceCatalog {
             .execute_stream()
             .await?;
 
-        // let tick_stream = PersistenceCatalog::batch_stream_to_tick_stream(batch_stream);
-        self.batch_streams.push(batch_stream);
+        self.add_batch_stream(batch_stream);
         Ok(())
     }
 
     // query a file for all it's records with a custom query
     // The query should ensure the records are ordered by the
     // ts_init field in ascending order
-    async fn add_file_with_query(
+    pub async fn add_file_with_query(
         &mut self,
-        table_name: &String,
-        file_path: &String,
-        sql_query: &String,
+        table_name: &str,
+        file_path: &str,
+        sql_query: &str,
     ) -> Result<()> {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
             ..Default::default()
         };
         self.session_ctx
-            .register_parquet(&table_name, &file_path, parquet_options)
+            .register_parquet(table_name, file_path, parquet_options)
             .await?;
 
         let batch_stream = self
             .session_ctx
-            .sql(&sql_query)
+            .sql(sql_query)
             .await?
             .execute_stream()
             .await?;
 
-        // let tick_stream = PersistenceCatalog::batch_stream_to_tick_stream(batch_stream);
-        self.batch_streams.push(batch_stream);
+        self.add_batch_stream(batch_stream);
         Ok(())
     }
-}
 
-pub struct QueryResult<S, T>
-where
-    T: DecodeFromRecordBatch + Ord,
-    S: Stream<Item = T> + Unpin,
-{
-    data: S,
-}
+    fn add_batch_stream(&mut self, stream: SendableRecordBatchStream) {
+        let transform = stream.map(|result| match result {
+            Ok(batch) => T::decode_batch(batch.schema().metadata(), batch).into_iter(),
+            Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
+        });
 
-impl<S, T> From<&mut PersistenceCatalog> for QueryResult<S, T>
-where
-    T: DecodeFromRecordBatch + Ord,
-    S: Stream<Item = T> + Unpin,
-{
-    fn from(value: &mut PersistenceCatalog) -> Self {
+        self.batch_streams.push(Box::new(transform));
+    }
+
+    pub fn to_query_result(&mut self) -> QueryResult<T>
+    where
+        T: DataTsInit,
+    {
         // TODO: No need to kmerge if there is only one batch stream
-        let data = kmerge(value.batch_streams.iter().map(|batch_stream| {
-            batch_stream.flat_map(|result| match result {
-                Ok(batch) => {
-                    let ticks = T::decode_batch(batch.schema().metadata(), batch);
-                    stream::iter(ticks)
-                }
-                Err(_err) => panic!("Error result"),
-            })
-        }));
+        let mut kmerge: KMerge<_, _> = KMerge::new(TsInitComparator);
 
-        // clear streams from persistence session
-        // as they've been mapped and merged into
-        // query results stream
-        value.batch_streams.clear();
+        Iterator::for_each(self.batch_streams.drain(..), |batch_stream| {
+            block_on(kmerge.push_stream(batch_stream));
+        });
 
-        Self { data }
+        QueryResult {
+            data: Box::new(kmerge.chunks(1000)),
+        }
     }
 }
 
-impl<S, T> Iterator for QueryResult<S, T>
-where
-    T: DecodeFromRecordBatch + Ord,
-    S: Stream<Item = T> + Unpin,
-{
-    type Item = T;
+pub struct QueryResult<T> {
+    data: Box<dyn Stream<Item = Vec<T>> + Unpin>,
+}
+
+impl<T> Iterator for QueryResult<T> {
+    type Item = Vec<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         block_on(self.data.next())

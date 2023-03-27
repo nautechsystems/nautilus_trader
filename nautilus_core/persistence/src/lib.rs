@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod kmerge_batch;
 pub mod parquet;
 pub mod session;
 

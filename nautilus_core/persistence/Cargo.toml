@@ -22,7 +22,9 @@ datafusion = "17.0.0"
 tokio = "1.25.0"
 futures = "0.3.26"
 pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
-stream-kmerge = "0.2.0"
+pin-project-lite = "0.2.9"
+binary-heap-plus = "0.5.0"
+compare = "0.1.0"
 
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]

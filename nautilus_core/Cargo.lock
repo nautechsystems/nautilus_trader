@@ -402,9 +402,9 @@ checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 
 [[package]]
 name = "binary-heap-plus"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f068638f8ff9e118a9361e66a411eff410e7fb3ecaa23bf9272324f8fc606d7"
+checksum = "e4551d8382e911ecc0d0f0ffb602777988669be09447d536ff4388d1def11296"
 dependencies = [
  "compare",
 ]
@@ -1899,16 +1899,18 @@ name = "nautilus_persistence"
 version = "0.2.0"
 dependencies = [
  "arrow2",
+ "binary-heap-plus",
  "chrono",
+ "compare",
  "datafusion",
  "futures",
  "nautilus_core",
  "nautilus_model",
  "once_cell",
+ "pin-project-lite",
  "pyo3",
  "pyo3-asyncio",
  "rand",
- "stream-kmerge",
  "tokio",
 ]
 
@@ -2714,18 +2716,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "stream-kmerge"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "047bf5adb71b588d07fa077819b84f276a33a41c75b52772be7c2dba5921188d"
-dependencies = [
- "binary-heap-plus",
- "compare",
- "futures",
- "pin-project-lite",
-]
 
 [[package]]
 name = "streaming-decompression"
