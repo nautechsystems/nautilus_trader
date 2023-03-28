@@ -27,6 +27,7 @@ where
         l: &PeekElementBatchStream<S, Data>,
         r: &PeekElementBatchStream<S, Data>,
     ) -> std::cmp::Ordering {
+        // it is a max heap so the ordering must be reversed
         l.item.get_ts_init().cmp(&r.item.get_ts_init()).reverse()
     }
 }

@@ -119,7 +119,8 @@ mod tests {
             l: &PeekElementBatchStream<S, i32>,
             r: &PeekElementBatchStream<S, i32>,
         ) -> std::cmp::Ordering {
-            l.item.cmp(&r.item)
+            // it is a max heap so the ordering must be reversed
+            l.item.cmp(&r.item).reverse()
         }
     }
 
