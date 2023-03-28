@@ -50,9 +50,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder

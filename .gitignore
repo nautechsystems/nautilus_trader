@@ -21,10 +21,10 @@
 .idea/
 .ipynb_checkpoints
 .mypy_cache/
-.nox/
 .profile/
 .pytest_cache/
 .python-version
+.ruff_cache/
 .vscode/
 
 __pycache__

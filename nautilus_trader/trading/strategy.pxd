@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
+from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar

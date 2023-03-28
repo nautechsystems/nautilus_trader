@@ -13,16 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecAlgorithmId
+from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
-cdef class ExecAlgorithmSpecification:
-    cdef frozenset _key
+cdef class ExecAlgorithm(Actor):
 
-    cdef readonly ClientOrderId client_order_id
-    """The client order ID for the order being executed.\n\n:returns: `ExecAlgorithmId`"""
-    cdef readonly ExecAlgorithmId exec_algorithm_id
-    """The execution algorithm ID.\n\n:returns: `ExecAlgorithmId`"""
-    cdef readonly dict params
-    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""
+    cdef readonly PortfolioFacade portfolio
+    """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
+
+# -- REGISTRATION ---------------------------------------------------------------------------------
+
+    cpdef void register(
+        self,
+        TraderId trader_id,
+        PortfolioFacade portfolio,
+        MessageBus msgbus,
+        CacheFacade cache,
+        Clock clock,
+        Logger logger,
+    )
