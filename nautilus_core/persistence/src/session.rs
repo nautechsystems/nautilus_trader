@@ -31,6 +31,11 @@ where
     }
 }
 
+/// Catalog is a data fusion session and registers data fusion queries
+///
+/// The session is used to register data sources and make queries on them. A
+/// query returns a Chunk of Arrow records. It is decoded and converted into
+/// a Vec of data by types that implement [DecodeDataFromRecordBatch].
 #[derive(Default)]
 pub struct PersistenceCatalog {
     session_ctx: SessionContext,
@@ -38,7 +43,8 @@ pub struct PersistenceCatalog {
 }
 
 impl PersistenceCatalog {
-    // query a file for all it's records
+    // query a file for all it's records. the caller must specify `T` to indicate
+    // the kind of data expected from this query.
     pub async fn add_file<T>(&mut self, table_name: &str, file_path: &str) -> Result<()>
     where
         T: DecodeDataFromRecordBatch + Into<Data>,
@@ -62,9 +68,12 @@ impl PersistenceCatalog {
         Ok(())
     }
 
-    // query a file for all it's records with a custom query
-    // The query should ensure the records are ordered by the
-    // ts_init field in ascending order
+    // query a file for all it's records with a custom query. The caller must
+    // specify `T` to indicate what kind of data is expected from this query.
+    //
+    // #Safety
+    // They query should ensure the records are ordered by the `ts_init` field
+    // in ascending order.
     pub async fn add_file_with_query<T>(
         &mut self,
         table_name: &str,
@@ -105,6 +114,10 @@ impl PersistenceCatalog {
         self.batch_streams.push(Box::new(transform));
     }
 
+    // Consumes the registered queries and returns a [QueryResult].
+    // Passes the output of the query though the a KMerge which sorts the
+    // queries in ascending order of `ts_init`.
+    // QueryResult is an iterator that return Vec<Data>.
     pub fn to_query_result(&mut self) -> QueryResult<Data> {
         // TODO: No need to kmerge if there is only one batch stream
         let mut kmerge: KMerge<_, _, _> = KMerge::new(TsInitComparator);
@@ -119,17 +132,21 @@ impl PersistenceCatalog {
     }
 }
 
-pub struct QueryResult<T> {
+pub struct QueryResult<T = Data> {
     data: Box<dyn Stream<Item = Vec<T>> + Unpin>,
 }
 
-impl<T> Iterator for QueryResult<T> {
-    type Item = Vec<T>;
+impl Iterator for QueryResult {
+    type Item = Vec<Data>;
 
     fn next(&mut self) -> Option<Self::Item> {
         block_on(self.data.next())
     }
 }
+
+//////////////////////////////////////////
+/// Python API
+//////////////////////////////////////////
 
 /// Store the data fusion session context
 #[pyclass]

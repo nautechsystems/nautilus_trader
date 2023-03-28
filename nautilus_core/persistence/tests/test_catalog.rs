@@ -18,7 +18,7 @@ async fn test_quote_ticks() {
         )
         .await
         .unwrap();
-    let query_result: QueryResult<Data> = catalog.to_query_result();
+    let query_result: QueryResult = catalog.to_query_result();
 
     // NOTE: is_sorted_by_key is unstable otherwise use
     // ticks.is_sorted_by_key(|tick| tick.ts_init)
