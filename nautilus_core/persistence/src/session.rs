@@ -274,8 +274,7 @@ impl PythonQueryResult {
     /// drop if exists and reset the field.
     fn drop_chunk(&mut self) {
         if let Some(CVec { ptr, len, cap }) = self.chunk.take() {
-            let data: Vec<QuoteTick> =
-                unsafe { Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap) };
+            let data: Vec<Data> = unsafe { Vec::from_raw_parts(ptr as *mut Data, len, cap) };
             drop(data);
         }
     }
