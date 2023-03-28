@@ -1,7 +1,8 @@
 use nautilus_model::data::tick::{Data, QuoteTick};
 use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
 
-#[tokio::test]
+// Note: "current_thread" hangs up for some reason
+#[tokio::test(flavor = "multi_thread")]
 async fn test_quote_ticks() {
     let mut catalog = PersistenceCatalog::default();
     catalog
