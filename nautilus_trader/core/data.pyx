@@ -17,15 +17,7 @@ import warnings
 
 import cython
 
-from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport uint64_t
-
-from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport Data_t
-from nautilus_trader.core.rust.model cimport Data_t_Tag
-
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
 
 
 @cython.auto_pickle(False)
@@ -83,24 +75,3 @@ cdef class Data:
 
         """
         return cls.__module__ + ':' + cls.__qualname__
-
-    # Safety: Do NOT deallocate the capsule here
-    # It is supposed to be deallocated by the creator
-    @staticmethod
-    cdef inline list capsule_to_data_list(object capsule):
-        cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
-        cdef Data_t* ptr = <Data_t*>data.ptr
-        cdef list ticks = []
-
-        cdef uint64_t i
-        for i in range(0, data.len):
-            if ptr[i].tag == Data_t_Tag.TRADE:
-                ticks.append(TradeTick.from_mem_c(ptr[i].trade))
-            elif ptr[i].tag == Data_t_Tag.QUOTE:
-                ticks.append(QuoteTick.from_mem_c(ptr[i].quote))
-
-        return ticks
-
-    @staticmethod
-    def list_from_capsule(capsule) -> list[Data]:
-        return Data.capsule_to_data_list(capsule)

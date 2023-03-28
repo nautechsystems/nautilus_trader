@@ -20,12 +20,16 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport secs_to_nanos
+from nautilus_trader.core.rust.model cimport Data_t
+from nautilus_trader.core.rust.model cimport Data_t_Tag
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -35,6 +39,30 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.core.data import Data
+
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+
+
+# Safety: Do NOT deallocate the capsule here
+cdef inline list capsule_to_data_list(object capsule):
+    cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+    cdef Data_t* ptr = <Data_t*>data.ptr
+    cdef list ticks = []
+
+    cdef uint64_t i
+    for i in range(0, data.len):
+        if ptr[i].tag == Data_t_Tag.TRADE:
+            ticks.append(TradeTick.from_mem_c(ptr[i].trade))
+        elif ptr[i].tag == Data_t_Tag.QUOTE:
+            ticks.append(QuoteTick.from_mem_c(ptr[i].quote))
+
+    return ticks
+
+@staticmethod
+def list_from_capsule(capsule) -> list[Data]:
+    return capsule_to_data_list(capsule)
 
 cdef class QuoteTickDataWrangler:
     """
