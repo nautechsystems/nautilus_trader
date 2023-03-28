@@ -375,7 +375,6 @@ class NautilusKernel:
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
         # Setup persistence
-
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}.feather"
         self._writer = StreamingFeatherWriter(
             path=path,
