@@ -7,13 +7,13 @@ use datafusion::prelude::*;
 use futures::executor::block_on;
 use futures::{Stream, StreamExt};
 use nautilus_core::cvec::CVec;
-use nautilus_model::data::tick::{QuoteTick, TradeTick};
+use nautilus_model::data::tick::{Data, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 use pyo3_asyncio::tokio::get_runtime;
 
 use crate::kmerge_batch::{KMerge, PeekElementBatchStream};
-use crate::parquet::{Data, DecodeFromRecordBatch, ParquetType};
+use crate::parquet::{DecodeDataFromRecordBatch, ParquetType};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
@@ -41,7 +41,7 @@ impl PersistenceCatalog {
     // query a file for all it's records
     pub async fn add_file<T>(&mut self, table_name: &str, file_path: &str) -> Result<()>
     where
-        T: DecodeFromRecordBatch + Into<Data>,
+        T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
@@ -72,7 +72,7 @@ impl PersistenceCatalog {
         sql_query: &str,
     ) -> Result<()>
     where
-        T: DecodeFromRecordBatch + Into<Data>,
+        T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
@@ -95,7 +95,7 @@ impl PersistenceCatalog {
 
     fn add_batch_stream<T>(&mut self, stream: SendableRecordBatchStream)
     where
-        T: DecodeFromRecordBatch + Into<Data>,
+        T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let transform = stream.map(|result| match result {
             Ok(batch) => T::decode_batch(batch.schema().metadata(), batch).into_iter(),

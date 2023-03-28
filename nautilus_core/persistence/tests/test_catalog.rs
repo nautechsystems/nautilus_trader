@@ -1,8 +1,5 @@
-use nautilus_model::data::tick::QuoteTick;
-use nautilus_persistence::{
-    parquet::Data,
-    session::{PersistenceCatalog, QueryResult},
-};
+use nautilus_model::data::tick::{Data, QuoteTick};
+use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
 
 #[tokio::test]
 async fn test_quote_ticks() {

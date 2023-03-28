@@ -255,6 +255,15 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    cpdef enum Data_t_Tag:
+        TRADE,
+        QUOTE,
+
+    cdef struct Data_t:
+        Data_t_Tag tag;
+        TradeTick_t trade;
+        QuoteTick_t quote;
+
     cdef struct AccountId_t:
         Rc_String *value;
 
@@ -425,6 +434,10 @@ cdef extern from "../includes/model.h":
 
     # Returns a [`TradeTick`] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);
+
+    void data_free(Data_t data);
+
+    Data_t data_clone(const Data_t *data);
 
     const char *account_type_to_cstr(AccountType value);
 

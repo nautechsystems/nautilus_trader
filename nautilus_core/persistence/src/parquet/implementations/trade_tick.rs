@@ -30,7 +30,7 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{Data, DecodeFromChunk, DecodeFromRecordBatch, EncodeToChunk};
+use crate::parquet::{Data, DecodeDataFromRecordBatch, DecodeFromChunk, EncodeToChunk};
 
 impl EncodeToChunk for TradeTick {
     fn assert_metadata(metadata: &BTreeMap<String, String>) {
@@ -172,7 +172,7 @@ impl DecodeFromChunk for TradeTick {
     }
 }
 
-impl DecodeFromRecordBatch for TradeTick {
+impl DecodeDataFromRecordBatch for TradeTick {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
         let instrument_id = InstrumentId::from(metadata.get("instrument_id").unwrap().as_str());
         let price_precision = metadata

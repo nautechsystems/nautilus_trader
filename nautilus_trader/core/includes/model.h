@@ -297,6 +297,23 @@ typedef struct TradeTick_t {
     uint64_t ts_init;
 } TradeTick_t;
 
+typedef enum Data_t_Tag {
+    TRADE,
+    QUOTE,
+} Data_t_Tag;
+
+typedef struct Data_t {
+    Data_t_Tag tag;
+    union {
+        struct {
+            struct TradeTick_t trade;
+        };
+        struct {
+            struct QuoteTick_t quote;
+        };
+    };
+} Data_t;
+
 typedef struct AccountId_t {
     struct Rc_String *value;
 } AccountId_t;
@@ -496,6 +513,10 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
  * Returns a [`TradeTick`] as a C string pointer.
  */
 const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
+
+void data_free(struct Data_t data);
+
+struct Data_t data_clone(const struct Data_t *data);
 
 const char *account_type_to_cstr(enum AccountType value);
 
