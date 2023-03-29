@@ -507,9 +507,15 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         if self.is_inverse:
-            return Money(self.quantity.as_f64_c() * self.multiplier.as_f64_c() * (1.0 / last.as_f64_c()), self.base_currency)
+            return Money(
+                self.quantity.as_f64_c() * self.multiplier.as_f64_c() * (1.0 / last.as_f64_c()),
+                self.base_currency,
+            )
         else:
-            return Money(self.quantity.as_f64_c() * self.multiplier.as_f64_c() * last.as_f64_c(), self.quote_currency)
+            return Money(
+                self.quantity.as_f64_c() * self.multiplier.as_f64_c() * last.as_f64_c(),
+                self.quote_currency,
+            )
 
     cpdef Money calculate_pnl(
         self,
