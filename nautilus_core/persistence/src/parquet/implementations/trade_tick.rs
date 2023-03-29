@@ -193,7 +193,7 @@ impl DecodeDataFromRecordBatch for TradeTick {
         let price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
         let size_values = cols[1].as_any().downcast_ref::<UInt64Array>().unwrap();
         let aggressor_side_values = cols[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values_values = cols[3].as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+        let trade_id_values_values = cols[3].as_any().downcast_ref::<StringArray>().unwrap();
         let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
@@ -239,4 +239,63 @@ impl DecodeDataFromRecordBatch for TradeTick {
 
         Schema::new_with_metadata(fields, metadata).into()
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use nautilus_model::{
+        data::tick::TradeTick,
+        identifiers::trade_id::TradeId,
+        types::{price::Price, quantity::Quantity},
+    };
+
+    use crate::parquet::{DecodeFromChunk, EncodeToChunk};
+
+    #[test]
+    fn round_trip_decode_chunk() {
+        let data = vec![
+            TradeTick {
+                instrument_id: "EUR/USD.DUKA".into(),
+                price: Price::new(1.1, 4),
+                size: Quantity::new(40.0, 0),
+                ts_event: 0,
+                ts_init: 3,
+                aggressor_side: nautilus_model::enums::AggressorSide::Buyer,
+                trade_id: TradeId::new("hey"),
+            },
+            TradeTick {
+                instrument_id: "EUR/USD.DUKA".into(),
+                price: Price::new(1.1, 4),
+                size: Quantity::new(40.0, 0),
+                ts_event: 0,
+                ts_init: 2,
+                aggressor_side: nautilus_model::enums::AggressorSide::Buyer,
+                trade_id: TradeId::new("hey"),
+            },
+            TradeTick {
+                instrument_id: "EUR/USD.DUKA".into(),
+                price: Price::new(1.1, 4),
+                size: Quantity::new(40.0, 0),
+                ts_event: 0,
+                ts_init: 23,
+                aggressor_side: nautilus_model::enums::AggressorSide::Buyer,
+                trade_id: TradeId::new("hey"),
+            },
+        ];
+
+        let mut metadata: BTreeMap<String, String> = BTreeMap::new();
+        metadata.insert("instrument_id".to_string(), "EUR/USD.DUKA".to_string());
+        metadata.insert("price_precision".to_string(), "4".to_string());
+        metadata.insert("size_precision".to_string(), "4".to_string());
+        let schema = TradeTick::encode_schema(metadata);
+
+        let chunk = TradeTick::encode(data.iter());
+        let decoded = TradeTick::decode(&schema, chunk);
+
+        assert_eq!(data, decoded);
+    }
+
+    // TODO: round trip for decode data trait
 }

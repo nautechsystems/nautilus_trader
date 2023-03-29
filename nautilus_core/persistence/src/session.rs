@@ -41,9 +41,18 @@ where
 pub struct PersistenceCatalog {
     session_ctx: SessionContext,
     batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
+    chunk_size: usize,
 }
 
 impl PersistenceCatalog {
+    fn new(chunk_size: usize) -> Self {
+        Self {
+            session_ctx: SessionContext::default(),
+            batch_streams: Vec::default(),
+            chunk_size,
+        }
+    }
+
     // query a file for all it's records. the caller must specify `T` to indicate
     // the kind of data expected from this query.
     pub async fn add_file<T>(&mut self, table_name: &str, file_path: &str) -> Result<()>
@@ -128,7 +137,7 @@ impl PersistenceCatalog {
         });
 
         QueryResult {
-            data: Box::new(kmerge.chunks(1000)),
+            data: Box::new(kmerge.chunks(self.chunk_size)),
         }
     }
 }
@@ -151,7 +160,6 @@ impl Iterator for QueryResult {
 
 /// Store the data fusion session context
 #[pyclass]
-#[derive(Default)]
 pub struct PythonCatalog(PersistenceCatalog);
 
 // Note: Intended to be used on a single python thread
@@ -160,10 +168,11 @@ unsafe impl Send for PersistenceCatalog {}
 #[pymethods]
 impl PythonCatalog {
     #[new]
-    pub fn new_session() -> Self {
+    #[pyo3(signature=(chunk_size=5000))]
+    pub fn new_session(chunk_size: usize) -> Self {
         // initialize runtime here
         get_runtime();
-        Self::default()
+        PythonCatalog(PersistenceCatalog::new(chunk_size))
     }
 
     pub fn add_file(
