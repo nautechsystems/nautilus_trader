@@ -1,6 +1,6 @@
 # NautilusTrader 1.171.0 Beta
 
-Released on TBD (UTC).
+Released on 30th March 2023 (UTC).
 
 ### Breaking Changes
 - Renamed all position `net_qty` fields and parameters to `signed_qty` (more accurate naming)
