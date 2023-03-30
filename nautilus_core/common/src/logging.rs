@@ -15,8 +15,10 @@
 
 use std::collections::HashMap;
 use std::ffi::c_char;
+use std::fs::{create_dir_all, File};
 use std::io::{Stderr, Stdout};
 use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 use std::{
     io::{self, BufWriter, Write},
@@ -24,13 +26,10 @@ use std::{
     thread,
 };
 
-use flexi_logger::{
-    Age, Cleanup, Criterion, DeferredNow, FileSpec, FormatFunction, LogSpecification,
-    Logger as FlexiLogger, Naming, Record, WriteMode,
-};
+use chrono::prelude::*;
+use chrono::Utc;
 use governor::clock::{Clock, DefaultClock};
 use governor::{Quota, RateLimiter};
-use log::info;
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::parsing::optional_bytes_to_json;
 use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
@@ -153,17 +152,7 @@ impl Logger {
         let mut out_buf = BufWriter::new(io::stdout());
         let mut err_buf = BufWriter::new(io::stderr());
 
-        let formatter: FormatFunction =
-            |write: &mut dyn std::io::Write,
-             _now: &mut DeferredNow,
-             record: &Record|
-             -> Result<(), std::io::Error> { write!(write, "{}", record.args()) };
-
         // Setup log file
-        let log_spec = LogSpecification::info();
-        let mut flexi_logger_builder =
-            FlexiLogger::with(log_spec).write_mode(WriteMode::BufferAndFlush);
-
         let is_json_format = match file_format.as_ref().map(|s| s.to_lowercase()) {
             Some(ref format) if format == "json" => true,
             None => false,
@@ -176,45 +165,34 @@ impl Logger {
             }
         };
 
-        if level_file.is_some() {
-            if let Some(file_name) = file_name {
-                let suffix = if is_json_format { "json" } else { "log" };
-                let mut file_spec = FileSpec::default()
-                    .basename(file_name)
-                    .use_timestamp(false)
-                    .suffix(suffix);
-                if let Some(directory) = directory {
-                    file_spec = file_spec.directory(directory)
-                }
-                flexi_logger_builder = flexi_logger_builder
-                    .format_for_files(formatter)
-                    .log_to_file(file_spec)
-            } else {
-                let basename = format!("{}_{}", trader_id, instance_id);
-                let suffix = if is_json_format { "json" } else { "log" };
-                let mut file_spec = FileSpec::default()
-                    .basename(basename)
-                    .use_timestamp(true)
-                    .suffix(suffix);
-                if let Some(directory) = directory {
-                    file_spec = file_spec.directory(directory)
-                }
-                flexi_logger_builder = flexi_logger_builder
-                    .format_for_files(formatter)
-                    .log_to_file(file_spec)
-                    .rotate(Criterion::Age(Age::Day), Naming::Timestamps, Cleanup::Never);
-            }
+        let file_path = PathBuf::new();
+        let file = if level_file.is_some() {
+            let file_path = Self::create_log_file_path(
+                &directory,
+                &file_name,
+                trader_id,
+                instance_id,
+                is_json_format,
+            );
 
-            flexi_logger_builder.start().expect("Error building logger");
+            Some(
+                File::options()
+                    .create(true)
+                    .append(true)
+                    .open(file_path)
+                    .expect("Error creating log file"),
+            )
+        } else {
+            None
         };
 
-        // Setup templates and formatting
+        let mut file_buf = file.map(BufWriter::new);
+
+        // Setup templates for formatting
         let template_console = String::from(
             "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
         );
-        // The newline is not necessary for the file template because flexi_logger handles this
-        // already.
-        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}");
+        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
 
         // Setup rate limiting
         let quota = Quota::per_second(NonZeroU32::new(rate_limit as u32).unwrap());
@@ -265,20 +243,97 @@ impl Logger {
             }
 
             if let Some(level_file) = level_file {
-                if log_msg.level >= level_file {
-                    let line = Self::format_log_line_file(
-                        &log_msg,
+                if Self::should_rotate_file(&file_path) {
+                    // Ensure previous file buffer flushed
+                    if let Some(file_buf) = file_buf.as_mut() {
+                        Self::flush_file(file_buf);
+                    };
+
+                    let file_path = Self::create_log_file_path(
+                        &directory,
+                        &file_name,
                         trader_id,
-                        &template_file,
+                        instance_id,
                         is_json_format,
                     );
-                    info!("{}", line);
+
+                    let file = File::options()
+                        .create(true)
+                        .append(true)
+                        .open(file_path)
+                        .expect("Error creating log file");
+
+                    file_buf = Some(BufWriter::new(file));
+                }
+
+                if log_msg.level >= level_file {
+                    if let Some(file_buf) = file_buf.as_mut() {
+                        let line = Self::format_log_line_file(
+                            &log_msg,
+                            trader_id,
+                            &template_file,
+                            is_json_format,
+                        );
+                        Self::write_file(file_buf, &line);
+                        Self::flush_file(file_buf);
+                    }
                 }
             }
         }
+
         // Finally ensure remaining buffers are flushed
         Self::flush_stderr(&mut err_buf);
         Self::flush_stdout(&mut out_buf);
+    }
+
+    fn should_rotate_file(file_path: &Path) -> bool {
+        if file_path.exists() {
+            let current_date_utc = Utc::now().date_naive();
+            let metadata = file_path
+                .metadata()
+                .expect("Failed to read log file metadata");
+            let creation_time = metadata
+                .created()
+                .expect("Failed to get log file creation time");
+
+            let creation_time_utc: DateTime<Utc> = creation_time.into();
+            let creation_date_utc = creation_time_utc.date_naive();
+
+            current_date_utc != creation_date_utc
+        } else {
+            false
+        }
+    }
+
+    fn default_log_file_basename(trader_id: &str, instance_id: &str) -> String {
+        let current_date_utc = Utc::now().format("%Y-%m-%d");
+        format!("{}_{}_{}", trader_id, current_date_utc, instance_id)
+    }
+
+    fn create_log_file_path(
+        directory: &Option<String>,
+        file_name: &Option<String>,
+        trader_id: &str,
+        instance_id: &str,
+        is_json_format: bool,
+    ) -> PathBuf {
+        let basename = if let Some(file_name) = file_name {
+            file_name.to_owned()
+        } else {
+            Self::default_log_file_basename(trader_id, instance_id)
+        };
+
+        let suffix = if is_json_format { "json" } else { "log" };
+        let mut file_path = PathBuf::new();
+
+        if let Some(directory) = directory {
+            file_path.push(directory);
+            create_dir_all(&file_path).expect("Failed to create directories for log file");
+        }
+
+        file_path.push(basename);
+        file_path.set_extension(suffix);
+        file_path
     }
 
     fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
@@ -298,7 +353,9 @@ impl Logger {
         is_json_format: bool,
     ) -> String {
         if is_json_format {
-            serde_json::to_string(log_msg).expect("Error serializing log message to string")
+            let json_string =
+                serde_json::to_string(log_msg).expect("Error serializing log message to string");
+            format!("{}\n", json_string)
         } else {
             template
                 .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
@@ -334,6 +391,20 @@ impl Logger {
         match err_buf.flush() {
             Ok(_) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+        }
+    }
+
+    fn write_file(file_buf: &mut BufWriter<File>, line: &str) {
+        match file_buf.write_all(line.as_bytes()) {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error writing to file: {e:?}"),
+        }
+    }
+
+    fn flush_file(file_buf: &mut BufWriter<File>) {
+        match file_buf.flush() {
+            Ok(_) => {}
+            Err(e) => eprintln!("Error writing to file: {e:?}"),
         }
     }
 

@@ -21,7 +21,6 @@ serde_json.workspace = true
 pyo3.workspace = true
 strum.workspace = true
 governor = "0.5.1"
-flexi_logger = { version = "0.25.3", features = ["specfile"] }
 
 [dev-dependencies]
 tempfile.workspace = true
