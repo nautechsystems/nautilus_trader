@@ -107,6 +107,7 @@ repos:
           types-pytz,
           types-redis,
           types-requests,
+          types-toml,
         ]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
