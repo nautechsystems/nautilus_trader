@@ -2708,18 +2708,6 @@ files = [
 types-urllib3 = "<1.27"
 
 [[package]]
-name = "types-toml"
-version = "0.10.8.6"
-description = "Typing stubs for toml"
-category = "dev"
-optional = false
-python-versions = "*"
-files = [
-    {file = "types-toml-0.10.8.6.tar.gz", hash = "sha256:6d3ac79e36c9ee593c5d4fb33a50cca0e3adceb6ef5cff8b8e5aef67b4c4aaf2"},
-    {file = "types_toml-0.10.8.6-py3-none-any.whl", hash = "sha256:de7b2bb1831d6f7a4b554671ffe5875e729753496961b3e9b202745e4955dafa"},
-]
-
-[[package]]
 name = "types-urllib3"
 version = "1.26.25.10"
 description = "Typing stubs for urllib3"
@@ -2998,4 +2986,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "a5ebf737464973fd3a1ab46940f9b4e5ff7fc2b55c95600507e33103e248e016"
+content-hash = "2db07526a76060440284060dfed3fafc372379f47a30b9bcf1a800d3018088de"
