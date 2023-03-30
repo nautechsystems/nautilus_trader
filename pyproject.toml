@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.171.0"
+version = "1.172.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -37,7 +37,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.5.2",
     "numpy>=1.24.2",
-    "Cython==3.0.0b1",
+    "Cython==3.0.0b2",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -47,7 +47,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.0b1"
+cython = "==3.0.0b2"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.4"
 click = "^8.1.3"
