@@ -25,7 +25,8 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -54,8 +55,8 @@ provider_config = InstrumentProviderConfig(
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="DEBUG",
-    risk_engine=RiskEngineConfig(bypass=True),
+    logging=LoggingConfig(log_level="INFO"),
+    risk_engine=LiveRiskEngineConfig(bypass=True),
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=provider_config,

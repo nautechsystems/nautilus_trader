@@ -107,7 +107,7 @@ however, you were adding data for financial or crypto markets, you would need to
 the catalog) an instrument corresponding to that instrument ID. Definitions for other 
 instruments (of various asset classes) can be found in `nautilus_trader.model.instruments`.
 
-See [Instruments](./instruments.md) for more details on creating other instruments.
+See [Instruments](../concepts/instruments.md) for more details on creating other instruments.
 
 ```python
 from nautilus_trader.persistence.external.core import process_files, write_objects

@@ -13,16 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import tempfile
 from collections.abc import Generator
 from functools import partial
+from pathlib import Path
 
 import pandas as pd
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -46,15 +45,19 @@ class NewsEventData(NewsEvent):
     pass
 
 
-def data_catalog_setup(protocol, path=tempfile.mktemp()) -> ParquetDataCatalog:
+def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
-        raise ValueError("`fs_protocol` should only be one of `memory` or `file` for testing")
+        raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    catalog = ParquetDataCatalog(path=path, fs_protocol=protocol)
+    if path is None:
+        path = Path.cwd() / "data_catalog"
+    else:
+        path = Path(path).resolve()
 
-    path = catalog.path
+    path = str(path)
+    catalog = ParquetDataCatalog(path=path, fs_protocol=protocol)
 
     if catalog.fs.exists(path):
         catalog.fs.rm(path, recursive=True)
@@ -78,7 +81,7 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
     def parse_csv_tick(df, instrument_id):
         yield instrument
         for r in df.values:
-            ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
+            ts = pd.Timestamp(r[0], tz="UTC").value
             tick = QuoteTick(
                 instrument_id=instrument_id,
                 bid=Price(r[1], 5),
@@ -107,43 +110,3 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
         instrument_provider=instrument_provider,
         catalog=catalog,
     )
-
-
-# def _make_catalog_path(protocol: str) -> Path:
-#     if protocol == "memory":
-#         return Path("/.nautilus/")
-#     elif protocol == "file":
-#         return Path(__file__).parent.absolute() / ".nautilus/"
-#     else:
-#         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
-
-# def data_catalog_setup(protocol: str = "memory"):
-#     """
-#     Reset the filesystem and ParquetDataCatalog to a clean state
-#     """
-#     clear_singleton_instances(ParquetDataCatalog)
-#     fs = fsspec.filesystem("memory")
-#     path = Path("/.nautilus/")
-#     str_path = resolve_path(path, fs)
-#     if not fs.exists(str_path):
-#         fs.mkdir(str_path)
-#     os.environ["NAUTILUS_PATH"] = f"{protocol}://{path}"
-#     catalog = ParquetDataCatalog.from_env()
-#     if path == "/":
-#         assert isinstance(catalog.fs, MemoryFileSystem)
-#     try:
-#         catalog.fs.rm(resolve_path(path, fs=fs), recursive=True)
-#     except FileNotFoundError:
-#         pass
-#     catalog.fs.mkdir(str_path)
-#     assert catalog.fs.exists(str_path)
-#     assert not catalog.fs.glob(f"{str_path}/**")
-#     return catalog
-
-
-# if fs_protocol == "memory":
-#     path = "/.nautilus/"
-# elif fs_protocol == "file":
-#     path = str(Path(__file__).parent.absolute() / ".nautilus/")
-# os.environ["NAUTILUS_PATH"] = f"{fs_protocol}://{path}"
-# catalog = ParquetDataCatalog.from_env()

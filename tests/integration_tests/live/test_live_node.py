@@ -32,6 +32,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
@@ -42,7 +43,6 @@ RAW_CONFIG = msgspec.json.encode(
     {
         "environment": "live",
         "trader_id": "Test-111",
-        "log_level": "INFO",
         "exec_engine": {
             "reconciliation_lookback_mins": 1440,
         },
@@ -135,7 +135,7 @@ class TestTradingNodeConfiguration:
         # Arrange
         config = TradingNodeConfig(
             trader_id="TESTER-001",
-            log_level="DEBUG",
+            logging=LoggingConfig(bypass_logging=True),
             data_clients={
                 "IB": InteractiveBrokersDataClientConfig(),
             },

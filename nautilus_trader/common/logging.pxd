@@ -37,7 +37,6 @@ cdef str RES
 cdef class Logger:
     cdef CLogger _mem
     cdef Clock _clock
-    cdef str _file_path
 
     cpdef void change_clock(self, Clock clock)
     cdef void log(

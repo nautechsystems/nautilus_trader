@@ -110,6 +110,8 @@ cdef class OrderMatchingEngine:
         The clock for the matching engine.
     logger : Logger
         The logger for the matching engine.
+    bar_execution : bool, default True
+        If bars should be processed by the matching engine(s) (and move the market).
     reject_stop_orders : bool, default True
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
@@ -129,6 +131,7 @@ cdef class OrderMatchingEngine:
         CacheFacade cache not None,
         TestClock clock not None,
         Logger logger not None,
+        bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         auction_match_algo = default_auction_match
@@ -148,6 +151,7 @@ cdef class OrderMatchingEngine:
         self.oms_type = oms_type
         self.market_status = MarketStatus.OPEN
 
+        self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._auction_match_algo = auction_match_algo
@@ -396,6 +400,9 @@ cdef class OrderMatchingEngine:
 
         """
         Condition.not_none(bar, "bar")
+
+        if not self._bar_execution:
+            return
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(bar)}...")

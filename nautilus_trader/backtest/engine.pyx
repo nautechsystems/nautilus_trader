@@ -69,6 +69,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orderbook.data cimport OrderBookData
@@ -121,43 +122,14 @@ cdef class BacktestEngine:
         self._backtest_end: Optional[datetime] = None
 
         # Build core system kernel
-        self._kernel = NautilusKernel(
-            environment=Environment.BACKTEST,
-            name=type(self).__name__,
-            trader_id=TraderId(config.trader_id),
-            instance_id=config.instance_id,
-            cache_config=config.cache or CacheConfig(),
-            cache_database_config=config.cache_database or CacheDatabaseConfig(),
-            data_config=config.data_engine or DataEngineConfig(),
-            risk_config=config.risk_engine or RiskEngineConfig(),
-            exec_config=config.exec_engine or ExecEngineConfig(),
-            streaming_config=config.streaming,
-            actor_configs=config.actors,
-            strategy_configs=config.strategies,
-            load_state=config.load_state,
-            save_state=config.save_state,
-            log_level=log_level_from_str(config.log_level.upper()),
-            log_level_file=log_level_from_str(config.log_level_file.upper()),
-            log_file_path=config.log_file_path,
-            log_rate_limit=config.log_rate_limit,
-            bypass_logging=config.bypass_logging,
-        )
+        self._kernel = NautilusKernel(name=type(self).__name__, config=config)
 
-        cdef Trader trader = self._kernel.trader
         self._data_engine: DataEngine = self._kernel.data_engine
 
         # Setup engine logging
-        self._logger = Logger(
-            clock=LiveClock(),
-            trader_id=self.kernel.trader_id,
-            machine_id=self.kernel.machine_id,
-            instance_id=self.kernel.instance_id,
-            bypass=config.bypass_logging,
-        )
-
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
-            logger=self._logger,
+            logger=self._kernel.logger,
         )
 
     @property
@@ -368,6 +340,7 @@ cdef class BacktestEngine:
         book_type: BookType = BookType.L1_TBBO,
         routing: bool = False,
         frozen_account: bool = False,
+        bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
     ) -> None:
@@ -403,6 +376,8 @@ cdef class BacktestEngine:
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
+        bar_execution : bool, default True
+            If bars should be processed by the matching engine(s) (and move the market).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
@@ -449,6 +424,7 @@ cdef class BacktestEngine:
             clock=self.kernel.clock,
             logger=self.kernel.logger,
             frozen_account=frozen_account,
+            bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
         )
@@ -518,8 +494,18 @@ cdef class BacktestEngine:
                 f"Add the {instrument.id.venue} venue using the `add_venue` method."
             )
 
-        # TODO(cs): validate the instrument is correct for the venue
-        account_type: AccountType = self._venues[instrument.id.venue].account_type
+        # Validate instrument is correct for the venue
+        cdef SimulatedExchange venue = self._venues[instrument.id.venue]
+
+        if (
+            isinstance(instrument, CurrencyPair)
+            and venue.account_type == AccountType.CASH
+            and venue.base_currency is not None  # Single-currency account
+        ):
+            raise InvalidConfiguration(
+                f"Cannot add `CurrencyPair` instrument {instrument} "
+                "for a venue with a single-currency CASH account.",
+            )
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(instrument.id.venue)
@@ -836,6 +822,7 @@ cdef class BacktestEngine:
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
+        self._kernel.logger.change_clock(self._clock)
 
         self._log_post_run()
 

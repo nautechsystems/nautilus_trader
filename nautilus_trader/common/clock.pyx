@@ -762,12 +762,17 @@ cdef class LiveClock(Clock):
             )
 
     cpdef void _raise_time_event(self, LiveTimer timer):
+        cdef uint64_t now = self.timestamp_ns()
         cdef TimeEvent event = timer.pop_event(
             event_id=UUID4(),
-            ts_init=self.timestamp_ns(),
+            ts_init=now,
         )
 
-        timer.iterate_next_time(self.timestamp_ns())
+        if now < timer.next_time_ns:
+            timer.iterate_next_time(timer.next_time_ns)
+        else:
+            timer.iterate_next_time(now)
+
         self._handle_time_event(event)
 
         if timer.is_expired:

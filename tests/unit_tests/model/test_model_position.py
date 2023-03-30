@@ -140,7 +140,7 @@ class TestPosition:
             "strategy_id": "S-001",
             "entry": "BUY",
             "side": "LONG",
-            "net_qty": 100000.0,
+            "signed_qty": 100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
             "ts_opened": 0,
@@ -187,7 +187,7 @@ class TestPosition:
             "instrument_id": "AAPL.NASDAQ",
             "entry": "BUY",
             "side": "LONG",
-            "net_qty": 100000.0,
+            "signed_qty": 100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
             "ts_opened": 0,
@@ -234,7 +234,7 @@ class TestPosition:
             "instrument_id": "AAPL.NASDAQ",
             "entry": "SELL",
             "side": "SHORT",
-            "net_qty": -100000.0,
+            "signed_qty": -100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
             "ts_opened": 0,
@@ -280,6 +280,9 @@ class TestPosition:
         assert position.closing_order_id is None
         assert position.quantity == Quantity.from_int(100_000)
         assert position.peak_qty == Quantity.from_int(100_000)
+        assert position.size_precision == 0
+        assert position.signed_decimal_qty() == Decimal("100000")
+        assert position.signed_qty == 100_000.0
         assert position.entry == OrderSide.BUY
         assert position.side == PositionSide.LONG
         assert position.ts_opened == 0
@@ -327,6 +330,9 @@ class TestPosition:
         # Assert
         assert position.quantity == Quantity.from_int(100_000)
         assert position.peak_qty == Quantity.from_int(100_000)
+        assert position.size_precision == 0
+        assert position.signed_decimal_qty() == Decimal("-100000")
+        assert position.signed_qty == -100_000.0
         assert position.side == PositionSide.SHORT
         assert position.ts_opened == 0
         assert position.avg_px_open == 1.00001
@@ -486,6 +492,9 @@ class TestPosition:
         # Assert
         assert position.is_opposite_side(fill2.order_side)
         assert position.quantity == Quantity.zero()
+        assert position.size_precision == 0
+        assert position.signed_decimal_qty() == Decimal()
+        assert position.signed_qty == 0.0
         assert position.side == PositionSide.FLAT
         assert position.ts_opened == 1_000_000_000
         assert position.duration_ns == 1_000_000_000

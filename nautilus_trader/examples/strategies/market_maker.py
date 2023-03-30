@@ -95,10 +95,10 @@ class MarketMaker(Strategy):
 
     def on_event(self, event: Event):
         if isinstance(event, (PositionOpened, PositionChanged)):
-            net_qty = event.quantity.as_decimal()
+            signed_qty = event.quantity.as_decimal()
             if event.side == PositionSide.SHORT:
-                net_qty = -net_qty
-            self._adj = (net_qty / self.max_size) * Decimal(0.01)
+                signed_qty = -signed_qty
+            self._adj = (signed_qty / self.max_size) * Decimal(0.01)
         elif isinstance(event, PositionClosed):
             self._adj = Decimal(0)
 

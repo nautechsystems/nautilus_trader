@@ -18,6 +18,7 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr};
 
 #[repr(C)]
@@ -64,19 +65,36 @@ pub enum ComponentTrigger {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialOrd, PartialEq, Eq, FromRepr, EnumString)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialOrd,
+    PartialEq,
+    Eq,
+    FromRepr,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum LogLevel {
     #[strum(serialize = "DBG", serialize = "DEBUG")]
+    #[serde(rename = "DEBUG")]
     Debug = 10,
     #[strum(serialize = "INF", serialize = "INFO")]
+    #[serde(rename = "INFO")]
     Info = 20,
     #[strum(serialize = "WRN", serialize = "WARNING")]
+    #[serde(rename = "WARNING")]
     Warning = 30,
     #[strum(serialize = "ERR", serialize = "ERROR")]
+    #[serde(rename = "ERROR")]
     Error = 40,
     #[strum(serialize = "CRT", serialize = "CRITICAL")]
+    #[serde(rename = "CRITICAL")]
     Critical = 50,
 }
 
@@ -95,7 +113,9 @@ impl std::fmt::Display for LogLevel {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum LogColor {

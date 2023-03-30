@@ -50,6 +50,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -130,6 +131,7 @@ cdef class ExecutionEngine(Component):
         self._routing_map: dict[Venue, ExecutionClient] = {}
         self._default_client: Optional[ExecutionClient] = None
         self._oms_overrides: dict[StrategyId, OmsType] = {}
+        self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
 
         self._pos_id_generator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
@@ -343,6 +345,28 @@ cdef class ExecutionEngine(Component):
             f"Registered OMS.{oms_type_to_str(strategy.oms_type)} "
             f"for Strategy {strategy}.",
         )
+
+    cpdef void register_exec_algorithm(self, ExecAlgorithm exec_algorithm):
+        """
+        Register the given execution algorithm with the execution engine.
+
+        Parameters
+        ----------
+        exec_algorithm : ExecAlgorithm
+            The execution algorithm to register.
+
+        Raises
+        ------
+        ValueError
+            If `exec_algorithm` is already registered with the execution engine.
+
+        """
+        Condition.not_none(exec_algorithm, "exec_algorithm")
+        Condition.not_in(exec_algorithm.id, self._exec_algorithms, "exec_algorithm.id", "self._exec_algorithms")
+
+        self._exec_algorithms[exec_algorithm.id] = exec_algorithm
+
+        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
 
     cpdef void deregister_client(self, ExecutionClient client):
         """

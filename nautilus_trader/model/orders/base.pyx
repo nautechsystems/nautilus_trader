@@ -809,6 +809,8 @@ cdef class Order:
         if self.venue_order_id is not None and event.venue_order_id is not None and not isinstance(event, OrderUpdated):
             Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
+        cdef OrderStatus previous_status = <OrderStatus>self._fsm.state
+
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInitialized):
             pass  # Do nothing else
@@ -825,10 +827,8 @@ cdef class Order:
             self._fsm.trigger(OrderStatus.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderPendingUpdate):
-            self._previous_status = <OrderStatus>self._fsm.state
             self._fsm.trigger(OrderStatus.PENDING_UPDATE)
         elif isinstance(event, OrderPendingCancel):
-            self._previous_status = <OrderStatus>self._fsm.state
             self._fsm.trigger(OrderStatus.PENDING_CANCEL)
         elif isinstance(event, OrderModifyRejected):
             if self._fsm.state == OrderStatus.PENDING_UPDATE:
@@ -870,7 +870,10 @@ cdef class Order:
                 f"invalid `OrderEvent`, was {type(event)}",  # pragma: no cover (design-time error)
             )
 
-        # Update events last as FSM may raise InvalidStateTrigger
+        # Update previous status and events last as FSM may raise `InvalidStateTrigger`
+        if previous_status != OrderStatus.PENDING_UPDATE and previous_status != OrderStatus.PENDING_CANCEL:
+            self._previous_status = previous_status
+
         self._events.append(event)
 
     cdef void _denied(self, OrderDenied event):

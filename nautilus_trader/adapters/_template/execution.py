@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from typing import Optional
+
+import pandas as pd
 
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -91,8 +92,8 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -101,16 +102,16 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

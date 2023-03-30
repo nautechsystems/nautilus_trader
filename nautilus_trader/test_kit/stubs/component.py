@@ -59,7 +59,7 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def msgbus():
+    def msgbus() -> MessageBus:
         return MessageBus(
             trader_id=TestIdStubs.trader_id(),
             clock=TestComponentStubs.clock(),
@@ -67,14 +67,14 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def cache(logger: Optional[Logger] = None):
+    def cache(logger: Optional[Logger] = None) -> Cache:
         return Cache(
             database=None,
             logger=logger or TestComponentStubs.logger(),
         )
 
     @staticmethod
-    def portfolio():
+    def portfolio() -> Portfolio:
         return Portfolio(
             msgbus=TestComponentStubs.msgbus(),
             clock=TestComponentStubs.clock(),
@@ -83,7 +83,7 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def trading_strategy():
+    def trading_strategy() -> Strategy:
         strategy = Strategy()
         strategy.register(
             trader_id=TraderId("TESTER-000"),
@@ -96,7 +96,7 @@ class TestComponentStubs:
         return strategy
 
     @staticmethod
-    def mock_live_data_engine():
+    def mock_live_data_engine() -> MockLiveDataEngine:
         return MockLiveDataEngine(
             loop=asyncio.get_event_loop(),
             msgbus=TestComponentStubs.msgbus(),
@@ -106,7 +106,7 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def mock_live_exec_engine():
+    def mock_live_exec_engine() -> MockLiveExecutionEngine:
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
             msgbus=TestComponentStubs.msgbus(),
@@ -116,7 +116,7 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def mock_live_risk_engine():
+    def mock_live_risk_engine() -> MockLiveRiskEngine:
         return MockLiveRiskEngine(
             loop=asyncio.get_event_loop(),
             portfolio=TestComponentStubs.portfolio(),
@@ -127,7 +127,7 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def order_factory():
+    def order_factory() -> OrderFactory:
         return OrderFactory(
             trader_id=TestIdStubs.trader_id(),
             strategy_id=TestIdStubs.strategy_id(),
@@ -147,7 +147,7 @@ class TestComponentStubs:
     def backtest_engine(
         config: Optional[BacktestEngineConfig] = None,
         instrument: Optional[Instrument] = None,
-        ticks: list[Data] = None,
+        ticks: Optional[list[Data]] = None,
         venue: Optional[Venue] = None,
         oms_type: Optional[OmsType] = None,
         account_type: Optional[AccountType] = None,

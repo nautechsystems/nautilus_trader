@@ -23,12 +23,13 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
@@ -1475,7 +1476,7 @@ class TestExecutionCacheIntegrityCheck:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            logging=LoggingConfig(bypass_logging=True),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)

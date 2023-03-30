@@ -21,7 +21,8 @@ from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -37,7 +38,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 class TestSimulationModules:
     def create_engine(self, modules: list):
-        engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
         engine.add_venue(
             venue=Venue("SIM"),
             oms_type=OmsType.HEDGING,

@@ -15,7 +15,7 @@
 
 import itertools
 import os
-import tempfile
+from pathlib import Path
 
 import pandas as pd
 
@@ -91,12 +91,12 @@ def test_buffer_parquet_reader_quote_ticks():
     # )
 
 
-def test_file_parquet_writer_quote_ticks():
-    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+def test_file_parquet_writer_quote_ticks(tmp_path: Path):
+    parquet_data_path = Path(PACKAGE_ROOT) / "tests/test_data/quote_tick_data.parquet"
 
     # Write quotes
     reader = ParquetReader(
-        parquet_data_path,
+        str(parquet_data_path),
         1000,
         ParquetType.QuoteTick,
         ParquetReaderType.File,
@@ -112,7 +112,7 @@ def test_file_parquet_writer_quote_ticks():
         metadata,
     )
 
-    file_path = tempfile.mktemp()
+    file_path = tmp_path / "quote_tick_output.parquet"
 
     for chunk in reader:
         writer.write(chunk)
@@ -123,14 +123,11 @@ def test_file_parquet_writer_quote_ticks():
 
     # Read quotes again
     reader = ParquetReader(
-        file_path,
+        str(file_path),
         1000,
         ParquetType.QuoteTick,
         ParquetReaderType.File,
     )
-
-    # Cleanup
-    os.remove(file_path)
 
     mapped_chunk = map(QuoteTick.list_from_capsule, reader)
     quotes = list(itertools.chain(*mapped_chunk))
@@ -138,13 +135,13 @@ def test_file_parquet_writer_quote_ticks():
     assert len(quotes) == 9500
 
 
-def test_file_parquet_writer_trade_ticks():
+def test_file_parquet_writer_trade_ticks(tmp_path: Path):
     # Read quotes
-    parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
-    assert os.path.exists(parquet_data_path)
+    parquet_data_path = Path(TEST_DATA_DIR) / "trade_tick_data.parquet"
+    assert parquet_data_path.exists()
 
     reader = ParquetReader(
-        parquet_data_path,
+        str(parquet_data_path),
         100,
         ParquetType.TradeTick,
         ParquetReaderType.File,
@@ -161,7 +158,7 @@ def test_file_parquet_writer_trade_ticks():
         metadata,
     )
 
-    file_path = tempfile.mktemp()
+    file_path = tmp_path / "trade_tick_output.parquet"
     with open(file_path, "wb") as f:
         for chunk in reader:
             writer.write(chunk)
@@ -170,14 +167,11 @@ def test_file_parquet_writer_trade_ticks():
 
     # Read quotes again
     reader = ParquetReader(
-        parquet_data_path,
+        str(parquet_data_path),
         100,
         ParquetType.TradeTick,
         ParquetReaderType.File,
     )
-
-    # Cleanup
-    os.remove(file_path)
 
     mapped_chunk = map(TradeTick.list_from_capsule, reader)
     trades = list(itertools.chain(*mapped_chunk))

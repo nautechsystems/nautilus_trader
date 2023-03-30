@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ops::Deref;
+use std::rc::Rc;
+
+use derive_builder::{self, Builder};
+use nautilus_core::time::UnixNanos;
+use nautilus_core::uuid::UUID4;
+
 use crate::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
 };
@@ -29,11 +36,6 @@ use crate::types::currency::Currency;
 use crate::types::money::Money;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-use derive_builder::{self, Builder};
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
-use std::ops::Deref;
-use std::rc::Rc;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum OrderEvent {

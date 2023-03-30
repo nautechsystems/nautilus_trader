@@ -72,6 +72,7 @@ cdef class OrderMatchingEngine:
     cdef OrderBook _closing_auction_book
     cdef FillModel _fill_model
     cdef object _auction_match_algo
+    cdef bint _bar_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
     cdef dict _account_ids

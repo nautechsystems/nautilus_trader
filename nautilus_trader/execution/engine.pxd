@@ -16,6 +16,7 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
+from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -42,6 +43,7 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict _clients
     cdef readonly dict _routing_map
     cdef readonly dict _oms_overrides
+    cdef readonly dict _exec_algorithms
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -66,6 +68,7 @@ cdef class ExecutionEngine(Component):
     cpdef void register_default_client(self, ExecutionClient client)
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue)
     cpdef void register_oms_type(self, Strategy strategy)
+    cpdef void register_exec_algorithm(self, ExecAlgorithm exec_algorithm)
     cpdef void deregister_client(self, ExecutionClient client)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------

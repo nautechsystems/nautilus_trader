@@ -25,6 +25,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
@@ -49,7 +50,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     def test_run_with_empty_strategy(benchmark):
         def setup():
             # Arrange
-            config = BacktestEngineConfig(bypass_logging=True)
+            config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
             engine = BacktestEngine(config=config)
 
             engine.add_venue(
@@ -86,7 +87,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_for_tick_processing(benchmark):
         def setup():
-            config = BacktestEngineConfig(bypass_logging=True)
+            config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
             engine = BacktestEngine(config=config)
 
             engine.add_venue(
@@ -131,7 +132,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_with_ema_cross_strategy(benchmark):
         def setup():
-            config = BacktestEngineConfig(bypass_logging=True)
+            config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
             engine = BacktestEngine(config=config)
 
             provider = TestDataProvider()

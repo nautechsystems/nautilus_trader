@@ -280,7 +280,7 @@ class BetfairDataClient(LiveMarketDataClient):
                     f"Received event: {data}, DataEngine not yet setup to send events",
                 )
             else:
-                raise RuntimeError()
+                raise RuntimeError
 
     def _check_stream_unhealthy(self, update: MCM):
         if update.stream_unreliable:
