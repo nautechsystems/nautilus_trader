@@ -254,6 +254,22 @@ def _get_rustc_version() -> str:
         ) from e
 
 
+def _strip_unneeded_symbols() -> None:
+    try:
+        print("Stripping unneeded symbols from binaries...")
+        for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
+            strip_cmd = f"strip --strip-unneeded {so}"
+            print(strip_cmd)
+            subprocess.run(
+                strip_cmd,
+                check=True,
+                shell=True,
+                capture_output=True,
+            )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error when stripping symbols.\n{e.stderr.decode()}") from e
+
+
 def build() -> None:
     """Construct the extensions and distribution."""
     _build_rust_libs()
@@ -275,6 +291,9 @@ def build() -> None:
         if COPY_TO_SOURCE:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
+
+    if platform.system() == "Linux":
+        _strip_unneeded_symbols()
 
 
 if __name__ == "__main__":
