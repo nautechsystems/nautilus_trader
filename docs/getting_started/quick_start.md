@@ -4,7 +4,7 @@ This guide explains how to get up and running with NautilusTrader backtesting wi
 FX data. The Nautilus maintainers have pre-loaded some test data using the standard Nautilus persistence 
 format (Parquet) for this guide.
 
-For more details on how to load data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
+For more details on how to load data into Nautilus, see [Backtest Example](../guides/backtest_example.md).
 
 ## Running in docker
 A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
@@ -66,22 +66,23 @@ registering indicators to receive certain data types, however in this example we
 ```python
 from typing import Optional
 from nautilus_trader.core.message import Event
-from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events.position import PositionEvent
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 
 
 class MACDConfig(StrategyConfig):
     instrument_id: str
-    fast_period: int
-    slow_period: int
-    trade_size: int = 1000
+    fast_period: int = 12
+    slow_period: int = 26
+    trade_size: int = 1_000_000
     entry_threshold: float = 0.00010
 
 
@@ -100,63 +101,66 @@ class MACDStrategy(Strategy):
         # Convenience
         self.position: Optional[Position] = None
 
-    def on_start(self) -> None:
+    def on_start(self):
         self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
-    def on_stop(self) -> None:
+    def on_stop(self):
+        self.close_all_positions(self.instrument_id)
         self.unsubscribe_quote_ticks(instrument_id=self.instrument_id)
 
-    def on_quote_tick(self, tick: QuoteTick) -> None:
-        # Update our MACD
+    def on_quote_tick(self, tick: QuoteTick):
+        # You can register indicators to receive quote tick updates automatically,
+        # here we manually update the indicator to demonstrate the flexibility available.
         self.macd.handle_quote_tick(tick)
-        if self.macd.value:
-            # self._log.info(f"{self.macd.value=}:%5d")
-            self.check_for_entry()
-            self.check_for_exit()
-        if self.position:
-            assert self.position.quantity <= 1000
 
-    def on_event(self, event: Event) -> None:
-        if isinstance(event, PositionEvent):
+        if not self.macd.initialized:
+            return  # Wait for indicator to warm up
+        
+        # self._log.info(f"{self.macd.value=}:%5d")
+        self.check_for_entry()
+        self.check_for_exit()
+
+    def on_event(self, event):
+        if isinstance(event, PositionOpened):
             self.position = self.cache.position(event.position_id)
 
-    def check_for_entry(self) -> None:
-        if self.cache.positions():
-            # If we have a position, do not enter again
-            return
+    def check_for_entry(self):
+        # If MACD line is above our entry threshold, we should be LONG
+        if self.macd.value > self.entry_threshold:
+            if self.position and self.position.side == PositionSide.LONG:
+                return  # Already LONG
 
-        # We have no position, check if we are above or below our MACD entry threshold
-        if abs(self.macd.value) > self.entry_threshold:
-            self._log.info(f"Entering trade, {self.macd.value=}, {self.entry_threshold=}")
-            # We're above (to sell) or below (to buy) our entry threshold, with no position: enter a trade
-            side = OrderSide.BUY if self.macd.value < -self.entry_threshold else OrderSide.SELL
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,
-                order_side=side,
+                order_side=OrderSide.BUY,
+                quantity=self.trade_size,
+            )
+            self.submit_order(order)
+        # If MACD line is below our entry threshold, we should be SHORT
+        elif self.macd.value < -self.entry_threshold:
+            if self.position and self.position.side == PositionSide.SHORT:
+                return  # Already SHORT
+
+            order = self.order_factory.market(
+                instrument_id=self.instrument_id,
+                order_side=OrderSide.SELL,
                 quantity=self.trade_size,
             )
             self.submit_order(order)
 
-    def check_for_exit(self) -> None:
-        if not self.cache.positions():
-            # If we don't have a position, return early
-            return
+    def check_for_exit(self):
+        # If MACD line is above zero then exit if we are SHORT
+        if self.macd.value >= 0.0:
+            if self.position and self.position.side == PositionSide.SHORT:
+                self.close_position(self.position)
+        # If MACD line is below zero then exit if we are LONG
+        else:
+            if self.position and self.position.side == PositionSide.LONG:
+                self.close_position(self.position)
 
-        # We have a position, check if we have crossed back over the MACD 0 line (and therefore close position)
-        if (self.position.is_long and self.macd.value > 0) or (self.position.is_short and self.macd.value < 0):
-            self._log.info(f"Exiting trade, {self.macd.value=}")
-            # We've crossed back over 0 line - close the position.
-            # Opposite to trade entry, except only sell our position size (we may not have been full filled)
-            side = OrderSide.SELL if self.position.is_long else OrderSide.BUY
-            order = self.order_factory.market(
-                instrument_id=self.instrument_id,
-                order_side=side,
-                quantity=self.position.quantity,
-            )
-            self.submit_order(order)
-
-    def on_dispose(self) -> None:
+    def on_dispose(self):
         pass  # Do nothing else
+
 ```
 
 ## Configuring Backtests
@@ -180,15 +184,19 @@ First, we create a venue configuration. For this example we will create a simula
 A venue needs a name which acts as an ID (in this case `SIM`), as well as some basic configuration, e.g. 
 the account type (`CASH` vs `MARGIN`), an optional base currency, and starting balance(s).
 
+```{note}
+FX trading is typically done on margin with Non-Deliverable Forward, Swap or CFD type instruments.
+```
+
 ```python
 from nautilus_trader.config import BacktestVenueConfig
 
 venue = BacktestVenueConfig(
     name="SIM",
     oms_type="NETTING",
-    account_type="CASH",
+    account_type="MARGIN",
     base_currency="USD",
-    starting_balances=["100_000 USD"]
+    starting_balances=["1_000_000 USD"]
 )
 ```
 
@@ -217,7 +225,7 @@ data = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=QuoteTick,
     instrument_id=str(instruments[0].id),
-    end_time="2020-01-05",
+    end_time="2020-01-10",
 )
 ```
 
@@ -233,6 +241,7 @@ user packages. In this instance, our `MACDStrategy` is defined in the current mo
 ```python
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
 
 engine = BacktestEngineConfig(
     strategies=[
@@ -246,7 +255,7 @@ engine = BacktestEngineConfig(
             ),
         )
     ],
-    log_level="ERROR",  # Lower to `INFO` to see more logging about orders, events, etc.
+    logging=LoggingConfig(log_level="ERROR"),  # Lower to `INFO` to see more logging about orders, events, etc.
 )
 ```
 
@@ -265,7 +274,6 @@ config = BacktestRunConfig(
     venues=[venue],
     data=[data],
 )
-
 ```
 
 The `BacktestNode` class will orchestrate the backtest run. The reason for this separation between 
@@ -296,13 +304,13 @@ from nautilus_trader.model.identifiers import Venue
 
 engine: BacktestEngine = node.get_engine(config.id)
 
-engine.trader.generate_account_report(Venue("SIM"))
-```
-
-```python
 engine.trader.generate_order_fills_report()
 ```
 
 ```python
 engine.trader.generate_positions_report()
+```
+
+```python
+engine.trader.generate_account_report(Venue("SIM"))
 ```

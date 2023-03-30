@@ -23,6 +23,7 @@ import pytest
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
@@ -78,7 +79,9 @@ class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        self.engine = self.create_engine(BacktestEngineConfig(bypass_logging=True))
+        self.engine = self.create_engine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
 
     def create_engine(self, config: Optional[BacktestEngineConfig] = None):
         engine = BacktestEngine(config)
@@ -107,7 +110,7 @@ class TestBacktestEngine:
         self.engine.dispose()
 
     def test_initialization(self):
-        engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
 
         # Arrange, Act, Assert
         assert engine.run_id is None
@@ -191,7 +194,7 @@ class TestBacktestEngine:
             engine = self.create_engine(
                 config=BacktestEngineConfig(
                     streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
-                    bypass_logging=True,
+                    logging=LoggingConfig(bypass_logging=True),
                 ),
             )
             engine.add_strategy(strategy)
@@ -205,7 +208,7 @@ class TestBacktestEngine:
         engine = self.create_engine(
             config=BacktestEngineConfig(
                 streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
-                bypass_logging=True,
+                logging=LoggingConfig(bypass_logging=True),
             ),
         )
         engine.add_strategy(strategy)
@@ -226,22 +229,59 @@ class TestBacktestEngine:
         instance_id = UUID4().value
 
         # Act
-        engine = self.create_engine(
-            config=BacktestEngineConfig(instance_id=instance_id, bypass_logging=True),
+        engine1 = self.create_engine(
+            config=BacktestEngineConfig(
+                instance_id=instance_id,
+                logging=LoggingConfig(bypass_logging=True),
+            ),
         )
         engine2 = self.create_engine(
-            config=BacktestEngineConfig(bypass_logging=True),
+            config=BacktestEngineConfig(
+                logging=LoggingConfig(bypass_logging=True),
+            ),
         )  # Engine sets instance id
 
         # Assert
-        assert engine.kernel.instance_id.value == instance_id
+        assert engine1.kernel.instance_id.value == instance_id
         assert engine2.kernel.instance_id.value != instance_id
+
+
+class TestBacktestEngineCashAccount:
+    def setup(self) -> None:
+        # Fixture Setup
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        self.engine = self.create_engine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
+
+    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
+        engine = BacktestEngine(config)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            fill_model=FillModel(),
+        )
+        return engine
+
+    def teardown(self):
+        self.engine.reset()
+        self.engine.dispose()
+
+    def test_adding_currency_pair_for_single_currency_cash_account_raises_exception(self):
+        # Arrange, Act, Assert
+        with pytest.raises(InvalidConfiguration):
+            self.engine.add_instrument(self.usdjpy)
 
 
 class TestBacktestEngineData:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        self.engine = BacktestEngine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
         self.engine.add_venue(
             venue=Venue("BINANCE"),
             oms_type=OmsType.NETTING,
@@ -258,7 +298,7 @@ class TestBacktestEngineData:
             fill_model=FillModel(),
         )
 
-    def test_add_generic_data_adds_to_engine(self, capsys):
+    def test_add_generic_data_adds_to_engine(self):
         # Arrange
         data_type = DataType(MyData, metadata={"news_wire": "hacks"})
 
@@ -294,13 +334,13 @@ class TestBacktestEngineData:
 
     def test_add_instrument_when_no_venue_raises_exception(self):
         # Arrange
-        engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
+        engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
 
         # Act, Assert
         with pytest.raises(InvalidConfiguration):
             engine.add_instrument(ETHUSDT_BINANCE)
 
-    def test_add_order_book_snapshots_adds_to_engine(self, capsys):
+    def test_add_order_book_snapshots_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(ETHUSDT_BINANCE)
 
@@ -330,7 +370,7 @@ class TestBacktestEngineData:
         assert self.engine.data[0] == snapshot1
         assert self.engine.data[1] == snapshot2
 
-    def test_add_order_book_deltas_adds_to_engine(self, capsys):
+    def test_add_order_book_deltas_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(AUDUSD_SIM)
         self.engine.add_instrument(ETHUSDT_BINANCE)
@@ -434,7 +474,7 @@ class TestBacktestEngineData:
         assert self.engine.data[0] == operations1
         assert self.engine.data[1] == operations2
 
-    def test_add_quote_ticks_adds_to_engine(self, capsys):
+    def test_add_quote_ticks_adds_to_engine(self):
         # Arrange, Setup data
         self.engine.add_instrument(AUDUSD_SIM)
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
@@ -447,7 +487,7 @@ class TestBacktestEngineData:
         # Assert
         assert len(self.engine.data) == 100000
 
-    def test_add_trade_ticks_adds_to_engine(self, capsys):
+    def test_add_trade_ticks_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(ETHUSDT_BINANCE)
 
@@ -461,7 +501,7 @@ class TestBacktestEngineData:
         # Assert
         assert len(self.engine.data) == 69806
 
-    def test_add_bars_adds_to_engine(self, capsys):
+    def test_add_bars_adds_to_engine(self):
         # Arrange
         bar_spec = BarSpecification(
             step=1,
@@ -489,7 +529,7 @@ class TestBacktestEngineData:
         # Assert
         assert len(self.engine.data) == 2000
 
-    def test_add_instrument_status_to_engine(self, capsys):
+    def test_add_instrument_status_to_engine(self):
         # Arrange
         data = [
             InstrumentStatusUpdate(
@@ -519,7 +559,7 @@ class TestBacktestWithAddedBars:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            logging=LoggingConfig(bypass_logging=True),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)

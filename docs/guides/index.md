@@ -1,6 +1,6 @@
-# User Guide
+# Guides
 
-Thank you for using the NautilusTrader platform! We hope that this user guide will be a helpful 
+Welcome to the guides for the NautilusTrader platform! We hope these guides will be a helpful 
 resource as you explore the different features and capabilities of the platform.
 
 To get started, you can take a look at the table of contents on the left-hand side of the page. 
@@ -24,13 +24,6 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
    :titlesonly:
    :hidden:
    
-   core_concepts.md
-   architecture.md
    backtest_example.md
    loading_external_data.md
-   strategies.md
-   instruments.md
-   orders.md
-   adapters.md
-   advanced/index.md
 ```

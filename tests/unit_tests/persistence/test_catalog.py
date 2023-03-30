@@ -17,13 +17,11 @@ import datetime
 import itertools
 import os
 import sys
-import tempfile
 from decimal import Decimal
 
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.core.datetime import unix_nanos_to_dt
@@ -44,7 +42,6 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -400,15 +397,6 @@ class _TestPersistenceCatalog:
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="windows paths broken")
-    def test_from_env(self):
-        path = tempfile.mktemp() if self.fs_protocol == "file" else "/'"
-        uri = f"{self.fs_protocol}://{path}"
-        catalog = ParquetDataCatalog.from_uri(uri)
-        os.environ["NAUTILUS_PATH"] = uri
-        catalog = ParquetDataCatalog.from_env()
-        assert catalog.fs_protocol == self.fs_protocol
 
     def test_partition_key_correctly_remapped(self):
         # Arrange

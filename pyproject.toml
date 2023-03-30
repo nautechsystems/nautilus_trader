@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.170.0"
+version = "1.171.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -35,7 +35,7 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.5.1",
+    "poetry-core>=1.5.2",
     "numpy>=1.24.2",
     "Cython==3.0.0b1",
 ]
@@ -51,8 +51,9 @@ cython = "==3.0.0b1"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.4"
 click = "^8.1.3"
-frozendict = "^2.3.5"
+frozendict = "^2.3.6"
 fsspec = ">=2023.3.0"
+importlib_metadata = "^6.1.0"
 msgspec = "^0.13.1"
 numpy = "^1.24.2"
 pandas = "^1.5.3"
@@ -65,7 +66,7 @@ tqdm = "^4.65.0"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.2", optional = true}
 ib_insync = {version = "^0.9.81", optional = true}
-redis = {version = "^4.5.1", optional = true}
+redis = {version = "^4.5.4", optional = true}
 docker = {version = "^6.0.1", optional = true}
 betfair_parser = {version = "==0.1.21", optional = true}
 
@@ -79,13 +80,13 @@ redis = ["hiredis", "redis"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.1.0"
+black = "^23.3.0"
 isort = "^5.12.0"
 mypy = "^1.1.1"
-pre-commit = "^3.1.1"
-ruff = "^0.0.254"
+pre-commit = "^3.2.1"
+ruff = "^0.0.260"
 types-pytz = "^2022.6.0"
-types-redis = "^4.5.1"
+types-redis = "^4.5.4"
 types-requests = "^2.28.11"
 types-toml = "^0.10.8"
 
@@ -99,7 +100,7 @@ pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
-pytest-xdist = { version = "^3.2.0", extras = ["psutil"] }
+pytest-xdist = { version = "^3.2.1", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
 optional = true
@@ -151,72 +152,53 @@ select = [
     "ICN",
     "PYI",
     "Q",
-    # "RSE",
+    # "I",
+    "RSE",
     "TID",
     # "ARG",
     # "ERA",
     # "PD",
     # "PGH",
-    # "PL",
-    # "PLE",
-    # "PLR",
     # "PLW",
-    # "NPY",
+    "NPY",
     # "RUF",
 ]
 
 ignore = [
-    "E741",
-    "D100",
+    "E741",  # Ambiguous variable name (single char)
+    "D100",  # Missing docstring in public module  **fix**
     "D101",
-    "D102",
-    "D103",
-    "D104",
+    "D102",  # Missing docstring in public method  **fix**
+    "D103",  # Missing docstring in public function  **fix**
+    "D104",  # Missing docstring in public package  **fix**
     "D107",
     "D105",
-    "D200",
-    "D203",
-    "D205",
-    "D212",
-    "D400",
-    "D413",
-    "D415",
-    "D416",
+    "D200",  # One-line docstring should fit on one line with quotes (optional style)
+    "D203",  # 1 blank line required before class docstring (optional style)
+    "D205",  # 1 blank line required between summary line and description (optional style)
+    "D212",  # Multi-line docstring summary should start at the first line (optional style)
+    "D400",  # First line should end with a period (not always a first line)
+    "D413",  # Missing blank line after last section ('Parameters')
+    "D415",  # First line should end with a period, question mark, or exclamation point (not always a first line)
+    "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
     "S101",  # Use of assert detected (OK in test suite)
     "S105",  # Use of hardcoded password (spurious)
     "S106",  # Use of hardcoded password (spurious)
     "S113",  # Probable use of requests call without timeout **fix**
 ]
 
-# pydocstyle ignore reasons
-# -------------------------
-# D100: Missing docstring in public module  **fix**
-# D102: Missing docstring in public method  **fix**
-# D103: Missing docstring in public function  **fix**
-# D104: Missing docstring in public package  **fix**
-# D200: One-line docstring should fit on one line with quotes (optional style)
-# D203: 1 blank line required before class docstring (optional style)
-# D205: 1 blank line required between summary line and description (optional style)
-# D212: Multi-line docstring summary should start at the first line (optional style)
-# D400: First line should end with a period (not always a first line)
-# D413: Missing blank line after last section ('Parameters')
-# D415: First line should end with a period, question mark, or exclamation point (not always a first line)
-# D416: Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
-
 # Allow autofix for all enabled rules (when `--fix`) is provided
 fixable = ["A", "B", "C", "D", "E", "F"]
 unfixable = []
 
 exclude = [
+    ".benchmarks",
     ".eggs",
     ".git",
     ".mypy_cache",
-    ".pants.d",
-    ".pytype",
+    ".pytest_cache",
     ".ruff_cache",
     ".venv",
-    "__pypackages__",
-    "_build",
     "build",
     "dist",
     "venv",
@@ -228,6 +210,20 @@ line-length = 150  # Reduce to 100
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 target-version = "py39"
+
+# [tool.ruff.isort]
+# # py_version = "39"
+# # skip_glob = ["**/core/rust/*"]
+# combine-as-imports = true
+# # max-line-length = 100
+# # ensure_newline_before_comments = true
+# force-single-line = true
+# single-line-exclusions = ["typing"]
+# # include_trailing_comma = true
+# # multi_line_output = 3
+# lines-after-imports = 2
+# # use_parentheses = true
+# # filter_files = true
 
 [tool.ruff.mccabe]
 max-complexity = 10

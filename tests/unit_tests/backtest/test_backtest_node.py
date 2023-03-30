@@ -23,6 +23,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
@@ -64,7 +65,10 @@ class TestBacktestNode:
         ]
         self.backtest_configs = [
             BacktestRunConfig(
-                engine=BacktestEngineConfig(strategies=self.strategies, bypass_logging=True),
+                engine=BacktestEngineConfig(
+                    strategies=self.strategies,
+                    logging=LoggingConfig(bypass_logging=True),
+                ),
                 venues=[self.venue_config],
                 data=[self.data_config],
             ),

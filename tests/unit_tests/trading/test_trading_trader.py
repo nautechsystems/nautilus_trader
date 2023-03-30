@@ -26,9 +26,11 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.blank import MyStrategy
 from nautilus_trader.examples.strategies.blank import MyStrategyConfig
+from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -275,19 +277,65 @@ class TestTrader:
         assert status[StrategyId("Strategy-002")] == "READY"
         assert len(status) == 2
 
+    def test_add_exec_algorithm(self):
+        # Arrange
+        exec_algorithm = ExecAlgorithm()
+
+        # Act
+        self.trader.add_exec_algorithm(exec_algorithm)
+
+        # Assert
+        assert self.trader.exec_algorithm_ids() == [exec_algorithm.id]
+        assert self.trader.exec_algorithms() == [exec_algorithm]
+        assert self.trader.exec_algorithm_states() == {exec_algorithm.id: "READY"}
+
+    def test_change_exec_algorithms(self):
+        # Arrange
+        exec_algorithm1 = ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="001"))
+        exec_algorithm2 = ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="002"))
+        exec_algorithms = [exec_algorithm1, exec_algorithm2]
+
+        # Act
+        self.trader.add_exec_algorithms(exec_algorithms)
+
+        # Assert
+        assert self.trader.exec_algorithm_ids() == [exec_algorithm1.id, exec_algorithm2.id]
+        assert self.trader.exec_algorithms() == [exec_algorithm1, exec_algorithm2]
+        assert self.trader.exec_algorithm_states() == {
+            exec_algorithm1.id: "READY",
+            exec_algorithm2.id: "READY",
+        }
+
+    def test_clear_exec_algorithms(self):
+        # Arrange
+        exec_algorithms = [
+            ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="001")),
+            ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="002")),
+        ]
+
+        self.trader.add_exec_algorithms(exec_algorithms)
+
+        # Act
+        self.trader.clear_exec_algorithms()
+
+        # Assert
+        assert self.trader.exec_algorithm_ids() == []
+        assert self.trader.exec_algorithms() == []
+        assert self.trader.exec_algorithm_states() == {}
+
     def test_change_strategies(self):
         # Arrange
-        strategies = [
-            Strategy(StrategyConfig(order_id_tag="003")),
-            Strategy(StrategyConfig(order_id_tag="004")),
-        ]
+        strategy1 = Strategy(StrategyConfig(order_id_tag="003"))
+        strategy2 = Strategy(StrategyConfig(order_id_tag="004"))
+
+        strategies = [strategy1, strategy2]
 
         # Act
         self.trader.add_strategies(strategies)
 
         # Assert
-        assert strategies[0].id in self.trader.strategy_states()
-        assert strategies[1].id in self.trader.strategy_states()
+        assert strategy1.id in self.trader.strategy_states()
+        assert strategy2.id in self.trader.strategy_states()
         assert len(self.trader.strategy_states()) == 2
 
     def test_start_a_trader(self):

@@ -43,7 +43,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.loaders import ParquetTickDataLoader
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
-from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
@@ -257,15 +256,14 @@ class TestBarBuilder:
 class TestTickBarAggregator:
     def test_handle_quote_tick_when_count_below_threshold_updates(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -283,19 +281,18 @@ class TestTickBarAggregator:
         aggregator.handle_quote_tick(tick1)
 
         # Assert
-        assert len(bar_store.get_store()) == 0
+        assert len(handler) == 0
 
     def test_handle_trade_tick_when_count_below_threshold_updates(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -313,19 +310,18 @@ class TestTickBarAggregator:
         aggregator.handle_trade_tick(tick1)
 
         # Assert
-        assert len(bar_store.get_store()) == 0
+        assert len(handler) == 0
 
     def test_handle_quote_tick_when_count_at_threshold_sends_bar_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -365,24 +361,23 @@ class TestTickBarAggregator:
         aggregator.handle_quote_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 1
-        assert bar_store.get_store()[0].open == Price.from_str("1.000025")
-        assert bar_store.get_store()[0].high == Price.from_str("1.000035")
-        assert bar_store.get_store()[0].low == Price.from_str("1.000015")
-        assert bar_store.get_store()[0].close == Price.from_str("1.000015")
-        assert bar_store.get_store()[0].volume == Quantity.from_int(3)
+        assert len(handler) == 1
+        assert handler[0].open == Price.from_str("1.000025")
+        assert handler[0].high == Price.from_str("1.000035")
+        assert handler[0].low == Price.from_str("1.000015")
+        assert handler[0].close == Price.from_str("1.000015")
+        assert handler[0].volume == Quantity.from_int(3)
 
     def test_handle_trade_tick_when_count_at_threshold_sends_bar_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -422,24 +417,23 @@ class TestTickBarAggregator:
         aggregator.handle_trade_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 1
-        assert bar_store.get_store()[0].open == Price.from_str("1.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("1.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].volume == Quantity.from_int(3)
+        assert len(handler) == 1
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].high == Price.from_str("1.00002")
+        assert handler[0].low == Price.from_str("1.00000")
+        assert handler[0].close == Price.from_str("1.00000")
+        assert handler[0].volume == Quantity.from_int(3)
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -453,8 +447,8 @@ class TestTickBarAggregator:
             aggregator.handle_quote_tick(tick)
 
         # Assert
-        last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 10
+        last_bar = handler[-1]
+        assert len(handler) == 10
         assert last_bar.open == Price.from_str("0.670340")
         assert last_bar.high == Price.from_str("0.670345")
         assert last_bar.low == Price.from_str("0.670225")
@@ -463,15 +457,14 @@ class TestTickBarAggregator:
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = ETHUSDT_BITMEX
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = TickBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -484,8 +477,8 @@ class TestTickBarAggregator:
             aggregator.handle_trade_tick(tick)
 
         # Assert
-        last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 10
+        last_bar = handler[-1]
+        assert len(handler) == 10
         assert last_bar.open == Price.from_str("424.69")
         assert last_bar.high == Price.from_str("425.25")
         assert last_bar.low == Price.from_str("424.51")
@@ -496,15 +489,14 @@ class TestTickBarAggregator:
 class TestVolumeBarAggregator:
     def test_handle_quote_tick_when_volume_below_threshold_updates(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -522,19 +514,18 @@ class TestVolumeBarAggregator:
         aggregator.handle_quote_tick(tick1)
 
         # Assert
-        assert len(bar_store.get_store()) == 0
+        assert len(handler) == 0
 
     def test_handle_trade_tick_when_volume_below_threshold_updates(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -552,19 +543,18 @@ class TestVolumeBarAggregator:
         aggregator.handle_trade_tick(tick1)
 
         # Assert
-        assert len(bar_store.get_store()) == 0
+        assert len(handler) == 0
 
     def test_handle_quote_tick_when_volume_at_threshold_sends_bar_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -604,24 +594,23 @@ class TestVolumeBarAggregator:
         aggregator.handle_quote_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 1
-        assert bar_store.get_store()[0].open == Price.from_str("1.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("1.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].volume == Quantity.from_int(10_000)
+        assert len(handler) == 1
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].high == Price.from_str("1.00002")
+        assert handler[0].low == Price.from_str("1.00000")
+        assert handler[0].close == Price.from_str("1.00000")
+        assert handler[0].volume == Quantity.from_int(10_000)
 
     def test_handle_trade_tick_when_volume_at_threshold_sends_bar_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -661,24 +650,23 @@ class TestVolumeBarAggregator:
         aggregator.handle_trade_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 1
-        assert bar_store.get_store()[0].open == Price.from_str("1.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("1.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].volume == Quantity.from_int(10_000)
+        assert len(handler) == 1
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].high == Price.from_str("1.00002")
+        assert handler[0].low == Price.from_str("1.00000")
+        assert handler[0].close == Price.from_str("1.00000")
+        assert handler[0].volume == Quantity.from_int(10_000)
 
     def test_handle_quote_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -718,34 +706,33 @@ class TestVolumeBarAggregator:
         aggregator.handle_quote_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 3
-        assert bar_store.get_store()[0].open == Price.from_str("1.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("1.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].volume == Quantity.from_int(10_000)
-        assert bar_store.get_store()[1].open == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].high == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].volume == Quantity.from_int(10_000)
-        assert bar_store.get_store()[2].open == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].high == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].volume == Quantity.from_int(10_000)
+        assert len(handler) == 3
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].high == Price.from_str("1.00002")
+        assert handler[0].low == Price.from_str("1.00000")
+        assert handler[0].close == Price.from_str("1.00000")
+        assert handler[0].volume == Quantity.from_int(10_000)
+        assert handler[1].open == Price.from_str("1.00000")
+        assert handler[1].high == Price.from_str("1.00000")
+        assert handler[1].low == Price.from_str("1.00000")
+        assert handler[1].close == Price.from_str("1.00000")
+        assert handler[1].volume == Quantity.from_int(10_000)
+        assert handler[2].open == Price.from_str("1.00000")
+        assert handler[2].high == Price.from_str("1.00000")
+        assert handler[2].low == Price.from_str("1.00000")
+        assert handler[2].close == Price.from_str("1.00000")
+        assert handler[2].volume == Quantity.from_int(10_000)
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -785,34 +772,33 @@ class TestVolumeBarAggregator:
         aggregator.handle_trade_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 3
-        assert bar_store.get_store()[0].open == Price.from_str("1.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("1.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].volume == Quantity.from_int(10_000)
-        assert bar_store.get_store()[1].open == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].high == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[1].volume == Quantity.from_int(10_000)
-        assert bar_store.get_store()[2].open == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].high == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[2].volume == Quantity.from_int(10_000)
+        assert len(handler) == 3
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].high == Price.from_str("1.00002")
+        assert handler[0].low == Price.from_str("1.00000")
+        assert handler[0].close == Price.from_str("1.00000")
+        assert handler[0].volume == Quantity.from_int(10_000)
+        assert handler[1].open == Price.from_str("1.00000")
+        assert handler[1].high == Price.from_str("1.00000")
+        assert handler[1].low == Price.from_str("1.00000")
+        assert handler[1].close == Price.from_str("1.00000")
+        assert handler[1].volume == Quantity.from_int(10_000)
+        assert handler[2].open == Price.from_str("1.00000")
+        assert handler[2].high == Price.from_str("1.00000")
+        assert handler[2].low == Price.from_str("1.00000")
+        assert handler[2].close == Price.from_str("1.00000")
+        assert handler[2].volume == Quantity.from_int(10_000)
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -829,8 +815,8 @@ class TestVolumeBarAggregator:
             aggregator.handle_quote_tick(tick)
 
         # Assert
-        last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 10
+        last_bar = handler[-1]
+        assert len(handler) == 10
         assert last_bar.open == Price.from_str("0.670650")
         assert last_bar.high == Price.from_str("0.670705")
         assert last_bar.low == Price.from_str("0.670370")
@@ -839,15 +825,14 @@ class TestVolumeBarAggregator:
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = ETHUSDT_BITMEX
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument.id, bar_spec)
         aggregator = VolumeBarAggregator(
             instrument,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -860,8 +845,8 @@ class TestVolumeBarAggregator:
             aggregator.handle_trade_tick(tick)
 
         # Assert
-        last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 27
+        last_bar = handler[-1]
+        assert len(handler) == 27
         assert last_bar.open == Price.from_str("425.07")
         assert last_bar.high == Price.from_str("425.20")
         assert last_bar.low == Price.from_str("424.69")
@@ -872,15 +857,14 @@ class TestVolumeBarAggregator:
 class TestTestValueBarAggregator:
     def test_handle_quote_tick_when_value_below_threshold_updates(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -898,20 +882,19 @@ class TestTestValueBarAggregator:
         aggregator.handle_quote_tick(tick1)
 
         # Assert
-        assert len(bar_store.get_store()) == 0
+        assert len(handler) == 0
         assert aggregator.get_cumulative_value() == Decimal("3000.03000")
 
     def test_handle_trade_tick_when_value_below_threshold_updates(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -929,20 +912,19 @@ class TestTestValueBarAggregator:
         aggregator.handle_trade_tick(tick1)
 
         # Assert
-        assert len(bar_store.get_store()) == 0
+        assert len(handler) == 0
         assert aggregator.get_cumulative_value() == Decimal("52500.000")
 
     def test_handle_quote_tick_when_value_beyond_threshold_sends_bar_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -982,25 +964,24 @@ class TestTestValueBarAggregator:
         aggregator.handle_quote_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 1
-        assert bar_store.get_store()[0].open == Price.from_str("1.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("1.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].close == Price.from_str("1.00000")
-        assert bar_store.get_store()[0].volume == Quantity.from_str("99999")
+        assert len(handler) == 1
+        assert handler[0].open == Price.from_str("1.00001")
+        assert handler[0].high == Price.from_str("1.00002")
+        assert handler[0].low == Price.from_str("1.00000")
+        assert handler[0].close == Price.from_str("1.00000")
+        assert handler[0].volume == Quantity.from_str("99999")
         assert aggregator.get_cumulative_value() == Decimal("10501.400")
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -1040,30 +1021,29 @@ class TestTestValueBarAggregator:
         aggregator.handle_trade_tick(tick3)
 
         # Assert
-        assert len(bar_store.get_store()) == 2
-        assert bar_store.get_store()[0].open == Price.from_str("20.00001")
-        assert bar_store.get_store()[0].high == Price.from_str("20.00002")
-        assert bar_store.get_store()[0].low == Price.from_str("20.00001")
-        assert bar_store.get_store()[0].close == Price.from_str("20.00002")
-        assert bar_store.get_store()[0].volume == Quantity.from_str("5000.00")
-        assert bar_store.get_store()[1].open == Price.from_str("20.00002")
-        assert bar_store.get_store()[1].high == Price.from_str("20.00002")
-        assert bar_store.get_store()[1].low == Price.from_str("20.00000")
-        assert bar_store.get_store()[1].close == Price.from_str("20.00000")
-        assert bar_store.get_store()[1].volume == Quantity.from_str("5000.00")
+        assert len(handler) == 2
+        assert handler[0].open == Price.from_str("20.00001")
+        assert handler[0].high == Price.from_str("20.00002")
+        assert handler[0].low == Price.from_str("20.00001")
+        assert handler[0].close == Price.from_str("20.00002")
+        assert handler[0].volume == Quantity.from_str("5000.00")
+        assert handler[1].open == Price.from_str("20.00002")
+        assert handler[1].high == Price.from_str("20.00002")
+        assert handler[1].low == Price.from_str("20.00000")
+        assert handler[1].close == Price.from_str("20.00000")
+        assert handler[1].volume == Quantity.from_str("5000.00")
         assert aggregator.get_cumulative_value() == Decimal("40000.11000")
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(1000, BarAggregation.VALUE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -1080,8 +1060,8 @@ class TestTestValueBarAggregator:
             aggregator.handle_quote_tick(tick)
 
         # Assert
-        last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 6
+        last_bar = handler[-1]
+        assert len(handler) == 6
         assert last_bar.open == Price.from_str("0.671230")
         assert last_bar.high == Price.from_str("0.671330")
         assert last_bar.low == Price.from_str("0.670370")
@@ -1090,14 +1070,13 @@ class TestTestValueBarAggregator:
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         bar_spec = BarSpecification(10000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(ETHUSDT_BITMEX.id, bar_spec)
         aggregator = ValueBarAggregator(
             ETHUSDT_BITMEX,
             bar_type,
-            handler,
+            handler.append,
             Logger(TestClock()),
         )
 
@@ -1110,8 +1089,8 @@ class TestTestValueBarAggregator:
             aggregator.handle_trade_tick(tick)
 
         # Assert
-        last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 109
+        last_bar = handler[-1]
+        assert len(handler) == 109
         assert last_bar.open == Price.from_str("423.19")
         assert last_bar.high == Price.from_str("423.25")
         assert last_bar.low == Price.from_str("423.19")
@@ -1123,8 +1102,7 @@ class TestTimeBarAggregator:
     def test_instantiate_given_invalid_bar_spec_raises_value_error(self):
         # Arrange
         clock = TestClock()
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument = AUDUSD_SIM
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
@@ -1134,7 +1112,7 @@ class TestTimeBarAggregator:
             TimeBarAggregator(
                 instrument,
                 bar_type,
-                handler,
+                handler.append,
                 clock,
                 Logger(clock),
             )
@@ -1175,8 +1153,7 @@ class TestTimeBarAggregator:
     def test_instantiate_with_various_bar_specs(self, bar_spec, expected):
         # Arrange
         clock = TestClock()
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_type = BarType(instrument_id, bar_spec)
 
@@ -1184,7 +1161,7 @@ class TestTimeBarAggregator:
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
+            handler.append,
             clock,
             Logger(clock),
         )
@@ -1316,7 +1293,7 @@ class TestTimeBarAggregator:
         ticks = wrangler.process(df_ticks)
 
         clock = TestClock()
-        bar_store = []
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
@@ -1325,7 +1302,7 @@ class TestTimeBarAggregator:
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            bar_store.append,
+            handler.append,
             clock,
             Logger(clock),
             build_with_no_updates=False,  # <-- set this True and test will fail
@@ -1337,7 +1314,7 @@ class TestTimeBarAggregator:
             event.handle()
 
         # Assert
-        assert len(bar_store) == 1  # <-- only 1 bar even after 5 minutes
+        assert len(handler) == 1  # <-- only 1 bar even after 5 minutes
 
     def test_timestamp_on_close_false_timestamps_ts_event_as_open(self):
         # Arrange
@@ -1348,7 +1325,7 @@ class TestTimeBarAggregator:
         ticks = wrangler.process(df_ticks)
 
         clock = TestClock()
-        bar_store = []
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
@@ -1357,7 +1334,7 @@ class TestTimeBarAggregator:
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            bar_store.append,
+            handler.append,
             clock,
             Logger(clock),
             timestamp_on_close=False,  # <-- set this True and test will fail
@@ -1369,8 +1346,8 @@ class TestTimeBarAggregator:
             event.handle()
 
         # Assert
-        assert len(bar_store) == 2
-        assert bar_store[0].ts_event == 0  # <-- bar open
-        assert bar_store[0].ts_init == 60_000_000_000  # <-- bar close
-        assert bar_store[1].ts_event == 60_000_000_000  # <-- bar open
-        assert bar_store[1].ts_init == 120_000_000_000  # <-- bar close
+        assert len(handler) == 2
+        assert handler[0].ts_event == 0  # <-- bar open
+        assert handler[0].ts_init == 60_000_000_000  # <-- bar close
+        assert handler[1].ts_event == 60_000_000_000  # <-- bar open
+        assert handler[1].ts_init == 120_000_000_000  # <-- bar close

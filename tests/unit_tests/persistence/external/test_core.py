@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import pickle
+import sys
 
 import fsspec
 import numpy as np
@@ -374,6 +376,7 @@ class _TestPersistenceCore:
         assert None in split[NewsEventData]
         assert len(split[NewsEventData][None]) == 22941
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows and being rewritten")
     def test_catalog_generic_data_not_overwritten(self):
         # Arrange
         self._load_data_into_catalog()

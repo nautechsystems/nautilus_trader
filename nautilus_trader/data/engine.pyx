@@ -1192,6 +1192,14 @@ cdef class DataEngine(Component):
                 as_nautilus=True,
                 use_rust=False,  # Until implemented
             )
+        elif request.data_type.type == InstrumentClose:
+            data = self._catalog.instrument_closes(
+                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                start=start_ns,
+                end=end_ns,
+                as_nautilus=True,
+                use_rust=False,  # Until implemented
+            )
         else:
             data = self._catalog.generic_data(
                 cls=request.data_type.type,
@@ -1316,6 +1324,9 @@ cdef class DataEngine(Component):
                     if bar.ts_event == last_bar.ts_event:
                         # Replace `last_bar`, previously cached bar will fall out of scope
                         self._cache._bars.get(bar_type)[0] = bar  # noqa
+                    elif bar.ts_event > last_bar.ts_event:
+                        # Bar is latest, consider as new bar
+                        self._cache.add_bar(bar)
                     else:
                         self._log.warning(
                             f"Bar revision {bar} was not at last bar `ts_event` {last_bar.ts_event}.",

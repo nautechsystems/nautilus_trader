@@ -14,10 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
+from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -126,3 +127,14 @@ cdef class QueryOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(QueryOrder obj)
+
+
+cdef class ExecAlgorithmSpecification:
+    cdef frozenset _key
+
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID for the order being executed.\n\n:returns: `ExecAlgorithmId`"""
+    cdef readonly ExecAlgorithmId exec_algorithm_id
+    """The execution algorithm ID.\n\n:returns: `ExecAlgorithmId`"""
+    cdef readonly dict params
+    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""

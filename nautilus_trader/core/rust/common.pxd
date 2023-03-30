@@ -173,7 +173,11 @@ cdef extern from "../includes/common.h":
                        const char *instance_id_ptr,
                        LogLevel level_stdout,
                        LogLevel level_file,
-                       const char *file_path_ptr,
+                       uint8_t file_logging,
+                       const char *directory_ptr,
+                       const char *file_name_ptr,
+                       const char *file_format_ptr,
+                       const char *component_levels_ptr,
                        uintptr_t rate_limit,
                        uint8_t is_bypassed);
 

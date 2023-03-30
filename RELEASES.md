@@ -1,3 +1,26 @@
+# NautilusTrader 1.171.0 Beta
+
+Released on 30th March 2023 (UTC).
+
+### Breaking Changes
+- Renamed all position `net_qty` fields and parameters to `signed_qty` (more accurate naming)
+- `NautilusKernelConfig` removed all `log_*` config options (replaced by `logging` with `LoggingConfig`)
+- Trading `CurrencyPair` instruments with a _single-currency_ `CASH` account type no longer permitted (unrealistic)
+- Changed `PositionEvent` parquet schemas (renamed `net_qty` field to `signed_qty`)
+
+### Enhancements
+- Added `LoggingConfig` to consolidate logging configs, offering various file options and per component level filters
+- Added `BacktestVenueConfig.bar_execution` to control whether bar data moves the matching engine markets (reinstated)
+- Added optional `request_id` for actor data requests (aids processing responses), thanks @rsmb7z
+- Added `Position.signed_decimal_qty()`
+- Now using above signed quantity for `Portfolio` net position calculation, and `LiveExecutionEngine` reconciliation comparisons
+
+### Fixes
+- Fixed `BacktestEngine` clock and logger handling (had a redundant extra logger and not swapping live clock in post run)
+- Fixed `close_position` order event publishing and cache persistence for `MarketOrder` and `SubmitOrder`, thanks for reporting @rsmb7z
+
+---
+
 # NautilusTrader 1.170.0 Beta
 
 Released on 11th March 2023 (UTC).

@@ -48,6 +48,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
@@ -234,8 +235,7 @@ class BetfairTestStubs:
         flush_interval_ms: int = None,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            log_level="INFO",
-            bypass_logging=True,
+            logging=LoggingConfig(bypass_logging=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(
                 catalog_path=catalog_path,
@@ -689,10 +689,10 @@ class BetfairDataProvider:
 
     @staticmethod
     def market_sample():
-        np.random.seed(0)
+        rng = np.random.default_rng()
         navigation = BetfairResponses.navigation_list_navigation()
         markets = list(flatten_tree(navigation))
-        return np.random.choice(markets, size=int(len(markets) * 0.05))
+        return rng.choice(markets, size=int(len(markets) * 0.05))
 
     @staticmethod
     def market_catalogue_short():

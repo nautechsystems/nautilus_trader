@@ -13,9 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{
+    collections::HashMap,
+    ffi::{c_char, CStr},
+};
+
+use serde_json::{Result, Value};
 
 use crate::string::cstr_to_string;
+
+/// Convert a C bytes pointer into an owned `Option<HashMap<String, Value>>`.
+///
+/// # Safety
+/// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
+pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<String, Value>> {
+    if ptr.is_null() {
+        None
+    } else {
+        let c_str = CStr::from_ptr(ptr);
+        let bytes = c_str.to_bytes();
+        let json_string = std::str::from_utf8(bytes).unwrap();
+        let result: Result<HashMap<String, Value>> = serde_json::from_str(json_string);
+        match result {
+            Ok(map) => Some(map),
+            Err(err) => {
+                eprintln!("Error parsing JSON: {}", err);
+                None
+            }
+        }
+    }
+}
 
 /// Return the decimal precision inferred from the given string.
 pub fn precision_from_str(s: &str) -> u8 {
@@ -51,6 +79,43 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[test]
+    fn test_optional_bytes_to_json_null() {
+        let ptr = std::ptr::null();
+        let result = unsafe { optional_bytes_to_json(ptr) };
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_optional_bytes_to_json_empty() {
+        let json_str = CString::new("{}").unwrap();
+        let ptr = json_str.as_ptr() as *const c_char;
+        let result = unsafe { optional_bytes_to_json(ptr) };
+        assert_eq!(result, Some(HashMap::new()));
+    }
+
+    #[test]
+    fn test_optional_bytes_to_json_valid() {
+        let json_str = CString::new(r#"{"key1": "value1", "key2": 2}"#).unwrap();
+        let ptr = json_str.as_ptr() as *const c_char;
+        let result = unsafe { optional_bytes_to_json(ptr) };
+        let mut expected_map = HashMap::new();
+        expected_map.insert("key1".to_owned(), Value::String("value1".to_owned()));
+        expected_map.insert(
+            "key2".to_owned(),
+            Value::Number(serde_json::Number::from(2)),
+        );
+        assert_eq!(result, Some(expected_map));
+    }
+
+    #[test]
+    fn test_optional_bytes_to_json_invalid() {
+        let json_str = CString::new(r#"{"key1": "value1", "key2": }"#).unwrap();
+        let ptr = json_str.as_ptr() as *const c_char;
+        let result = unsafe { optional_bytes_to_json(ptr) };
+        assert_eq!(result, None);
+    }
 
     #[rstest(
         s,

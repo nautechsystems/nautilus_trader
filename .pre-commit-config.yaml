@@ -25,7 +25,7 @@ repos:
       - id: check-yaml
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.2
+    rev: v2.2.4
     hooks:
       - id: codespell
         description: Checks for common misspellings.
@@ -84,7 +84,7 @@ repos:
         args: ["--settings-file", "pyproject.toml", "."]
 
   - repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: 23.3.0
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -93,7 +93,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.0.1
+    rev: v1.1.1
     hooks:
       - id: mypy
         args: [
@@ -111,7 +111,7 @@ repos:
         ]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.254
+    rev: v0.0.260
     hooks:
       - id: ruff
 
