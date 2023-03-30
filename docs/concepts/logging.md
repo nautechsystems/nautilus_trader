@@ -41,22 +41,24 @@ Log messages are written to the console via stdout/stderr writers. The minimum l
 
 ### File logging
 
-Log files are written to the current working directory with automatic naming and daily rotation by default. 
+Log files are written to the current working directory with daily rotation (UTC) by default. 
 
-You can specify a custom log directory using the `log_directory` parameter and/or a custom log file name using the `log_file_name` parameter. 
-The log files will be suffixed with '.log' for plain text or '.json' for JSON (no need to include a suffix in file names).
-
-If a `log_file_name` is _not_ provided then log files will be automatically named as follows:
+The default naming convention is as follows:
 - Trader ID
-- Instance ID
 - ISO 8601 datetime
-- If the log file is the latest active (`_rCURRENT` discriminant)
+- Instance ID
 - The log format suffix
 
-```bash
-{trader_id}_{instance_id}_{"ISO 8601 datetime"}_{discriminant}.{log | json}
 ```
-e.g. `TESTER-001_635a4539-4fe2-4cb1-9be3-3079ba8d879e_2023-03-22_15-51-48_rCURRENT.json`
+{trader_id}_{%Y-%m-%d}_{instance_id}.{log | json}`
+```
+
+e.g. `TESTER-001_2023-03-23_635a4539-4fe2-4cb1-9be3-3079ba8d879e.json`
+
+You can specify a custom log directory path using the `log_directory` parameter and/or a custom log file basename using the `log_file_name` parameter. 
+The log files will always be suffixed with '.log' for plain text, or '.json' for JSON (no need to include a suffix in file names).
+
+If the log file already exists, it will be appended to.
 
 ### Component filtering
 
