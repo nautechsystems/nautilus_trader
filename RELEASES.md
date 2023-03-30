@@ -1,3 +1,18 @@
+# NautilusTrader 1.172.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- None
+
+### Enhancements
+- Now stripping debug symbols after build (reduced binary sizes)
+
+### Fixes
+- None
+
+---
+
 # NautilusTrader 1.171.0 Beta
 
 Released on 30th March 2023 (UTC).
