@@ -226,8 +226,8 @@ cdef class SubmitOrder(TradingCommand):
 
 cdef class SubmitOrderList(TradingCommand):
     """
-    Represents a command to submit an order list consisting of an order bulk
-    or related parent-child contingent orders.
+    Represents a command to submit an order list consisting of an order batch/bulk
+    of related parent-child contingent orders.
 
     This command can correspond to a `NewOrderList <E> message` for the FIX
     protocol.
