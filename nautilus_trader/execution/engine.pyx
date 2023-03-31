@@ -113,7 +113,7 @@ cdef class ExecutionEngine(Component):
         Clock clock not None,
         Logger logger not None,
         config: Optional[ExecEngineConfig] = None,
-    ):
+    ) -> None:
         if config is None:
             config = ExecEngineConfig()
         Condition.type(config, ExecEngineConfig, "config")
@@ -125,7 +125,7 @@ cdef class ExecutionEngine(Component):
             config=config.dict(),
         )
 
-        self._cache = cache
+        self._cache: Cache = cache
 
         self._clients: dict[ClientId, ExecutionClient] = {}
         self._routing_map: dict[Venue, ExecutionClient] = {}
@@ -133,19 +133,19 @@ cdef class ExecutionEngine(Component):
         self._oms_overrides: dict[StrategyId, OmsType] = {}
         self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
 
-        self._pos_id_generator = PositionIdGenerator(
+        self._pos_id_generator: PositionIdGenerator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
             clock=clock,
         )
 
         # Settings
-        self.debug = config.debug
-        self.allow_cash_positions = config.allow_cash_positions
+        self.debug: bool = config.debug
+        self.allow_cash_positions: bool = config.allow_cash_positions
 
         # Counters
-        self.command_count = 0
-        self.event_count = 0
-        self.report_count = 0
+        self.command_count: int = 0
+        self.event_count: int = 0
+        self.report_count: int = 0
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.execute", handler=self.execute)
