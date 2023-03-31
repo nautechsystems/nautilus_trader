@@ -131,6 +131,9 @@ def _build_extensions() -> list[Extension]:
 
     if platform.system() == "Darwin":
         extra_compile_args.append("-Wno-unreachable-code-fallthrough")
+        extra_link_args.append("-flat_namespace")
+        extra_link_args.append("-undefined")
+        extra_link_args.append("suppress")
 
     if platform.system() != "Windows":
         # Suppress warnings produced by Cython boilerplate
