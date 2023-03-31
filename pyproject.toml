@@ -93,9 +93,9 @@ types-requests = "^2.28.11"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.2.1"
+coverage = "^7.2.2"
 pytest = "^7.2.2"
-pytest-asyncio = "^0.20.2"
+pytest-asyncio = "^0.21.0"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
