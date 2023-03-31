@@ -17,8 +17,8 @@ import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
-from nautilus_trader.common.events.risk import TradingStateChanged
-from nautilus_trader.common.events.system import ComponentStateChanged
+from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
