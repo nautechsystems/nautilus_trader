@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - None
 
 ### Enhancements
+- Added `Order.signed_decimal_qty()`
 - Now stripping debug symbols after build (reduced binary sizes)
 
 ### Fixes
