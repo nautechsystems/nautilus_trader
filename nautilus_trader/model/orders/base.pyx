@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-from libc.stdint cimport uint64_t
+from decimal import Decimal
 
 from nautilus_trader.model.enums import order_status_to_str
+
+from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -747,6 +749,27 @@ cdef class Order:
 
         """
         return Order.closing_side_c(position_side)
+
+    cpdef signed_decimal_qty(self):
+        """
+        Return a signed decimal representation of the remaining quantity.
+
+         - If the order is a BUY, the value is positive (e.g. Decimal('10.25'))
+         - If the order is a SELL, the value is negative (e.g. Decimal('-10.25'))
+
+        Returns
+        -------
+        Decimal
+
+        """
+        if self.side == OrderSide.BUY:
+            return Decimal(f"{self.leaves_qty.as_f64_c():.{self.leaves_qty._mem.precision}}")
+        elif self.side == OrderSide.SELL:
+            return -Decimal(f"{self.leaves_qty.as_f64_c():.{self.leaves_qty._mem.precision}}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {order_side_to_str(self.side)}",  # pragma: no cover (design-time error)
+            )
 
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty):
         """
