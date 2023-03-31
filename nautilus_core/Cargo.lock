@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_common"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1021,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_indicators"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "nautilus_core",
  "nautilus_model",
@@ -1046,7 +1046,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_model"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cbindgen",
  "criterion",
@@ -1063,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_persistence"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1076,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_pyo3"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "nautilus_indicators",
  "nautilus_model",
@@ -1440,9 +1440,9 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "rstest"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b07f2d176c472198ec1e6551dc7da28f1c089652f66a7b722676c2238ebc0edf"
+checksum = "de1bb486a691878cd320c2f0d319ba91eeaa2e894066d8b5f8f117c000e9d962"
 dependencies = [
  "futures",
  "futures-timer",
@@ -1452,9 +1452,9 @@ dependencies = [
 
 [[package]]
 name = "rstest_macros"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7229b505ae0706e64f37ffc54a9c163e11022a6636d58fe1f3f52018257ff9f7"
+checksum = "290ca1a1c8ca7edb7c3283bd44dc35dd54fdec6253a3912e201ba1072018fca8"
 dependencies = [
  "cfg-if",
  "proc-macro2",
