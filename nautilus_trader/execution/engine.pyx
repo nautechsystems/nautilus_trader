@@ -566,8 +566,17 @@ cdef class ExecutionEngine(Component):
             # Cache order
             self._cache.add_order(command.order, command.position_id)
 
-        # Send to execution client
-        client.submit_order(command)
+        cdef ExecAlgorithm exec_algorithm
+        if command.exec_algorithm_spec is not None:
+            # Send to execution algorithm
+            exec_algorithm = self._exec_algorithms.get(command.exec_algorithm_spec.exec_algorithm_id)
+            if exec_algorithm is None:
+                self._log.error(f"Cannot submit order: execution algorithm {exec_algorithm} not found.")
+                return
+            exec_algorithm.handle_submit_order(command)
+        else:
+            # Send to execution client
+            client.submit_order(command)
 
     cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
         cdef Order order
@@ -576,8 +585,17 @@ cdef class ExecutionEngine(Component):
                 # Cache order
                 self._cache.add_order(order, position_id=None)
 
-        # Send to execution client
-        client.submit_order_list(command)
+        cdef ExecAlgorithm exec_algorithm
+        if command.exec_algorithm_specs:
+            # Send to execution algorithm
+            exec_algorithm = self._exec_algorithms.get(command.exec_algorithm_specs[0].exec_algorithm_id)
+            if exec_algorithm is None:
+                self._log.error(f"Cannot submit order: execution algorithm {exec_algorithm} not found.")
+                return
+            exec_algorithm.handle_submit_order_list(command)
+        else:
+            # Send to execution client
+            client.submit_order_list(command)
 
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)
