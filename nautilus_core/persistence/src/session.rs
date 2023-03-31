@@ -37,7 +37,6 @@ where
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
 /// a Vec of data by types that implement [DecodeDataFromRecordBatch].
-#[derive(Default)]
 pub struct PersistenceCatalog {
     session_ctx: SessionContext,
     batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
@@ -45,7 +44,7 @@ pub struct PersistenceCatalog {
 }
 
 impl PersistenceCatalog {
-    fn new(chunk_size: usize) -> Self {
+    pub fn new(chunk_size: usize) -> Self {
         Self {
             session_ctx: SessionContext::default(),
             batch_streams: Vec::default(),
