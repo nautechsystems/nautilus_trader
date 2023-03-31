@@ -21,8 +21,8 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ExecAlgorithmSpecification

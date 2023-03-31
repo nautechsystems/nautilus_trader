@@ -157,6 +157,7 @@ cdef class Order:
     @staticmethod
     cdef OrderSide closing_side_c(PositionSide position_side)
 
+    cpdef signed_decimal_qty(self)
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty)
 
     cpdef void apply(self, OrderEvent event)

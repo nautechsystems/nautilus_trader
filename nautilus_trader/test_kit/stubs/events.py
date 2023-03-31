@@ -17,8 +17,8 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.events.risk import TradingStateChanged
-from nautilus_trader.common.events.system import ComponentStateChanged
+from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD

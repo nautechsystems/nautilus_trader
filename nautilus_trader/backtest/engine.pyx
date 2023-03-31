@@ -54,6 +54,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -675,6 +676,32 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
 
+    def add_exec_algorithm(self, exec_algorithm: ExecAlgorithm) -> None:
+        """
+        Add the given execution algorithm to the backtest engine.
+
+        Parameters
+        ----------
+        exec_algorithm : ExecAlgorithm
+            The execution algorithm to add.
+
+        """
+        # Checked inside trader
+        self.kernel.trader.add_exec_algorithm(exec_algorithm)
+
+    def add_exec_algorithms(self, exec_algorithms: list[ExecAlgorithm]) -> None:
+        """
+        Add the given list of execution algorithms to the backtest engine.
+
+        Parameters
+        ----------
+        exec_algorithms : list[ExecAlgorithm]
+            The execution algorithms to add.
+
+        """
+        # Checked inside trader
+        self.kernel.trader.add_exec_algorithms(exec_algorithms)
+
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -996,6 +1023,10 @@ cdef class BacktestEngine:
         cdef Strategy strategy
         for strategy in self._kernel.trader.strategies():
             all_events += strategy.clock.advance_time(now_ns, set_time=False)
+
+        cdef ExecAlgorithm exec_algorithm
+        for exec_algorithm in self._kernel.trader.exec_algorithms():
+            all_events += exec_algorithm.clock.advance_time(now_ns, set_time=False)
 
         all_events += self.kernel.clock.advance_time(now_ns, set_time=False)
 

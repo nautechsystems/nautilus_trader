@@ -18,8 +18,8 @@ from decimal import Decimal
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.message import Event

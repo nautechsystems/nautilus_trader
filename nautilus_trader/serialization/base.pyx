@@ -18,8 +18,8 @@ from typing import Any, Callable
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 
-from nautilus_trader.common.events.risk cimport TradingStateChanged
-from nautilus_trader.common.events.system cimport ComponentStateChanged
+from nautilus_trader.common.messages cimport ComponentStateChanged
+from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder

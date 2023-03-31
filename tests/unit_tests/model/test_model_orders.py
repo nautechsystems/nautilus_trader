@@ -287,6 +287,7 @@ class TestOrders:
         assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.side_string == "BUY"
+        assert order.signed_decimal_qty() == Decimal(100_000)
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert not order.has_price
@@ -317,6 +318,7 @@ class TestOrders:
         assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.side_string == "SELL"
+        assert order.signed_decimal_qty() == -Decimal(100_000)
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
@@ -1686,7 +1688,7 @@ class TestOrders:
         assert not order.is_closed
         assert order.event_count == 5
 
-    def test_apply_order_updated_event_when_order_partially_filled(self):
+    def test_apply_order_updated_event_when_buy_order_partially_filled(self):
         # Arrange
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -1730,6 +1732,56 @@ class TestOrders:
         assert order.quantity == Quantity.from_int(120_000)
         assert order.filled_qty == Quantity.from_int(50_000)
         assert order.leaves_qty == Quantity.from_int(70_000)
+        assert not order.is_inflight
+        assert order.is_open
+        assert not order.is_closed
+        assert order.event_count == 6
+
+    def test_apply_order_updated_event_when_sell_order_partially_filled(self):
+        # Arrange
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(
+            TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                last_qty=Quantity.from_int(50_000),
+            ),
+        )
+        order.apply(TestEventStubs.order_pending_update(order))
+
+        updated = OrderUpdated(
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.account_id,
+            Quantity.from_int(120_000),
+            None,
+            Price.from_str("1.00001"),
+            UUID4(),
+            0,
+            0,
+        )
+
+        # Act
+        order.apply(updated)
+
+        # Assert
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.venue_order_id == VenueOrderId("1")
+        assert order.quantity == Quantity.from_int(120_000)
+        assert order.filled_qty == Quantity.from_int(50_000)
+        assert order.leaves_qty == Quantity.from_int(70_000)
+        assert order.signed_decimal_qty() == -Decimal(70_000)
         assert not order.is_inflight
         assert order.is_open
         assert not order.is_closed
@@ -1796,6 +1848,7 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100_000)
         assert order.leaves_qty == Quantity.zero()
+        assert order.signed_decimal_qty() == Decimal()
         assert order.avg_px == 1.00001
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
@@ -1828,6 +1881,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100_000)
+        assert order.signed_decimal_qty() == Decimal()
         assert order.avg_px == 1.00001
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
@@ -1876,6 +1930,7 @@ class TestOrders:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(60_000)
         assert order.leaves_qty == Quantity.from_int(40_000)
+        assert order.signed_decimal_qty() == Decimal(40_000)
         assert order.avg_px == 1.000014
         assert len(order.trade_ids) == 2
         assert not order.is_inflight

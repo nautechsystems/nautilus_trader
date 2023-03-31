@@ -1,6 +1,22 @@
-# NautilusTrader 1.171.0 Beta
+# NautilusTrader 1.172.0 Beta
 
 Released on TBD (UTC).
+
+### Breaking Changes
+- None
+
+### Enhancements
+- Added `Order.signed_decimal_qty()`
+- Now stripping debug symbols after build (reduced binary sizes)
+
+### Fixes
+- None
+
+---
+
+# NautilusTrader 1.171.0 Beta
+
+Released on 30th March 2023 (UTC).
 
 ### Breaking Changes
 - Renamed all position `net_qty` fields and parameters to `signed_qty` (more accurate naming)
