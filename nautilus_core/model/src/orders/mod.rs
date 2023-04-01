@@ -41,6 +41,8 @@ use crate::types::fixed::fixed_i64_to_f64;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 
+pub mod limit;
+
 #[derive(Error, Debug)]
 pub enum OrderError {
     #[error("Invalid state transition")]
