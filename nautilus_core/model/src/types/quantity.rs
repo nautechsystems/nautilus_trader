@@ -163,33 +163,33 @@ impl Mul for Quantity {
     }
 }
 
-impl AddAssign for Quantity {
-    fn add_assign(&mut self, other: Self) {
-        self.raw += other.raw;
+impl From<Quantity> for u64 {
+    fn from(value: Quantity) -> u64 {
+        value.raw
     }
 }
 
-impl AddAssign<u64> for Quantity {
-    fn add_assign(&mut self, other: u64) {
-        self.raw += other;
+impl From<&Quantity> for u64 {
+    fn from(value: &Quantity) -> u64 {
+        value.raw
     }
 }
 
-impl SubAssign for Quantity {
-    fn sub_assign(&mut self, other: Self) {
-        self.raw -= other.raw;
+impl<T: Into<u64>> AddAssign<T> for Quantity {
+    fn add_assign(&mut self, other: T) {
+        self.raw += other.into();
     }
 }
 
-impl SubAssign<u64> for Quantity {
-    fn sub_assign(&mut self, other: u64) {
-        self.raw -= other;
+impl<T: Into<u64>> SubAssign<T> for Quantity {
+    fn sub_assign(&mut self, other: T) {
+        self.raw -= other.into();
     }
 }
 
-impl MulAssign<u64> for Quantity {
-    fn mul_assign(&mut self, multiplier: u64) {
-        self.raw *= multiplier;
+impl<T: Into<u64>> MulAssign<T> for Quantity {
+    fn mul_assign(&mut self, other: T) {
+        self.raw *= other.into();
     }
 }
 

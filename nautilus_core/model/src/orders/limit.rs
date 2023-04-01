@@ -20,7 +20,7 @@ use rust_fsm::StateMachine;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
-    events::order::OrderMetadata,
+    events::order::OrderIdentifiers,
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, order_list_id::OrderListId,
         strategy_id::StrategyId, trader_id::TraderId,
@@ -82,7 +82,7 @@ impl LimitOrder for Order {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
-        let metadata = OrderMetadata {
+        let metadata = OrderIdentifiers {
             trader_id,
             strategy_id,
             instrument_id,
@@ -96,7 +96,7 @@ impl LimitOrder for Order {
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
-            metadata: Rc::new(metadata),
+            ids: Rc::new(metadata),
             venue_order_id: None,
             position_id: None,
             account_id: None,
