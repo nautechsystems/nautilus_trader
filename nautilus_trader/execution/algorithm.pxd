@@ -17,10 +17,12 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
@@ -46,20 +48,17 @@ cdef class ExecAlgorithm(Actor):
         Logger logger,
     )
 
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
+
     cpdef void handle_submit_order(self, SubmitOrder command)
     cpdef void handle_submit_order_list(self, SubmitOrderList command)
 
-    cpdef void submit_order(
-        self,
-        Order order,
-        PositionId position_id=*,
-        ClientId client_id=*,
-    )
-    cpdef void submit_order_list(
-        self,
-        OrderList order_list,
-        PositionId position_id=*,
-        ClientId client_id=*,
-    )
+    cpdef void on_order(self, Order order, ExecAlgorithmSpecification exec_algorithm_spec)
+    cpdef void on_order_list(self, OrderList order_list, list exec_algorithms_specs)
+
+# -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void submit_order(self, Order order, ClientOrderId parent_order_id=*)
+    cpdef void submit_order_list(self, OrderList order_list, PositionId position_id=*)
 
     cdef void _send_exec_command(self, TradingCommand command)

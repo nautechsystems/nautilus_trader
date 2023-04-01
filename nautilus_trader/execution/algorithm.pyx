@@ -25,10 +25,14 @@ from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -140,6 +144,8 @@ cdef class ExecAlgorithm(Actor):
 
         self.portfolio = portfolio
 
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
+
     cpdef void handle_submit_order(self, SubmitOrder command):
         """
         Handle the give submit order command by processing it with the execution algorithm.
@@ -165,6 +171,8 @@ cdef class ExecAlgorithm(Actor):
             "command.exec_algorithm_spec.exec_algorithm_id",
             "self.exec_algorithm_id",
         )
+
+        self.on_order(command.order, command.exec_algorithm_spec)
 
     cpdef void handle_submit_order_list(self, SubmitOrderList command):
         """
@@ -192,29 +200,63 @@ cdef class ExecAlgorithm(Actor):
             "self.exec_algorithm_id",
         )
 
+        self.on_order_list(command.order_list, command.exec_algorithm_specs)
+
+    cpdef void on_order(self, Order order, ExecAlgorithmSpecification exec_algorithm_spec):
+        """
+        Actions to be performed when running and receives an order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to be handled.
+        exec_algorithm_spec : ExecAlgorithmSpecification
+            The execution algorithm specification.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_order_list(self, OrderList order_list, list exec_algorithm_specs):
+        """
+        Actions to be performed when running and receives an order list.
+
+        Parameters
+        ----------
+        order_list : OrderList
+            The order list to be handled.
+        exec_algorithm_specs : list[ExecAlgorithmSpecification]
+            The execution algorithm specifications.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass
+
+# -- COMMANDS -------------------------------------------------------------------------------------
+
     cpdef void submit_order(
         self,
         Order order,
-        PositionId position_id = None,
-        ClientId client_id = None,
+        ClientOrderId parent_order_id: Optional[ClientOrderId] = None,
     ):
         """
         Submit the given order with optional position ID and routing instructions.
 
         A `SubmitOrder` command will be created and sent directly to the `ExecutionEngine`.
 
-        If the client order ID is duplicate, then the order will be denied.
-
         Parameters
         ----------
         order : Order
             The order to submit.
-        position_id : PositionId, optional
-            The position ID to submit the order against. If a position does not
-            yet exist, then any position opened will have this identifier assigned.
-        client_id : ClientId, optional
-            The specific execution client ID for the command.
-            If ``None`` then will be inferred from the venue in the instrument ID.
+        parent_order_id : ClientOrderId, optional
+            The parent client order identifier. If provided then will be considered a child order
+            of the parent.
 
         Raises
         ------
@@ -228,13 +270,66 @@ cdef class ExecAlgorithm(Actor):
         not be what you intended.
 
         """
+        Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
+        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+
+        cdef SubmitOrder original_command = None
+
+        # Check if original order or new child order
+        if parent_order_id is not None:
+            original_command = self._cache.load_submit_order_command(parent_order_id)
+            if original_command is None:
+                self._log.error(
+                    "Cannot submit order: cannot find original "
+                    f"`SubmitOrder` command for {repr(parent_order_id)}."
+                )
+                return
+
+            if self._cache.order_exists(order.client_order_id):
+                self._log.error(
+                    f"Cannot submit order: order already exists for {repr(order.client_order_id)}.",
+                )
+                return
+
+            # Tag child order with parent order ID
+            order.parent_order_id = original_command.client_order_id
+
+            # Publish initialized event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=order.init_event_c(),
+            )
+
+            self.cache.add_order(order, original_command.position_id)
+        else:
+            original_command = self._cache.load_submit_order_command(order.client_order_id)
+            if original_command is None:
+                self._log.error(
+                    "Cannot submit order: cannot find original "
+                    f"`SubmitOrder` command for {repr(order.client_order_id)}."
+                )
+                return
+
+        cdef SubmitOrder command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=original_command.strategy_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            position_id=original_command.position_id,
+            exec_algorithm_spec=None,  # Not allowing sub-algorithms for now
+            client_id=original_command.client_id,
+        )
+
+        self.cache.add_submit_order_command(command)
+
+        self._send_exec_command(command)
 
     cpdef void submit_order_list(
         self,
         OrderList order_list,
         PositionId position_id = None,
-        ClientId client_id = None
     ):
         """
         Submit the given order list with optional position ID, execution and routing instructions.
@@ -251,9 +346,6 @@ cdef class ExecAlgorithm(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        client_id : ClientId, optional
-            The specific execution client ID for the command.
-            If ``None`` then will be inferred from the venue in the instrument ID.
 
         Raises
         ------
@@ -268,6 +360,8 @@ cdef class ExecAlgorithm(Actor):
 
         """
         Condition.not_none(order_list, "order_list")
+
+        self._log.error("Execution algorithms for submitting order lists not currently implemented")
 
     cdef void _send_exec_command(self, TradingCommand command):
         if not self.log.is_bypassed:
