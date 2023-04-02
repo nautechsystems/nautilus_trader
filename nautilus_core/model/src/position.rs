@@ -179,7 +179,7 @@ impl Position {
             self.entry = OrderSide::Sell;
             self.side = PositionSide::Short;
         } else {
-            self.side = PositionSide::NoPositionSide;
+            self.side = PositionSide::Flat;
             self.closing_order_id = Some(fill.client_order_id.clone());
             self.ts_closed = Some(fill.ts_event);
             self.duration_ns = Some(self.ts_closed.unwrap() - self.ts_opened);
