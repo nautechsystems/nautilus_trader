@@ -96,7 +96,7 @@ impl Position {
             opening_order_id: fill.client_order_id.clone(),
             closing_order_id: None,
             entry: fill.order_side,
-            side: PositionSide::NoPositionSide, // TODO: Use associated function
+            side: PositionSide::Flat,
             signed_qty: 0.0,
             quantity: fill.last_qty.clone(),
             peak_qty: fill.last_qty.clone(),
