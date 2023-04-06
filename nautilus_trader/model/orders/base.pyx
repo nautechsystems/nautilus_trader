@@ -175,6 +175,9 @@ cdef class Order:
         self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None
         self.parent_order_id = init.parent_order_id  # Can be None
+        self.exec_algorithm_id = init.exec_algorithm_id  # Can be None
+        self.exec_algorithm_params = init.exec_algorithm_params  # Can be None
+        self.exec_spawn_id = init.exec_spawn_id  # Can be None
         self.tags = init.tags
 
         # Execution
@@ -197,17 +200,23 @@ cdef class Order:
     def __repr__(self) -> str:
         cdef ClientOrderId coi
         cdef str contingency_str = "" if self.contingency_type == ContingencyType.NO_CONTINGENCY else f", contingency_type={contingency_type_to_str(self.contingency_type)}"
-        cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
         cdef str linked_order_ids_str = "" if self.linked_order_ids is None else f", linked_order_ids=[{', '.join([coi.to_str() for coi in self.linked_order_ids])}]" if self.linked_order_ids is not None else None  # noqa
+        cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
+        cdef str exec_algorithm_id_str = "" if self.exec_algorithm_id is None else f", exec_algorithm_id={self.exec_algorithm_id.to_str()}"
+        cdef str exec_algorithm_params_str = "" if self.exec_algorithm_params is None else f", exec_algorithm_params={self.exec_algorithm_params}"
+        cdef str exec_spawn_id_str = "" if self.exec_spawn_id is None else f", exec_spawn_id={self.exec_spawn_id.to_str()}"
         return (
             f"{type(self).__name__}("
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}"  # Can be None
+            f"venue_order_id={self.venue_order_id}"  # Can be None (no whitespace before contingency_str)
             f"{contingency_str}"
-            f"{parent_order_id_str}"
             f"{linked_order_ids_str}"
+            f"{parent_order_id_str}"
+            f"{exec_algorithm_id_str}"
+            f"{exec_algorithm_params_str}"
+            f"{exec_spawn_id_str}"
             f", tags={self.tags})"
         )
 
@@ -947,7 +956,7 @@ cdef class Order:
                 f"fill={fill}",
             )
         self.filled_qty.add_assign(fill.last_qty)
-        self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty._mem.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side

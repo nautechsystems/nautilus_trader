@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 import msgspec
 
@@ -152,6 +152,12 @@ cdef class OrderInitialized(OrderEvent):
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
         The orders parent client order ID.
+    exec_algorithm_id : ExecAlgorithmId, optional with no default so ``None`` must be passed explicitly
+        The execution algorithm ID for the order.
+    exec_algorithm_params : dict[str, Any], optional
+        The execution algorithm parameters for the order.
+    exec_spawn_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
+        The execution algorithm spawning client order ID.
     tags : str, optional with no default so ``None`` must be passed explicitly
         The custom user tags for the order. These are optional and can
         contain any arbitrary delimiter if required.
@@ -186,6 +192,9 @@ cdef class OrderInitialized(OrderEvent):
         OrderListId order_list_id: Optional[OrderListId],
         list linked_order_ids: Optional[list[ClientOrderId]],
         ClientOrderId parent_order_id: Optional[ClientOrderId],
+        ExecAlgorithmId exec_algorithm_id: Optional[ExecAlgorithmId],
+        dict exec_algorithm_params: Optional[dict[str, Any]],
+        ClientOrderId exec_spawn_id: Optional[ClientOrderId],
         str tags: Optional[str],
         UUID4 event_id not None,
         uint64_t ts_init,
@@ -218,6 +227,9 @@ cdef class OrderInitialized(OrderEvent):
         self.order_list_id = order_list_id
         self.linked_order_ids = linked_order_ids
         self.parent_order_id = parent_order_id
+        self.exec_algorithm_id = exec_algorithm_id
+        self.exec_algorithm_params = exec_algorithm_params
+        self.exec_spawn_id = exec_spawn_id
         self.tags = tags
 
     def __str__(self) -> str:
@@ -240,7 +252,10 @@ cdef class OrderInitialized(OrderEvent):
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
-            f"parent_order_id={self.parent_order_id}, "
+            f"parent_order_id={self.parent_order_id}, "  # Can be None
+            f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
+            f"exec_algorithm_params={self.exec_algorithm_params}, "  # Can be None
+            f"exec_spawn_id={self.exec_spawn_id}, "  # Can be None
             f"tags={self.tags})"
         )
 
@@ -266,7 +281,10 @@ cdef class OrderInitialized(OrderEvent):
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
-            f"parent_order_id={self.parent_order_id}, "
+            f"parent_order_id={self.parent_order_id}, "  # Can be None
+            f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
+            f"exec_algorithm_params={self.exec_algorithm_params}, "  # Can be None
+            f"exec_spawn_id={self.exec_spawn_id}, "  # Can be None
             f"tags={self.tags}, "
             f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
@@ -278,6 +296,8 @@ cdef class OrderInitialized(OrderEvent):
         cdef str order_list_id_str = values["order_list_id"]
         cdef str linked_order_ids_str = values["linked_order_ids"]
         cdef str parent_order_id_str = values["parent_order_id"]
+        cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
+        cdef str exec_spawn_id_str = values["exec_spawn_id"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -292,9 +312,12 @@ cdef class OrderInitialized(OrderEvent):
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
             emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
             contingency_type=contingency_type_from_str(values["contingency_type"]),
-            order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
+            order_list_id=OrderListId(order_list_id_str) if order_list_id_str is not None else None,
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
-            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
+            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str is not None else None,
+            exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
+            exec_algorithm_params=json.loads(values["exec_algorithm_params"]),  # Using vanilla json due mixed schema types
+            exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
@@ -323,6 +346,9 @@ cdef class OrderInitialized(OrderEvent):
             "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
             "parent_order_id": obj.parent_order_id.to_str() if obj.parent_order_id is not None else None,
+            "exec_algorithm_id": obj.exec_algorithm_id.to_str() if obj.exec_algorithm_id is not None else None,
+            "exec_algorithm_params": json.dumps(obj.exec_algorithm_params),  # Using vanilla json due mixed schema types
+            "exec_spawn_id": obj.exec_spawn_id.to_str() if obj.exec_spawn_id is not None else None,
             "tags": obj.tags,
             "event_id": obj.id.to_str(),
             "ts_init": obj.ts_init,

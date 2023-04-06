@@ -19,7 +19,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
@@ -86,7 +85,6 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id=*,
         bint manage_gtd_expiry=*,
-        ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
     )
     cpdef void submit_order_list(
@@ -94,7 +92,6 @@ cdef class Strategy(Actor):
         OrderList order_list,
         PositionId position_id=*,
         bint manage_gtd_expiry=*,
-        list exec_algorithm_specs=*,
         ClientId client_id=*,
     )
     cpdef void modify_order(
@@ -132,5 +129,7 @@ cdef class Strategy(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
+    cdef void _send_submit_order_algo(self, TradingCommand command)
+    cdef void _send_submit_order_list_algo(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
     cdef void _send_exec_command(self, TradingCommand command)

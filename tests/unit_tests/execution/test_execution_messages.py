@@ -18,7 +18,6 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
-from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -76,14 +75,14 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrder(order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=None), position_id=P-001, exec_algorithm_spec=None)"  # noqa
+            == "SubmitOrder(order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=None), position_id=P-001)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=None), position_id=P-001, exec_algorithm_spec=None, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=None), position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
         )
 
-    def test_submit_order_command_with_exec_algorithm_spec_from_dict_and_str_repr(self):
+    def test_submit_order_command_with_exec_algorithm_from_dict_and_str_repr(self):
         # Arrange
         uuid = UUID4()
 
@@ -92,12 +91,8 @@ class TestCommands:
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
-        )
-
-        exec_algorithm_spec = ExecAlgorithmSpecification(
-            client_order_id=ClientOrderId("O-123456789"),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
-            params={"max_percentage": 100.0, "start": 0, "end": 1},
+            exec_algorithm_params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
 
         command = SubmitOrder(
@@ -105,7 +100,6 @@ class TestCommands:
             strategy_id=StrategyId("S-001"),
             order=order,
             position_id=PositionId("P-001"),
-            exec_algorithm_spec=exec_algorithm_spec,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
@@ -114,11 +108,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrder(order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=None), position_id=P-001, exec_algorithm_spec=ExecAlgorithmSpecification(client_order_id=O-123456789, exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1}))"  # noqa
+            == "SubmitOrder(order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={'max_percentage': 100.0, 'start': 0, 'end': 1}, tags=None), position_id=P-001)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=None), position_id=P-001, exec_algorithm_spec=ExecAlgorithmSpecification(client_order_id=O-123456789, exec_algorithm_id=VWAP, params={{'max_percentage': 100.0, 'start': 0, 'end': 1}}), command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={{'max_percentage': 100.0, 'start': 0, 'end': 1}}, tags=None), position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
@@ -142,19 +136,21 @@ class TestCommands:
             ts_init=self.clock.timestamp_ns(),
         )
 
+        print(str(command))
+        print(repr(command))
         # Act, Assert
         assert not command.has_emulated_order
         assert SubmitOrderList.from_dict(SubmitOrderList.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrderList(order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)]), position_id=P-001, exec_algorithm_specs=None)"  # noqa
+            == "SubmitOrderList(order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-3], parent_order_id=O-19700101-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-2], parent_order_id=O-19700101-000-001-1, tags=TAKE_PROFIT)]), position_id=P-001)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrderList(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)]), position_id=P-001, exec_algorithm_specs=None, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrderList(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-3], parent_order_id=O-19700101-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-2], parent_order_id=O-19700101-000-001-1, tags=TAKE_PROFIT)]), position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
         )
 
-    def test_submit_bracket_order_command_with_exec_algorithm_specs_to_from_dict_and_str_repr(self):
+    def test_submit_bracket_order_command_with_exec_algorithm_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = UUID4()
 
@@ -166,33 +162,26 @@ class TestCommands:
             tp_price=Price.from_str("1.00100"),
         )
 
-        exec_algorithm_specs = [
-            ExecAlgorithmSpecification(
-                client_order_id=bracket.first.client_order_id,
-                exec_algorithm_id=ExecAlgorithmId("VWAP"),
-                params={"max_percentage": 100.0, "start": 0, "end": 1},
-            ),
-        ]
-
         command = SubmitOrderList(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
             order_list=bracket,
             position_id=PositionId("P-001"),
-            exec_algorithm_specs=exec_algorithm_specs,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
 
+        print(str(command))
+        print(repr(command))
         # Act, Assert
         assert SubmitOrderList.from_dict(SubmitOrderList.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrderList(order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)]), position_id=P-001, exec_algorithm_specs=[ExecAlgorithmSpecification(client_order_id=O-19700101-000-001-1, exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})])"  # noqa
+            == "SubmitOrderList(order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-3], parent_order_id=O-19700101-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-2], parent_order_id=O-19700101-000-001-1, tags=TAKE_PROFIT)]), position_id=P-001)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrderList(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)]), position_id=P-001, exec_algorithm_specs=[ExecAlgorithmSpecification(client_order_id=O-19700101-000-001-1, exec_algorithm_id=VWAP, params={{'max_percentage': 100.0, 'start': 0, 'end': 1}})], command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrderList(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_list=OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-3], parent_order_id=O-19700101-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-2], parent_order_id=O-19700101-000-001-1, tags=TAKE_PROFIT)]), position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_modify_order_command_to_from_dict_and_str_repr(self):
@@ -372,52 +361,4 @@ class TestCommands:
         assert (
             repr(command)
             == f"QueryOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"  # noqa
-        )
-
-    def test_exec_algorithm_spec_properties(self):
-        # Arrange, Act
-        exec_algorithm_spec = ExecAlgorithmSpecification(
-            client_order_id=ClientOrderId("O-123456789"),
-            exec_algorithm_id=ExecAlgorithmId("VWAP"),
-            params={"max_percentage": 100.0, "start": 0, "end": 1},
-        )
-
-        # Assert
-        assert exec_algorithm_spec.exec_algorithm_id.value == "VWAP"
-
-    def test_exec_algorithm_spec_equality(self):
-        # Arrange
-        exec_algorithm_spec1 = ExecAlgorithmSpecification(
-            client_order_id=ClientOrderId("O-123456789"),
-            exec_algorithm_id=ExecAlgorithmId("VWAP"),
-            params={"max_percentage": 100.0, "start": 0, "end": 1},
-        )
-
-        exec_algorithm_spec2 = ExecAlgorithmSpecification(
-            client_order_id=ClientOrderId("O-123456789"),
-            exec_algorithm_id=ExecAlgorithmId("TWAP"),
-            params={"max_percentage": 100.0, "start": 0, "end": 1},
-        )
-
-        # Act, Assert
-        assert exec_algorithm_spec1 == exec_algorithm_spec1
-        assert exec_algorithm_spec1 != exec_algorithm_spec2
-
-    def test_exec_algorithm_spec_hash_str_repr(self):
-        # Arrange, Act
-        exec_algorithm_spec = ExecAlgorithmSpecification(
-            client_order_id=ClientOrderId("O-123456789"),
-            exec_algorithm_id=ExecAlgorithmId("VWAP"),
-            params={"max_percentage": 100.0, "start": 0, "end": 1},
-        )
-
-        # Assert
-        assert isinstance(hash(exec_algorithm_spec), int)
-        assert (
-            str(exec_algorithm_spec)
-            == "ExecAlgorithmSpecification(client_order_id=O-123456789, exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})"  # noqa
-        )
-        assert (
-            repr(exec_algorithm_spec)
-            == "ExecAlgorithmSpecification(client_order_id=O-123456789, exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})"  # noqa
         )

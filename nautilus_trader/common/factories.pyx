@@ -29,6 +29,7 @@ from nautilus_trader.model.enums_c cimport TrailingOffsetType
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -201,6 +202,8 @@ cdef class OrderFactory:
         Quantity quantity,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -218,6 +221,10 @@ cdef class OrderFactory:
             The orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -249,6 +256,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -264,6 +273,8 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -291,6 +302,10 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -329,6 +344,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -343,6 +360,8 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -368,6 +387,10 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -407,6 +430,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -424,6 +449,8 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -455,6 +482,10 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -499,6 +530,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -511,6 +544,8 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         Quantity display_qty = None,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -532,6 +567,10 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the limit order to display on the public book (iceberg).
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -565,6 +604,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -579,6 +620,8 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -604,6 +647,10 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -643,6 +690,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -660,6 +709,8 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -691,6 +742,10 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -735,6 +790,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -751,6 +808,8 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -781,6 +840,10 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -824,6 +887,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -844,6 +909,8 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         str tags = None,
     ):
         """
@@ -883,6 +950,10 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        exec_algorithm_id : ExecAlgorithmId, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -932,6 +1003,8 @@ cdef class OrderFactory:
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             tags=tags,
         )
 
@@ -953,6 +1026,12 @@ cdef class OrderFactory:
         bint tp_post_only = True,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
         ContingencyType contingency_type = ContingencyType.OUO,
+        ExecAlgorithmId entry_exec_algorithm_id = None,
+        ExecAlgorithmId sl_exec_algorithm_id = None,
+        ExecAlgorithmId tp_exec_algorithm_id = None,
+        dict entry_exec_algorithm_params = None,
+        dict tp_exec_algorithm_params = None,
+        dict sl_exec_algorithm_params = None,
     ):
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -995,6 +1074,18 @@ cdef class OrderFactory:
             The emulation trigger type for the entry, as well as the TP and SL bracket orders.
         contingency_type : ContingencyType, default ``OUO``
             The contingency type for the TP and SL bracket orders.
+        entry_exec_algorithm_id : ExecAlgorithmId, optional
+            The entry order execution algorithm ID.
+        sl_exec_algorithm_id : ExecAlgorithmId, optional
+            The stop-loss order execution algorithm ID.
+        tp_exec_algorithm_id : ExecAlgorithmId, optional
+            The take-profit order execution algorithm ID.
+        entry_exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
+        tp_exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
+        sl_exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order.
 
         Returns
         -------
@@ -1024,6 +1115,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
                 parent_order_id=None,
+                exec_algorithm_id=entry_exec_algorithm_id,
+                exec_algorithm_params=entry_exec_algorithm_params,
                 tags="ENTRY",
             )
         elif entry_order_type == OrderType.LIMIT:
@@ -1045,6 +1138,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
                 parent_order_id=None,
+                exec_algorithm_id=entry_exec_algorithm_id,
+                exec_algorithm_params=entry_exec_algorithm_params,
                 tags="ENTRY",
             )
         elif entry_order_type == OrderType.MARKET_IF_TOUCHED:
@@ -1066,6 +1161,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
                 parent_order_id=None,
+                exec_algorithm_id=entry_exec_algorithm_id,
+                exec_algorithm_params=entry_exec_algorithm_params,
                 tags="ENTRY",
             )
         elif entry_order_type == OrderType.LIMIT_IF_TOUCHED:
@@ -1089,6 +1186,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
                 parent_order_id=None,
+                exec_algorithm_id=entry_exec_algorithm_id,
+                exec_algorithm_params=entry_exec_algorithm_params,
                 tags="ENTRY",
             )
         else:
@@ -1117,6 +1216,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id],
                 parent_order_id=entry_client_order_id,
+                exec_algorithm_id=tp_exec_algorithm_id,
+                exec_algorithm_params=tp_exec_algorithm_params,
                 tags="TAKE_PROFIT",
             )
         elif tp_order_type == OrderType.LIMIT_IF_TOUCHED:
@@ -1141,6 +1242,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id],
                 parent_order_id=entry_client_order_id,
+                exec_algorithm_id=tp_exec_algorithm_id,
+                exec_algorithm_params=tp_exec_algorithm_params,
                 tags="TAKE_PROFIT",
             )
         elif tp_order_type == OrderType.MARKET_IF_TOUCHED:
@@ -1162,6 +1265,8 @@ cdef class OrderFactory:
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id],
                 parent_order_id=entry_client_order_id,
+                exec_algorithm_id=tp_exec_algorithm_id,
+                exec_algorithm_params=tp_exec_algorithm_params,
                 tags="TAKE_PROFIT",
             )
         else:
@@ -1188,6 +1293,8 @@ cdef class OrderFactory:
             order_list_id=order_list_id,
             linked_order_ids=[tp_client_order_id],
             parent_order_id=entry_client_order_id,
+            exec_algorithm_id=sl_exec_algorithm_id,
+            exec_algorithm_params=sl_exec_algorithm_params,
             tags="STOP_LOSS",
         )
 

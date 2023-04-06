@@ -36,6 +36,7 @@ from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -397,6 +398,9 @@ class TestOrders:
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -440,6 +444,8 @@ class TestOrders:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
             display_qty=Quantity.from_int(20_000),
+            exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            exec_algorithm_params={"period": 60},
         )
 
         # Act
@@ -474,6 +480,9 @@ class TestOrders:
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
+            "exec_algorithm_id": "VWAP",
+            "exec_algorithm_params": b'{"period":60}',
+            "exec_spawn_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -579,6 +588,9 @@ class TestOrders:
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -639,6 +651,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "STOP_LIMIT",
             "side": "BUY",
@@ -720,6 +735,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "MARKET_TO_LIMIT",
             "side": "BUY",
@@ -794,6 +812,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "MARKET_IF_TOUCHED",
             "side": "BUY",
@@ -877,6 +898,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "LIMIT_IF_TOUCHED",
             "side": "BUY",
@@ -989,6 +1013,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "TRAILING_STOP_MARKET",
             "side": "BUY",
@@ -1036,6 +1063,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "TRAILING_STOP_MARKET",
             "side": "BUY",
@@ -1147,6 +1177,9 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "last_trade_id": None,
             "type": "TRAILING_STOP_LIMIT",
             "side": "BUY",
@@ -1226,6 +1259,9 @@ class TestOrders:
             "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
+            "exec_algorithm_id": None,
+            "exec_algorithm_params": None,
+            "exec_spawn_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -1426,10 +1462,10 @@ class TestOrders:
 
         # Assert
         assert str(bracket) == (
-            "OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-3], parent_order_id=O-19700101-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-2], parent_order_id=O-19700101-000-001-1, tags=TAKE_PROFIT)])"  # noqa
         )
         assert repr(bracket) == (
-            "OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000-001-1, linked_order_ids=[O-19700101-000-001-2], tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=OL-19700101-000-001-1, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000-001-2, O-19700101-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-2, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-3], parent_order_id=O-19700101-000-001-1, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000-001-3, venue_order_id=None, contingency_type=OUO, linked_order_ids=[O-19700101-000-001-2], parent_order_id=O-19700101-000-001-1, tags=TAKE_PROFIT)])"  # noqa
         )
 
     def test_apply_order_denied_event(self):
