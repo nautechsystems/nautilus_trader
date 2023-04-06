@@ -23,6 +23,7 @@ from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -77,6 +78,12 @@ cdef class OrderInitialized(OrderEvent):
     """The orders linked client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ClientOrderId parent_order_id
     """The orders parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
+    cdef readonly ExecAlgorithmId exec_algorithm_id
+    """The execution algorithm ID for the order.\n\n:returns: `ExecAlgorithmId` or ``None``"""
+    cdef readonly dict exec_algorithm_params
+    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""
+    cdef readonly ClientOrderId exec_spawn_id
+    """The execution algorithm spawning client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
 

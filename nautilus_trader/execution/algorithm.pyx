@@ -18,6 +18,10 @@ from typing import Any, Optional
 from nautilus_trader.config import ExecAlgorithmConfig
 from nautilus_trader.config import ImportableExecAlgorithmConfig
 
+from cpython.datetime cimport datetime
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -25,19 +29,27 @@ from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.list cimport OrderList
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
@@ -75,6 +87,8 @@ cdef class ExecAlgorithm(Actor):
 
         # Configuration
         self.config = config
+
+        self._exec_spawn_ids: dict[ClientOrderId, int] = {}
 
         # Public components
         self.portfolio = None  # Initialized when registered
@@ -144,11 +158,62 @@ cdef class ExecAlgorithm(Actor):
 
         self.portfolio = portfolio
 
+        # Register endpoints
+        self._msgbus.register(endpoint=f"{self.id}.execute_order", handler=self.execute_order)
+        self._msgbus.register(endpoint=f"{self.id}.execute_order_list", handler=self.execute_order_list)
+
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
+
+    cpdef void _reset(self):
+        self._exec_spawn_ids.clear()
+
+        self.on_reset()
+
+# -- INTERNAL -------------------------------------------------------------------------------------
+
+    cdef ClientOrderId _spawn_client_order_id(self, Order original):
+        cdef int spawn_sequence = self._exec_spawn_ids.get(original.client_order_id, 0)
+        spawn_sequence += 1
+        self._exec_spawn_ids[original.client_order_id] = spawn_sequence
+
+        return ClientOrderId(f"{original.client_order_id.to_str()}E{spawn_sequence}")
+
+    cdef void _reduce_original_order(self, Order original, Quantity spawn_qty):
+        cdef uint8_t size_precision = original.quantity._mem.size_precision
+        cdef uint64_t new_raw = original._mem.raw - spawn_qty._mem.raw
+        cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
+
+        # Generate event
+        cdef uint64_t now = self._clock.timestamp_ns()
+
+        cdef OrderUpdated updated = OrderUpdated(
+            trader_id=original.trader_id,
+            strategy_id=original.strategy_id,
+            instrument_id=original.instrument_id,
+            client_order_id=original.client_order_id,
+            venue_order_id=original.venue_order_id,
+            account_id=original.account_id,
+            quantity=new_qty,
+            price=None,
+            trigger_price=None,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        original.apply(updated)
+
+        # Publish updated event
+        self._msgbus.publish_c(
+            topic=f"events.order.{original.strategy_id.to_str()}",
+            msg=updated,
+        )
+
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void handle_submit_order(self, SubmitOrder command):
+    cpdef void execute_order(self, SubmitOrder command):
         """
-        Handle the give submit order command by processing it with the execution algorithm.
+        Handle the given submit order command by processing it with the execution algorithm.
 
         Parameters
         ----------
@@ -158,23 +223,15 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `command.exec_algorithm_spec` is ``None``.
-        ValueError
-            If `command.exec_algorithm_spec.exec_algorithm_id` is not equal to `self.exec_algorithm_id`
+            If `command.order.exec_algorithm_id` is not equal to `self.id`
 
         """
         Condition.not_none(command, "command")
-        Condition.not_none(command.exec_algorithm_spec, "command.exec_algorithm_spec")
-        Condition.equal(
-            command.exec_algorithm_spec.exec_algorithm_id,
-            self.exec_algorithm_id,
-            "command.exec_algorithm_spec.exec_algorithm_id",
-            "self.exec_algorithm_id",
-        )
+        Condition.equal(command.order.exec_algorithm_id, self.id, "command.order.exec_algorithm_id", "self.id")
 
-        self.on_order(command.order, command.exec_algorithm_spec)
+        self.on_order(command.order)
 
-    cpdef void handle_submit_order_list(self, SubmitOrderList command):
+    cpdef void execute_order_list(self, SubmitOrderList command):
         """
         Handle the give submit order list command by processing it with the execution algorithm.
 
@@ -183,26 +240,12 @@ cdef class ExecAlgorithm(Actor):
         command : SubmitOrderList
             The command to handle.
 
-        Raises
-        ------
-        ValueError
-            If `command.exec_algorithm_specs` is empty.
-        ValueError
-            If the first element of `command.exec_algorithm_specs` `exec_algorithm_id` is not equal to `self.exec_algorith_id`.
-
         """
         Condition.not_none(command, "command")
-        Condition.not_empty(command.exec_algorithm_specs, "command.exec_algorithm_specs")
-        Condition.equal(
-            command.exec_algorithm_specs[0].exec_algorithm_id,
-            self.exec_algorithm_id,
-            "command.exec_algorithm_specs[0].exec_algorithm_id",
-            "self.exec_algorithm_id",
-        )
 
-        self.on_order_list(command.order_list, command.exec_algorithm_specs)
+        self.on_order_list(command.order_list)
 
-    cpdef void on_order(self, Order order, ExecAlgorithmSpecification exec_algorithm_spec):
+    cpdef void on_order(self, Order order):
         """
         Actions to be performed when running and receives an order.
 
@@ -210,8 +253,6 @@ cdef class ExecAlgorithm(Actor):
         ----------
         order : Order
             The order to be handled.
-        exec_algorithm_spec : ExecAlgorithmSpecification
-            The execution algorithm specification.
 
         Warnings
         --------
@@ -220,7 +261,7 @@ cdef class ExecAlgorithm(Actor):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_order_list(self, OrderList order_list, list exec_algorithm_specs):
+    cpdef void on_order_list(self, OrderList order_list):
         """
         Actions to be performed when running and receives an order list.
 
@@ -228,8 +269,6 @@ cdef class ExecAlgorithm(Actor):
         ----------
         order_list : OrderList
             The order list to be handled.
-        exec_algorithm_specs : list[ExecAlgorithmSpecification]
-            The execution algorithm specifications.
 
         Warnings
         --------
@@ -237,6 +276,166 @@ cdef class ExecAlgorithm(Actor):
 
         """
         pass
+
+    cpdef MarketOrder spawn_market(
+        self,
+        Order original,
+        Quantity quantity,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        bint reduce_only = False,
+        str tags = None,
+    ):
+        """
+        Spawn a new ``MARKET`` order from the given original order.
+
+        Parameters
+        ----------
+        original : Order
+            The original order from which this order will spawn.
+        quantity : Quantity
+            The spawned orders quantity (> 0).
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+            The spawned orders time in force. Often not applicable for market orders.
+        reduce_only : bool, default False
+            If the spawned order carries the 'reduce-only' execution instruction.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        MarketOrder
+
+        Raises
+        ------
+        ValueError
+            If `original.status` is not ``INITIALIZED``.
+        ValueError
+            If `original.exec_algorithm_id` is not equal to `self.id`.
+        ValueError
+            If `quantity` is not positive (> 0) or not less than `original.quantity`.
+        ValueError
+            If `time_in_force` is ``GTD``.
+
+        """
+        Condition.not_none(original, "original")
+        Condition.not_none(quantity, "quantity")
+        Condition.equal(original.status, OrderStatus.INITIALIZED, "original.status", "order_status")
+        Condition.equal(original.exec_algorithm_id, self.id, "original.exec_algorithm_id", "id")
+        Condition.true(quantity < original.quantity, "spawning order quantity was not less than `original.quantity`")
+
+        self._reduce_original_order(original, spawn_qty=quantity)
+
+        return MarketOrder(
+            trader_id=original.trader_id,
+            strategy_id=original.strategy_id,
+            instrument_id=original.instrument_id,
+            client_order_id=self._spawn_client_order_id(original),
+            order_side=original.side,
+            quantity=quantity,
+            time_in_force=time_in_force,
+            reduce_only=reduce_only,
+            init_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            contingency_type=ContingencyType.NO_CONTINGENCY,
+            order_list_id=None,
+            linked_order_ids=None,
+            parent_order_id=None,
+            exec_algorithm_id=self.exec_algorithm_id,
+            exec_spawn_id=original.client_order_id,
+            tags=tags,
+        )
+
+    cpdef LimitOrder spawn_limit(
+        self,
+        Order original,
+        Quantity quantity,
+        Price price,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        str tags = None,
+    ):
+        """
+        Spawn a new ``LIMIT`` order from the given original order.
+
+        Parameters
+        ----------
+        original : Order
+            The original order from which this order will spawn.
+        quantity : Quantity
+            The spawned orders quantity (> 0). Must be less than `original.quantity`.
+        price : Price
+            The spawned orders price.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+            The spawned orders time in force.
+        expire_time : datetime, optional
+            The spawned order expiration (for ``GTD`` orders).
+        post_only : bool, default False
+            If the spawned order will only provide liquidity (make a market).
+        reduce_only : bool, default False
+            If the spawned order carries the 'reduce-only' execution instruction.
+        display_qty : Quantity, optional
+            The quantity of the spawned order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NO_TRIGGER``
+            The spawned orders emulation trigger.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        LimitOrder
+
+        Raises
+        ------
+        ValueError
+            If `original.status` is not ``INITIALIZED``.
+        ValueError
+            If `original.exec_algorithm_id` is not equal to `self.id`.
+        ValueError
+            If `quantity` is not positive (> 0) or not less than `original.quantity`.
+        ValueError
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
+        ValueError
+            If `display_qty` is negative (< 0) or greater than `quantity`.
+
+        """
+        Condition.not_none(original, "original")
+        Condition.not_none(quantity, "quantity")
+        Condition.equal(original.status, OrderStatus.INITIALIZED, "original.status", "order_status")
+        Condition.equal(original.exec_algorithm_id, self.id, "original.exec_algorithm_id", "id")
+        Condition.true(quantity < original.quantity, "spawning order quantity was not less than `original.quantity`")
+
+        self._reduce_original_order(original, spawn_qty=quantity)
+
+        return LimitOrder(
+            trader_id=original.trader_id,
+            strategy_id=original.strategy_id,
+            instrument_id=original.instrument_id,
+            client_order_id=self._spawn_client_order_id(original),
+            order_side=original.order_side,
+            quantity=quantity,
+            price=price,
+            init_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            post_only=post_only,
+            reduce_only=reduce_only,
+            display_qty=display_qty,
+            emulation_trigger=emulation_trigger,
+            contingency_type=ContingencyType.NO_CONTINGENCY,
+            order_list_id=None,
+            linked_order_ids=None,
+            parent_order_id=None,
+            exec_algorithm_id=self.exec_algorithm_id,
+            exec_spawn_id=original.client_order_id,
+            tags=tags,
+        )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -318,7 +517,6 @@ cdef class ExecAlgorithm(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             position_id=original_command.position_id,
-            exec_algorithm_spec=None,  # Not allowing sub-algorithms for now
             client_id=original_command.client_id,
         )
 
@@ -363,7 +561,7 @@ cdef class ExecAlgorithm(Actor):
 
         self._log.error("Execution algorithms for submitting order lists not currently implemented")
 
-    cdef void _send_exec_command(self, TradingCommand command):
+    cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)

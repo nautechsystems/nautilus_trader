@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import msgspec
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -35,6 +37,7 @@ from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -99,6 +102,12 @@ cdef class LimitIfTouchedOrder(Order):
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
         The order parent client order ID.
+    exec_algorithm_id : ExecAlgorithmId, optional
+        The execution algorithm ID for the order.
+    exec_algorithm_params : dict[str, Any], optional
+        The execution algorithm parameters for the order.
+    exec_spawn_id : ClientOrderId, optional
+        The execution algorithm spawning client order ID.
     tags : str, optional
         The custom user tags for the order. These are optional and can
         contain any arbitrary delimiter if required.
@@ -146,6 +155,9 @@ cdef class LimitIfTouchedOrder(Order):
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
+        ExecAlgorithmId exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
+        ClientOrderId exec_spawn_id = None,
         str tags = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
@@ -191,6 +203,9 @@ cdef class LimitIfTouchedOrder(Order):
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=exec_spawn_id,
             tags=tags,
             event_id=init_id,
             ts_init=ts_init,
@@ -279,10 +294,10 @@ cdef class LimitIfTouchedOrder(Order):
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
             "client_order_id": self.client_order_id.to_str(),
-            "venue_order_id": self.venue_order_id.to_str() if self.venue_order_id else None,
-            "position_id": self.position_id.to_str() if self.position_id else None,
-            "account_id": self.account_id.to_str() if self.account_id else None,
-            "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
+            "venue_order_id": self.venue_order_id.to_str() if self.venue_order_id is not None else None,
+            "position_id": self.position_id.to_str() if self.position_id is not None else None,
+            "account_id": self.account_id.to_str() if self.account_id is not None else None,
+            "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id is not None else None,
             "type": order_type_to_str(self.order_type),
             "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
@@ -304,6 +319,9 @@ cdef class LimitIfTouchedOrder(Order):
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
+            "exec_algorithm_id": self.exec_algorithm_id.to_str() if self.exec_algorithm_id is not None else None,
+            "exec_algorithm_params": msgspec.json.encode(self.exec_algorithm_params) if self.exec_algorithm_params is not None else None,  # noqa
+            "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
@@ -356,5 +374,7 @@ cdef class LimitIfTouchedOrder(Order):
             order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
+            exec_algorithm_id=init.exec_algorithm_id,
+            exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )

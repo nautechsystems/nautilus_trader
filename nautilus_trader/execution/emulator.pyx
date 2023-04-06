@@ -34,7 +34,6 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -366,11 +365,6 @@ cdef class OrderEmulator(Actor):
         if command.position_id is not None:
             self._monitored_positions.add(command.position_id)
 
-        # Index all execution algorithm specs
-        cdef dict exec_algorithm_index = {}
-        if command.exec_algorithm_specs:
-            exec_algorithm_index = {eas.client_order_id: eas for eas in command.exec_algorithm_specs}
-
         cdef Order order
         for order in command.order_list.orders:
             if order.parent_order_id is not None:
@@ -381,7 +375,6 @@ cdef class OrderEmulator(Actor):
             self._create_new_submit_order(
                 order=order,
                 position_id=command.position_id,
-                exec_algorithm_spec=exec_algorithm_index.get(order.client_order_id),
                 client_id=command.client_id,
             )
 
@@ -468,7 +461,6 @@ cdef class OrderEmulator(Actor):
         self,
         Order order,
         PositionId position_id,
-        ExecAlgorithmSpecification exec_algorithm_spec,
         ClientId client_id,
     ):
         cdef SubmitOrder submit = SubmitOrder(
@@ -476,7 +468,6 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             order=order,
             position_id=position_id,
-            exec_algorithm_spec=exec_algorithm_spec,
             client_id=client_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -596,16 +587,12 @@ cdef class OrderEmulator(Actor):
             assert order.linked_order_ids
             submit_order_list = self._commands_submit_order_list.get(order.order_list_id)
             assert submit_order_list
-            # Index all execution algorithm specs
-            if submit_order_list.exec_algorithm_specs:
-                exec_algorithm_index = {eas.client_order_id: eas for eas in submit_order_list.exec_algorithm_specs}
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order
                 self._create_new_submit_order(
                     order=child_order,
                     position_id=submit_order_list.position_id,
-                    exec_algorithm_spec=exec_algorithm_index.get(child_order.client_order_id),
                     client_id=submit_order_list.client_id,
                 )
         elif order.contingency_type == ContingencyType.OCO:
