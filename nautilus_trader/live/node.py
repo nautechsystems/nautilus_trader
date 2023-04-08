@@ -205,7 +205,7 @@ class TradingNode:
         name : str
             The name of the client factory.
         factory : type[LiveDataClientFactory]
-            The factory to add.
+            The factory class to add.
 
         Raises
         ------
@@ -226,7 +226,7 @@ class TradingNode:
         name : str
             The name of the client factory.
         factory : type[LiveExecutionClientFactory]
-            The factory to add.
+            The factory class to add.
 
         Raises
         ------
