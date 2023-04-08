@@ -42,12 +42,13 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(
         log_level="INFO",
-        log_level_file="DEBUG",
-        log_file_format="json",
+        # log_level_file="DEBUG",
+        # log_file_format="json",
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
+        external_order_claims={"VolatilityMarketMaker-000": ["ETHUSDT-PERP.BINANCE"]},
     ),
     cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={

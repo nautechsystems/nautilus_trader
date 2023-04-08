@@ -64,7 +64,7 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
     exec_client.on_data(_make_quote_tick(instrument))
 
     # Assert
-    initialised, submitted, _, accepted, _, filled, _ = events
+    _, submitted, _, accepted, _, filled, _ = events
     assert isinstance(submitted, OrderSubmitted)
     assert isinstance(accepted, OrderAccepted)
     assert isinstance(filled, OrderFilled)

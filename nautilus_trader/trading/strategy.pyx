@@ -290,25 +290,6 @@ cdef class Strategy(Actor):
             clock=self.clock,
         )
 
-        cdef set client_order_ids = self.cache.client_order_ids(
-            venue=None,
-            instrument_id=None,
-            strategy_id=self.id,
-        )
-
-        cdef set order_list_ids = self.cache.order_list_ids(
-            venue=None,
-            instrument_id=None,
-            strategy_id=self.id,
-        )
-
-        cdef int order_id_count = len(client_order_ids)
-        cdef int order_list_id_count = len(order_list_ids)
-        self.order_factory.set_client_order_id_count(order_id_count)
-        self.order_factory.set_order_list_id_count(order_list_id_count)
-        self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
-        self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
-
         # Required subscriptions
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
         self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
@@ -398,6 +379,28 @@ cdef class Strategy(Actor):
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
+
+    cpdef void _start(self):
+        cdef set client_order_ids = self.cache.client_order_ids(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
+        cdef set order_list_ids = self.cache.order_list_ids(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
+        cdef int order_id_count = len(client_order_ids)
+        cdef int order_list_id_count = len(order_list_ids)
+        self.order_factory.set_client_order_id_count(order_id_count)
+        self.order_factory.set_order_list_id_count(order_list_id_count)
+        self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
+        self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
+
+        self.on_start()
 
     cpdef void _reset(self):
         if self.order_factory:
