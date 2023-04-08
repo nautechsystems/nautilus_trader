@@ -40,7 +40,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossBracketConfig(StrategyConfig, kw_only=True):
+class EMACrossBracketConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``EMACrossBracket`` instances.
 
@@ -97,7 +97,7 @@ class EMACrossBracket(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: EMACrossBracketConfig):
+    def __init__(self, config: EMACrossBracketConfig) -> None:
         super().__init__(config)
 
         # Configuration
@@ -114,7 +114,7 @@ class EMACrossBracket(Strategy):
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -134,7 +134,7 @@ class EMACrossBracket(Strategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
 
@@ -148,7 +148,7 @@ class EMACrossBracket(Strategy):
         # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -191,7 +191,7 @@ class EMACrossBracket(Strategy):
                 self.cancel_all_orders(self.instrument_id)
                 self.sell(bar)
 
-    def buy(self, last_bar: Bar):
+    def buy(self, last_bar: Bar) -> None:
         """
         Users bracket buy method (example).
         """
@@ -216,7 +216,7 @@ class EMACrossBracket(Strategy):
 
         self.submit_order_list(order_list, manage_gtd_expiry=True)
 
-    def sell(self, last_bar: Bar):
+    def sell(self, last_bar: Bar) -> None:
         """
         Users bracket sell method (example).
         """
@@ -241,7 +241,7 @@ class EMACrossBracket(Strategy):
 
         self.submit_order_list(order_list, manage_gtd_expiry=True)
 
-    def on_data(self, data: Data):
+    def on_data(self, data: Data) -> None:
         """
         Actions to be performed when the strategy is running and receives generic data.
 
@@ -253,7 +253,7 @@ class EMACrossBracket(Strategy):
         """
         pass
 
-    def on_event(self, event: Event):
+    def on_event(self, event: Event) -> None:
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -265,7 +265,7 @@ class EMACrossBracket(Strategy):
         """
         pass
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Actions to be performed when the strategy is stopped.
         """
@@ -276,7 +276,7 @@ class EMACrossBracket(Strategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         """
         Actions to be performed when the strategy is reset.
         """
@@ -298,7 +298,7 @@ class EMACrossBracket(Strategy):
         """
         return {}
 
-    def on_load(self, state: dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -312,7 +312,7 @@ class EMACrossBracket(Strategy):
         """
         pass
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         """
         Actions to be performed when the strategy is disposed.
 

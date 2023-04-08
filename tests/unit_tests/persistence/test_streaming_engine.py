@@ -543,12 +543,12 @@ class TestStreamingEngine(TestBatchingData):
 
 
 class TestPersistenceBatching:
-    def setup(self):
+    def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_data_into_catalog()
 
-    def teardown(self):
+    def teardown(self) -> None:
         # Cleanup
         path = self.catalog.path
         fs = self.catalog.fs

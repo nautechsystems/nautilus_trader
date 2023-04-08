@@ -14,13 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from typing import Any
+from typing import Any, Optional
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
 
 
-class MockActorConfig(ActorConfig):
+class MockActorConfig(ActorConfig, frozen=True):
     """
     Provides a mock actor config for testing.
     """
@@ -33,7 +33,7 @@ class MockActor(Actor):
     Provides a mock actor for testing.
     """
 
-    def __init__(self, config: ActorConfig = None):
+    def __init__(self, config: Optional[ActorConfig] = None):
         super().__init__(config)
 
         self.store: list[object] = []

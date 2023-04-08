@@ -135,7 +135,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect client
         if not self._client.isConnected():
             await self._client.connectAsync()
@@ -146,7 +146,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._set_connected(True)
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         # Disconnect clients
         if self._client.isConnected():
             self._client.disconnect()

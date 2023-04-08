@@ -516,7 +516,7 @@ class TestDataProvider:
         The NautilusTrader GitHub branch for the path.
     """
 
-    def __init__(self, branch="develop"):
+    def __init__(self, branch="develop") -> None:
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()

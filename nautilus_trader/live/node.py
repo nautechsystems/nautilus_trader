@@ -24,6 +24,8 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.portfolio.base import PortfolioFacade
@@ -41,14 +43,14 @@ class TradingNode:
         The configuration for the instance.
     """
 
-    def __init__(self, config: Optional[TradingNodeConfig] = None):
+    def __init__(self, config: Optional[TradingNodeConfig] = None) -> None:
         if config is None:
             config = TradingNodeConfig()
         PyCondition.not_none(config, "config")
         PyCondition.type(config, TradingNodeConfig, "config")
 
         # Configuration
-        self._config = config
+        self._config: TradingNodeConfig = config
 
         # Setup loop
         loop = asyncio.get_event_loop()
@@ -194,7 +196,7 @@ class TradingNode:
         """
         return self.kernel.logger
 
-    def add_data_client_factory(self, name: str, factory):
+    def add_data_client_factory(self, name: str, factory: type[LiveDataClientFactory]) -> None:
         """
         Add the given data client factory to the node.
 
@@ -202,7 +204,7 @@ class TradingNode:
         ----------
         name : str
             The name of the client factory.
-        factory : LiveDataClientFactory or LiveExecutionClientFactory
+        factory : type[LiveDataClientFactory]
             The factory to add.
 
         Raises
@@ -215,7 +217,7 @@ class TradingNode:
         """
         self._builder.add_data_client_factory(name, factory)
 
-    def add_exec_client_factory(self, name: str, factory):
+    def add_exec_client_factory(self, name: str, factory: type[LiveExecClientFactory]) -> None:
         """
         Add the given execution client factory to the node.
 
@@ -223,7 +225,7 @@ class TradingNode:
         ----------
         name : str
             The name of the client factory.
-        factory : LiveDataClientFactory or LiveExecutionClientFactory
+        factory : type[LiveExecutionClientFactory]
             The factory to add.
 
         Raises

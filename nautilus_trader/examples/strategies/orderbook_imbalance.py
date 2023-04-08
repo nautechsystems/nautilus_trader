@@ -34,7 +34,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class OrderBookImbalanceConfig(StrategyConfig):
+class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``OrderBookImbalance`` instances.
 
@@ -81,7 +81,7 @@ class OrderBookImbalance(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: OrderBookImbalanceConfig):
+    def __init__(self, config: OrderBookImbalanceConfig) -> None:
         assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
 
@@ -96,7 +96,7 @@ class OrderBookImbalance(Strategy):
         self.book_type: BookType = book_type_from_str(self.config.book_type)
         self._book = None  # type: Optional[OrderBook]
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -114,7 +114,7 @@ class OrderBookImbalance(Strategy):
             self.subscribe_ticker(self.instrument.id)
         self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
 
-    def on_order_book_delta(self, data: OrderBookData):
+    def on_order_book_delta(self, data: OrderBookData) -> None:
         """Actions to be performed when a delta is received."""
         if not self._book:
             self.log.error("No book being maintained.")
@@ -124,7 +124,7 @@ class OrderBookImbalance(Strategy):
         if self._book.spread():
             self.check_trigger()
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         """Actions to be performed when a delta is received."""
         bid = BookOrder(
             price=tick.bid.as_double(),
@@ -143,13 +143,13 @@ class OrderBookImbalance(Strategy):
         if self._book.spread():
             self.check_trigger()
 
-    def on_order_book(self, order_book: OrderBook):
+    def on_order_book(self, order_book: OrderBook) -> None:
         """Actions to be performed when an order book update is received."""
         self._book = order_book
         if self._book.spread():
             self.check_trigger()
 
-    def check_trigger(self):
+    def check_trigger(self) -> None:
         """Check for trigger conditions."""
         if not self._book:
             self.log.error("No book being maintained.")
@@ -194,7 +194,7 @@ class OrderBookImbalance(Strategy):
                 )
                 self.submit_order(order)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """Actions to be performed when the strategy is stopped."""
         if self.instrument is None:
             return

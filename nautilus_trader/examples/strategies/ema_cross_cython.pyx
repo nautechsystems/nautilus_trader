@@ -43,7 +43,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 # raised exceptions to bubble up (otherwise they are ignored)
 
 
-class EMACrossConfig(StrategyConfig):
+class EMACrossConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``EMACross`` instances.
 
@@ -88,14 +88,14 @@ cdef class EMACross(Strategy):
     config : EMACrossConfig
         The configuration for the instance.
     """
-    # Backing fields are necessary
+    # Backing fields are necessary for Cython
     cdef InstrumentId instrument_id
     cdef BarType bar_type
     cdef object trade_size
     cdef ExponentialMovingAverage fast_ema
     cdef ExponentialMovingAverage slow_ema
 
-    def __init__(self, config not None: EMACrossConfig):
+    def __init__(self, config not None: EMACrossConfig) -> None:
         super().__init__(config)
 
         # Configuration

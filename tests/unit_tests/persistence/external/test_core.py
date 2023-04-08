@@ -57,8 +57,8 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class _TestPersistenceCore:
-    def setup(self):
-        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
+    def setup(self) -> None:
+        self.catalog = data_catalog_setup(protocol=self.fs_protocol)  # type: ignore
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def teardown(self):
@@ -118,7 +118,7 @@ class _TestPersistenceCore:
         # Assert
         assert len(self.catalog.instruments()) == 2
 
-    def test_raw_file_pickleable(self):
+    def test_raw_file_pickleable(self) -> None:
         # Arrange
         self._load_data_into_catalog()
         path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707

@@ -31,7 +31,7 @@ def is_nautilus_class(cls: type) -> bool:
         return False
 
 
-def get_size_of(obj):
+def get_size_of(obj) -> int:
     """
     Return the bytes size in memory of the given object.
 
@@ -65,7 +65,7 @@ def get_size_of(obj):
         # The new obj_q will be the ones that were not marked,
         # and we will update marked with their ids so we will
         # not traverse them again.
-        obj_q = new_ref.values()
+        obj_q = new_ref.values()  # type: ignore
         marked.update(new_ref.keys())
 
     return size
