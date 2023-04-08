@@ -103,7 +103,7 @@ class TradingNodeBuilder:
         PyCondition.not_in(name, self._data_factories, "name", "_data_factories")
 
         if not issubclass(factory, LiveDataClientFactory):
-            self._log.error(f"Factory was not of type `LiveDataClientFactory` " f"was {factory}.")
+            self._log.error(f"Factory was not of type `LiveDataClientFactory`, was {factory}.")
             return
 
         self._data_factories[name] = factory
@@ -132,7 +132,7 @@ class TradingNodeBuilder:
         PyCondition.not_in(name, self._exec_factories, "name", "_exec_factories")
 
         if not issubclass(factory, LiveExecClientFactory):
-            self._log.error(f"Factory was not of type `LiveExecClientFactory` " f"was {factory}.")
+            self._log.error(f"Factory was not of type `LiveExecClientFactory`, was {factory}.")
             return
 
         self._exec_factories[name] = factory
