@@ -33,6 +33,7 @@ from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import ExecEngineConfig
 from nautilus_trader.config.common import ImportableActorConfig
+from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import ImportableExecAlgorithmConfig
 from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
@@ -43,7 +44,6 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.config.common import StrategyFactory
 from nautilus_trader.config.common import StreamingConfig
-from nautilus_trader.config.live import ImportableConfig
 from nautilus_trader.config.live import LiveDataClientConfig
 from nautilus_trader.config.live import LiveDataEngineConfig
 from nautilus_trader.config.live import LiveExecClientConfig

@@ -376,8 +376,8 @@ class TestPersistenceCatalogRust:
 
 
 class _TestPersistenceCatalog:
-    def setup(self):
-        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
+    def setup(self) -> None:
+        self.catalog = data_catalog_setup(protocol=self.fs_protocol)  # type: ignore
         self._load_data_into_catalog()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 

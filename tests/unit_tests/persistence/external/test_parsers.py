@@ -210,9 +210,9 @@ class TestPersistenceParsers:
         )
         assert sum(in_.values()) == 10
 
-    def test_text_reader(self):
+    def test_text_reader(self) -> None:
         provider = BetfairInstrumentProvider.from_instruments([])
-        reader = BetfairTestStubs.betfair_reader(provider)  # type: TextReader
+        reader: TextReader = BetfairTestStubs.betfair_reader(provider)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/1.166811431.bz2")[0]
         result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 22692

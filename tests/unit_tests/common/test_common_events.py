@@ -54,9 +54,8 @@ class TestCommonEvents:
 
     def test_serializing_component_state_changed_with_unserializable_config_raises_helpful_exception(
         self,
-    ):
+    ) -> None:
         # Arrange
-
         class MyType(ActorConfig, frozen=True):
             values: list[int]
 

@@ -18,7 +18,6 @@ from typing import Optional
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
-from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
@@ -182,8 +181,8 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
-    data_clients: dict[str, ImportableConfig] = {}
-    exec_clients: dict[str, ImportableConfig] = {}
+    data_clients: dict[str, LiveDataClientConfig] = {}
+    exec_clients: dict[str, LiveExecClientConfig] = {}
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0

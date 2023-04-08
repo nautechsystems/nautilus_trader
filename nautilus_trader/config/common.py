@@ -630,7 +630,7 @@ class ImportableFactoryConfig(NautilusConfig, frozen=True):
 
 class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable (typically live data client or live execution client) configuration.
+    Represents an importable configuration (typically live data client or live execution client).
     """
 
     path: str

@@ -83,7 +83,7 @@ class LiveDataClient(DataClient):
         clock: LiveClock,
         logger: Logger,
         config: Optional[dict[str, Any]] = None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             venue=venue,
@@ -296,7 +296,7 @@ class LiveMarketDataClient(MarketDataClient):
         clock: LiveClock,
         logger: Logger,
         config: Optional[dict[str, Any]] = None,
-    ):
+    ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
         super().__init__(

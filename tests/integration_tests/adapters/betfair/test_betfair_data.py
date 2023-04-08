@@ -407,7 +407,7 @@ def test_instrument_closing_events(data_client):
     )
 
 
-def test_betfair_ticker(data_client, mock_data_engine_process):
+def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     # Arrange
     raw = BetfairStreaming.mcm_UPDATE_tv()
 
@@ -460,7 +460,7 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
     assert len(starting_prices) == 36
 
 
-def test_betfair_orderbook(data_client):
+def test_betfair_orderbook(data_client) -> None:
     # Arrange
     books: dict[InstrumentId, L2OrderBook] = {}
     parser = BetfairParser()

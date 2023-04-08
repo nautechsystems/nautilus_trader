@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 from nautilus_trader.backtest.matching_engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
@@ -72,14 +74,14 @@ class TestOrderMatchingEngine:
             logger=self.logger,
         )
 
-    def test_repr(self):
+    def test_repr(self) -> None:
         # Arrange, Act, Assert
         assert (
             repr(self.matching_engine)
             == "OrderMatchingEngine(venue=BINANCE, instrument_id=ETHUSDT-PERP.BINANCE, product_id=0)"
         )
 
-    def test_set_fill_model(self):
+    def test_set_fill_model(self) -> None:
         # Arrange
         fill_model = FillModel()
 
@@ -89,20 +91,20 @@ class TestOrderMatchingEngine:
         # Assert
         assert True
 
-    def test_process_venue_status(self):
+    def test_process_venue_status(self) -> None:
         self.matching_engine.process_status(MarketStatus.CLOSED)
         self.matching_engine.process_status(MarketStatus.PRE_OPEN)
         self.matching_engine.process_status(MarketStatus.PAUSE)
         self.matching_engine.process_status(MarketStatus.OPEN)
 
-    def test_process_market_on_close_order(self):
+    def test_process_market_on_close_order(self) -> None:
         order: MarketOrder = TestExecStubs.market_order(
             instrument_id=self.instrument.id,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )
         self.matching_engine.process_order(order, self.account_id)
 
-    def test_process_auction_book(self):
+    def test_process_auction_book(self) -> None:
         # Arrange
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=self.instrument.id,
@@ -122,7 +124,7 @@ class TestOrderMatchingEngine:
         self.matching_engine.process_order(client_order, self.account_id)
         self.matching_engine.process_status(MarketStatus.OPEN)
         self.matching_engine.process_status(MarketStatus.PRE_OPEN)
-        messages = []
+        messages: list[Any] = []
         self.msgbus.register("ExecEngine.process", messages.append)
 
         # Act

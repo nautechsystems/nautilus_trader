@@ -129,7 +129,7 @@ class TestBetfairInstrumentProvider:
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument is None
 
-    def test_market_update_runner_removed(self):
+    def test_market_update_runner_removed(self) -> None:
         # Arrange
         raw = BetfairStreaming.market_definition_runner_removed()
         update = msgspec.json.decode(raw, type=MCM)

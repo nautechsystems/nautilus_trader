@@ -116,7 +116,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         logger: Logger,
         market_filter: dict,
         instrument_provider: BetfairInstrumentProvider,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
@@ -153,7 +153,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         self._log.info("Connecting to BetfairClient...")
         await self._client.connect()
         self._log.info("BetfairClient login successful.", LogColor.GREEN)
@@ -175,7 +175,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Closing BetfairClient...")
         await self._client.disconnect()
 
-    async def watch_stream(self):
+    async def watch_stream(self) -> None:
         """Ensure socket stream is connected"""
         while not self.stream.is_stopping:
             if not self.stream.is_connected:
@@ -183,7 +183,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
-    async def on_api_exception(self, error: BetfairAPIError):
+    async def on_api_exception(self, error: BetfairAPIError) -> None:
         if error.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
             self._log.warning("Invalid session error, reconnecting..")
@@ -193,7 +193,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
-    async def connection_account_state(self):
+    async def connection_account_state(self) -> None:
         account_details = await self._client.get_account_details()
         account_funds = await self._client.get_account_funds()
         timestamp = self._clock.timestamp_ns()
@@ -604,7 +604,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ACCOUNT ----------------------------------------------------------------------------------
 
-    async def check_account_currency(self):
+    async def check_account_currency(self) -> None:
         """
         Check account currency against BetfairClient
         """
@@ -635,7 +635,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         else:
             raise RuntimeError
 
-    async def _handle_order_stream_update(self, order_change_message: OCM):
+    async def _handle_order_stream_update(self, order_change_message: OCM) -> None:
         for market in order_change_message.oc:
             for selection in market.orc:
                 for unmatched_order in selection.uo:
@@ -652,7 +652,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self.check_cache_against_order_image(order_change_message)
                     continue
 
-    def check_cache_against_order_image(self, order_change_message: OCM):  # noqa
+    def check_cache_against_order_image(self, order_change_message: OCM) -> None:  # noqa
         for market in order_change_message.oc:
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
@@ -690,7 +690,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
                         raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
-    async def _check_order_update(self, unmatched_order: UnmatchedOrder):
+    async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         """
         Ensure we have a client_order_id, instrument and order for this venue order update
         """
@@ -760,7 +760,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 self.published_executions[client_order_id].append(trade_id)
 
-    def _determine_fill_price(self, unmatched_order: UnmatchedOrder, order: Order):
+    def _determine_fill_price(self, unmatched_order: UnmatchedOrder, order: Order) -> float:
         if not unmatched_order.avp:
             # We don't have any specifics about the fill, assume it was filled at our price
             return unmatched_order.p

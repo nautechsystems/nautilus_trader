@@ -36,7 +36,7 @@ class PortfolioAnalyzer:
     performance metrics and statistics.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._statistics: dict[str, PortfolioStatistic] = {}
 
         # Data

@@ -43,7 +43,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossStopEntryConfig(StrategyConfig):
+class EMACrossStopEntryConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``EMACrossStopEntry`` instances.
 
@@ -113,7 +113,7 @@ class EMACrossStopEntry(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: EMACrossStopEntryConfig):
+    def __init__(self, config: EMACrossStopEntryConfig) -> None:
         super().__init__(config)
 
         # Configuration
@@ -138,7 +138,7 @@ class EMACrossStopEntry(Strategy):
         self.entry = None
         self.trailing_stop = None
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -161,7 +161,7 @@ class EMACrossStopEntry(Strategy):
         self.subscribe_quote_ticks(self.instrument_id)
         self.subscribe_trade_ticks(self.instrument_id)
 
-    def on_instrument(self, instrument: Instrument):
+    def on_instrument(self, instrument: Instrument) -> None:
         """
         Actions to be performed when the strategy is running and receives an
         instrument.
@@ -174,7 +174,7 @@ class EMACrossStopEntry(Strategy):
         """
         pass
 
-    def on_order_book(self, order_book: OrderBook):
+    def on_order_book(self, order_book: OrderBook) -> None:
         """
         Actions to be performed when the strategy is running and receives an order book.
 
@@ -186,7 +186,7 @@ class EMACrossStopEntry(Strategy):
         """
         # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
 
@@ -198,7 +198,7 @@ class EMACrossStopEntry(Strategy):
         """
         pass
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
 
@@ -210,7 +210,7 @@ class EMACrossStopEntry(Strategy):
         """
         pass
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -241,7 +241,7 @@ class EMACrossStopEntry(Strategy):
             else:  # fast_ema.value < self.slow_ema.value
                 self.entry_sell(bar)
 
-    def entry_buy(self, last_bar: Bar):
+    def entry_buy(self, last_bar: Bar) -> None:
         """
         Users simple buy entry method (example).
 
@@ -276,7 +276,7 @@ class EMACrossStopEntry(Strategy):
         self.entry = order
         self.submit_order(order)
 
-    def entry_sell(self, last_bar: Bar):
+    def entry_sell(self, last_bar: Bar) -> None:
         """
         Users simple sell entry method (example).
 
@@ -311,7 +311,7 @@ class EMACrossStopEntry(Strategy):
         self.entry = order
         self.submit_order(order)
 
-    def trailing_stop_buy(self):
+    def trailing_stop_buy(self) -> None:
         """
         Users simple trailing stop BUY for (``SHORT`` positions).
         """
@@ -334,7 +334,7 @@ class EMACrossStopEntry(Strategy):
         self.trailing_stop = order
         self.submit_order(order)
 
-    def trailing_stop_sell(self):
+    def trailing_stop_sell(self) -> None:
         """
         Users simple trailing stop SELL for (LONG positions).
         """
@@ -357,7 +357,7 @@ class EMACrossStopEntry(Strategy):
         self.trailing_stop = order
         self.submit_order(order)
 
-    def on_data(self, data: Data):
+    def on_data(self, data: Data) -> None:
         """
         Actions to be performed when the strategy is running and receives generic data.
 
@@ -369,7 +369,7 @@ class EMACrossStopEntry(Strategy):
         """
         pass
 
-    def on_event(self, event: Event):
+    def on_event(self, event: Event) -> None:
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -390,7 +390,7 @@ class EMACrossStopEntry(Strategy):
                 if event.client_order_id == self.trailing_stop.client_order_id:
                     self.trailing_stop = None
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Actions to be performed when the strategy is stopped.
         """
@@ -402,7 +402,7 @@ class EMACrossStopEntry(Strategy):
         self.unsubscribe_quote_ticks(self.instrument_id)
         self.unsubscribe_trade_ticks(self.instrument_id)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         """
         Actions to be performed when the strategy is reset.
         """
@@ -425,7 +425,7 @@ class EMACrossStopEntry(Strategy):
         """
         return {}
 
-    def on_load(self, state: dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -439,7 +439,7 @@ class EMACrossStopEntry(Strategy):
         """
         pass
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         """
         Actions to be performed when the strategy is disposed.
 

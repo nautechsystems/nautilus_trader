@@ -24,7 +24,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
 
-class MyStrategyConfig(StrategyConfig):
+class MyStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``MyStrategy`` instances.
 
@@ -53,17 +53,17 @@ class MyStrategy(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: MyStrategyConfig):
+    def __init__(self, config: MyStrategyConfig) -> None:
         super().__init__(config)
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         pass
 
-    def on_instrument(self, instrument: Instrument):
+    def on_instrument(self, instrument: Instrument) -> None:
         """
         Actions to be performed when the strategy is running and receives an
         instrument.
@@ -76,7 +76,7 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
 
@@ -88,7 +88,7 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
 
@@ -100,7 +100,7 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -112,19 +112,19 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def buy(self):
+    def buy(self) -> None:
         """
         Users simple buy method (example).
         """
         pass
 
-    def sell(self):
+    def sell(self) -> None:
         """
         Users simple sell method (example).
         """
         pass
 
-    def on_data(self, data: Data):
+    def on_data(self, data: Data) -> None:
         """
         Actions to be performed when the strategy is running and receives generic data.
 
@@ -136,7 +136,7 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_event(self, event: Event):
+    def on_event(self, event: Event) -> None:
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -148,13 +148,13 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Actions to be performed when the strategy is stopped.
         """
         pass
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         """
         Actions to be performed when the strategy is reset.
         """
@@ -174,7 +174,7 @@ class MyStrategy(Strategy):
         """
         return {}
 
-    def on_load(self, state: dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -188,7 +188,7 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         """
         Actions to be performed when the strategy is disposed.
 

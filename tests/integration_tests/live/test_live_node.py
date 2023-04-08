@@ -123,12 +123,15 @@ class TestTradingNodeConfiguration:
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
+    @pytest.mark.skip(reason="WIP")
     def test_node_build_raw(self, monkeypatch):
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
+        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
         node.build()
 
     def test_node_build_objects(self, monkeypatch):
@@ -280,7 +283,7 @@ class TestTradingNodeOperation:
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
         node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
         node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)

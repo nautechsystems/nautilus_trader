@@ -537,7 +537,7 @@ async def test_order_stream_update(exec_client, setup_order_state, events):
 
 
 @pytest.mark.asyncio
-async def test_order_stream_filled(exec_client, setup_order_state, events, fill_events):
+async def test_order_stream_filled(exec_client, setup_order_state, events, fill_events) -> None:
     # Arrange
     order_change_message = BetfairStreaming.ocm_FILLED()
     await setup_order_state(order_change_message=order_change_message)
@@ -808,7 +808,7 @@ async def test_generate_order_status_report_client_id(
     exec_client,
     betfair_client,
     instrument_provider,
-):
+) -> None:
     # Arrange
     order_resp = format_current_orders()
     instrument_provider.add(
