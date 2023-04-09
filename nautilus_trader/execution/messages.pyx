@@ -122,6 +122,7 @@ cdef class SubmitOrder(TradingCommand):
         )
 
         self.order = order
+        self.exec_algorithm_id = order.exec_algorithm_id
         self.position_id = position_id
 
     def __str__(self) -> str:
@@ -255,6 +256,7 @@ cdef class SubmitOrderList(TradingCommand):
         )
 
         self.order_list = order_list
+        self.exec_algorithm_id = order_list.first.exec_algorithm_id
         self.position_id = position_id
         self.has_emulated_order = True if any(o.is_emulated for o in order_list.orders) else False
 

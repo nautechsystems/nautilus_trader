@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 
 import pytest
@@ -97,6 +98,7 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
     assert updated.price == Price.from_str("0.01")
 
 
+@pytest.mark.skip(reason="WIP and lets not use capfd for tests")
 @pytest.mark.no_ci  # Relies on capfd, which is unreliable on CI
 @pytest.mark.asyncio
 async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument, events, capfd):
@@ -145,6 +147,7 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
     assert isinstance(cancelled, OrderCanceled)
 
 
+@pytest.mark.skip(reason="WIP and lets not use capfd for tests")
 @pytest.mark.no_ci  # Relies on capfd, which is unreliable on CI
 @pytest.mark.asyncio
 async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events, capfd):
