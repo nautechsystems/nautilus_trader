@@ -413,10 +413,7 @@ cdef class RiskEngine(Component):
     cpdef void _handle_submit_order(self, SubmitOrder command):
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
-                self._send_to_execution(command)
-            else:
-                self._send_to_emulator(command)
+            self._send_to_execution(command)
             return
 
         cdef Order order = command.order
@@ -451,18 +448,12 @@ cdef class RiskEngine(Component):
         if not self._check_orders_risk(instrument, [order]):
             return # Denied
 
-        if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
-            self._execution_gateway(instrument, command)
-        else:
-            self._send_to_emulator(command)
+        self._execution_gateway(instrument, command)
 
     cpdef void _handle_submit_order_list(self, SubmitOrderList command):
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            if command.has_emulated_order:
-                self._send_to_emulator(command)
-            else:
-                self._send_to_execution(command)
+            self._send_to_execution(command)
             return
 
         # Get instrument for orders
@@ -486,10 +477,7 @@ cdef class RiskEngine(Component):
             self._deny_order_list(command.order_list, "OrderList DENIED")
             return # Denied
 
-        if command.has_emulated_order:
-            self._send_to_emulator(command)
-        else:
-            self._execution_gateway(instrument, command)
+        self._execution_gateway(instrument, command)
 
     cpdef void _handle_modify_order(self, ModifyOrder command):
         ########################################################################
@@ -565,10 +553,7 @@ cdef class RiskEngine(Component):
                     )
                     return  # Denied
 
-        if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            self._order_modify_throttler.send(command)
-        else:
-            self._send_to_emulator(command)
+        self._order_modify_throttler.send(command)
 
     cpdef void _handle_cancel_order(self, CancelOrder command):
         ########################################################################
@@ -587,14 +572,10 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
-        if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            self._send_to_execution(command)
-        else:
-            # All checks passed
-            self._send_to_emulator(command)
+        # All checks passed
+        self._send_to_execution(command)
 
     cpdef void _handle_cancel_all_orders(self, CancelAllOrders command):
-        self._send_to_emulator(command)
         self._send_to_execution(command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
@@ -934,10 +915,6 @@ cdef class RiskEngine(Component):
     # Needs to be `cpdef` due being called from throttler
     cpdef void _send_to_execution(self, TradingCommand command):
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
-
-    # Needs to be `cpdef` due being called from throttler
-    cpdef void _send_to_emulator(self, TradingCommand command):
-        self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

@@ -129,7 +129,7 @@ cdef class Strategy(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_submit_order_algo(self, TradingCommand command)
-    cdef void _send_submit_order_list_algo(self, TradingCommand command)
+    cdef void _send_emulator_command(self, TradingCommand command)
+    cdef void _send_algo_command(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
     cdef void _send_exec_command(self, TradingCommand command)

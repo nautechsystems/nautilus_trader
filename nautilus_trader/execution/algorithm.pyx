@@ -26,7 +26,10 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
@@ -159,8 +162,7 @@ cdef class ExecAlgorithm(Actor):
         self.portfolio = portfolio
 
         # Register endpoints
-        self._msgbus.register(endpoint=f"{self.id}.execute_order", handler=self.execute_order)
-        self._msgbus.register(endpoint=f"{self.id}.execute_order_list", handler=self.execute_order_list)
+        self._msgbus.register(endpoint=f"{self.id}.execute", handler=self.execute)
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
@@ -171,28 +173,28 @@ cdef class ExecAlgorithm(Actor):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef ClientOrderId _spawn_client_order_id(self, Order original):
-        cdef int spawn_sequence = self._exec_spawn_ids.get(original.client_order_id, 0)
+    cdef ClientOrderId _spawn_client_order_id(self, Order primary):
+        cdef int spawn_sequence = self._exec_spawn_ids.get(primary.client_order_id, 0)
         spawn_sequence += 1
-        self._exec_spawn_ids[original.client_order_id] = spawn_sequence
+        self._exec_spawn_ids[primary.client_order_id] = spawn_sequence
 
-        return ClientOrderId(f"{original.client_order_id.to_str()}E{spawn_sequence}")
+        return ClientOrderId(f"{primary.client_order_id.to_str()}E{spawn_sequence}")
 
-    cdef void _reduce_original_order(self, Order original, Quantity spawn_qty):
-        cdef uint8_t size_precision = original.quantity._mem.size_precision
-        cdef uint64_t new_raw = original._mem.raw - spawn_qty._mem.raw
+    cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
+        cdef uint8_t size_precision = primary.quantity._mem.size_precision
+        cdef uint64_t new_raw = primary._mem.raw - spawn_qty._mem.raw
         cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
 
         # Generate event
         cdef uint64_t now = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
-            trader_id=original.trader_id,
-            strategy_id=original.strategy_id,
-            instrument_id=original.instrument_id,
-            client_order_id=original.client_order_id,
-            venue_order_id=original.venue_order_id,
-            account_id=original.account_id,
+            trader_id=primary.trader_id,
+            strategy_id=primary.strategy_id,
+            instrument_id=primary.instrument_id,
+            client_order_id=primary.client_order_id,
+            venue_order_id=primary.venue_order_id,
+            account_id=primary.account_id,
             quantity=new_qty,
             price=None,
             trigger_price=None,
@@ -201,19 +203,19 @@ cdef class ExecAlgorithm(Actor):
             ts_init=now,
         )
 
-        original.apply(updated)
+        primary.apply(updated)
 
         # Publish updated event
         self._msgbus.publish_c(
-            topic=f"events.order.{original.strategy_id.to_str()}",
+            topic=f"events.order.{primary.strategy_id.to_str()}",
             msg=updated,
         )
 
-# -- EVENT HANDLERS -------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void execute_order(self, SubmitOrder command):
+    cpdef void execute(self, TradingCommand command):
         """
-        Handle the given submit order command by processing it with the execution algorithm.
+        Handle the given trading command by processing it with the execution algorithm.
 
         Parameters
         ----------
@@ -223,27 +225,25 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `command.order.exec_algorithm_id` is not equal to `self.id`
+            If `command.exec_algorithm_id` is not equal to `self.id`
 
         """
         Condition.not_none(command, "command")
-        Condition.equal(command.order.exec_algorithm_id, self.id, "command.order.exec_algorithm_id", "self.id")
+        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
 
-        self.on_order(command.order)
+        self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
-    cpdef void execute_order_list(self, SubmitOrderList command):
-        """
-        Handle the give submit order list command by processing it with the execution algorithm.
+        cdef Order order
+        if isinstance(command, SubmitOrder):
+            self.on_order(command)
+        elif isinstance(command, SubmitOrderList):
+            for order in command.order_list:
+                Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
+            self.on_order_list(command)
+        else:
+            self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to handle.
-
-        """
-        Condition.not_none(command, "command")
-
-        self.on_order_list(command.order_list)
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void on_order(self, Order order):
         """
@@ -277,21 +277,23 @@ cdef class ExecAlgorithm(Actor):
         """
         pass
 
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
+
     cpdef MarketOrder spawn_market(
         self,
-        Order original,
+        Order primary,
         Quantity quantity,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
         str tags = None,
     ):
         """
-        Spawn a new ``MARKET`` order from the given original order.
+        Spawn a new ``MARKET`` order from the given primary order.
 
         Parameters
         ----------
-        original : Order
-            The original order from which this order will spawn.
+        primary : Order
+            The primary order from which this order will spawn.
         quantity : Quantity
             The spawned orders quantity (> 0).
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
@@ -309,29 +311,29 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `original.status` is not ``INITIALIZED``.
+            If `primary.status` is not ``INITIALIZED``.
         ValueError
-            If `original.exec_algorithm_id` is not equal to `self.id`.
+            If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
-            If `quantity` is not positive (> 0) or not less than `original.quantity`.
+            If `quantity` is not positive (> 0) or not less than `primary.quantity`.
         ValueError
             If `time_in_force` is ``GTD``.
 
         """
-        Condition.not_none(original, "original")
+        Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(original.status, OrderStatus.INITIALIZED, "original.status", "order_status")
-        Condition.equal(original.exec_algorithm_id, self.id, "original.exec_algorithm_id", "id")
-        Condition.true(quantity < original.quantity, "spawning order quantity was not less than `original.quantity`")
+        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
+        Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
+        Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
-        self._reduce_original_order(original, spawn_qty=quantity)
+        self._reduce_original_order(primary, spawn_qty=quantity)
 
         return MarketOrder(
-            trader_id=original.trader_id,
-            strategy_id=original.strategy_id,
-            instrument_id=original.instrument_id,
-            client_order_id=self._spawn_client_order_id(original),
-            order_side=original.side,
+            trader_id=primary.trader_id,
+            strategy_id=primary.strategy_id,
+            instrument_id=primary.instrument_id,
+            client_order_id=self._spawn_client_order_id(primary),
+            order_side=primary.side,
             quantity=quantity,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
@@ -342,13 +344,13 @@ cdef class ExecAlgorithm(Actor):
             linked_order_ids=None,
             parent_order_id=None,
             exec_algorithm_id=self.exec_algorithm_id,
-            exec_spawn_id=original.client_order_id,
+            exec_spawn_id=primary.client_order_id,
             tags=tags,
         )
 
     cpdef LimitOrder spawn_limit(
         self,
-        Order original,
+        Order primary,
         Quantity quantity,
         Price price,
         TimeInForce time_in_force = TimeInForce.GTC,
@@ -360,14 +362,14 @@ cdef class ExecAlgorithm(Actor):
         str tags = None,
     ):
         """
-        Spawn a new ``LIMIT`` order from the given original order.
+        Spawn a new ``LIMIT`` order from the given primary order.
 
         Parameters
         ----------
-        original : Order
-            The original order from which this order will spawn.
+        primary : Order
+            The primary order from which this order will spawn.
         quantity : Quantity
-            The spawned orders quantity (> 0). Must be less than `original.quantity`.
+            The spawned orders quantity (> 0). Must be less than `primary.quantity`.
         price : Price
             The spawned orders price.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
@@ -393,31 +395,31 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `original.status` is not ``INITIALIZED``.
+            If `primary.status` is not ``INITIALIZED``.
         ValueError
-            If `original.exec_algorithm_id` is not equal to `self.id`.
+            If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
-            If `quantity` is not positive (> 0) or not less than `original.quantity`.
+            If `quantity` is not positive (> 0) or not less than `primary.quantity`.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
-        Condition.not_none(original, "original")
+        Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(original.status, OrderStatus.INITIALIZED, "original.status", "order_status")
-        Condition.equal(original.exec_algorithm_id, self.id, "original.exec_algorithm_id", "id")
-        Condition.true(quantity < original.quantity, "spawning order quantity was not less than `original.quantity`")
+        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
+        Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
+        Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
-        self._reduce_original_order(original, spawn_qty=quantity)
+        self._reduce_original_order(primary, spawn_qty=quantity)
 
         return LimitOrder(
-            trader_id=original.trader_id,
-            strategy_id=original.strategy_id,
-            instrument_id=original.instrument_id,
-            client_order_id=self._spawn_client_order_id(original),
-            order_side=original.order_side,
+            trader_id=primary.trader_id,
+            strategy_id=primary.strategy_id,
+            instrument_id=primary.instrument_id,
+            client_order_id=self._spawn_client_order_id(primary),
+            order_side=primary.order_side,
             quantity=quantity,
             price=price,
             init_id=UUID4(),
@@ -433,21 +435,18 @@ cdef class ExecAlgorithm(Actor):
             linked_order_ids=None,
             parent_order_id=None,
             exec_algorithm_id=self.exec_algorithm_id,
-            exec_spawn_id=original.client_order_id,
+            exec_spawn_id=primary.client_order_id,
             tags=tags,
         )
 
-# -- COMMANDS -------------------------------------------------------------------------------------
-
-    cpdef void submit_order(
-        self,
-        Order order,
-        ClientOrderId parent_order_id: Optional[ClientOrderId] = None,
-    ):
+    cpdef void submit_order(self, Order order):
         """
-        Submit the given order with optional position ID and routing instructions.
+        Submit the given order (may be the primary or spawned order).
 
-        A `SubmitOrder` command will be created and sent directly to the `ExecutionEngine`.
+        A `SubmitOrder` command will be created and sent to the `RiskEngine`.
+
+        If the client order ID is duplicate, then the order will be denied.
+
 
         Parameters
         ----------
@@ -475,13 +474,13 @@ cdef class ExecAlgorithm(Actor):
 
         cdef SubmitOrder original_command = None
 
-        # Check if original order or new child order
-        if parent_order_id is not None:
-            original_command = self._cache.load_submit_order_command(parent_order_id)
-            if original_command is None:
+        # Check if primary order or new spawned order
+        if order.exec_spawn_id is not None:
+            primary_command = self._cache.load_submit_order_command(order.exec_spawn_id)
+            if primary_command is None:
                 self._log.error(
-                    "Cannot submit order: cannot find original "
-                    f"`SubmitOrder` command for {repr(parent_order_id)}."
+                    "Cannot submit order: cannot find primary "
+                    f"`SubmitOrder` command for {repr(order.exec_spawn_id)}."
                 )
                 return
 
@@ -491,9 +490,6 @@ cdef class ExecAlgorithm(Actor):
                 )
                 return
 
-            # Tag child order with parent order ID
-            order.parent_order_id = original_command.client_order_id
-
             # Publish initialized event
             self._msgbus.publish_c(
                 topic=f"events.order.{order.strategy_id.to_str()}",
@@ -502,64 +498,30 @@ cdef class ExecAlgorithm(Actor):
 
             self.cache.add_order(order, original_command.position_id)
         else:
-            original_command = self._cache.load_submit_order_command(order.client_order_id)
-            if original_command is None:
+            primary_command = self._cache.load_submit_order_command(order.client_order_id)
+            if primary_command is None:
                 self._log.error(
-                    "Cannot submit order: cannot find original "
+                    "Cannot submit order: cannot find primary "
                     f"`SubmitOrder` command for {repr(order.client_order_id)}."
                 )
                 return
 
+        Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
-            strategy_id=original_command.strategy_id,
+            strategy_id=primary_command.strategy_id,
             order=order,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            position_id=original_command.position_id,
-            client_id=original_command.client_id,
+            position_id=primary_command.position_id,
+            client_id=primary_command.client_id,
         )
 
         self.cache.add_submit_order_command(command)
 
         self._send_exec_command(command)
 
-    cpdef void submit_order_list(
-        self,
-        OrderList order_list,
-        PositionId position_id = None,
-    ):
-        """
-        Submit the given order list with optional position ID, execution and routing instructions.
-
-        A `SubmitOrderList` command with be created and sent **directly** to the `ExecutionEngine`.
-
-        If the order list ID is duplicate, or any client order ID is duplicate,
-        then all orders will be denied.
-
-        Parameters
-        ----------
-        order_list : OrderList
-            The order list to submit.
-        position_id : PositionId, optional
-            The position ID to submit the order against. If a position does not
-            yet exist, then any position opened will have this identifier assigned.
-
-        Raises
-        ------
-        ValueError
-            If any `order.status` is not ``INITIALIZED``.
-
-        Warning
-        -------
-        If a `position_id` is passed and a position does not yet exist, then any
-        position opened by an order will have this position ID assigned. This may
-        not be what you intended.
-
-        """
-        Condition.not_none(order_list, "order_list")
-
-        self._log.error("Execution algorithms for submitting order lists not currently implemented")
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

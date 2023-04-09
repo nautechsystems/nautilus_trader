@@ -473,8 +473,10 @@ cdef class OrderEmulator(Actor):
             ts_init=self.clock.timestamp_ns(),
         )
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            # Immediately send back to RiskEngine
-            self._send_risk_command(submit)
+            if order.exec_algorithm_id is not None:
+                self._send_algo_command(submit)
+            else:
+                self._send_risk_command(submit)
         else:
             # Emulate
             self._handle_submit_order(submit)
@@ -719,7 +721,10 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
-        self._send_exec_command(command)
+        if order.exec_algorithm_id is not None:
+            self._send_algo_command(command)
+        else:
+            self._send_exec_command(command)
 
     cpdef void _fill_limit_order(self, Order order):
         if order.order_type == OrderType.LIMIT:
@@ -757,7 +762,10 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
-        self._send_exec_command(command)
+        if order.exec_algorithm_id is not None:
+            self._send_algo_command(command)
+        else:
+            self._send_exec_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         if not self._log.is_bypassed:
@@ -870,6 +878,11 @@ cdef class OrderEmulator(Actor):
         self._send_risk_event(event)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_algo_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint=f"{command.exec_algorithm_id}.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

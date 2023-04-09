@@ -7,6 +7,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `Order.signed_decimal_qty()`
+- Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Now stripping debug symbols after build (reduced binary sizes)
 
 ### Fixes

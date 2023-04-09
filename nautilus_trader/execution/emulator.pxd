@@ -76,6 +76,7 @@ cdef class OrderEmulator(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
+    cdef void _send_algo_command(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
     cdef void _send_exec_command(self, TradingCommand command)
     cdef void _send_risk_event(self, OrderEvent event)

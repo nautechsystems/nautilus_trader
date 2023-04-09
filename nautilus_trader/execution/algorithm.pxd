@@ -61,22 +61,23 @@ cdef class ExecAlgorithm(Actor):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
-    cdef ClientOrderId _spawn_client_order_id(self, Order original)
-    cdef void _reduce_original_order(self, Order original, Quantity spawn_qty)
+    cdef ClientOrderId _spawn_client_order_id(self, Order primary)
+    cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty)
+
+# -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void execute(self, TradingCommand command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
-
-    cpdef void execute_order(self, SubmitOrder command)
-    cpdef void execute_order_list(self, SubmitOrderList command)
 
     cpdef void on_order(self, Order order)
     cpdef void on_order_list(self, OrderList order_list)
 
-# -- COMMANDS -------------------------------------------------------------------------------------
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef MarketOrder spawn_market(
         self,
-        Order original,
+        Order primary,
         Quantity quantity,
         TimeInForce time_in_force=*,
         bint reduce_only=*,
@@ -85,7 +86,7 @@ cdef class ExecAlgorithm(Actor):
 
     cpdef LimitOrder spawn_limit(
         self,
-        Order original,
+        Order primary,
         Quantity quantity,
         Price price,
         TimeInForce time_in_force=*,
@@ -97,7 +98,8 @@ cdef class ExecAlgorithm(Actor):
         str tags=*,
     )
 
-    cpdef void submit_order(self, Order order, ClientOrderId parent_order_id=*)
-    cpdef void submit_order_list(self, OrderList order_list, PositionId position_id=*)
+    cpdef void submit_order(self, Order order)
+
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_risk_command(self, TradingCommand command)
