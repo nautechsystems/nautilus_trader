@@ -109,7 +109,7 @@ cdef class StopLimitOrder(Order):
     exec_algorithm_params : dict[str, Any], optional
         The execution algorithm parameters for the order.
     exec_spawn_id : ClientOrderId, optional
-        The execution algorithm spawning client order ID.
+        The execution algorithm spawning primary client order ID.
     tags : str, optional
         The custom user tags for the order. These are optional and can
         contain any arbitrary delimiter if required.

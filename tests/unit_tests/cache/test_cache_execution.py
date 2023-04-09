@@ -361,6 +361,7 @@ class TestCache:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
+            exec_algorithm_id=ExecAlgorithmId("SizeStagger"),
         )
 
         position_id = PositionId("P-1")
@@ -389,6 +390,20 @@ class TestCache:
         assert not self.cache.is_order_inflight(order.client_order_id)
         assert not self.cache.is_order_emulated(order.client_order_id)
         assert self.cache.venue_order_id(order.client_order_id) is None
+        assert order in self.cache.orders_for_exec_spawn(order.client_order_id)
+        assert order in self.cache.orders_for_exec_algorithm(order.exec_algorithm_id)
+        assert order in self.cache.orders_for_exec_algorithm(
+            order.exec_algorithm_id,
+            venue=order.venue,
+            instrument_id=order.instrument_id,
+            strategy_id=order.strategy_id,
+            side=OrderSide.BUY,
+        )
+        assert order not in self.cache.orders_for_exec_algorithm(
+            order.exec_algorithm_id,
+            side=OrderSide.SELL,
+        )
+        assert order not in self.cache.orders_for_exec_algorithm(ExecAlgorithmId("UnknownAlgo"))
 
     def test_add_emulated_limit_order(self):
         # Arrange
@@ -803,11 +818,13 @@ class TestCache:
 
     def test_update_order_for_submitted_order(self):
         # Arrange
+        exec_algorithm_id = ExecAlgorithmId("AutoRetry")
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
+            exec_algorithm_id=exec_algorithm_id,
         )
 
         position_id = PositionId("P-1")
@@ -821,6 +838,8 @@ class TestCache:
         # Assert
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
+        assert order in self.cache.orders_for_exec_spawn(order.client_order_id)
+        assert order in self.cache.orders_for_exec_algorithm(exec_algorithm_id)
         assert order in self.cache.orders()
         assert order in self.cache.orders_inflight()
         assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)
