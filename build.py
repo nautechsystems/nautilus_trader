@@ -8,6 +8,7 @@ import subprocess
 import sysconfig
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from Cython.Build import build_ext
@@ -121,7 +122,9 @@ def _build_extensions() -> list[Extension]:
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
-    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+    define_macros: list[tuple[str, Optional[str]]] = [
+        ("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"),
+    ]
     if PROFILE_MODE or ANNOTATION_MODE:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
