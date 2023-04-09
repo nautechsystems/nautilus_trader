@@ -80,6 +80,8 @@ cdef class Cache(CacheFacade):
     cdef dict _index_instrument_positions
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
+    cdef dict _index_exec_algorithm_orders
+    cdef dict _index_exec_spawn_orders
     cdef set _index_orders
     cdef set _index_orders_open
     cdef set _index_orders_closed

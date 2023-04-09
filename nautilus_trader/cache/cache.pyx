@@ -47,6 +47,7 @@ from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -100,48 +101,50 @@ cdef class Cache(CacheFacade):
         self.bar_capacity = config.bar_capacity
 
         # Caches
-        self._general = {}                     # type: dict[str, bytes]
-        self._xrate_symbols = {}               # type: dict[InstrumentId, str]
-        self._tickers = {}                     # type: dict[InstrumentId, deque[Ticker]]
-        self._quote_ticks = {}                 # type: dict[InstrumentId, deque[QuoteTick]]
-        self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
-        self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
-        self._bars = {}                        # type: dict[BarType, deque[Bar]]
-        self._bars_bid = {}                    # type: dict[InstrumentId, Bar]
-        self._bars_ask = {}                    # type: dict[InstrumentId, Bar]
-        self._currencies = {}                  # type: dict[str, Currency]
-        self._instruments = {}                 # type: dict[InstrumentId, Instrument]
-        self._accounts = {}                    # type: dict[AccountId, Account]
-        self._orders = {}                      # type: dict[ClientOrderId, Order]
-        self._order_lists = {}                 # type: dict[OrderListId, OrderList]
-        self._positions = {}                   # type: dict[PositionId, Position]
-        self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
-        self._submit_order_commands = {}       # type: dict[ClientOrderId, SubmitOrder]
-        self._submit_order_list_commands = {}  # type: dict[OrderListId, SubmitOrderList]
+        self._general: dict[str, bytes] = {}
+        self._xrate_symbols: dict[InstrumentId, str] = {}
+        self._tickers: dict[InstrumentId, deque[Ticker]] = {}
+        self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
+        self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
+        self._order_books: dict[InstrumentId, OrderBook] = {}
+        self._bars: dict[BarType, deque[Bar]] = {}
+        self._bars_bid: dict[InstrumentId, Bar] = {}
+        self._bars_ask: dict[InstrumentId, Bar] = {}
+        self._currencies: dict[str, Currency] = {}
+        self._instruments: dict[InstrumentId, Instrument] = {}
+        self._accounts: dict[AccountId, Account] = {}
+        self._orders: dict[ClientOrderId, Order] = {}
+        self._order_lists: dict[OrderListId, OrderList] = {}
+        self._positions: dict[PositionId, Position] = {}
+        self._position_snapshots: dict[PositionId, list[bytes]] = {}
+        self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
+        self._submit_order_list_commands: dict[OrderListId, SubmitOrderList] = {}
 
         # Cache index
-        self._index_venue_account = {}         # type: dict[Venue, AccountId]
-        self._index_venue_orders = {}          # type: dict[Venue, set[ClientOrderId]]
-        self._index_venue_positions = {}       # type: dict[Venue, set[PositionId]]
-        self._index_order_ids = {}             # type: dict[VenueOrderId, ClientOrderId]
-        self._index_order_position = {}        # type: dict[ClientOrderId, PositionId]
-        self._index_order_strategy = {}        # type: dict[ClientOrderId, StrategyId]
-        self._index_position_strategy = {}     # type: dict[PositionId, StrategyId]
-        self._index_position_orders = {}       # type: dict[PositionId, set[ClientOrderId]]
-        self._index_instrument_orders = {}     # type: dict[InstrumentId, set[ClientOrderId]]
-        self._index_instrument_positions = {}  # type: dict[InstrumentId, set[PositionId]]
-        self._index_strategy_orders = {}       # type: dict[StrategyId, set[ClientOrderId]]
-        self._index_strategy_positions = {}    # type: dict[StrategyId, set[PositionId]]
-        self._index_orders = set()             # type: set[ClientOrderId]
-        self._index_orders_open = set()        # type: set[ClientOrderId]
-        self._index_orders_closed = set()      # type: set[ClientOrderId]
-        self._index_orders_emulated = set()    # type: set[ClientOrderId]
-        self._index_orders_inflight = set()    # type: set[ClientOrderId]
-        self._index_positions = set()          # type: set[PositionId]
-        self._index_positions_open = set()     # type: set[PositionId]
-        self._index_positions_closed = set()   # type: set[PositionId]
-        self._index_actors = set()             # type: set[ComponentId]
-        self._index_strategies = set()         # type: set[StrategyId]
+        self._index_venue_account: dict[Venue, AccountId] = {}
+        self._index_venue_orders: dict[Venue, set[ClientOrderId]] = {}
+        self._index_venue_positions: dict[Venue, set[PositionId]] = {}
+        self._index_order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._index_order_position: dict[ClientOrderId, PositionId] = {}
+        self._index_order_strategy: dict[ClientOrderId, StrategyId] = {}
+        self._index_position_strategy: dict[PositionId, StrategyId] = {}
+        self._index_position_orders: dict[PositionId, set[ClientOrderId]] = {}
+        self._index_instrument_orders: dict[InstrumentId, set[ClientOrderId]] = {}
+        self._index_instrument_positions: dict[InstrumentId, set[PositionId]] = {}
+        self._index_strategy_orders: dict[StrategyId, set[ClientOrderId]] = {}
+        self._index_strategy_positions: dict[StrategyId, set[PositionId]] = {}
+        self._index_exec_algorithm_orders: dict[ExecAlgorithmId, set[ClientOrderId]] = {}
+        self._index_exec_spawn_orders: dict[ClientOrderId: set[ClientOrderId]] = {}
+        self._index_orders: set[ClientOrderId] = set()
+        self._index_orders_open: set[ClientOrderId] = set()
+        self._index_orders_closed: set[ClientOrderId] = set()
+        self._index_orders_emulated: set[ClientOrderId] = set()
+        self._index_orders_inflight: set[ClientOrderId] = set()
+        self._index_positions: set[PositionId] = set()
+        self._index_positions_open: set[PositionId] = set()
+        self._index_positions_closed: set[PositionId] = set()
+        self._index_actors: set[ComponentId] = set()
+        self._index_strategies: set[StrategyId] = set()
 
         self._log.info("READY.")
 
@@ -406,6 +409,18 @@ cdef class Cache(CacheFacade):
                     f"{repr(client_order_id)} not found in self._index_orders_closed"
                 )
                 error_count += 1
+            if order.exec_algorithm_id is not None and order.exec_algorithm_id not in self._index_exec_algorithm_orders:
+                self._log.error(
+                    f"{failure} in _cached_orders "
+                    f"{repr(order.exec_algorithm_id)} not found in self._index_exec_algorithm_orders"
+                )
+                error_count += 1
+            if order.exec_algorithm_id is not None and order.exec_spawn_id is None and order.client_order_id not in self._index_exec_spawn_orders:
+                self._log.error(
+                    f"{failure} in _cached_orders "
+                    f"{repr(order.exec_algorithm_id)} not found in self._index_exec_spawn_orders"
+                )
+                error_count += 1
 
         for position_id, position in self._positions.items():
             if position_id not in self._index_position_strategy:
@@ -654,6 +669,8 @@ cdef class Cache(CacheFacade):
         self._index_instrument_positions.clear()
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
+        self._index_exec_algorithm_orders.clear()
+        self._index_exec_spawn_orders.clear()
         self._index_orders.clear()
         self._index_orders_open.clear()
         self._index_orders_closed.clear()
@@ -751,26 +768,43 @@ cdef class Cache(CacheFacade):
                 self._index_strategy_orders[order.strategy_id] = set()
             self._index_strategy_orders[order.strategy_id].add(client_order_id)
 
-            # 7: Build _index_orders -> {ClientOrderId}
+            # 7: Build _index_exec_algorithm_orders -> {ExecAlgorithmId, {ClientOrderId}}
+            if order.exec_algorithm_id is not None:
+                if order.exec_algorithm_id not in self._index_exec_algorithm_orders:
+                    self._index_exec_algorithm_orders[order.exec_algorithm_id] = set()
+                self._index_exec_algorithm_orders[order.exec_algorithm_id].add(order.client_order_id)
+
+            # 8: Build _index_exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
+            if order.exec_algorithm_id is not None:
+                if order.exec_spawn_id is None:
+                    if order.client_order_id not in self._index_exec_spawn_orders:
+                        self._index_exec_spawn_orders[order.client_order_id] = set()
+                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
+                else:
+                    if order.exec_spawn_id not in self._index_exec_spawn_orders:
+                        self._index_exec_spawn_orders[order.exec_spawn_id] = set()
+                    self._index_exec_algorithm_orders[order.exec_spawn_id].append(order.client_order_id)
+
+            # 9: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
 
-            # 8: Build _index_orders_open -> {ClientOrderId}
+            # 10: Build _index_orders_open -> {ClientOrderId}
             if order.is_open_c():
                 self._index_orders_open.add(client_order_id)
 
-            # 9: Build _index_orders_closed -> {ClientOrderId}
+            # 11: Build _index_orders_closed -> {ClientOrderId}
             if order.is_closed_c():
                 self._index_orders_closed.add(client_order_id)
 
-            # 10: Build _index_orders_emulated -> {ClientOrderId}
+            # 12: Build _index_orders_emulated -> {ClientOrderId}
             if order.is_emulated_c() and not order.is_closed_c():
                 self._index_orders_emulated.add(client_order_id)
 
-            # 11: Build _index_orders_inflight -> {ClientOrderId}
+            # 13: Build _index_orders_inflight -> {ClientOrderId}
             if order.is_inflight_c():
                 self._index_orders_inflight.add(client_order_id)
 
-            # 12: Build _index_strategies -> {StrategyId}
+            # 14: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self):
@@ -1353,6 +1387,34 @@ cdef class Cache(CacheFacade):
             self._index_strategy_orders[order.strategy_id] = {order.client_order_id}
         else:
             strategy_orders.add(order.client_order_id)
+
+        # Index: ExecAlgorithmId -> set[ClientOrderId]
+        # Index: ClientOrderId -> set[ClientOrderId]
+        cdef set exec_algorithm_orders
+        cdef set exec_spawn_orders
+        if order.exec_algorithm_id is not None:
+            # Set exec_algorithm_orders index
+            exec_algorithm_orders = self._index_exec_algorithm_orders.get(order.exec_algorithm_id)
+            if not exec_algorithm_orders:
+                self._index_exec_algorithm_orders[order.exec_algorithm_id] = {order.client_order_id}
+            else:
+                exec_algorithm_orders.add(order.exec_algorithm_id)
+
+            # Set exec_spawn_id index
+            if order.exec_spawn_id is None:
+                # Primary order
+                exec_spawn_orders = self._index_exec_spawn_orders.get(order.client_order_id)
+                if not exec_spawn_orders:
+                    self._index_exec_spawn_orders[order.client_order_id] = {order.client_order_id}
+                else:
+                    self._index_exec_spawn_orders[order.client_order_id].append(order.client_order_id)
+            else:
+                # Secondary order
+                exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+                if not exec_spawn_orders:
+                    self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
+                else:
+                    self._index_exec_spawn_orders[order.exec_spawn_id].append(order.client_order_id)
 
         # Update emulation
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
@@ -2471,6 +2533,9 @@ cdef class Cache(CacheFacade):
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side):
         cdef list orders = []
 
+        if not client_order_ids:
+            return orders
+
         cdef:
             ClientOrderId client_order_id
             Order order
@@ -3006,6 +3071,66 @@ cdef class Cache(CacheFacade):
             return []
 
         return [self._orders[client_order_id] for client_order_id in client_order_ids]
+
+    cpdef list orders_for_exec_algorithm(
+        self,
+        ExecAlgorithmId exec_algorithm_id,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
+    ):
+        """
+        Return all execution algorithm orders for the given query filters.
+
+        Parameters
+        ----------
+        exec_algorithm_id : ExecAlgorithmId
+            The execution algorithm ID.
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
+            The order side query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
+
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
+
+        cdef set exec_algorithm_order_ids = self._index_exec_algorithm_orders.get(exec_algorithm_id)
+
+        if query is not None and exec_algorithm_order_ids is not None:
+            exec_algorithm_order_ids = query.intersection(exec_algorithm_order_ids)
+
+        return self._get_orders_for_ids(exec_algorithm_order_ids, side)
+
+    cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id):
+        """
+        Return all orders for the given execution spawn ID (if found).
+
+        Will also include the primary order.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The execution algorithm spawning primary client order ID.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return self._get_orders_for_ids(self._index_exec_spawn_orders.get(client_order_id), OrderSide.NO_ORDER_SIDE)
 
     cpdef bint order_exists(self, ClientOrderId client_order_id):
         """
