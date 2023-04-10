@@ -44,10 +44,6 @@ class TWAPExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
     ----------
     exec_algorithm_id : InstrumentId
         The execution algorithm ID (will override default which is the class name).
-    horizon_secs : PositiveInt
-        The horizon (seconds) over which the algorithm will execute.
-    interval_secs : PositiveInt
-        The interval (seconds) between orders.
     """
 
     exec_algorithm_id: Optional[str] = "TWAP"
@@ -228,7 +224,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             scheduled_sizes.append(instrument.make_qty(qty_remainder))
 
         assert sum(scheduled_sizes) == order.quantity
-        self.log.info(f"Order execution size schedule will be: {scheduled_sizes}.")
+        self.log.info(f"Order execution size schedule: {scheduled_sizes}.", LogColor.BLUE)
 
         # Immediately submit first order
         if qty_per_interval == order.quantity:
@@ -256,7 +252,9 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             callback=self.on_time_event,
         )
         self.log.info(
-            f"Started TWAP execution for {order.client_order_id} at {interval_secs} second intervals.",
+            f"Started TWAP execution for {order.client_order_id}: "
+            f"{horizon_secs=}, {interval_secs=}.",
+            LogColor.BLUE,
         )
 
     def on_time_event(self, event: TimeEvent) -> None:
