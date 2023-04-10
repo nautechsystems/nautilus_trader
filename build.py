@@ -264,8 +264,10 @@ def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
-            strip_cmd = f"strip --strip-unneeded {so}"
-            print(strip_cmd)
+            if platform.system() == "Linux":
+                strip_cmd = f"strip --strip-unneeded {so}"
+            elif platform.system() == "Darwin":
+                strip_cmd = f"strip -x {so}"
             subprocess.run(
                 strip_cmd,
                 check=True,
@@ -298,7 +300,7 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if platform.system() == "Linux":
+    if platform.system() in ("Linux", "Darwin"):
         _strip_unneeded_symbols()
 
 
