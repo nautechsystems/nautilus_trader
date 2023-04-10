@@ -592,7 +592,7 @@ cdef class Strategy(Actor):
         if command.has_emulated_order:
             self._send_emulator_command(command)
         elif order_list.first.exec_algorithm_id is not None:
-            self._send_exec_algorithm(command)
+            self._send_algo_command(command)
         else:
             self._send_risk_command(command)
 
