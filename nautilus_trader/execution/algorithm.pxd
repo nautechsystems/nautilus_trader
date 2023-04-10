@@ -37,6 +37,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
@@ -92,6 +93,18 @@ cdef class ExecAlgorithm(Actor):
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,
+        bint reduce_only=*,
+        Quantity display_qty=*,
+        TriggerType emulation_trigger=*,
+        str tags=*,
+    )
+
+    cpdef MarketToLimitOrder spawn_market_to_limit(
+        self,
+        Order primary,
+        Quantity quantity,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*,
         bint reduce_only=*,
         Quantity display_qty=*,
         TriggerType emulation_trigger=*,

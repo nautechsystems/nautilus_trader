@@ -53,6 +53,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
@@ -178,7 +179,7 @@ cdef class ExecAlgorithm(Actor):
         spawn_sequence += 1
         self._exec_spawn_ids[primary.client_order_id] = spawn_sequence
 
-        return ClientOrderId(f"{primary.client_order_id.to_str()}E{spawn_sequence}")
+        return ClientOrderId(f"{primary.client_order_id.to_str()}-E{spawn_sequence}")
 
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
         cdef uint8_t size_precision = primary.quantity._mem.precision
@@ -419,7 +420,7 @@ cdef class ExecAlgorithm(Actor):
             strategy_id=primary.strategy_id,
             instrument_id=primary.instrument_id,
             client_order_id=self._spawn_client_order_id(primary),
-            order_side=primary.order_side,
+            order_side=primary.side,
             quantity=quantity,
             price=price,
             init_id=UUID4(),
@@ -430,6 +431,88 @@ cdef class ExecAlgorithm(Actor):
             reduce_only=reduce_only,
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
+            contingency_type=ContingencyType.NO_CONTINGENCY,
+            order_list_id=None,
+            linked_order_ids=None,
+            parent_order_id=None,
+            exec_algorithm_id=self.id,
+            exec_spawn_id=primary.client_order_id,
+            tags=tags,
+        )
+
+    cpdef MarketToLimitOrder spawn_market_to_limit(
+        self,
+        Order primary,
+        Quantity quantity,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        str tags = None,
+    ):
+        """
+        Spawn a new ``MARKET_TO_LIMIT`` order from the given primary order.
+
+        Parameters
+        ----------
+        primary : Order
+            The primary order from which this order will spawn.
+        quantity : Quantity
+            The spawned orders quantity (> 0). Must be less than `primary.quantity`.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+            The spawned orders time in force.
+        expire_time : datetime, optional
+            The spawned order expiration (for ``GTD`` orders).
+        reduce_only : bool, default False
+            If the spawned order carries the 'reduce-only' execution instruction.
+        display_qty : Quantity, optional
+            The quantity of the spawned order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NO_TRIGGER``
+            The spawned orders emulation trigger.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        MarketToLimitOrder
+
+        Raises
+        ------
+        ValueError
+            If `primary.status` is not ``INITIALIZED``.
+        ValueError
+            If `primary.exec_algorithm_id` is not equal to `self.id`.
+        ValueError
+            If `quantity` is not positive (> 0) or not less than `primary.quantity`.
+        ValueError
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
+        ValueError
+            If `display_qty` is negative (< 0) or greater than `quantity`.
+
+        """
+        Condition.not_none(primary, "primary")
+        Condition.not_none(quantity, "quantity")
+        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
+        Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
+        Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
+
+        self._reduce_primary_order(primary, spawn_qty=quantity)
+
+        return MarketToLimitOrder(
+            trader_id=primary.trader_id,
+            strategy_id=primary.strategy_id,
+            instrument_id=primary.instrument_id,
+            client_order_id=self._spawn_client_order_id(primary),
+            order_side=primary.side,
+            quantity=quantity,
+            reduce_only=reduce_only,
+            display_qty=display_qty,
+            init_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
