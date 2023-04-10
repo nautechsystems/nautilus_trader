@@ -25,7 +25,7 @@ PositiveInt = Annotated[int, Meta(gt=0)]
 NonNegativeInt = Annotated[int, Meta(ge=0)]
 
 # A float constrained to values > 0
-PositiveFloat = Annotated[float, Meta(gt=0)]
+PositiveFloat = Annotated[float, Meta(gt=0.0)]
 
 # A float constrained to values >= 0
-NonNegativeFloat = Annotated[float, Meta(ge=0)]
+NonNegativeFloat = Annotated[float, Meta(ge=0.0)]
