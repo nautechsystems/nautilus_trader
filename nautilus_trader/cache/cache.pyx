@@ -1407,14 +1407,14 @@ cdef class Cache(CacheFacade):
                 if not exec_spawn_orders:
                     self._index_exec_spawn_orders[order.client_order_id] = {order.client_order_id}
                 else:
-                    self._index_exec_spawn_orders[order.client_order_id].append(order.client_order_id)
+                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
             else:
                 # Secondary order
                 exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
                 if not exec_spawn_orders:
                     self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
                 else:
-                    self._index_exec_spawn_orders[order.exec_spawn_id].append(order.client_order_id)
+                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
         # Update emulation
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
