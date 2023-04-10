@@ -290,6 +290,10 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             self.log.error(f"Cannot find scheduled sizes for {exec_spawn_id=}")
             return
 
+        if not scheduled_sizes:
+            self.log.warning(f"No more size to execute for {exec_spawn_id=}")
+            return
+
         quantity: Quantity = instrument.make_qty(scheduled_sizes.pop(0))
         if not scheduled_sizes:  # Final quantity
             self.submit_order(primary)
