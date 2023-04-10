@@ -101,12 +101,18 @@ class EMACrossTWAP(Strategy):
     ------
     ValueError
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
+    ValueError
+        If `config.twap_interval_secs` is not less than or equal to `config.twap_horizon_secs`.
     """
 
     def __init__(self, config: EMACrossTWAPConfig) -> None:
         PyCondition.true(
             config.fast_ema_period < config.slow_ema_period,
             "{config.fast_ema_period=} must be less than {config.slow_ema_period=}",
+        )
+        PyCondition.true(
+            config.twap_interval_secs <= config.twap_horizon_secs,
+            "{config.twap_interval_secs=} must be less than or equal to {config.twap_horizon_secs=}",
         )
         super().__init__(config)
 
