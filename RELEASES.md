@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `Order.signed_decimal_qty()`
 - Added `Cache.orders_for_exec_algorithm(...)`
 - Added `Cache.orders_for_exec_spawn(...)`
+- Added `TWAPExecAlgorithm` and `TWAPExecAlgorithmConfig` to examples
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Now stripping debug symbols after build (reduced binary sizes)
