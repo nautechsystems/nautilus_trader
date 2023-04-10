@@ -60,105 +60,25 @@ class MyStrategy(Strategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
-        pass
-
-    def on_instrument(self, instrument: Instrument) -> None:
-        """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument received.
-
-        """
-        pass
-
-    def on_quote_tick(self, tick: QuoteTick) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a quote tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick received.
-
-        """
-        pass
-
-    def on_trade_tick(self, tick: TradeTick) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a trade tick.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick received.
-
-        """
-        pass
-
-    def on_bar(self, bar: Bar) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a bar.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        """
-        pass
-
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        pass
-
-    def sell(self) -> None:
-        """
-        Users simple sell method (example).
-        """
-        pass
-
-    def on_data(self, data: Data) -> None:
-        """
-        Actions to be performed when the strategy is running and receives generic data.
-
-        Parameters
-        ----------
-        data : Data
-            The data received.
-
-        """
-        pass
-
-    def on_event(self, event: Event) -> None:
-        """
-        Actions to be performed when the strategy is running and receives an event.
-
-        Parameters
-        ----------
-        event : Event
-            The event received.
-
-        """
-        pass
+        """Actions to be performed when the strategy is started."""
+        pass  # Optionally implement
 
     def on_stop(self) -> None:
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        pass
+        """Actions to be performed when the strategy is stopped."""
+        pass  # Optionally implement
 
     def on_reset(self) -> None:
+        """Actions to be performed when the strategy is reset."""
+        pass  # Optionally implement
+
+    def on_dispose(self) -> None:
         """
-        Actions to be performed when the strategy is reset.
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
+
         """
-        pass
+        pass  # Optionally implement
 
     def on_save(self) -> dict[str, bytes]:
         """
@@ -172,7 +92,7 @@ class MyStrategy(Strategy):
             The strategy state dictionary.
 
         """
-        return {}
+        return {}  # Optionally implement
 
     def on_load(self, state: dict[str, bytes]) -> None:
         """
@@ -186,13 +106,89 @@ class MyStrategy(Strategy):
             The strategy state dictionary.
 
         """
-        pass
+        pass  # Optionally implement
 
-    def on_dispose(self) -> None:
+    def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is disposed.
+        Actions to be performed when the strategy is running and receives an
+        instrument.
 
-        Cleanup any resources used by the strategy here.
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
 
         """
-        pass
+        pass  # Optionally implement
+
+    def on_quote_tick(self, tick: QuoteTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick received.
+
+        """
+        pass  # Optionally implement
+
+    def on_trade_tick(self, tick: TradeTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick received.
+
+        """
+        pass  # Optionally implement
+
+    def on_bar(self, bar: Bar) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar received.
+
+        """
+        pass  # Optionally implement
+
+    def buy(self) -> None:
+        """
+        Users simple buy method (example).
+        """
+        pass  # Optionally implement
+
+    def sell(self) -> None:
+        """
+        Users simple sell method (example).
+        """
+        pass  # Optionally implement
+
+    def on_data(self, data: Data) -> None:
+        """
+        Actions to be performed when the strategy is running and receives generic data.
+
+        Parameters
+        ----------
+        data : Data
+            The data received.
+
+        """
+        pass  # Optionally implement
+
+    def on_event(self, event: Event) -> None:
+        """
+        Actions to be performed when the strategy is running and receives an event.
+
+        Parameters
+        ----------
+        event : Event
+            The event received.
+
+        """
+        pass  # Optionally implement

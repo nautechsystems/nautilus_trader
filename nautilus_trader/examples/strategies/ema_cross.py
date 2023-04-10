@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -85,9 +86,18 @@ class EMACross(Strategy):
     ----------
     config : EMACrossConfig
         The configuration for the instance.
+
+    Raises
+    ------
+    ValueError
+        If `config.fast_ema_period` is not less than `config.slow_ema_period`.
     """
 
     def __init__(self, config: EMACrossConfig) -> None:
+        PyCondition.true(
+            config.fast_ema_period < config.slow_ema_period,
+            "{config.fast_ema_period=} must be less than {config.slow_ema_period=}",
+        )
         super().__init__(config)
 
         # Configuration
