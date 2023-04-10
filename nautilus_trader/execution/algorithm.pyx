@@ -181,8 +181,8 @@ cdef class ExecAlgorithm(Actor):
         return ClientOrderId(f"{primary.client_order_id.to_str()}E{spawn_sequence}")
 
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
-        cdef uint8_t size_precision = primary.quantity._mem.size_precision
-        cdef uint64_t new_raw = primary._mem.raw - spawn_qty._mem.raw
+        cdef uint8_t size_precision = primary.quantity._mem.precision
+        cdef uint64_t new_raw = primary.quantity._mem.raw - spawn_qty._mem.raw
         cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
 
         # Generate event
@@ -235,11 +235,11 @@ cdef class ExecAlgorithm(Actor):
 
         cdef Order order
         if isinstance(command, SubmitOrder):
-            self.on_order(command)
+            self.on_order(command.order)
         elif isinstance(command, SubmitOrderList):
             for order in command.order_list:
                 Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
-            self.on_order_list(command)
+            self.on_order_list(command.order_list)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -326,7 +326,7 @@ cdef class ExecAlgorithm(Actor):
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
         Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
-        self._reduce_original_order(primary, spawn_qty=quantity)
+        self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return MarketOrder(
             trader_id=primary.trader_id,
@@ -343,7 +343,7 @@ cdef class ExecAlgorithm(Actor):
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
-            exec_algorithm_id=self.exec_algorithm_id,
+            exec_algorithm_id=self.id,
             exec_spawn_id=primary.client_order_id,
             tags=tags,
         )
@@ -412,7 +412,7 @@ cdef class ExecAlgorithm(Actor):
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
         Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
-        self._reduce_original_order(primary, spawn_qty=quantity)
+        self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return LimitOrder(
             trader_id=primary.trader_id,
@@ -434,7 +434,7 @@ cdef class ExecAlgorithm(Actor):
             order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
-            exec_algorithm_id=self.exec_algorithm_id,
+            exec_algorithm_id=self.id,
             exec_spawn_id=primary.client_order_id,
             tags=tags,
         )
@@ -472,11 +472,13 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(order, "order")
         Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
 
-        cdef SubmitOrder original_command = None
+        cdef SubmitOrder primary_command = None
+        cdef SubmitOrder spawned_command = None
 
-        # Check if primary order or new spawned order
         if order.exec_spawn_id is not None:
-            primary_command = self._cache.load_submit_order_command(order.exec_spawn_id)
+            # Handle new spawned order
+            primary_command = self.cache.load_submit_order_command(order.exec_spawn_id)
+            Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
             if primary_command is None:
                 self._log.error(
                     "Cannot submit order: cannot find primary "
@@ -484,7 +486,7 @@ cdef class ExecAlgorithm(Actor):
                 )
                 return
 
-            if self._cache.order_exists(order.client_order_id):
+            if self.cache.order_exists(order.client_order_id):
                 self._log.error(
                     f"Cannot submit order: order already exists for {repr(order.client_order_id)}.",
                 )
@@ -496,30 +498,32 @@ cdef class ExecAlgorithm(Actor):
                 msg=order.init_event_c(),
             )
 
-            self.cache.add_order(order, original_command.position_id)
-        else:
-            primary_command = self._cache.load_submit_order_command(order.client_order_id)
-            if primary_command is None:
-                self._log.error(
-                    "Cannot submit order: cannot find primary "
-                    f"`SubmitOrder` command for {repr(order.client_order_id)}."
-                )
-                return
+            self.cache.add_order(order, primary_command.position_id)
 
+            spawned_command = SubmitOrder(
+                trader_id=self.trader_id,
+                strategy_id=primary_command.strategy_id,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+                position_id=primary_command.position_id,
+                client_id=primary_command.client_id,
+            )
+            self.cache.add_submit_order_command(spawned_command)
+
+            self._send_risk_command(spawned_command)
+            return
+
+        # Handle primary (original) order
+        primary_command = self.cache.load_submit_order_command(order.client_order_id)
         Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
-        cdef SubmitOrder command = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=primary_command.strategy_id,
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            position_id=primary_command.position_id,
-            client_id=primary_command.client_id,
-        )
-
-        self.cache.add_submit_order_command(command)
-
-        self._send_exec_command(command)
+        if primary_command is None:
+            self._log.error(
+                "Cannot submit order: cannot find primary "
+                f"`SubmitOrder` command for {repr(order.client_order_id)}."
+            )
+            return
+        self._send_risk_command(primary_command)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
