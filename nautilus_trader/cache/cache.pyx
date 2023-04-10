@@ -2540,7 +2540,7 @@ cdef class Cache(CacheFacade):
             ClientOrderId client_order_id
             Order order
         try:
-            for client_order_id in client_order_ids:
+            for client_order_id in sorted(client_order_ids):
                 order = self._orders[client_order_id]
                 if side == OrderSide.NO_ORDER_SIDE or side == order.side:
                     orders.append(order)
@@ -2556,7 +2556,7 @@ cdef class Cache(CacheFacade):
             PositionId position_id
             Position position
         try:
-            for position_id in position_ids:
+            for position_id in sorted(position_ids):
                 position = self._positions[position_id]
                 if side == PositionSide.NO_POSITION_SIDE or side == position.side:
                     positions.append(position)
