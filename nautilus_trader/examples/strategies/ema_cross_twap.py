@@ -18,6 +18,7 @@ from typing import Any
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -58,9 +59,9 @@ class EMACrossTWAPConfig(StrategyConfig, frozen=True):
         The fast EMA period.
     slow_ema_period : int, default 20
         The slow EMA period.
-    twap_horizon_secs : PositiveInt
+    twap_horizon_secs : PositiveFloat, default 30.0
         The TWAP horizon (seconds) over which the algorithm will execute.
-    twap_interval_secs : PositiveInt
+    twap_interval_secs : PositiveFloat, default 3.0
         The TWAP interval (seconds) between orders.
     close_positions_on_stop : bool, default True
         If all open positions should be closed on strategy stop.
@@ -77,8 +78,8 @@ class EMACrossTWAPConfig(StrategyConfig, frozen=True):
     trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    twap_horizon_secs: int = 60
-    twap_interval_secs: int = 10
+    twap_horizon_secs: PositiveFloat = 30.0
+    twap_interval_secs: PositiveFloat = 3.0
     close_positions_on_stop: bool = True
 
 
