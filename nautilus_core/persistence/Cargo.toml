@@ -19,7 +19,8 @@ rand.workspace = true
 once_cell = "1.17.1"
 # TODO: remove with catalog v1 implementation
 arrow2 = { version = "0.15.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
-datafusion = "21.0.0"
+# FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
+datafusion = { version = "21.0.0", default-features = false, features = [ "regex_expressions", "unicode_expressions", "compression"] }
 tokio = "1.27.0"
 futures = "0.3.28"
 pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
