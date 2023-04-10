@@ -915,7 +915,7 @@ cdef class BacktestEngine:
         # Gather clocks
         cdef list clocks = [self.kernel.clock]
         cdef Actor actor
-        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies():
+        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies() + self._kernel.trader.exec_algorithms():
             clocks.append(actor.clock)
 
         # Set clocks
