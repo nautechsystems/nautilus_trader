@@ -472,6 +472,8 @@ cdef class OrderEmulator(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
+        self.cache.add_submit_order_command(submit)
+
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
             if order.exec_algorithm_id is not None:
                 self._send_algo_command(submit)
