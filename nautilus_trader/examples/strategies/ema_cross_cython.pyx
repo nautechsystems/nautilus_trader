@@ -19,6 +19,7 @@ from typing import Optional
 from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.common.logging cimport LogColor
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
@@ -56,9 +57,9 @@ class EMACrossConfig(StrategyConfig, frozen=True):
     trade_size : str
         The position size per trade (interpreted as Decimal).
     fast_ema_period : int, default 10
-        The fast EMA period.
+        The fast EMA period. Must be positive and less than `slow_ema_period`.
     slow_ema_period : int, default 20
-        The slow EMA period.
+        The slow EMA period. Must be positive and less than `fast_ema_period`.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -87,6 +88,11 @@ cdef class EMACross(Strategy):
     ----------
     config : EMACrossConfig
         The configuration for the instance.
+
+    Raises
+    ------
+    ValueError
+        If `config.fast_ema_period` is not less than `config.slow_ema_period`.
     """
     # Backing fields are necessary for Cython
     cdef InstrumentId instrument_id
@@ -96,6 +102,10 @@ cdef class EMACross(Strategy):
     cdef ExponentialMovingAverage slow_ema
 
     def __init__(self, config not None: EMACrossConfig) -> None:
+        Condition.true(
+            config.fast_ema_period < config.slow_ema_period,
+            "{config.fast_ema_period=} must be less than {config.slow_ema_period=}",
+        )
         super().__init__(config)
 
         # Configuration
