@@ -123,8 +123,8 @@ For this particular algorithm, two parameters must be specified:
 - `horizon_secs` 
 - `interval_secs` 
 
-The horizon_secs parameter determines the time period over which the algorithm will execute, while 
-the interval_secs parameter sets the time between individual order executions. These parameters 
+The `horizon_secs` parameter determines the time period over which the algorithm will execute, while 
+the `interval_secs` parameter sets the time between individual order executions. These parameters 
 determine how a primary order is split into a series of spawned orders.
 
 ```python
@@ -177,7 +177,7 @@ dictionary is not ``None`` and all necessary parameters actually exist).
 ```
 
 Received orders will arrive via the following `on_order(...)` method. These received orders are
-know as `primary` (original) orders when being handled by an execution algorithm.
+know as "primary" (original) orders when being handled by an execution algorithm.
 
 ```python
 def on_order(self, order: Order) -> None:  # noqa (too complex)
@@ -207,24 +207,24 @@ When the algorithm is ready to spawn a secondary order, it can use one of the fo
 Additional order types will be implemented in future versions, as the need arises.
 ```
 
-Each of these methods takes the primary `Order` as the first argument. The primary order
+Each of these methods takes the primary (original) `Order` as the first argument. The primary order
 quantity will be reduced by the `quantity` passed in (becoming the spawned orders quantity).
 
 ```{warning}
 There must be enough primary order quantity remaining (this is validated).
 ```
 
-Once the desired number of secondard orders have been spawned, and the execution routine is over,
-the intention is that the algorithm will then finally send the 'original' primary order.
+Once the desired number of secondary orders have been spawned, and the execution routine is over,
+the intention is that the algorithm will then finally send the primary (original) order.
 
 ### Spawned orders
 
-All secondard orders spawned from an execution algorithm will carry a `exec_spawn_id` which is
-simply the `ClientOrderId` of the 'original' primary order, and whose `client_order_id`
+All secondary orders spawned from an execution algorithm will carry a `exec_spawn_id` which is
+simply the `ClientOrderId` of the primary (original) order, and whose `client_order_id`
 derives from this original identifier with the following convention:
 
-- `exec_spawn_id` (original primary order `client_order_id` value)
-- `spawn_sequence` (the sequence number for the spawned secondard order)
+- `exec_spawn_id` (primary order `client_order_id` value)
+- `spawn_sequence` (the sequence number for the spawned order)
 
 ```
 {exec_spawn_id}-E{spawn_sequence}
@@ -282,12 +282,12 @@ cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id):
     """
     Return all orders for the given execution spawn ID (if found).
 
-    Will also include the primary order.
+    Will also include the primary (original) order.
 
     Parameters
     ----------
     client_order_id : ClientOrderId
-        The execution algorithm spawning primary client order ID.
+        The execution algorithm spawning primary (original) client order ID.
 
     Returns
     -------
