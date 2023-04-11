@@ -268,6 +268,8 @@ def _strip_unneeded_symbols() -> None:
                 strip_cmd = f"strip --strip-unneeded {so}"
             elif platform.system() == "Darwin":
                 strip_cmd = f"strip -x {so}"
+            else:
+                raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
                 strip_cmd,
                 check=True,
