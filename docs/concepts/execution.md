@@ -9,8 +9,8 @@ The main execution-related components include:
 - `ExecAlgorithm` (execution algorithms)
 - `OrderEmulator`
 - `RiskEngine`
-- `ExecutionEngine` and `LiveExecutionEngine`
-- `ExecutionClient` amd `LiveExecutionClient`
+- `ExecutionEngine` or `LiveExecutionEngine`
+- `ExecutionClient` or `LiveExecutionClient`
 
 ## Execution flow
 
@@ -27,12 +27,11 @@ methods. It also provides methods for managing orders and trade execution:
 
 These methods create the necessary execution commands under the hood and send them on the message 
 bus to the relevant components (point-to-point), as well as publishing any events (such as the 
-initialization of new orders).
+initialization of new orders i.e. `OrderInitialized` events).
 
 The general execution flow looks like the following (each arrow indicates movement across the message bus):
 
-`Strategy` -> `OrderEmulator` -> `RiskEngine` -> `ExecutionEngine` -> `ExecutionClient`
-           -> `ExecAlgorithm`
+`Strategy` -> `OrderEmulator` -> `ExecAlgorithm` -> `RiskEngine` -> `ExecutionEngine` -> `ExecutionClient`
 
 The `OrderEmulator` and `ExecAlgorithm`(s) components are optional in the flow, depending on
 individual order parameters (as explained below).
@@ -41,7 +40,7 @@ individual order parameters (as explained below).
 
 An `OrderFactory` is provided on the base class for every `Strategy` as a convenience, reducing
 the amount of boilerplate required to create different `Order` objects (although these objects
-can be initialized directly with the `Order.__init__` constructor if the trader prefers).
+can still be initialized directly with the `Order.__init__` constructor if the trader prefers).
 
 The component an order flows to when submitted for execution depends on the following:
 
@@ -234,8 +233,8 @@ derives from this original identifier with the following convention:
 e.g. `O-20230404-001-000-E1` (for the first spawned order)
 
 ```{note}
-The 'primary', 'secondary'/'spawn' terminology was specifically chosen so as not to conflict
-with 'parent' and 'child' contingency orders (an execution algorithm may also deal with contingent orders).
+The "primary" and "secondary"/"spawn" terminology was specifically chosen to avoid conflict
+or confusion with the "parent" and "child" contingency orders terminology (an execution algorithm may also deal with contingent orders).
 ```
 
 ### Managing execution algorithm orders
