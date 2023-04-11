@@ -50,7 +50,7 @@ The component an order flows to when submitted for execution depends on the foll
 
 The following examples show method implementations for a `Strategy`.
 
-This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md):
+This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
 ```python
     def buy(self) -> None:
         """
@@ -158,9 +158,9 @@ over the wire, such as ints, floats, and strings).
 To implement a custom execution algorithm you must define a class which inherits from `ExecAlgorithm`.
 
 An execution algorithm is a type of `Actor`, so it's capable of the following:
-- Requesting and subscribing to data
-- Accessing the `Cache`
-- Setting time alerts and timers using a `Clock`
+- Request and subscribe to data
+- Access the `Cache`
+- Set time alerts and/or timers using a `Clock`
 
 Additionally it can:
 - Access the central `Portfolio`
@@ -211,7 +211,7 @@ Each of these methods takes the primary `Order` as the first argument. The prima
 quantity will be reduced by the `quantity` passed in (becoming the spawned orders quantity).
 
 ```{warning}
-There must be enough primary order quantity remaining. This is validated.
+There must be enough primary order quantity remaining (this is validated).
 ```
 
 Once the desired number of secondard orders have been spawned, and the execution routine is over,
@@ -233,7 +233,7 @@ derives from this original identifier with the following convention:
 e.g. `O-20230404-001-000-E1` (for the first spawned order)
 
 ```{note}
-The "primary" and "secondary"/"spawn" terminology was specifically chosen to avoid conflict
+The "primary" and "secondary" / "spawn" terminology was specifically chosen to avoid conflict
 or confusion with the "parent" and "child" contingency orders terminology (an execution algorithm may also deal with contingent orders).
 ```
 
