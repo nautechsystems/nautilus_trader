@@ -3116,12 +3116,12 @@ cdef class Cache(CacheFacade):
         """
         Return all orders for the given execution spawn ID (if found).
 
-        Will also include the primary order.
+        Will also include the primary (original) order.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The execution algorithm spawning primary client order ID.
+            The execution algorithm spawning primary (original) client order ID.
 
         Returns
         -------
