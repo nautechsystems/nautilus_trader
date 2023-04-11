@@ -131,7 +131,6 @@ cdef class ExecutionEngine(Component):
         self._routing_map: dict[Venue, ExecutionClient] = {}
         self._default_client: Optional[ExecutionClient] = None
         self._oms_overrides: dict[StrategyId, OmsType] = {}
-        self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
 
         self._pos_id_generator: PositionIdGenerator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
@@ -346,28 +345,6 @@ cdef class ExecutionEngine(Component):
             f"for Strategy {strategy}.",
         )
 
-    cpdef void register_exec_algorithm(self, ExecAlgorithm exec_algorithm):
-        """
-        Register the given execution algorithm with the execution engine.
-
-        Parameters
-        ----------
-        exec_algorithm : ExecAlgorithm
-            The execution algorithm to register.
-
-        Raises
-        ------
-        ValueError
-            If `exec_algorithm` is already registered with the execution engine.
-
-        """
-        Condition.not_none(exec_algorithm, "exec_algorithm")
-        Condition.not_in(exec_algorithm.id, self._exec_algorithms, "exec_algorithm.id", "self._exec_algorithms")
-
-        self._exec_algorithms[exec_algorithm.id] = exec_algorithm
-
-        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
-
     cpdef void deregister_client(self, ExecutionClient client):
         """
         Deregister the given execution client from the execution engine.
@@ -566,17 +543,8 @@ cdef class ExecutionEngine(Component):
             # Cache order
             self._cache.add_order(command.order, command.position_id)
 
-        cdef ExecAlgorithm exec_algorithm
-        if command.exec_algorithm_spec is not None:
-            # Send to execution algorithm
-            exec_algorithm = self._exec_algorithms.get(command.exec_algorithm_spec.exec_algorithm_id)
-            if exec_algorithm is None:
-                self._log.error(f"Cannot submit order: execution algorithm {exec_algorithm} not found.")
-                return
-            exec_algorithm.handle_submit_order(command)
-        else:
-            # Send to execution client
-            client.submit_order(command)
+        # Send to execution client
+        client.submit_order(command)
 
     cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
         cdef Order order
@@ -585,17 +553,8 @@ cdef class ExecutionEngine(Component):
                 # Cache order
                 self._cache.add_order(order, position_id=None)
 
-        cdef ExecAlgorithm exec_algorithm
-        if command.exec_algorithm_specs:
-            # Send to execution algorithm
-            exec_algorithm = self._exec_algorithms.get(command.exec_algorithm_specs[0].exec_algorithm_id)
-            if exec_algorithm is None:
-                self._log.error(f"Cannot submit order: execution algorithm {exec_algorithm} not found.")
-                return
-            exec_algorithm.handle_submit_order_list(command)
-        else:
-            # Send to execution client
-            client.submit_order_list(command)
+        # Send to execution client
+        client.submit_order_list(command)
 
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command):
         client.modify_order(command)

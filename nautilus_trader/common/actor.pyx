@@ -541,8 +541,6 @@ cdef class Actor(Component):
         self.clock = self._clock
         self.log = self._log
 
-        self.log.info(f"Registered {self.id}.")
-
     cpdef void register_warning_event(self, type event):
         """
         Register the given event type for warning log levels.

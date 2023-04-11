@@ -18,7 +18,6 @@ from typing import Optional
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
-from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
@@ -69,6 +68,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     reconciliation_lookback_mins : NonNegativeInt, optional
         The maximum lookback minutes to reconcile state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
+    external_order_claims : dict[str, list[str]], optional
+        The map of external order claims.
+        The keys are strategy IDs, values are lists of instrument IDs.
     inflight_check_interval_ms : NonNegativeInt, default 2_000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
@@ -84,6 +86,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
 
     reconciliation: bool = True
     reconciliation_lookback_mins: Optional[NonNegativeInt] = None
+    external_order_claims: Optional[dict[str, list[str]]] = None
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     qsize: PositiveInt = 10_000
@@ -182,8 +185,8 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
-    data_clients: dict[str, ImportableConfig] = {}
-    exec_clients: dict[str, ImportableConfig] = {}
+    data_clients: dict[str, LiveDataClientConfig] = {}
+    exec_clients: dict[str, LiveExecClientConfig] = {}
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0

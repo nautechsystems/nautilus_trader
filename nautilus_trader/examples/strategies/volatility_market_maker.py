@@ -42,7 +42,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class VolatilityMarketMakerConfig(StrategyConfig):
+class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``VolatilityMarketMaker`` instances.
 
@@ -90,7 +90,7 @@ class VolatilityMarketMaker(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: VolatilityMarketMakerConfig):
+    def __init__(self, config: VolatilityMarketMakerConfig) -> None:
         super().__init__(config)
 
         # Configuration
@@ -109,7 +109,7 @@ class VolatilityMarketMaker(Strategy):
         self.buy_order: Union[LimitOrder, None] = None
         self.sell_order: Union[LimitOrder, None] = None
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -141,7 +141,7 @@ class VolatilityMarketMaker(Strategy):
         #     client_id=ClientId("BINANCE"),
         # )
 
-    def on_data(self, data: Data):
+    def on_data(self, data: Data) -> None:
         """
         Actions to be performed when the strategy is running and receives generic
         data.
@@ -155,7 +155,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(data), LogColor.CYAN)
 
-    def on_instrument(self, instrument: Instrument):
+    def on_instrument(self, instrument: Instrument) -> None:
         """
         Actions to be performed when the strategy is running and receives an
         instrument.
@@ -169,7 +169,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
 
-    def on_order_book(self, order_book: OrderBook):
+    def on_order_book(self, order_book: OrderBook) -> None:
         """
         Actions to be performed when the strategy is running and receives an order book.
 
@@ -182,7 +182,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(order_book), LogColor.CYAN)
 
-    def on_order_book_delta(self, delta: OrderBookDelta):
+    def on_order_book_delta(self, delta: OrderBookDelta) -> None:
         """
         Actions to be performed when the strategy is running and receives an order book delta.
 
@@ -195,7 +195,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(delta), LogColor.CYAN)
 
-    def on_ticker(self, ticker: Ticker):
+    def on_ticker(self, ticker: Ticker) -> None:
         """
         Actions to be performed when the strategy is running and receives a ticker.
 
@@ -208,7 +208,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(ticker), LogColor.CYAN)
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
 
@@ -221,7 +221,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
 
@@ -234,7 +234,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -269,7 +269,7 @@ class VolatilityMarketMaker(Strategy):
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
-    def create_buy_order(self, last: QuoteTick):
+    def create_buy_order(self, last: QuoteTick) -> None:
         """
         Market maker simple buy limit method (example).
         """
@@ -292,7 +292,7 @@ class VolatilityMarketMaker(Strategy):
         self.buy_order = order
         self.submit_order(order)
 
-    def create_sell_order(self, last: QuoteTick):
+    def create_sell_order(self, last: QuoteTick) -> None:
         """
         Market maker simple sell limit method (example).
         """
@@ -315,7 +315,7 @@ class VolatilityMarketMaker(Strategy):
         self.sell_order = order
         self.submit_order(order)
 
-    def on_event(self, event: Event):
+    def on_event(self, event: Event) -> None:
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -339,7 +339,7 @@ class VolatilityMarketMaker(Strategy):
                 if self.sell_order.is_closed:
                     self.create_sell_order(last)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Actions to be performed when the strategy is stopped.
         """
@@ -350,7 +350,7 @@ class VolatilityMarketMaker(Strategy):
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         """
         Actions to be performed when the strategy is reset.
         """
@@ -371,7 +371,7 @@ class VolatilityMarketMaker(Strategy):
         """
         return {}
 
-    def on_load(self, state: dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -385,7 +385,7 @@ class VolatilityMarketMaker(Strategy):
         """
         pass
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         """
         Actions to be performed when the strategy is disposed.
 

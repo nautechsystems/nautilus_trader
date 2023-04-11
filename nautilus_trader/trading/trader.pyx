@@ -496,10 +496,9 @@ cdef class Trader(Component):
             logger=self._log.get_logger(),
         )
 
-        self._exec_engine.register_exec_algorithm(exec_algorithm)
         self._exec_algorithms.append(exec_algorithm)
 
-        self._log.info(f"Registered Execution Algorithm {exec_algorithm}.")
+        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
 
     cpdef void add_exec_algorithms(self, list exec_algorithms: [ExecAlgorithm]):
         """

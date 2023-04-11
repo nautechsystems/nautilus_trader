@@ -53,6 +53,7 @@ from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
@@ -120,6 +121,10 @@ class LiveExecutionEngine(ExecutionEngine):
         # Settings
         self.reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
+        self.external_order_claims: dict[
+            StrategyId,
+            InstrumentId,
+        ] = self._parse_external_order_claims(config.external_order_claims)
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -136,6 +141,21 @@ class LiveExecutionEngine(ExecutionEngine):
             endpoint="ExecEngine.reconcile_mass_status",
             handler=self.reconcile_mass_status,
         )
+
+    def _parse_external_order_claims(
+        self,
+        config_claims: Optional[dict[str, list[str]]],
+    ) -> dict[StrategyId, list[InstrumentId]]:
+        external_order_claims: dict[StrategyId, list[InstrumentId]] = {}
+        if config_claims is None:
+            return external_order_claims
+
+        for strategy_id_str, instrument_id_strs in config_claims.items():
+            strategy_id = StrategyId(strategy_id_str)
+            external_order_claims[strategy_id] = [
+                InstrumentId.from_str(i) for i in instrument_id_strs
+            ]
+        return external_order_claims
 
     def connect(self) -> None:
         """
@@ -779,9 +799,17 @@ class LiveExecutionEngine(ExecutionEngine):
             0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
         )
 
+        strategy_id = StrategyId("EXTERNAL")
+        tags = "EXTERNAL"
+        for sid, instrument_ids in self.external_order_claims.items():
+            if report.instrument_id in instrument_ids:
+                strategy_id = sid
+                tags = None
+                break
+
         initialized = OrderInitialized(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("EXTERNAL"),
+            strategy_id=strategy_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             order_side=report.order_side,
@@ -796,7 +824,10 @@ class LiveExecutionEngine(ExecutionEngine):
             order_list_id=report.order_list_id,
             linked_order_ids=None,
             parent_order_id=None,
-            tags="EXTERNAL",
+            exec_algorithm_id=None,
+            exec_algorithm_params=None,
+            exec_spawn_id=None,
+            tags=tags,
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,

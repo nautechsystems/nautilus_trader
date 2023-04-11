@@ -8,6 +8,7 @@ import subprocess
 import sysconfig
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from Cython.Build import build_ext
@@ -121,7 +122,9 @@ def _build_extensions() -> list[Extension]:
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
-    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+    define_macros: list[tuple[str, Optional[str]]] = [
+        ("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"),
+    ]
     if PROFILE_MODE or ANNOTATION_MODE:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
@@ -131,6 +134,9 @@ def _build_extensions() -> list[Extension]:
 
     if platform.system() == "Darwin":
         extra_compile_args.append("-Wno-unreachable-code-fallthrough")
+        extra_link_args.append("-flat_namespace")
+        extra_link_args.append("-undefined")
+        extra_link_args.append("suppress")
 
     if platform.system() != "Windows":
         # Suppress warnings produced by Cython boilerplate
@@ -258,8 +264,12 @@ def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
-            strip_cmd = f"strip --strip-unneeded {so}"
-            print(strip_cmd)
+            if platform.system() == "Linux":
+                strip_cmd = f"strip --strip-unneeded {so}"
+            elif platform.system() == "Darwin":
+                strip_cmd = f"strip -x {so}"
+            else:
+                raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
                 strip_cmd,
                 check=True,
@@ -292,7 +302,7 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if platform.system() == "Linux":
+    if platform.system() in ("Linux", "Darwin"):
         _strip_unneeded_symbols()
 
 

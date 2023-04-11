@@ -21,7 +21,6 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.model.enums_c cimport order_side_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -95,8 +94,6 @@ cdef class SubmitOrder(TradingCommand):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     position_id : PositionId, optional
         The position ID for the command.
-    exec_algorithm_spec : ExecAlgorithmSpecification, optional
-        The execution algorithm specification for the order.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -113,7 +110,6 @@ cdef class SubmitOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         PositionId position_id: Optional[PositionId] = None,
-        ExecAlgorithmSpecification exec_algorithm_spec: Optional[ExecAlgorithmSpecification] = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -126,15 +122,14 @@ cdef class SubmitOrder(TradingCommand):
         )
 
         self.order = order
+        self.exec_algorithm_id = order.exec_algorithm_id
         self.position_id = position_id
-        self.exec_algorithm_spec = exec_algorithm_spec
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"order={self.order}, "
-            f"position_id={self.position_id}, " # Can be None
-            f"exec_algorithm_spec={self.exec_algorithm_spec})"  # Can be None
+            f"position_id={self.position_id})" # Can be None
         )
 
     def __repr__(self) -> str:
@@ -147,7 +142,6 @@ cdef class SubmitOrder(TradingCommand):
             f"client_order_id={self.order.client_order_id.to_str()}, "
             f"order={self.order}, "
             f"position_id={self.position_id}, "  # Can be None
-            f"exec_algorithm_spec={self.exec_algorithm_spec}, "  # Can be None
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -157,23 +151,13 @@ cdef class SubmitOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str p = values["position_id"]
-        cdef str exec_algorithm_id = values["exec_algorithm_id"]
-        cdef dict exec_algorithm_params = values["exec_algorithm_params"]
         cdef Order order = OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
-        cdef ExecAlgorithmSpecification exec_algorithm_spec = None
-        if exec_algorithm_id is not None:
-            exec_algorithm_spec = ExecAlgorithmSpecification(
-                client_order_id=order.client_order_id,
-                exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id),
-                params=exec_algorithm_params,
-            )
         return SubmitOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             order=order,
             position_id=PositionId(p) if p is not None else None,
-            exec_algorithm_spec=exec_algorithm_spec,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -188,8 +172,6 @@ cdef class SubmitOrder(TradingCommand):
             "strategy_id": obj.strategy_id.to_str(),
             "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
-            "exec_algorithm_id": obj.exec_algorithm_spec.exec_algorithm_id.to_str() if obj.exec_algorithm_spec is not None else None,
-            "exec_algorithm_params": obj.exec_algorithm_spec.params if obj.exec_algorithm_spec is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
@@ -246,8 +228,6 @@ cdef class SubmitOrderList(TradingCommand):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     position_id : PositionId, optional
         The position ID for the command.
-    exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
-        The execution algorithm specifications for the orders.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -264,7 +244,6 @@ cdef class SubmitOrderList(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         PositionId position_id: Optional[PositionId] = None,
-        list exec_algorithm_specs: Optional[list[ExecAlgorithmSpecification]] = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -277,16 +256,15 @@ cdef class SubmitOrderList(TradingCommand):
         )
 
         self.order_list = order_list
+        self.exec_algorithm_id = order_list.first.exec_algorithm_id
         self.position_id = position_id
-        self.exec_algorithm_specs = exec_algorithm_specs
         self.has_emulated_order = True if any(o.is_emulated for o in order_list.orders) else False
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"order_list={self.order_list}, "
-            f"position_id={self.position_id}, " # Can be None
-            f"exec_algorithm_specs={self.exec_algorithm_specs})"  # Can be None
+            f"position_id={self.position_id})" # Can be None
         )
 
     def __repr__(self) -> str:
@@ -298,7 +276,6 @@ cdef class SubmitOrderList(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"order_list={self.order_list}, "
             f"position_id={self.position_id}, " # Can be None
-            f"exec_algorithm_specs={self.exec_algorithm_specs}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -312,23 +289,12 @@ cdef class SubmitOrderList(TradingCommand):
             order_list_id=OrderListId(values["order_list_id"]),
             orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in msgspec.json.decode(values["orders"])],
         )
-        cdef list exec_algorithm_specs = values["exec_algorithm_specs"]
-        if exec_algorithm_specs is not None:
-            exec_algorithm_specs = [
-                ExecAlgorithmSpecification(
-                    client_order_id=ClientOrderId(ea["client_order_id"]),
-                    exec_algorithm_id=ExecAlgorithmId(ea["exec_algorithm_id"]),
-                    params=ea["params"],
-                )
-                for ea in exec_algorithm_specs
-            ]
         return SubmitOrderList(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             order_list=order_list,
             position_id=PositionId(p) if p is not None else None,
-            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -336,9 +302,7 @@ cdef class SubmitOrderList(TradingCommand):
     @staticmethod
     cdef dict to_dict_c(SubmitOrderList obj):
         Condition.not_none(obj, "obj")
-        cdef:
-            Order o
-            ExecAlgorithmSpecification eas
+        cdef Order o
         return {
             "type": "SubmitOrderList",
             "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
@@ -347,13 +311,6 @@ cdef class SubmitOrderList(TradingCommand):
             "order_list_id": str(obj.order_list.id),
             "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders]),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
-            "exec_algorithm_specs": [
-                {
-                    "client_order_id": eas.client_order_id.to_str(),
-                    "exec_algorithm_id": eas.exec_algorithm_id.to_str(),
-                    "params": eas.params,
-                } for eas in obj.exec_algorithm_specs
-            ] if obj.exec_algorithm_specs is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
@@ -932,48 +889,3 @@ cdef class QueryOrder(TradingCommand):
 
         """
         return QueryOrder.to_dict_c(obj)
-
-
-cdef class ExecAlgorithmSpecification:
-    """
-    Represents the execution algorithm specification for the order.
-
-    Parameters
-    ----------
-    client_order_id : ClientOrderId
-        The client order ID for the order being executed.
-    exec_algorithm_id : ExecAlgorithmId
-        The execution algorithm ID.
-    params : dict[str, Any], optional
-        The execution algorithm parameters for the order (must be serializable primitives).
-        If ``None`` then no parameters will be passed to any execution algorithm.
-    """
-
-    def __init__(
-        self,
-        ClientOrderId client_order_id not None,
-        ExecAlgorithmId exec_algorithm_id not None,
-        dict params: Optional[dict[str, Any]] = None,
-    ) -> None:
-        self.client_order_id = client_order_id
-        self.exec_algorithm_id = exec_algorithm_id
-        self.params = params
-        self._key = frozenset(params.items())
-
-    def __eq__(self, ExecAlgorithmSpecification other) -> bool:
-        return (
-            self.client_order_id == other.client_order_id
-            and self.exec_algorithm_id == other.exec_algorithm_id
-            and self._key == other._key
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.client_order_id.to_str(), self.exec_algorithm_id.to_str(), self._key))
-
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}"
-            f"(client_order_id={self.client_order_id.to_str()}, "
-            f"exec_algorithm_id={self.exec_algorithm_id.to_str()}, "
-            f"params={self.params})"
-        )

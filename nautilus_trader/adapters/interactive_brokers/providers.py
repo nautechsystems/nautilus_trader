@@ -197,12 +197,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
         return [x for d in details for x in d]
 
-    async def load(
+    async def load(  # type: ignore
         self,
         build_options_chain=False,
         option_kwargs=None,
         **kwargs,
-    ):
+    ) -> None:
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 

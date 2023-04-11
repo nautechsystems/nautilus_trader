@@ -1514,7 +1514,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Act
-        self.risk_engine.execute(submit_bracket)
+        self.emulator.execute(submit_bracket)
 
         # Assert
         assert submit_bracket.has_emulated_order

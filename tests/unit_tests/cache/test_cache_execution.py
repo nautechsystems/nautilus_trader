@@ -29,7 +29,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
@@ -362,6 +361,7 @@ class TestCache:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
+            exec_algorithm_id=ExecAlgorithmId("SizeStagger"),
         )
 
         position_id = PositionId("P-1")
@@ -390,6 +390,20 @@ class TestCache:
         assert not self.cache.is_order_inflight(order.client_order_id)
         assert not self.cache.is_order_emulated(order.client_order_id)
         assert self.cache.venue_order_id(order.client_order_id) is None
+        assert order in self.cache.orders_for_exec_spawn(order.client_order_id)
+        assert order in self.cache.orders_for_exec_algorithm(order.exec_algorithm_id)
+        assert order in self.cache.orders_for_exec_algorithm(
+            order.exec_algorithm_id,
+            venue=order.venue,
+            instrument_id=order.instrument_id,
+            strategy_id=order.strategy_id,
+            side=OrderSide.BUY,
+        )
+        assert order not in self.cache.orders_for_exec_algorithm(
+            order.exec_algorithm_id,
+            side=OrderSide.SELL,
+        )
+        assert order not in self.cache.orders_for_exec_algorithm(ExecAlgorithmId("UnknownAlgo"))
 
     def test_add_emulated_limit_order(self):
         # Arrange
@@ -780,22 +794,15 @@ class TestCache:
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
             emulation_trigger=TriggerType.BID_ASK,
+            entry_exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            entry_exec_algorithm_params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
-
-        exec_algorithm_specs = [
-            ExecAlgorithmSpecification(
-                client_order_id=bracket.first.client_order_id,
-                exec_algorithm_id=ExecAlgorithmId("VWAP"),
-                params={"max_percentage": 100.0, "start": 0, "end": 1},
-            ),
-        ]
 
         command = SubmitOrderList(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),
             order_list=bracket,
             position_id=PositionId("P-001"),
-            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -811,11 +818,13 @@ class TestCache:
 
     def test_update_order_for_submitted_order(self):
         # Arrange
+        exec_algorithm_id = ExecAlgorithmId("AutoRetry")
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
+            exec_algorithm_id=exec_algorithm_id,
         )
 
         position_id = PositionId("P-1")
@@ -829,6 +838,8 @@ class TestCache:
         # Assert
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
+        assert order in self.cache.orders_for_exec_spawn(order.client_order_id)
+        assert order in self.cache.orders_for_exec_algorithm(exec_algorithm_id)
         assert order in self.cache.orders()
         assert order in self.cache.orders_inflight()
         assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)

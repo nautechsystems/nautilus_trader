@@ -34,7 +34,6 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -366,11 +365,6 @@ cdef class OrderEmulator(Actor):
         if command.position_id is not None:
             self._monitored_positions.add(command.position_id)
 
-        # Index all execution algorithm specs
-        cdef dict exec_algorithm_index = {}
-        if command.exec_algorithm_specs:
-            exec_algorithm_index = {eas.client_order_id: eas for eas in command.exec_algorithm_specs}
-
         cdef Order order
         for order in command.order_list.orders:
             if order.parent_order_id is not None:
@@ -381,7 +375,6 @@ cdef class OrderEmulator(Actor):
             self._create_new_submit_order(
                 order=order,
                 position_id=command.position_id,
-                exec_algorithm_spec=exec_algorithm_index.get(order.client_order_id),
                 client_id=command.client_id,
             )
 
@@ -468,7 +461,6 @@ cdef class OrderEmulator(Actor):
         self,
         Order order,
         PositionId position_id,
-        ExecAlgorithmSpecification exec_algorithm_spec,
         ClientId client_id,
     ):
         cdef SubmitOrder submit = SubmitOrder(
@@ -476,14 +468,17 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             order=order,
             position_id=position_id,
-            exec_algorithm_spec=exec_algorithm_spec,
             client_id=client_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
+        self.cache.add_submit_order_command(submit)
+
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            # Immediately send back to RiskEngine
-            self._send_risk_command(submit)
+            if order.exec_algorithm_id is not None:
+                self._send_algo_command(submit)
+            else:
+                self._send_risk_command(submit)
         else:
             # Emulate
             self._handle_submit_order(submit)
@@ -596,16 +591,12 @@ cdef class OrderEmulator(Actor):
             assert order.linked_order_ids
             submit_order_list = self._commands_submit_order_list.get(order.order_list_id)
             assert submit_order_list
-            # Index all execution algorithm specs
-            if submit_order_list.exec_algorithm_specs:
-                exec_algorithm_index = {eas.client_order_id: eas for eas in submit_order_list.exec_algorithm_specs}
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order
                 self._create_new_submit_order(
                     order=child_order,
                     position_id=submit_order_list.position_id,
-                    exec_algorithm_spec=exec_algorithm_index.get(child_order.client_order_id),
                     client_id=submit_order_list.client_id,
                 )
         elif order.contingency_type == ContingencyType.OCO:
@@ -732,7 +723,10 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
-        self._send_exec_command(command)
+        if order.exec_algorithm_id is not None:
+            self._send_algo_command(command)
+        else:
+            self._send_exec_command(command)
 
     cpdef void _fill_limit_order(self, Order order):
         if order.order_type == OrderType.LIMIT:
@@ -770,7 +764,10 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
-        self._send_exec_command(command)
+        if order.exec_algorithm_id is not None:
+            self._send_algo_command(command)
+        else:
+            self._send_exec_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         if not self._log.is_bypassed:
@@ -883,6 +880,11 @@ cdef class OrderEmulator(Actor):
         self._send_risk_event(event)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_algo_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint=f"{command.exec_algorithm_id}.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

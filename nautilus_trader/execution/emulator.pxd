@@ -17,7 +17,6 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -53,7 +52,7 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_cancel_order(self, CancelOrder command)
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
-    cdef void _create_new_submit_order(self, Order order, PositionId position_id, ExecAlgorithmSpecification exec_algorithm_spec, ClientId client_id)
+    cdef void _create_new_submit_order(self, Order order, PositionId position_id, ClientId client_id)
     cdef void _cancel_order(self, MatchingCore matching_core, Order order)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
@@ -77,6 +76,7 @@ cdef class OrderEmulator(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
+    cdef void _send_algo_command(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
     cdef void _send_exec_command(self, TradingCommand command)
     cdef void _send_risk_event(self, OrderEvent event)

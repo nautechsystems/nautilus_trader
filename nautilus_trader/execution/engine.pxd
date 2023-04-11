@@ -43,7 +43,6 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict _clients
     cdef readonly dict _routing_map
     cdef readonly dict _oms_overrides
-    cdef readonly dict _exec_algorithms
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -68,7 +67,6 @@ cdef class ExecutionEngine(Component):
     cpdef void register_default_client(self, ExecutionClient client)
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue)
     cpdef void register_oms_type(self, Strategy strategy)
-    cpdef void register_exec_algorithm(self, ExecAlgorithm exec_algorithm)
     cpdef void deregister_client(self, ExecutionClient client)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------

@@ -60,7 +60,7 @@ config_node = TradingNodeConfig(
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
-                filters=msgspec.json.encode(instrument_filters),
+                filters=msgspec.json.encode(instrument_filters),  # type: ignore
             ),
             start_gateway=False,
         ),

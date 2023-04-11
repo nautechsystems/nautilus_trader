@@ -19,7 +19,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
+class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``InteractiveBrokersDataClient`` instances.
 
@@ -61,7 +61,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     read_only_api: bool = True
 
 
-class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
+class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``InteractiveBrokersExecClient`` instances.
 

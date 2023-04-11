@@ -25,7 +25,6 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
-from nautilus_trader.execution.messages import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
@@ -490,12 +489,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
-        )
-
-        exec_algorithm_spec = ExecAlgorithmSpecification(
-            client_order_id=ClientOrderId("O-123456789"),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
-            params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
 
         command = SubmitOrder(
@@ -503,7 +497,6 @@ class TestMsgPackSerializer:
             strategy_id=StrategyId("SCALPER-001"),
             order=order,
             position_id=PositionId("P-123456"),
-            exec_algorithm_spec=exec_algorithm_spec,
             command_id=UUID4(),
             ts_init=0,
             client_id=ClientId("SIM"),
@@ -531,21 +524,12 @@ class TestMsgPackSerializer:
             tp_price=Price(1.00010, precision=5),
         )
 
-        exec_algorithm_specs = [
-            ExecAlgorithmSpecification(
-                client_order_id=bracket.first.client_order_id,
-                exec_algorithm_id=ExecAlgorithmId("VWAP"),
-                params={"max_percentage": 100.0, "start": 0, "end": 1},
-            ),
-        ]
-
         command = SubmitOrderList(
             client_id=ClientId("SIM"),
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             order_list=bracket,
             position_id=PositionId("P-123456"),
-            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(),
             ts_init=0,
         )
@@ -707,6 +691,9 @@ class TestMsgPackSerializer:
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
+            exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            exec_algorithm_params={"period": 60},
+            exec_spawn_id=ClientOrderId("O-1"),
             tags="ENTRY",
             event_id=UUID4(),
             ts_init=0,
@@ -743,6 +730,9 @@ class TestMsgPackSerializer:
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
+            exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            exec_algorithm_params={"period": 60},
+            exec_spawn_id=ClientOrderId("O-1"),
             tags=None,
             event_id=UUID4(),
             ts_init=0,
@@ -779,6 +769,9 @@ class TestMsgPackSerializer:
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
+            exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            exec_algorithm_params={"period": 60},
+            exec_spawn_id=ClientOrderId("O-1"),
             tags=None,
             event_id=UUID4(),
             ts_init=0,
@@ -817,6 +810,9 @@ class TestMsgPackSerializer:
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
+            exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            exec_algorithm_params={"period": 60},
+            exec_spawn_id=ClientOrderId("O-1"),
             tags="entry,bulk",
             event_id=UUID4(),
             ts_init=0,

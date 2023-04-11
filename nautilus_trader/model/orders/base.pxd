@@ -38,6 +38,7 @@ from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -70,9 +71,9 @@ cdef class Order:
     cdef readonly ClientOrderId client_order_id
     """The client order ID.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
+    """The venue assigned order ID.\n\n:returns: `VenueOrderId` or ``None``"""
     cdef readonly PositionId position_id
-    """The position ID associated with the order.\n\n:returns: `PositionId`"""
+    """The position ID associated with the order.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly AccountId account_id
     """The account ID associated with the order.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly TradeId last_trade_id
@@ -109,6 +110,12 @@ cdef class Order:
     """The orders linked client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ClientOrderId parent_order_id
     """The parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
+    cdef readonly ExecAlgorithmId exec_algorithm_id
+    """The execution algorithm ID for the order.\n\n:returns: `ExecAlgorithmId` or ``None``"""
+    cdef readonly dict exec_algorithm_params
+    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""
+    cdef readonly ClientOrderId exec_spawn_id
+    """The execution algorithm spawning client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 init_id
