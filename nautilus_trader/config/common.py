@@ -401,11 +401,14 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+    external_order_claims : list[str], optional
+        The external order claim instrument IDs.
     """
 
     strategy_id: Optional[str] = None
     order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
+    external_order_claims: Optional[list[str]] = None
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

@@ -425,6 +425,7 @@ cdef class Trader(Component):
         )
 
         self._exec_engine.register_oms_type(strategy)
+        self._exec_engine.register_external_order_claims(strategy)
         self._strategies.append(strategy)
 
         self._log.info(f"Registered Strategy {strategy}.")

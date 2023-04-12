@@ -56,10 +56,12 @@ cdef class Strategy(Actor):
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
-    cdef readonly OmsType oms_type
-    """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly str order_id_tag
     """The order ID tag for the strategy.\n\n:returns: `str`"""
+    cdef readonly OmsType oms_type
+    """The order management system for the strategy.\n\n:returns: `OmsType`"""
+    cdef readonly list external_order_claims
+    """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
 
     cpdef bint indicators_initialized(self)
 

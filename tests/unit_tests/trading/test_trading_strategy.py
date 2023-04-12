@@ -194,6 +194,7 @@ class TestStrategy:
             "oms_type": None,
             "order_id_tag": None,
             "strategy_id": None,
+            "external_order_claims": None,
         }
 
     def test_strategy_to_importable_config(self):
@@ -216,6 +217,7 @@ class TestStrategy:
             "oms_type": None,
             "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
+            "external_order_claims": None,
         }
 
     def test_strategy_equality(self):

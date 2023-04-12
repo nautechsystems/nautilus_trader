@@ -28,6 +28,7 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -43,6 +44,7 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict _clients
     cdef readonly dict _routing_map
     cdef readonly dict _oms_overrides
+    cdef readonly dict _external_order_claims
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -60,6 +62,7 @@ cdef class ExecutionEngine(Component):
     cpdef bint check_connected(self)
     cpdef bint check_disconnected(self)
     cpdef bint check_residuals(self)
+    cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -67,6 +70,7 @@ cdef class ExecutionEngine(Component):
     cpdef void register_default_client(self, ExecutionClient client)
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue)
     cpdef void register_oms_type(self, Strategy strategy)
+    cpdef void register_external_order_claims(self, Strategy strategy)
     cpdef void deregister_client(self, ExecutionClient client)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
