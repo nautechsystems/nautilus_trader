@@ -17,9 +17,13 @@ mod implementations;
 mod reader;
 mod writer;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::Encoding};
+use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
+
+use nautilus_model::data::tick::Data;
 use pyo3::prelude::*;
 
 pub use crate::parquet::reader::{GroupFilterArg, ParquetReader};
@@ -39,6 +43,14 @@ pub enum ParquetType {
 pub enum ParquetReaderType {
     File = 0,
     Buffer = 1,
+}
+
+pub trait DecodeDataFromRecordBatch
+where
+    Self: Sized + Into<Data>,
+{
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
+    fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
 }
 
 pub trait DecodeFromChunk
