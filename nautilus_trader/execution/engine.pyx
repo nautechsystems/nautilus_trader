@@ -373,6 +373,12 @@ cdef class ExecutionEngine(Component):
         ----------
         strategy : Strategy
             The strategy for the registration.
+
+        Raises
+        ------
+        KeyError
+            If a strategy is already registered to claim external orders for an instrument ID.
+
         """
         Condition.not_none(strategy, "strategy")
 
