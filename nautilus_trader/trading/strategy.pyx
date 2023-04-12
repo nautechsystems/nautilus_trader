@@ -134,6 +134,7 @@ cdef class Strategy(Actor):
         # Configuration
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
+        self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
         self._manage_gtd_expiry = False
 
         # Indicators
@@ -153,6 +154,15 @@ cdef class Strategy(Actor):
         self.register_warning_event(OrderRejected)
         self.register_warning_event(OrderCancelRejected)
         self.register_warning_event(OrderModifyRejected)
+
+    def _parse_external_order_claims(
+        self,
+        config_claims: Optional[list[str]],
+    ) -> list[InstrumentId]:
+        if config_claims is None:
+            return []
+
+        return [InstrumentId.from_str(i) for i in config_claims]
 
     def to_importable_config(self) -> ImportableStrategyConfig:
         """

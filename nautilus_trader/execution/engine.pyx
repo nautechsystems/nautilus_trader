@@ -70,6 +70,7 @@ from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -131,6 +132,7 @@ cdef class ExecutionEngine(Component):
         self._routing_map: dict[Venue, ExecutionClient] = {}
         self._default_client: Optional[ExecutionClient] = None
         self._oms_overrides: dict[StrategyId, OmsType] = {}
+        self._external_order_claims: dict[InstrumentId, StrategyId] = {}
 
         self._pos_id_generator: PositionIdGenerator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
@@ -247,6 +249,24 @@ cdef class ExecutionEngine(Component):
         """
         return self._cache.check_residuals()
 
+    cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id):
+        """
+        Get any external order claim for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the claim.
+
+        Returns
+        -------
+        StrategyId or ``None``
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self._external_order_claims.get(instrument_id)
+
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client):
@@ -344,6 +364,34 @@ cdef class ExecutionEngine(Component):
             f"Registered OMS.{oms_type_to_str(strategy.oms_type)} "
             f"for Strategy {strategy}.",
         )
+
+    cpdef void register_external_order_claims(self, Strategy strategy):
+        """
+        Register the given strategies external order claim instrument IDs (if any)
+
+        Parameters
+        ----------
+        strategy : Strategy
+            The strategy for the registration.
+        """
+        Condition.not_none(strategy, "strategy")
+
+        cdef:
+            InstrumentId instrument_id
+            StrategyId existing
+        for instrument_id in strategy.external_order_claims:
+            existing = self._external_order_claims.get(instrument_id)
+            if existing:
+                raise KeyError(
+                    f"External order claim for {instrument_id} already exists for {existing}",
+                )
+            # Register strategy to claim external orders for this instrument
+            self._external_order_claims[instrument_id] = strategy.id
+
+        if strategy.external_order_claims:
+            self._log.info(
+                f"Registered external order claims for {strategy}: {strategy.external_order_claims}.",
+            )
 
     cpdef void deregister_client(self, ExecutionClient client):
         """
