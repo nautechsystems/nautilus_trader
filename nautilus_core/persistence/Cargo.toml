@@ -14,19 +14,19 @@ crate-type = ["rlib", "staticlib", "cdylib" ]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 chrono.workspace = true
+once_cell.workspace = true
 pyo3.workspace = true
+pyo3-asyncio.workspace = true
 rand.workspace = true
-once_cell = "1.17.1"
+tokio.workspace = true
+binary-heap-plus = "0.5.0"
+compare = "0.1.0"
+futures = "0.3.28"
 # TODO: remove with catalog v1 implementation
 arrow2 = { version = "0.15.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
 # FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
 datafusion = { version = "21.0.0", default-features = false, features = [ "regex_expressions", "unicode_expressions", "compression"] }
-tokio = "1.27.0"
-futures = "0.3.28"
-pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
 pin-project-lite = "0.2.9"
-binary-heap-plus = "0.5.0"
-compare = "0.1.0"
 
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]

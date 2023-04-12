@@ -119,7 +119,7 @@ impl DecodeFromChunk for QuoteTick {
             .parse::<u8>()
             .unwrap();
 
-        // extract field value arrays from chunk separately
+        // Extract field value arrays from chunk separately
         let bid_values = cols.arrays()[0]
             .as_any()
             .downcast_ref::<Int64Array>()
@@ -145,7 +145,7 @@ impl DecodeFromChunk for QuoteTick {
             .downcast_ref::<UInt64Array>()
             .unwrap();
 
-        // construct iterator of values from field value arrays
+        // Construct iterator of values from field value arrays
         let values = bid_values
             .into_iter()
             .zip(ask_values.into_iter())
@@ -183,8 +183,11 @@ impl DecodeDataFromRecordBatch for QuoteTick {
             .parse::<u8>()
             .unwrap();
 
+        // TODO: Remove temporary import,
+        // imported here so types don't conflict with arrow2 types.
         use datafusion::arrow::array::*;
-        // extract field value arrays from record batch
+
+        // Extract field value arrays from record batch
         let cols = record_batch.columns();
         let bid_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
         let ask_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
@@ -193,7 +196,7 @@ impl DecodeDataFromRecordBatch for QuoteTick {
         let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
-        // construct iterator of values from field value arrays
+        // Construct iterator of values from field value arrays
         let values = bid_values
             .into_iter()
             .zip(ask_values.iter())
@@ -220,8 +223,8 @@ impl DecodeDataFromRecordBatch for QuoteTick {
     }
 
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
-        // TODO: remoev temporary import
-        // imported here so types don't conflict with arrow2 types
+        // TODO: Remove temporary import,
+        // imported here so types don't conflict with arrow2 types.
         use datafusion::arrow::datatypes::*;
         let fields = vec![
             Field::new("bid", DataType::Int64, false),

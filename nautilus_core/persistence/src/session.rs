@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::vec::IntoIter;
 
 use compare::Compare;
@@ -32,7 +47,7 @@ where
     }
 }
 
-/// Catalog is a data fusion session and registers data fusion queries
+/// Catalog is a data fusion session and registers data fusion queries.
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
@@ -52,7 +67,7 @@ impl PersistenceCatalog {
         }
     }
 
-    // query a file for all it's records. the caller must specify `T` to indicate
+    // Query a file for all it's records. the caller must specify `T` to indicate
     // the kind of data expected from this query.
     pub async fn add_file<T>(&mut self, table_name: &str, file_path: &str) -> Result<()>
     where
@@ -77,7 +92,7 @@ impl PersistenceCatalog {
         Ok(())
     }
 
-    // query a file for all it's records with a custom query. The caller must
+    // Query a file for all it's records with a custom query. The caller must
     // specify `T` to indicate what kind of data is expected from this query.
     //
     // #Safety

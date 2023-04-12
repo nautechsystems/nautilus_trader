@@ -22,7 +22,6 @@ use std::collections::{BTreeMap, HashMap};
 use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::Encoding};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
-
 use nautilus_model::data::tick::Data;
 use pyo3::prelude::*;
 
