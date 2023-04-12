@@ -121,7 +121,7 @@ impl DecodeFromChunk for TradeTick {
             .parse::<u8>()
             .unwrap();
 
-        // extract field value arrays from chunk separately
+        // Extract field value arrays from chunk separately
         let price_values = cols.arrays()[0]
             .as_any()
             .downcast_ref::<Int64Array>()
@@ -147,7 +147,7 @@ impl DecodeFromChunk for TradeTick {
             .downcast_ref::<UInt64Array>()
             .unwrap();
 
-        // construct iterator of values from field value arrays
+        // Construct iterator of values from field value arrays
         let values = price_values
             .into_iter()
             .zip(size_values.into_iter())
@@ -188,7 +188,7 @@ impl DecodeDataFromRecordBatch for TradeTick {
 
         use datafusion::arrow::array::*;
 
-        // extract field value arrays from record batch
+        // Extract field value arrays from record batch
         let cols = record_batch.columns();
         let price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
         let size_values = cols[1].as_any().downcast_ref::<UInt64Array>().unwrap();
@@ -197,7 +197,7 @@ impl DecodeDataFromRecordBatch for TradeTick {
         let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
-        // construct iterator of values from field value arrays
+        // Construct iterator of values from field value arrays
         let values = price_values
             .into_iter()
             .zip(size_values.into_iter())
@@ -225,8 +225,8 @@ impl DecodeDataFromRecordBatch for TradeTick {
     }
 
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
-        // TODO: remove temporary import
-        // imported here so types don't conflict with arrow2 types
+        // TODO: remove temporary import,
+        // imported here so types don't conflict with arrow2 types.
         use datafusion::arrow::datatypes::*;
         let fields = vec![
             Field::new("price", DataType::Int64, false),
