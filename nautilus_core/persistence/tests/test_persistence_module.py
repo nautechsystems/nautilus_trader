@@ -20,8 +20,58 @@ from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
+from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.persistence.wranglers import list_from_capsule
+
+
+def test_python_catalog_data():
+    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
+    quotes_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    session = PythonCatalog()
+    session.add_file("trade_ticks", trades_path, ParquetType.TradeTick)
+    session.add_file("quote_ticks", quotes_path, ParquetType.QuoteTick)
+    result = session.to_query_result()
+
+    ticks = []
+    for chunk in result:
+        ticks.extend(list_from_capsule(chunk))
+
+    assert len(ticks) == 9600
+    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert is_ascending
+
+
+def test_python_catalog_trades():
+    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
+    session = PythonCatalog()
+    session.add_file("trade_ticks", trades_path, ParquetType.TradeTick)
+    result = session.to_query_result()
+
+    ticks = []
+    for chunk in result:
+        ticks.extend(list_from_capsule(chunk))
+
+    assert len(ticks) == 100
+    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert is_ascending
+
+
+def test_python_catalog_quotes():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    session = PythonCatalog()
+    session.add_file("quote_ticks", parquet_data_path, ParquetType.QuoteTick)
+    result = session.to_query_result()
+
+    ticks = []
+    for chunk in result:
+        ticks.extend(list_from_capsule(chunk))
+
+    assert len(ticks) == 9500
+    assert str(ticks[-1]) == "EUR/USD.SIM,1.12130,1.12132,0,0,1577919652000000125"
+    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert is_ascending
 
 
 def test_python_parquet_reader():

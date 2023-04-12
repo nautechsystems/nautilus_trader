@@ -36,6 +36,7 @@ exclude = [
 "Quantity" = "Quantity_t"
 "QuoteTick" = "QuoteTick_t"
 "TradeTick" = "TradeTick_t"
+"Data" = "Data_t"
 "AccountId" = "AccountId_t"
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
