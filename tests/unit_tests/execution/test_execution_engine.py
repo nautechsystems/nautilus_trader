@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
@@ -38,6 +40,7 @@ from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -205,6 +208,85 @@ class TestExecutionEngine:
             exec_client.id,
             self.exec_client.id,
         ]
+
+    def test_register_strategy_with_external_order_claims_when_claim(self):
+        # Arrange
+        config = StrategyConfig(external_order_claims=["ETHUSDT-PERP.DYDX"])
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        expected_instrument_id = InstrumentId.from_str("ETHUSDT-PERP.DYDX")
+
+        # Act
+        self.exec_engine.register_external_order_claims(strategy)
+        claim = self.exec_engine.get_external_order_claim(expected_instrument_id)
+
+        # Assert
+        assert claim == strategy.id
+
+    def test_register_strategy_with_external_order_claims_when_no_claim(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        instrument_id = InstrumentId.from_str("ETHUSDT-PERP.DYDX")
+
+        # Act
+        self.exec_engine.register_external_order_claims(strategy)
+        claim = self.exec_engine.get_external_order_claim(instrument_id)
+
+        # Assert
+        assert claim is None
+
+    def test_register_external_order_claims_conflict(self):
+        # Arrange
+        config1 = StrategyConfig(
+            order_id_tag="000",
+            external_order_claims=["ETHUSDT-PERP.DYDX"],
+        )
+        strategy1 = Strategy(config=config1)
+        strategy1.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        config2 = StrategyConfig(
+            order_id_tag="001",
+            external_order_claims=["ETHUSDT-PERP.DYDX"],  # <-- Already claimed
+        )
+        strategy2 = Strategy(config=config2)
+        strategy2.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_external_order_claims(strategy1)
+
+        # Act, Assert
+        with pytest.raises(KeyError):
+            self.exec_engine.register_external_order_claims(strategy2)
 
     def test_deregister_client_removes_client(self):
         # Arrange, Act
