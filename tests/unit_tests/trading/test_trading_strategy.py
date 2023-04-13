@@ -200,8 +200,9 @@ class TestStrategy:
     def test_strategy_to_importable_config(self):
         # Arrange
         config = StrategyConfig(
-            strategy_id="ALPHA-01",
             order_id_tag="001",
+            strategy_id="ALPHA-01",
+            external_order_claims=["ETHUSDT-PERP.DYDX"],
         )
 
         strategy = Strategy(config=config)
@@ -217,7 +218,7 @@ class TestStrategy:
             "oms_type": None,
             "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
-            "external_order_claims": None,
+            "external_order_claims": ["ETHUSDT-PERP.DYDX"],
         }
 
     def test_strategy_equality(self):
