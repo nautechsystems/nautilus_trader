@@ -14,19 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 mod implementations;
-mod reader;
-mod writer;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::Encoding};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use nautilus_model::data::tick::Data;
 use pyo3::prelude::*;
-
-pub use crate::parquet::reader::{GroupFilterArg, ParquetReader};
-pub use crate::parquet::writer::ParquetWriter;
 
 #[repr(C)]
 #[pyclass]
@@ -50,32 +44,4 @@ where
 {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
-}
-
-pub trait DecodeFromChunk
-where
-    Self: Sized,
-{
-    fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self>;
-}
-
-pub trait EncodeToChunk
-where
-    Self: Sized,
-{
-    /// Assert that metadata has the required keys
-    /// ! Panics if a required key is missing.
-    fn assert_metadata(metadata: &BTreeMap<String, String>);
-    /// Converts schema and metadata for consumption by the `ParquetWriter`.
-    fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>>;
-    /// Creates a schema using the given metadata for the given Struct
-    /// ! Panics if metadata is not in the required shape.
-    fn encode_schema(metadata: BTreeMap<String, String>) -> Schema;
-    /// This is the most general type of an encoder. It only needs an iterator
-    /// of references it does not require ownership of the data, nor for
-    /// the data to be collected in a container.
-    fn encode<'a, I>(data: I) -> Chunk<Box<dyn Array>>
-    where
-        I: Iterator<Item = &'a Self>,
-        Self: 'a;
 }
