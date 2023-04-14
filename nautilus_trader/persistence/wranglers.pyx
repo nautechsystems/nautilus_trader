@@ -25,6 +25,7 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport secs_to_nanos
@@ -33,16 +34,12 @@ from nautilus_trader.core.rust.model cimport Data_t_Tag
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.core.data import Data
-
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
 
 
 # Safety: Do NOT deallocate the capsule here
