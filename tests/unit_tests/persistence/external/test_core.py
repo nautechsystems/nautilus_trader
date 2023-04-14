@@ -504,6 +504,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
             f"{self.catalog.path}/sample.parquet/instrument_id=b/",
         )
 
+    @pytest.mark.skip(reason="Implement with new Rust datafusion backend")
     def test_process_files_use_rust_writes_expected(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -525,6 +526,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         path = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=USD-JPY.SIM/1357077600295000064-1357079713493999872-0.parquet"
         assert self.fs.exists(path)
 
+    @pytest.mark.skip(reason="Implement with new Rust datafusion backend")
     def test_write_parquet_rust_quote_ticks_writes_expected(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
@@ -557,6 +559,7 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         assert self.fs.exists(path)
         assert len(pd.read_parquet(path)) == 2
 
+    @pytest.mark.skip(reason="Implement with new Rust datafusion backend")
     def test_write_parquet_rust_trade_ticks_writes_expected(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")

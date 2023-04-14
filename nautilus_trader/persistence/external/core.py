@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
-import os
 import pathlib
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
@@ -32,10 +31,7 @@ from pyarrow import parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetWriter
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -43,7 +39,6 @@ from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.util import parse_filename_start
-from nautilus_trader.persistence.external.util import py_type_to_parquet_type
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
@@ -273,35 +268,36 @@ def write_tables(
 
 
 def write_parquet_rust(catalog: ParquetDataCatalog, objs: list, instrument: Instrument):
-    cls = type(objs[0])
-
-    assert cls in (QuoteTick, TradeTick)
-    instrument_id = str(instrument.id)
-
-    min_timestamp = str(objs[0].ts_init).rjust(19, "0")
-    max_timestamp = str(objs[-1].ts_init).rjust(19, "0")
-
-    parent = catalog.make_path(cls=cls, instrument_id=instrument_id)
-    file_path = f"{parent}/{min_timestamp}-{max_timestamp}-0.parquet"
-
-    metadata = {
-        "instrument_id": instrument_id,
-        "price_precision": str(instrument.price_precision),
-        "size_precision": str(instrument.size_precision),
-    }
-    writer = ParquetWriter(py_type_to_parquet_type(cls), metadata)
-
-    capsule = cls.capsule_from_list(objs)
-
-    writer.write(capsule)
-
-    data: bytes = writer.flush_bytes()
-
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "wb") as f:
-        f.write(data)
-
-    write_objects(catalog, [instrument], existing_data_behavior="overwrite_or_ignore")
+    raise RuntimeError("Rust datafusion backend currently being integrated")
+    # cls = type(objs[0])
+    #
+    # assert cls in (QuoteTick, TradeTick)
+    # instrument_id = str(instrument.id)
+    #
+    # min_timestamp = str(objs[0].ts_init).rjust(19, "0")
+    # max_timestamp = str(objs[-1].ts_init).rjust(19, "0")
+    #
+    # parent = catalog.make_path(cls=cls, instrument_id=instrument_id)
+    # file_path = f"{parent}/{min_timestamp}-{max_timestamp}-0.parquet"
+    #
+    # metadata = {
+    #     "instrument_id": instrument_id,
+    #     "price_precision": str(instrument.price_precision),
+    #     "size_precision": str(instrument.size_precision),
+    # }
+    # writer = ParquetWriter(py_type_to_parquet_type(cls), metadata)
+    #
+    # capsule = cls.capsule_from_list(objs)
+    #
+    # writer.write(capsule)
+    #
+    # data: bytes = writer.flush_bytes()
+    #
+    # os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    # with open(file_path, "wb") as f:
+    #     f.write(data)
+    #
+    # write_objects(catalog, [instrument], existing_data_behavior="overwrite_or_ignore")
 
 
 def write_parquet(
