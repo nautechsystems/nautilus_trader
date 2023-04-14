@@ -34,7 +34,7 @@ where
     S: Stream<Item = IntoIter<I>> + Unpin,
 {
     async fn new_from_stream(mut stream: S) -> Option<Self> {
-        // poll next batch from stream and get next item from the batch
+        // Poll next batch from stream and get next item from the batch
         // and add the new element to the heap. No new element is added
         // to the heap if the stream is empty. Keep polling the stream
         // for a batch that is non-empty.
@@ -46,7 +46,7 @@ where
                 stream,
             })
         } else {
-            // stream is empty, no new batch
+            // Stream is empty, no new batch
             None
         }
     }
@@ -97,7 +97,7 @@ where
             stream,
         }) = this.heap.pop()
         {
-            // next element from batch
+            // Next element from batch
             if let Some(next_item) = batch.next() {
                 this.heap.push(PeekElementBatchStream {
                     item: next_item,
@@ -105,7 +105,7 @@ where
                     stream,
                 })
             }
-            // batch is empty create new heap element from stream
+            // Batch is empty create new heap element from stream
             else if let Some(heap_elem) =
                 ready!(Box::pin(PeekElementBatchStream::new_from_stream(stream)).poll_unpin(cx))
             {
@@ -113,7 +113,7 @@ where
             }
             Poll::Ready(Some(item))
         } else {
-            // heap is empty
+            // Heap is empty
             Poll::Ready(None)
         }
     }
@@ -134,7 +134,7 @@ mod tests {
             l: &PeekElementBatchStream<S, i32>,
             r: &PeekElementBatchStream<S, i32>,
         ) -> std::cmp::Ordering {
-            // it is a max heap so the ordering must be reversed
+            // Max heap ordering must be reversed
             l.item.cmp(&r.item).reverse()
         }
     }
