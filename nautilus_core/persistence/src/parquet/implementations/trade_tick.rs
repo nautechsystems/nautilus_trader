@@ -80,8 +80,6 @@ impl DecodeDataFromRecordBatch for TradeTick {
     }
 
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
-        // TODO: remove temporary import,
-        // imported here so types don't conflict with arrow2 types.
         let fields = vec![
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
