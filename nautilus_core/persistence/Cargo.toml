@@ -13,8 +13,6 @@ crate-type = ["rlib", "staticlib", "cdylib" ]
 [dependencies]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
-chrono.workspace = true
-once_cell.workspace = true
 pyo3.workspace = true
 pyo3-asyncio.workspace = true
 rand.workspace = true
