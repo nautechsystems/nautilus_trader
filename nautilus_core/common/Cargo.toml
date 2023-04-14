@@ -15,7 +15,6 @@ proc-macro = true
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 chrono.workspace = true
-log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pyo3.workspace = true

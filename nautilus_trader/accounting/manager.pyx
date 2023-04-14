@@ -294,8 +294,8 @@ cdef class AccountsManager:
             Order order
             double margin_init
         for order in orders_open:
-            assert order.instrument_id == instrument.id
-            assert order.is_open_c()
+            assert order.instrument_id == instrument.id, f"order not for instrument {instrument}"
+            assert order.is_open_c(), f"order not open {repr(order)}"
 
             if not order.has_price_c() and not order.has_trigger_price_c():
                 continue
