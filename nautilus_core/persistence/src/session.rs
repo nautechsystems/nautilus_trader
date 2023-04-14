@@ -184,7 +184,7 @@ impl PythonCatalog {
     #[new]
     #[pyo3(signature=(chunk_size=5000))]
     pub fn new_session(chunk_size: usize) -> Self {
-        // initialize runtime here
+        // Initialize runtime here
         get_runtime();
         PythonCatalog(PersistenceCatalog::new(chunk_size))
     }
