@@ -81,10 +81,11 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
+symbol = "ETHUSDT-PERP"
 strat_config = EMACrossTWAPConfig(
-    instrument_id="ETHUSDT-PERP.BINANCE",
-    external_order_claims=["ETHUSDT-PERP.BINANCE"],
-    bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=f"{symbol}.BINANCE",
+    external_order_claims=[f"{symbol}.BINANCE"],
+    bar_type=f"{symbol}.BINANCE-1-MINUTE-LAST-EXTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     twap_horizon_secs=5,
