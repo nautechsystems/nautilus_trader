@@ -22,7 +22,7 @@ install-just-deps-all:
 	poetry install --with dev,test,docs --all-extras --no-root
 
 build: nautilus_trader
-	poetry run python build.py
+	BUILD_MODE=release poetry run python build.py
 
 build-debug: nautilus_trader
 	BUILD_MODE=debug poetry run python build.py
