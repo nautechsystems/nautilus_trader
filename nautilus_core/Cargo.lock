@@ -1681,7 +1681,6 @@ dependencies = [
  "nautilus_core",
  "nautilus_model",
  "pyo3",
- "pyo3-macros",
 ]
 
 [[package]]
@@ -1698,7 +1697,6 @@ dependencies = [
  "rstest",
  "rust-fsm",
  "rust_decimal",
- "rust_decimal_macros",
  "strum",
  "thiserror",
 ]
@@ -2398,16 +2396,6 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "rust_decimal_macros"
-version = "1.29.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e773fd3da1ed42472fdf3cfdb4972948a555bc3d73f5e0bdb99d17e7b54c687"
-dependencies = [
- "quote",
- "rust_decimal",
 ]
 
 [[package]]

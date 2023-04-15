@@ -14,7 +14,6 @@ crate-type = ["rlib", "cdylib"]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 pyo3.workspace = true
-pyo3-macros.workspace = true
 
 [features]
 extension-module = [
