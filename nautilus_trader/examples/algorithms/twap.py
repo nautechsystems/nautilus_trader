@@ -276,6 +276,10 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             self.log.error(f"Cannot find primary order for {exec_spawn_id=}")
             return
 
+        if primary.is_closed:
+            self.complete_sequence(primary.client_order_id)
+            return
+
         instrument: Instrument = self.cache.instrument(primary.instrument_id)
         if not instrument:
             self.log.error(
@@ -295,8 +299,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         quantity: Quantity = instrument.make_qty(scheduled_sizes.pop(0))
         if not scheduled_sizes:  # Final quantity
             self.submit_order(primary)
-            self.clock.cancel_timer(event.name)
-            self.log.info(f"Completed TWAP execution for {exec_spawn_id}.", LogColor.GREEN)
+            self.complete_sequence(primary.client_order_id)
             return
 
         spawned_order: MarketOrder = self.spawn_market(
@@ -308,3 +311,18 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         )
 
         self.submit_order(spawned_order)
+
+    def complete_sequence(self, exec_spawn_id: ClientOrderId) -> None:
+        """
+        Complete an execution sequence.
+
+        Parameters
+        ----------
+        exec_spawn_id : ClientOrderId
+            The execution spawn ID to complete.
+
+        """
+        self.clock.cancel_timer(exec_spawn_id.value)
+        self._active_timers.pop(exec_spawn_id, None)
+        self._scheduled_sizes.pop(exec_spawn_id, None)
+        self.log.info(f"Completed TWAP execution for {exec_spawn_id}.", LogColor.BLUE)
