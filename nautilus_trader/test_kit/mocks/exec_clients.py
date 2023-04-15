@@ -86,43 +86,63 @@ class MockExecutionClient(ExecutionClient):
         self.commands: list[TradingCommand] = []
 
     def _start(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self._set_connected()
 
     def _stop(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self._set_connected(False)
 
     def _reset(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def _dispose(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     # -- COMMANDS ---------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def submit_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def submit_order_list(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def modify_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def cancel_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def cancel_all_orders(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
 
@@ -207,39 +227,57 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self._position_status_reports[report.instrument_id].append(report)
 
     def dispose(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     def reset(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
     # -- COMMANDS ---------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def submit_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def submit_order_list(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def modify_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def cancel_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def cancel_all_orders(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     def query_order(self, command) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
         self.commands.append(command)
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
@@ -250,7 +288,9 @@ class MockLiveExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
         return self._order_status_reports.get(venue_order_id)
 
@@ -261,7 +301,9 @@ class MockLiveExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
         reports = []
         for _, report in self._order_status_reports.items():
@@ -285,7 +327,9 @@ class MockLiveExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
         if venue_order_id is not None:
             trades = self._trades_reports.get(venue_order_id, [])
@@ -311,7 +355,9 @@ class MockLiveExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
-        self.calls.append(inspect.currentframe().f_code.co_name)
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
 
         if instrument_id is not None:
             reports = self._position_status_reports.get(instrument_id, [])
