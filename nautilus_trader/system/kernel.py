@@ -112,6 +112,7 @@ class NautilusKernel:
         PyCondition.valid_string(name, "name")
         PyCondition.type(config, NautilusKernelConfig, "config")
 
+        self._config = config
         self._environment = config.environment
         self._load_state = config.load_state
         self._save_state = config.save_state
@@ -379,6 +380,7 @@ class NautilusKernel:
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}.feather"
         self._writer = StreamingFeatherWriter(
             path=path,
+            config=self._config,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
             include_types=config.include_types,  # type: ignore  # TODO(cs)
