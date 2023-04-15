@@ -33,6 +33,7 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config.error import InvalidConfiguration
 
 from libc.stdint cimport uint64_t
 
@@ -376,7 +377,7 @@ cdef class ExecutionEngine(Component):
 
         Raises
         ------
-        KeyError
+        InvalidConfiguration
             If a strategy is already registered to claim external orders for an instrument ID.
 
         """
@@ -388,7 +389,7 @@ cdef class ExecutionEngine(Component):
         for instrument_id in strategy.external_order_claims:
             existing = self._external_order_claims.get(instrument_id)
             if existing:
-                raise KeyError(
+                raise InvalidConfiguration(
                     f"External order claim for {instrument_id} already exists for {existing}",
                 )
             # Register strategy to claim external orders for this instrument
