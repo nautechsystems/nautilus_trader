@@ -347,7 +347,7 @@ cdef class Condition:
             ex_default=ValueError,
             ex_type=ex_type,
             msg=(f"The \'{param1}\' {type(object1)} of {object1} "
-                 f"was equal to the \"{param2}\" {type(object2)} of {object1}"),
+                 f"was equal to the \'{param2}\' {type(object2)} of {object1}"),
         )
 
     @staticmethod
@@ -463,7 +463,7 @@ cdef class Condition:
             ex_default=KeyError,
             ex_type=ex_type,
             msg=(f"The \'{param1}\' {element} was not contained in "
-                 f"the {param2} collection"),
+                 f"the \'{param2}\' collection"),
         )
 
     @staticmethod
