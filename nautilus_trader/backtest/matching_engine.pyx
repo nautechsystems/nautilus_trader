@@ -24,6 +24,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport Price_t
@@ -644,6 +645,8 @@ cdef class OrderMatchingEngine:
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id):
         cdef Order order = self._core.get_order(command.client_order_id)
         if order is None:
+            order = self.cache.order(command.client_order_id)
+        if order is None:
             self._generate_order_modify_rejected(
                 trader_id=command.trader_id,
                 strategy_id=command.strategy_id,
@@ -663,6 +666,8 @@ cdef class OrderMatchingEngine:
 
     cpdef void process_cancel(self, CancelOrder command, AccountId account_id):
         cdef Order order = self._core.get_order(command.client_order_id)
+        if order is None:
+            order = self.cache.order(command.client_order_id)
         if order is None:
             self._generate_order_cancel_rejected(
                 trader_id=command.trader_id,
@@ -1839,7 +1844,7 @@ cdef class OrderMatchingEngine:
             self.fill_limit_order(order)
 
     cdef void _update_contingent_orders(self, Order order):
-        self._log.debug(f"Updating OUO orders from {order.client_order_id}")
+        self._log.debug(f"Updating OUO orders from {order.client_order_id}", LogColor.MAGENTA)
         cdef ClientOrderId client_order_id
         cdef Order ouo_order
         for client_order_id in order.linked_order_ids:
