@@ -212,13 +212,16 @@ point we will follow a formal process for releases, with deprecation periods for
 ## Makefile
 
 A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
-- `make install` -- Installs the main, dev and test dependencies then installs the package using poetry
-- `make install-just-deps` -- Installs just the main, dev and test dependencies (does not install package)
-- `make build` -- Runs the Cython build script
-- `make clean` -- Cleans all non-source artifacts from the repository
+- `make install` -- Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default)
+- `make install-debug` -- Same as `make install` but with `debug` build mode
+- `make install-just-deps` -- Installs just the `main`, `dev` and `test` dependencies (does not install package)
+- `make install-just-deps-all` -- Same as `make install-just-deps` and additionally installs `docs` dependencies
+- `make build` -- Runs the Cython build script in `release` build mode (default)
+- `make build-debug` -- Runs the Cython build script in `debug` build mode
+- `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository **caution**
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
-- `make ruff` -- Runs ruff over all files using the pyproject.toml config
+- `make ruff` -- Runs ruff over all files using the `pyproject.toml` config
 - `make pytest` -- Runs all tests with `pytest` (except performance tests)
 - `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
 

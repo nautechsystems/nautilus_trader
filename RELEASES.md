@@ -3,9 +3,11 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-- None
+- Removed legacy Rust parquet data catalog backend (based on arrow2)
 
 ### Enhancements
+- Added new DataFusion Rust backend for parquet data catalog (yet to be integrated into Python)
+- Added `external_order_claims` config option for `StrategyConfig` (for claiming external orders per instrument)
 - Added `Order.signed_decimal_qty()`
 - Added `Cache.orders_for_exec_algorithm(...)`
 - Added `Cache.orders_for_exec_spawn(...)`
@@ -13,6 +15,7 @@ Released on TBD (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Now stripping debug symbols after build (reduced binary sizes)
+- Refined build and added additional `debug` Makefile convenience targets
 
 ### Fixes
 - None
