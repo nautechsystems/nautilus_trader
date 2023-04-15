@@ -404,6 +404,24 @@ mod tests {
     }
 
     #[test]
+    fn test_cancel_timer() {
+        let mut clock = TestClock::new();
+        clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+        clock.cancel_timer(String::from("TEST_TIME1").as_str());
+        assert!(clock.timer_names().is_empty());
+        assert_eq!(clock.timer_count(), 0);
+    }
+
+    #[test]
+    fn test_cancel_timers() {
+        let mut clock = TestClock::new();
+        clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+        clock.cancel_timers();
+        assert!(clock.timer_names().is_empty());
+        assert_eq!(clock.timer_count(), 0);
+    }
+
+    #[test]
     fn test_advance_within_stop_time() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
