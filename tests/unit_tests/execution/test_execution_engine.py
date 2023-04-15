@@ -23,6 +23,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -285,7 +286,7 @@ class TestExecutionEngine:
         self.exec_engine.register_external_order_claims(strategy1)
 
         # Act, Assert
-        with pytest.raises(KeyError):
+        with pytest.raises(InvalidConfiguration):
             self.exec_engine.register_external_order_claims(strategy2)
 
     def test_deregister_client_removes_client(self):
