@@ -75,7 +75,6 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             config = TWAPExecAlgorithmConfig()
         super().__init__(config)
 
-        self._active_timers: dict[ClientOrderId, str] = {}
         self._scheduled_sizes: dict[ClientOrderId, list[Quantity]] = {}
 
     def on_start(self) -> None:
@@ -88,7 +87,6 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
     def on_reset(self) -> None:
         """Actions to be performed when the algorithm component is reset."""
-        self._active_timers.clear()
         self._scheduled_sizes.clear()
 
     def on_save(self) -> dict[str, bytes]:
@@ -141,12 +139,6 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             self._scheduled_sizes,
             "order.client_order_id",
             "self._scheduled_sizes",
-        )
-        PyCondition.not_in(
-            order.client_order_id,
-            self._active_timers,
-            "order.client_order_id",
-            "self._active_timers",
         )
         self.log.info(repr(order), LogColor.CYAN)
 
@@ -322,7 +314,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             The execution spawn ID to complete.
 
         """
-        self.clock.cancel_timer(exec_spawn_id.value)
-        self._active_timers.pop(exec_spawn_id, None)
+        if exec_spawn_id.value in self.clock.timer_names:
+            self.clock.cancel_timer(exec_spawn_id.value)
         self._scheduled_sizes.pop(exec_spawn_id, None)
         self.log.info(f"Completed TWAP execution for {exec_spawn_id}.", LogColor.BLUE)

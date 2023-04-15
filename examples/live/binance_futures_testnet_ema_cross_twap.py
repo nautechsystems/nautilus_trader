@@ -87,8 +87,8 @@ strat_config = EMACrossTWAPConfig(
     bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
-    twap_horizon_secs=30,
-    twap_interval_secs=2,
+    twap_horizon_secs=5,
+    twap_interval_secs=0.5,
     trade_size=Decimal("0.100"),
     order_id_tag="001",
 )
