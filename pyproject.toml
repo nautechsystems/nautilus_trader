@@ -237,7 +237,6 @@ python_version = "3.9"
 explicit_package_bases = true
 ignore_missing_imports = true
 namespace_packages = true
-no_strict_optional = true
 warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
