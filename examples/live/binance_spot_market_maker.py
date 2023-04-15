@@ -82,6 +82,7 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
     instrument_id="ETHUSDT.BINANCE",
+    external_order_claims=["ETHUSDT.BINANCE"],
     bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
     atr_period=20,
     atr_multiple=6.0,
