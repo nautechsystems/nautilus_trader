@@ -1104,7 +1104,7 @@ files = [
 name = "importlib-metadata"
 version = "6.3.0"
 description = "Read metadata from Python packages"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -2993,7 +2993,7 @@ multidict = ">=4.0"
 name = "zipp"
 version = "3.15.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -3014,4 +3014,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "55c4ebd8a33288002ff25cb9fb174554ef9fdacdda7b8faffd57d255138accb2"
+content-hash = "ee14265dd6b8483bfb186ea1f02362f67b1df75891c24224f8658102aa77ed2f"
