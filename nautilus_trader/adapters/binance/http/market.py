@@ -736,7 +736,6 @@ class BinanceMarketHttpAPI:
             )
 
         # Only split into separate requests if both start_time and end_time are specified
-        should_loop = (start_time is not None and end_time is not None) is True
         max_interval = (1000 * 60 * 60) - 1  # 1ms under an hour, as specified in Futures docs.
         last_id = 0
         interval_limited = False
@@ -747,7 +746,7 @@ class BinanceMarketHttpAPI:
             next_end_time = str(next_interval) if interval_limited is True else end_time
             return next_end_time, interval_limited
 
-        if should_loop:
+        if start_time is not None and end_time is not None:
             next_end_time, interval_limited = _calculate_next_end_time(start_time, end_time)
         else:
             next_end_time = end_time
@@ -775,7 +774,7 @@ class BinanceMarketHttpAPI:
             if len(response) < limit and interval_limited is False:
                 # end loop regardless when limit is not hit
                 break
-            if not should_loop:
+            if start_time is None or end_time is None:
                 break
             else:
                 last = response[-1]

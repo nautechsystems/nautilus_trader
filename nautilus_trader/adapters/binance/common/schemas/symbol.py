@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
+from typing import Optional
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
@@ -26,7 +27,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 class BinanceSymbol(str):
     """Binance compatible symbol."""
 
-    def __new__(cls, symbol: str):
+    def __new__(cls, symbol: Optional[str]):
         if symbol is not None:
             # Format the string on construction to be Binance compatible
             return super().__new__(
@@ -50,7 +51,7 @@ class BinanceSymbol(str):
 class BinanceSymbols(str):
     """Binance compatible list of symbols."""
 
-    def __new__(cls, symbols: list[str]):
+    def __new__(cls, symbols: Optional[list[str]]):
         if symbols is not None:
             binance_symbols: list[BinanceSymbol] = [BinanceSymbol(symbol) for symbol in symbols]
             return super().__new__(cls, json.dumps(binance_symbols).replace(" ", ""))

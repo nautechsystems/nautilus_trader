@@ -274,10 +274,11 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             )
         elif self.x == BinanceExecutionType.TRADE:
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+            assert instrument is not None
 
             # Determine commission
-            commission_asset: str = self.N
-            commission_amount: str = self.n
+            commission_asset: Optional[str] = self.N
+            commission_amount: Optional[str] = self.n
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
