@@ -366,16 +366,13 @@ class TestTestClock:
         with pytest.raises(ValueError):
             clock.advance_time(0)
 
-    def test_cancel_timer_when_no_timers_does_nothing(self):
+    def test_cancel_timer_when_no_timers_raises_key_error(self):
         # Arrange
         clock = TestClock()
 
-        # Act
-        clock.cancel_timer("BOGUS_ALERT")
-
-        # Assert
-        assert clock.timer_names == []
-        assert clock.timer_count == 0
+        # Act, Assert
+        with pytest.raises(KeyError):
+            clock.cancel_timer("BOGUS_ALERT")
 
     def test_cancel_timers_when_no_timers_does_nothing(self):
         # Arrange

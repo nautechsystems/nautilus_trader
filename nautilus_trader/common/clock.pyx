@@ -233,6 +233,8 @@ cdef class Clock:
         Raises
         ------
         ValueError
+            If `name` is not a valid string.
+        KeyError
             If `name` is not unique for this clock.
         ValueError
             If `alert_time` is not >= the clocks current time.
@@ -272,6 +274,8 @@ cdef class Clock:
 
         Raises
         ------
+        ValueError
+            If `name` is not a valid string.
         ValueError
             If `name` is not unique for this clock.
         ValueError
@@ -316,6 +320,8 @@ cdef class Clock:
         Raises
         ------
         ValueError
+            If `name` is not a valid string.
+        KeyError
             If `name` is not unique for this clock.
         ValueError
             If `interval` is not positive (> 0).
@@ -369,6 +375,8 @@ cdef class Clock:
         Raises
         ------
         ValueError
+            If `name` is not a valid string.
+        KeyError
             If `name` is not unique for this clock.
         ValueError
             If `interval` is not positive (> 0).
@@ -393,10 +401,12 @@ cdef class Clock:
         name : str
             The name for the timer to cancel.
 
-        Notes
-        -----
-        Logs a warning if a timer with the given name is not found (it may have
-        already been canceled).
+        Raises
+        ------
+        ValueError
+            If `name` is not a valid string.
+        KeyError
+            If `name` is not an active timer name for this clock.
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -448,7 +458,8 @@ cdef class TestClock(Clock):
         uint64_t alert_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
     ):
-        Condition.not_none(name, "name")
+        Condition.valid_string(name, "name")
+        Condition.not_in(name, self.timer_names, "name", "self.timer_names")
         if callback is None:
             callback = self._default_handler
 
@@ -464,6 +475,8 @@ cdef class TestClock(Clock):
         uint64_t stop_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
     ):
+        Condition.valid_string(name, "name")
+        Condition.not_in(name, self.timer_names, "name", "self.timer_names")
         if callback is None:
             callback = self._default_handler
 
@@ -486,9 +499,13 @@ cdef class TestClock(Clock):
         )
 
     cpdef uint64_t next_time_ns(self, str name):
+        Condition.valid_string(name, "name")
         return test_clock_next_time_ns(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
+        Condition.valid_string(name, "name")
+        Condition.is_in(name, self.timer_names, "name", "self.timer_names")
+
         test_clock_cancel_timer(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timers(self):
@@ -612,7 +629,8 @@ cdef class LiveClock(Clock):
         uint64_t alert_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
     ):
-        Condition.not_none(name, "name")
+        Condition.valid_string(name, "name")
+        Condition.not_in(name, self.timer_names, "name", "self.timer_names")
         if callback is None:
             callback = self._default_handler
 
@@ -635,6 +653,8 @@ cdef class LiveClock(Clock):
         uint64_t stop_time_ns,
         callback: Optional[Callable[[TimeEvent], None]] = None,
     ):
+        Condition.not_in(name, self.timer_names, "name", "self.timer_names")
+
         cdef uint64_t now_ns = self.timestamp_ns()  # Call here for greater accuracy
 
         Condition.valid_string(name, "name")
@@ -690,6 +710,7 @@ cdef class LiveClock(Clock):
 
     cpdef void cancel_timer(self, str name):
         Condition.valid_string(name, "name")
+        Condition.is_in(name, self.timer_names, "name", "self.timer_names")
 
         cdef LiveTimer timer = self._timers.pop(name, None)
         if not timer:
