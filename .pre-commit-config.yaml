@@ -97,7 +97,7 @@ repos:
     hooks:
       - id: mypy
         args: [
-          --no-strict-optional,  # Fixing this underway
+          --no-strict-optional,  # Fixing in progress
           --ignore-missing-imports,
           --warn-no-return,
         ]
