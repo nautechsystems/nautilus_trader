@@ -114,6 +114,10 @@ Cython, with static libraries linked at compile-time before the wheel binaries a
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
 [PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
 
+This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
+> “The intent of this project is to be free of soundness bugs. 
+> The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
+
 ## Architecture (data flow)
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
@@ -398,6 +402,9 @@ Contributions to the project are welcome and require the completion of a standar
 
 NautilusTrader is developed and maintained by Nautech Systems, a technology 
 company specializing in the development of high-performance trading systems. 
+Although the project utilizes the Rust programming language and benefits from its ecosystem, 
+Nautech Systems is not affiliated with the Rust Foundation, and this project is not an official 
+work of the Rust Foundation.
 For more information, visit https://nautilustrader.io.
 
 Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
