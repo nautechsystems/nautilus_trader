@@ -218,7 +218,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make install-just-deps-all` -- Same as `make install-just-deps` and additionally installs `docs` dependencies
 - `make build` -- Runs the Cython build script in `release` build mode (default)
 - `make build-debug` -- Runs the Cython build script in `debug` build mode
-- `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository **caution**
+- `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
 - `make ruff` -- Runs ruff over all files using the `pyproject.toml` config
