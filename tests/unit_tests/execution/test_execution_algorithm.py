@@ -314,11 +314,11 @@ class TestExecAlgorithm:
         assert self.exec_engine.command_count == 7
         assert len(spawned_orders) == 7
         assert [o.client_order_id.value for o in spawned_orders] == [
-            "O-19700101-000-None-1",
-            "O-19700101-000-None-1-E1",
-            "O-19700101-000-None-1-E2",
-            "O-19700101-000-None-1-E3",
-            "O-19700101-000-None-1-E4",
-            "O-19700101-000-None-1-E5",
-            "O-19700101-000-None-1-E6",
+            "O-19700101-0000-000-None-1",
+            "O-19700101-0000-000-None-1-E1",
+            "O-19700101-0000-000-None-1-E2",
+            "O-19700101-0000-000-None-1-E3",
+            "O-19700101-0000-000-None-1-E4",
+            "O-19700101-0000-000-None-1-E5",
+            "O-19700101-0000-000-None-1-E6",
         ]

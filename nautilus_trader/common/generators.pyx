@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
+from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.core.correctness cimport Condition
@@ -39,20 +39,22 @@ cdef class IdentifierGenerator:
         self._clock = clock
         self._id_tag_trader = trader_id.get_tag()
 
-    cdef str _get_date_tag(self):
+    cdef str _get_datetime_tag(self):
         """
-        Return the current date tag string for the current time.
+        Return the tag string for the current timestamp (UTC).
 
         Returns
         -------
         str
 
         """
-        cdef date date_now = self._clock.utc_now().date()
+        cdef datetime now = self._clock.utc_now()
         return (
-            f"{date_now.year}"
-            f"{date_now.month:02d}"
-            f"{date_now.day:02d}"
+            f"{now.year}"
+            f"{now.month:02d}"
+            f"{now.day:02d}-"
+            f"{now.hour:02d}"
+            f"{now.minute:02d}"
         )
 
 
@@ -115,7 +117,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
         return ClientOrderId(
             f"O-"
-            f"{self._get_date_tag()}-"
+            f"{self._get_datetime_tag()}-"
             f"{self._id_tag_trader}-"
             f"{self._id_tag_strategy}-"
             f"{self.count}",
@@ -189,7 +191,7 @@ cdef class OrderListIdGenerator(IdentifierGenerator):
 
         return OrderListId(
             f"OL-"
-            f"{self._get_date_tag()}-"
+            f"{self._get_datetime_tag()}-"
             f"{self._id_tag_trader}-"
             f"{self._id_tag_strategy}-"
             f"{self.count}",
@@ -284,7 +286,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
         return PositionId(
             f"P-"
-            f"{self._get_date_tag()}-"
+            f"{self._get_datetime_tag()}-"
             f"{self._id_tag_trader}-"
             f"{strategy_id.get_tag()}-"
             f"{count}{'F' if flipped else ''}",

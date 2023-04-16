@@ -44,14 +44,14 @@ class TestOrderFactory:
         result = self.order_factory.generate_client_order_id()
 
         # Assert
-        assert result == ClientOrderId("O-19700101-000-001-1")
+        assert result == ClientOrderId("O-19700101-0000-000-001-1")
 
     def test_generate_order_list_id(self):
         # Arrange, Act
         result = self.order_factory.generate_order_list_id()
 
         # Assert
-        assert result == OrderListId("OL-19700101-000-001-1")
+        assert result == OrderListId("OL-19700101-0000-000-001-1")
 
     def test_set_client_order_id_count(self):
         # Arrange, Act
@@ -60,7 +60,7 @@ class TestOrderFactory:
         result = self.order_factory.generate_client_order_id()
 
         # Assert
-        assert result == ClientOrderId("O-19700101-000-001-2")
+        assert result == ClientOrderId("O-19700101-0000-000-001-2")
 
     def test_set_order_list_id_count(self):
         # Arrange, Act
@@ -69,7 +69,7 @@ class TestOrderFactory:
         result = self.order_factory.generate_order_list_id()
 
         # Assert
-        assert result == OrderListId("OL-19700101-000-001-2")
+        assert result == OrderListId("OL-19700101-0000-000-001-2")
 
     def test_create_list(self):
         # Arrange
