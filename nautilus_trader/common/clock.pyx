@@ -32,6 +32,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.rust.common cimport Vec_TimeEvent
+from nautilus_trader.core.rust.common cimport live_clock_free
+from nautilus_trader.core.rust.common cimport live_clock_new
+from nautilus_trader.core.rust.common cimport live_clock_timestamp
+from nautilus_trader.core.rust.common cimport live_clock_timestamp_ms
+from nautilus_trader.core.rust.common cimport live_clock_timestamp_ns
+from nautilus_trader.core.rust.common cimport live_clock_timestamp_us
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
@@ -41,9 +47,12 @@ from nautilus_trader.core.rust.common cimport test_clock_next_time_ns
 from nautilus_trader.core.rust.common cimport test_clock_set_time
 from nautilus_trader.core.rust.common cimport test_clock_set_time_alert_ns
 from nautilus_trader.core.rust.common cimport test_clock_set_timer_ns
-from nautilus_trader.core.rust.common cimport test_clock_time_ns
 from nautilus_trader.core.rust.common cimport test_clock_timer_count
 from nautilus_trader.core.rust.common cimport test_clock_timer_names
+from nautilus_trader.core.rust.common cimport test_clock_timestamp
+from nautilus_trader.core.rust.common cimport test_clock_timestamp_ms
+from nautilus_trader.core.rust.common cimport test_clock_timestamp_ns
+from nautilus_trader.core.rust.common cimport test_clock_timestamp_us
 from nautilus_trader.core.rust.common cimport vec_time_events_drop
 from nautilus_trader.core.rust.core cimport nanos_to_millis
 from nautilus_trader.core.rust.core cimport nanos_to_secs
@@ -444,13 +453,13 @@ cdef class TestClock(Clock):
         return test_clock_timer_count(&self._mem)
 
     cpdef double timestamp(self):
-        return nanos_to_secs(test_clock_time_ns(&self._mem))
+        return test_clock_timestamp(&self._mem)
 
     cpdef uint64_t timestamp_ms(self):
-        return nanos_to_millis(test_clock_time_ns(&self._mem))
+        return test_clock_timestamp_ms(&self._mem)
 
     cpdef uint64_t timestamp_ns(self):
-        return test_clock_time_ns(&self._mem)
+        return test_clock_timestamp_ns(&self._mem)
 
     cpdef void set_time_alert_ns(
         self,
@@ -546,7 +555,7 @@ cdef class TestClock(Clock):
 
         """
         # Ensure monotonic
-        Condition.true(to_time_ns >= test_clock_time_ns(&self._mem), "to_time_ns was < time_ns")
+        Condition.true(to_time_ns >= test_clock_timestamp_ns(&self._mem), "to_time_ns was < time_ns")
 
         cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns, set_time)
         cdef list event_handlers = []
@@ -570,7 +579,9 @@ cdef class TestClock(Clock):
 
 cdef class LiveClock(Clock):
     """
-    Provides a monotonic clock for live trading. All times are timezone aware UTC.
+    Provides a monotonic clock for live trading.
+
+    All times are tz-aware UTC.
 
     Parameters
     ----------
@@ -581,15 +592,18 @@ cdef class LiveClock(Clock):
     def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None):
         super().__init__()
 
+        self._mem = live_clock_new()
+
         self._loop = loop
         self._timers: dict[str, LiveTimer] = {}
         self._stack = np.ascontiguousarray([], dtype=LiveTimer)
 
-        self._offset_secs = 0.0
-        self._offset_ms = 0
-        self._offset_ns = 0
         self._timer_count = 0
         self._next_event_time_ns = 0
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            live_clock_free(self._mem)
 
     @property
     def timer_names(self) -> list[str]:
@@ -599,29 +613,14 @@ cdef class LiveClock(Clock):
     def timer_count(self) -> int:
         return self._timer_count
 
-    cpdef void set_offset(self, int64_t offset_ns):
-        """
-        Set the offset (nanoseconds) for the clock.
-
-        The `offset` will then be *added* to all subsequent timestamps.
-
-        Warnings
-        --------
-        It shouldn't be necessary for a user to call this method.
-
-        """
-        self._offset_ns = offset_ns
-        self._offset_ms = nanos_to_millis(offset_ns)
-        self._offset_secs = nanos_to_secs(offset_ns)
-
     cpdef double timestamp(self):
-        return unix_timestamp() + self._offset_secs
+        return live_clock_timestamp(&self._mem)
 
     cpdef uint64_t timestamp_ms(self):
-        return unix_timestamp_ms() + self._offset_ms
+        return live_clock_timestamp_ms(&self._mem)
 
     cpdef uint64_t timestamp_ns(self):
-        return unix_timestamp_ns() + self._offset_ns
+        return live_clock_timestamp_ns(&self._mem)
 
     cpdef void set_time_alert_ns(
         self,
@@ -768,7 +767,7 @@ cdef class LiveClock(Clock):
                 name=name,
                 callback=self._raise_time_event,
                 interval_ns=interval_ns,
-                now_ns=self.timestamp_ns(),  # Timestamp now here for accuracy
+                now_ns=self.timestamp_ns(),  # Timestamp here for accuracy
                 start_time_ns=start_time_ns,
                 stop_time_ns=stop_time_ns,
             )
@@ -777,7 +776,7 @@ cdef class LiveClock(Clock):
                 name=name,
                 callback=self._raise_time_event,
                 interval_ns=interval_ns,
-                now_ns=self.timestamp_ns(),  # Timestamp now here for accuracy
+                now_ns=self.timestamp_ns(),  # Timestamp here for accuracy
                 start_time_ns=start_time_ns,
                 stop_time_ns=stop_time_ns,
             )

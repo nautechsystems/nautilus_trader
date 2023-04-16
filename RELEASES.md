@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed legacy Rust parquet data catalog backend (based on arrow2)
+- Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
 
 ### Enhancements

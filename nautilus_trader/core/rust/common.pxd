@@ -55,6 +55,9 @@ cdef extern from "../includes/common.h":
         ERROR # = 40,
         CRITICAL # = 50,
 
+    cdef struct LiveClock:
+        pass
+
     cdef struct Logger_t:
         pass
 
@@ -64,7 +67,7 @@ cdef extern from "../includes/common.h":
     cdef struct TestClock:
         pass
 
-    cdef struct CTestClock:
+    cdef struct TestClockAPI:
         TestClock *_0;
 
     # Represents a time event occurring at the event timestamp.
@@ -82,33 +85,42 @@ cdef extern from "../includes/common.h":
         const TimeEvent_t *ptr;
         uintptr_t len;
 
+    cdef struct LiveClockAPI:
+        LiveClock *_0;
+
     # Logger is not C FFI safe, so we box and pass it as an opaque pointer.
     # This works because Logger fields don't need to be accessed, only functions
     # are called.
     cdef struct CLogger:
         Logger_t *_0;
 
-    CTestClock test_clock_new();
+    TestClockAPI test_clock_new();
 
-    void test_clock_free(CTestClock clock);
+    void test_clock_free(TestClockAPI clock);
 
-    void test_clock_set_time(CTestClock *clock, uint64_t to_time_ns);
+    void test_clock_set_time(TestClockAPI *clock, uint64_t to_time_ns);
 
-    uint64_t test_clock_time_ns(const CTestClock *clock);
+    double test_clock_timestamp(TestClockAPI *clock);
 
-    PyObject *test_clock_timer_names(const CTestClock *clock);
+    uint64_t test_clock_timestamp_ms(TestClockAPI *clock);
 
-    uintptr_t test_clock_timer_count(CTestClock *clock);
+    uint64_t test_clock_timestamp_us(TestClockAPI *clock);
+
+    uint64_t test_clock_timestamp_ns(TestClockAPI *clock);
+
+    PyObject *test_clock_timer_names(const TestClockAPI *clock);
+
+    uintptr_t test_clock_timer_count(TestClockAPI *clock);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
-    void test_clock_set_time_alert_ns(CTestClock *clock,
+    void test_clock_set_time_alert_ns(TestClockAPI *clock,
                                       const char *name_ptr,
                                       uint64_t alert_time_ns);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
-    void test_clock_set_timer_ns(CTestClock *clock,
+    void test_clock_set_timer_ns(TestClockAPI *clock,
                                  const char *name_ptr,
                                  uint64_t interval_ns,
                                  uint64_t start_time_ns,
@@ -116,19 +128,33 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     # - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
-    Vec_TimeEvent test_clock_advance_time(CTestClock *clock, uint64_t to_time_ns, uint8_t set_time);
+    Vec_TimeEvent test_clock_advance_time(TestClockAPI *clock,
+                                          uint64_t to_time_ns,
+                                          uint8_t set_time);
 
     void vec_time_events_drop(Vec_TimeEvent v);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
-    uint64_t test_clock_next_time_ns(CTestClock *clock, const char *name_ptr);
+    uint64_t test_clock_next_time_ns(TestClockAPI *clock, const char *name_ptr);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
-    void test_clock_cancel_timer(CTestClock *clock, const char *name_ptr);
+    void test_clock_cancel_timer(TestClockAPI *clock, const char *name_ptr);
 
-    void test_clock_cancel_timers(CTestClock *clock);
+    void test_clock_cancel_timers(TestClockAPI *clock);
+
+    LiveClockAPI live_clock_new();
+
+    void live_clock_free(LiveClockAPI clock);
+
+    double live_clock_timestamp(LiveClockAPI *clock);
+
+    uint64_t live_clock_timestamp_ms(LiveClockAPI *clock);
+
+    uint64_t live_clock_timestamp_us(LiveClockAPI *clock);
+
+    uint64_t live_clock_timestamp_ns(LiveClockAPI *clock);
 
     const char *component_state_to_cstr(ComponentState value);
 
