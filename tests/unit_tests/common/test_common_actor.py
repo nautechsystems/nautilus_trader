@@ -19,7 +19,6 @@ from datetime import timedelta
 import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
-from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
@@ -28,7 +27,6 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
-from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -1575,10 +1573,6 @@ class TestActor:
 
         writer = StreamingFeatherWriter(
             path=catalog.path,
-            config=NautilusKernelConfig(
-                environment=Environment.BACKTEST,
-                trader_id="TRADER-001",
-            ),
             fs_protocol=catalog.fs_protocol,
             logger=LoggerAdapter(
                 component_name="Actor",
