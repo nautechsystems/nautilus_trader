@@ -45,8 +45,8 @@ class StreamingFeatherWriter:
     def __init__(
         self,
         path: str,
-        config: NautilusKernelConfig,
         logger: LoggerAdapter,
+        config: NautilusKernelConfig,
         fs_protocol: Optional[str] = "file",
         flush_interval_ms: Optional[int] = None,
         replace: bool = False,
