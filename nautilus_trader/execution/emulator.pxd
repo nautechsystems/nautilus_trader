@@ -27,6 +27,7 @@ from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -62,6 +63,7 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_order_expired(self, OrderExpired expired)
     cdef void _handle_order_updated(self, OrderUpdated updated)
     cdef void _handle_order_filled(self, OrderFilled filled)
+    cdef void _handle_position_event(self, PositionEvent event)
     cdef void _handle_contingencies(self, Order order)
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity)
 

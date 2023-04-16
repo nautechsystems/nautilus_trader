@@ -8,7 +8,7 @@ Released on TBD (UTC).
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
 
 ### Enhancements
-- Added new DataFusion Rust backend for parquet data catalog (yet to be integrated into Python)
+- Added new DataFusion Rust parquet data catalog backend (yet to be integrated into Python)
 - Added `external_order_claims` config option for `StrategyConfig` (for claiming external orders per instrument)
 - Added `Order.signed_decimal_qty()`
 - Added `Cache.orders_for_exec_algorithm(...)`
@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added `TWAPExecAlgorithm` and `TWAPExecAlgorithmConfig` to examples
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
+- Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
 - Now stripping debug symbols after build (reduced binary sizes)
 - Refined build and added additional `debug` Makefile convenience targets
 
