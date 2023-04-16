@@ -64,6 +64,8 @@ class EMACrossBracketConfig(StrategyConfig, frozen=True):
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
+    manage_gtd_expiry : bool, default True
+        If the expiry for orders with a time in force of 'GTD' will be managed by the strategy.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
