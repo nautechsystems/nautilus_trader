@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed legacy Rust parquet data catalog backend (based on arrow2)
+- Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
 
 ### Enhancements
 - Added new DataFusion Rust backend for parquet data catalog (yet to be integrated into Python)
