@@ -17,16 +17,71 @@ use std::collections::HashMap;
 use std::ffi::c_char;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null;
+use std::time::Duration;
 
 use nautilus_core::correctness;
-use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
+use nautilus_core::datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs};
 use nautilus_core::string::cstr_to_string;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::time::{duration_since_unix_epoch, UnixNanos};
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
+
+const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
+
+pub struct MonotonicClock {
+    last: Duration,
+}
+
+/// Provides a monotonic clock which will always produce unique timestamps.
+impl MonotonicClock {
+    fn monotonic_duration_since_unix_epoch(&mut self) -> Duration {
+        let now = duration_since_unix_epoch();
+        let output = if now <= self.last {
+            self.last + ONE_NANOSECOND_DURATION
+        } else {
+            now
+        };
+        self.last = output;
+        output
+    }
+
+    /// Initializes a new instance.
+    #[must_use]
+    pub fn new() -> Self {
+        MonotonicClock::default()
+    }
+
+    /// Returns the current seconds since the UNIX epoch.
+    pub fn unix_timestamp_secs(&mut self) -> f64 {
+        self.monotonic_duration_since_unix_epoch().as_secs_f64()
+    }
+
+    /// Returns the current milliseconds since the UNIX epoch.
+    pub fn unix_timestamp_millis(&mut self) -> u64 {
+        self.monotonic_duration_since_unix_epoch().as_millis() as u64
+    }
+
+    /// Returns the current microseconds since the UNIX epoch.
+    pub fn unix_timestamp_micros(&mut self) -> u64 {
+        self.monotonic_duration_since_unix_epoch().as_micros() as u64
+    }
+
+    /// Returns the current nanoseconds since the UNIX epoch.
+    pub fn unix_timestamp_nanos(&mut self) -> u64 {
+        self.monotonic_duration_since_unix_epoch().as_nanos() as u64
+    }
+}
+
+impl Default for MonotonicClock {
+    fn default() -> Self {
+        MonotonicClock {
+            last: duration_since_unix_epoch(),
+        }
+    }
+}
 
 /// Represents a type of clock.
 /// # Notes
@@ -36,13 +91,16 @@ trait Clock {
     fn new() -> Self;
 
     /// Return the current UNIX time in seconds.
-    fn timestamp(&self) -> f64;
+    fn timestamp(&mut self) -> f64;
 
     /// Return the current UNIX time in milliseconds (ms).
-    fn timestamp_ms(&self) -> u64;
+    fn timestamp_ms(&mut self) -> u64;
+
+    /// Return the current UNIX time in microseconds (us).
+    fn timestamp_us(&mut self) -> u64;
 
     /// Return the current UNIX time in nanoseconds (ns).
-    fn timestamp_ns(&self) -> u64;
+    fn timestamp_ns(&mut self) -> u64;
 
     /// Return the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
@@ -81,10 +139,10 @@ trait Clock {
 }
 
 pub struct TestClock {
-    pub time_ns: UnixNanos,
-    pub timers: HashMap<String, TestTimer>,
-    pub handlers: HashMap<String, Box<dyn Fn(TimeEvent)>>,
-    pub default_handler: Option<Box<dyn Fn(TimeEvent)>>,
+    time_ns: UnixNanos,
+    timers: HashMap<String, TestTimer>,
+    handlers: HashMap<String, Box<dyn Fn(TimeEvent)>>,
+    default_handler: Option<Box<dyn Fn(TimeEvent)>>,
 }
 
 impl TestClock {
@@ -93,7 +151,6 @@ impl TestClock {
         self.time_ns = to_time_ns
     }
 
-    #[inline]
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
         assert!(
@@ -112,7 +169,6 @@ impl TestClock {
             .collect()
     }
 
-    // #[inline]
     // pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
     //     events
     //         .into_iter()
@@ -127,7 +183,6 @@ impl TestClock {
 }
 
 impl Clock for TestClock {
-    #[inline]
     fn new() -> TestClock {
         TestClock {
             time_ns: 0,
@@ -137,17 +192,19 @@ impl Clock for TestClock {
         }
     }
 
-    #[inline]
-    fn timestamp(&self) -> f64 {
+    fn timestamp(&mut self) -> f64 {
         nanos_to_secs(self.time_ns)
     }
 
-    #[inline]
-    fn timestamp_ms(&self) -> u64 {
+    fn timestamp_ms(&mut self) -> u64 {
         nanos_to_millis(self.time_ns)
     }
 
-    fn timestamp_ns(&self) -> u64 {
+    fn timestamp_us(&mut self) -> u64 {
+        nanos_to_micros(self.time_ns)
+    }
+
+    fn timestamp_ns(&mut self) -> u64 {
         self.time_ns
     }
 
@@ -166,12 +223,10 @@ impl Clock for TestClock {
             .count()
     }
 
-    #[inline]
     fn register_default_handler(&mut self, handler: Box<dyn Fn(TimeEvent)>) {
         self.default_handler = Some(handler);
     }
 
-    #[inline]
     fn set_time_alert_ns(
         &mut self,
         name: String,
@@ -198,7 +253,6 @@ impl Clock for TestClock {
         self.timers.insert(name, timer);
     }
 
-    #[inline]
     fn set_timer_ns(
         &mut self,
         name: String,
@@ -229,7 +283,6 @@ impl Clock for TestClock {
         }
     }
 
-    #[inline]
     fn cancel_timer(&mut self, name: &str) {
         let timer = self.timers.remove(name);
         match timer {
@@ -238,7 +291,131 @@ impl Clock for TestClock {
         }
     }
 
-    #[inline]
+    fn cancel_timers(&mut self) {
+        for (_, timer) in self.timers.iter_mut() {
+            timer.cancel()
+        }
+        self.timers = HashMap::new();
+    }
+}
+
+pub struct LiveClock {
+    internal: MonotonicClock,
+    timers: HashMap<String, TestTimer>,
+    handlers: HashMap<String, Box<dyn Fn(TimeEvent)>>,
+    default_handler: Option<Box<dyn Fn(TimeEvent)>>,
+}
+
+impl Clock for LiveClock {
+    fn new() -> LiveClock {
+        LiveClock {
+            internal: MonotonicClock::default(),
+            timers: HashMap::new(),
+            handlers: HashMap::new(),
+            default_handler: None,
+        }
+    }
+
+    fn timestamp(&mut self) -> f64 {
+        self.internal.unix_timestamp_secs()
+    }
+
+    fn timestamp_ms(&mut self) -> u64 {
+        self.internal.unix_timestamp_millis()
+    }
+
+    fn timestamp_us(&mut self) -> u64 {
+        self.internal.unix_timestamp_micros()
+    }
+
+    fn timestamp_ns(&mut self) -> u64 {
+        self.internal.unix_timestamp_nanos()
+    }
+
+    fn timer_names(&self) -> Vec<&str> {
+        self.timers
+            .iter()
+            .filter(|(_, timer)| !timer.is_expired)
+            .map(|(k, _)| k.as_str())
+            .collect()
+    }
+
+    fn timer_count(&self) -> usize {
+        self.timers
+            .iter()
+            .filter(|(_, timer)| !timer.is_expired)
+            .count()
+    }
+
+    fn register_default_handler(&mut self, handler: Box<dyn Fn(TimeEvent)>) {
+        self.default_handler = Some(handler);
+    }
+
+    fn set_time_alert_ns(
+        &mut self,
+        name: String,
+        alert_time_ns: UnixNanos,
+        callback: Option<Box<dyn Fn(TimeEvent)>>,
+    ) {
+        correctness::valid_string(&name, "`Timer` name");
+        // assert!(
+        //     callback.is_some() | self.default_handler.is_some(),
+        //     "`callback` and `default_handler` were none"
+        // );
+
+        match callback {
+            Some(callback) => self.handlers.insert(name.clone(), callback),
+            None => None,
+        };
+
+        let now_ns = self.timestamp_ns();
+        let timer = TestTimer::new(
+            name.clone(),
+            alert_time_ns - now_ns,
+            now_ns,
+            Some(alert_time_ns),
+        );
+        self.timers.insert(name, timer);
+    }
+
+    fn set_timer_ns(
+        &mut self,
+        name: String,
+        interval_ns: u64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<Box<dyn Fn(TimeEvent)>>,
+    ) {
+        correctness::valid_string(&name, "`Timer` name");
+        // assert!(
+        //     callback.is_some() | self.default_handler.is_some(),
+        //     "`callback` and `default_handler` were none"
+        // );
+        match callback {
+            None => None,
+            Some(callback) => self.handlers.insert(name.clone(), callback),
+        };
+
+        let timer = TestTimer::new(name.clone(), interval_ns, start_time_ns, stop_time_ns);
+        self.timers.insert(name, timer);
+    }
+
+    fn next_time_ns(&mut self, name: &str) -> UnixNanos {
+        let timer = self.timers.get(name);
+        match timer {
+            None => 0,
+            Some(timer) => timer.next_time_ns,
+        }
+    }
+
+    fn cancel_timer(&mut self, name: &str) {
+        let timer = self.timers.remove(name);
+        match timer {
+            None => {}
+            Some(mut timer) => timer.cancel(),
+        }
+    }
+
     fn cancel_timers(&mut self) {
         for (_, timer) in self.timers.iter_mut() {
             timer.cancel()
@@ -248,13 +425,13 @@ impl Clock for TestClock {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
+// C API - TestClock
 ////////////////////////////////////////////////////////////////////////////////
 
 #[repr(C)]
-pub struct CTestClock(Box<TestClock>);
+pub struct TestClockAPI(Box<TestClock>);
 
-impl Deref for CTestClock {
+impl Deref for TestClockAPI {
     type Target = TestClock;
 
     fn deref(&self) -> &Self::Target {
@@ -262,34 +439,49 @@ impl Deref for CTestClock {
     }
 }
 
-impl DerefMut for CTestClock {
+impl DerefMut for TestClockAPI {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_new() -> CTestClock {
-    CTestClock(Box::new(TestClock::new()))
+pub extern "C" fn test_clock_new() -> TestClockAPI {
+    TestClockAPI(Box::new(TestClock::new()))
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_free(clock: CTestClock) {
+pub extern "C" fn test_clock_free(clock: TestClockAPI) {
     drop(clock); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_set_time(clock: &mut CTestClock, to_time_ns: u64) {
+pub extern "C" fn test_clock_set_time(clock: &mut TestClockAPI, to_time_ns: u64) {
     clock.set_time(to_time_ns);
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_time_ns(clock: &CTestClock) -> u64 {
-    clock.time_ns
+pub extern "C" fn test_clock_timestamp(clock: &mut TestClockAPI) -> f64 {
+    clock.timestamp()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timer_names(clock: &CTestClock) -> *mut ffi::PyObject {
+pub extern "C" fn test_clock_timestamp_ms(clock: &mut TestClockAPI) -> u64 {
+    clock.timestamp_ms()
+}
+
+#[no_mangle]
+pub extern "C" fn test_clock_timestamp_us(clock: &mut TestClockAPI) -> u64 {
+    clock.timestamp_us()
+}
+
+#[no_mangle]
+pub extern "C" fn test_clock_timestamp_ns(clock: &mut TestClockAPI) -> u64 {
+    clock.timestamp_ns()
+}
+
+#[no_mangle]
+pub extern "C" fn test_clock_timer_names(clock: &TestClockAPI) -> *mut ffi::PyObject {
     Python::with_gil(|py| -> Py<PyList> {
         let names: Vec<Py<PyString>> = clock
             .timers
@@ -302,7 +494,7 @@ pub extern "C" fn test_clock_timer_names(clock: &CTestClock) -> *mut ffi::PyObje
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timer_count(clock: &mut CTestClock) -> usize {
+pub extern "C" fn test_clock_timer_count(clock: &mut TestClockAPI) -> usize {
     clock.timer_count()
 }
 
@@ -310,7 +502,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut CTestClock) -> usize {
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
-    clock: &mut CTestClock,
+    clock: &mut TestClockAPI,
     name_ptr: *const c_char,
     alert_time_ns: UnixNanos,
 ) {
@@ -322,7 +514,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
-    clock: &mut CTestClock,
+    clock: &mut TestClockAPI,
     name_ptr: *const c_char,
     interval_ns: u64,
     start_time_ns: UnixNanos,
@@ -340,7 +532,7 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
 /// - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_advance_time(
-    clock: &mut CTestClock,
+    clock: &mut TestClockAPI,
     to_time_ns: u64,
     set_time: u8,
 ) -> Vec_TimeEvent {
@@ -368,7 +560,7 @@ pub extern "C" fn vec_time_events_drop(v: Vec_TimeEvent) {
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_next_time_ns(
-    clock: &mut CTestClock,
+    clock: &mut TestClockAPI,
     name_ptr: *const c_char,
 ) -> UnixNanos {
     let name = cstr_to_string(name_ptr);
@@ -378,14 +570,68 @@ pub unsafe extern "C" fn test_clock_next_time_ns(
 /// # Safety
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name_ptr: *const c_char) {
+pub unsafe extern "C" fn test_clock_cancel_timer(
+    clock: &mut TestClockAPI,
+    name_ptr: *const c_char,
+) {
     let name = cstr_to_string(name_ptr);
     clock.cancel_timer(&name);
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_cancel_timers(clock: &mut CTestClock) {
+pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClockAPI) {
     clock.cancel_timers();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// C API - LiveClock
+////////////////////////////////////////////////////////////////////////////////
+
+#[repr(C)]
+pub struct LiveClockAPI(Box<LiveClock>);
+
+impl Deref for LiveClockAPI {
+    type Target = LiveClock;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LiveClockAPI {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_new() -> LiveClockAPI {
+    LiveClockAPI(Box::new(LiveClock::new()))
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_free(clock: LiveClockAPI) {
+    drop(clock); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_timestamp(clock: &mut LiveClockAPI) -> f64 {
+    clock.timestamp()
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClockAPI) -> u64 {
+    clock.timestamp_ms()
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClockAPI) -> u64 {
+    clock.timestamp_us()
+}
+
+#[no_mangle]
+pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClockAPI) -> u64 {
+    clock.timestamp_ns()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -393,7 +639,37 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut CTestClock) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::clock::{Clock, TestClock};
+    use super::*;
+
+    #[test]
+    fn test_monotonic_clock_increasing() {
+        let mut clock = MonotonicClock::new();
+        let secs1 = clock.unix_timestamp_secs();
+        let secs2 = clock.unix_timestamp_secs();
+        assert!(secs2 >= secs1);
+
+        let millis1 = clock.unix_timestamp_millis();
+        let millis2 = clock.unix_timestamp_millis();
+        assert!(millis2 >= millis1);
+
+        let micros1 = clock.unix_timestamp_micros();
+        let micros2 = clock.unix_timestamp_micros();
+        assert!(micros2 >= micros1);
+
+        let nanos1 = clock.unix_timestamp_nanos();
+        let nanos2 = clock.unix_timestamp_nanos();
+        assert!(nanos2 >= nanos1);
+    }
+
+    #[test]
+    fn test_monotonic_clock_beyond_unix_epoch() {
+        let mut clock = MonotonicClock::new();
+
+        assert!(clock.unix_timestamp_secs() > 1_650_000_000.0);
+        assert!(clock.unix_timestamp_millis() > 1_650_000_000_000);
+        assert!(clock.unix_timestamp_micros() > 1_650_000_000_000_000);
+        assert!(clock.unix_timestamp_nanos() > 1_650_000_000_000_000_000);
+    }
 
     #[test]
     fn test_set_timer_ns() {

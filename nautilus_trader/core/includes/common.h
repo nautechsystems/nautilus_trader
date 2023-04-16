@@ -58,15 +58,17 @@ typedef enum LogLevel {
     CRITICAL = 50,
 } LogLevel;
 
+typedef struct LiveClock LiveClock;
+
 typedef struct Logger_t Logger_t;
 
 typedef struct Rc_String Rc_String;
 
 typedef struct TestClock TestClock;
 
-typedef struct CTestClock {
+typedef struct TestClockAPI {
     struct TestClock *_0;
-} CTestClock;
+} TestClockAPI;
 
 /**
  * Represents a time event occurring at the event timestamp.
@@ -95,6 +97,10 @@ typedef struct Vec_TimeEvent {
     uintptr_t len;
 } Vec_TimeEvent;
 
+typedef struct LiveClockAPI {
+    struct LiveClock *_0;
+} LiveClockAPI;
+
 /**
  * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
  * This works because Logger fields don't need to be accessed, only functions
@@ -104,23 +110,29 @@ typedef struct CLogger {
     struct Logger_t *_0;
 } CLogger;
 
-struct CTestClock test_clock_new(void);
+struct TestClockAPI test_clock_new(void);
 
-void test_clock_free(struct CTestClock clock);
+void test_clock_free(struct TestClockAPI clock);
 
-void test_clock_set_time(struct CTestClock *clock, uint64_t to_time_ns);
+void test_clock_set_time(struct TestClockAPI *clock, uint64_t to_time_ns);
 
-uint64_t test_clock_time_ns(const struct CTestClock *clock);
+double test_clock_timestamp(struct TestClockAPI *clock);
 
-PyObject *test_clock_timer_names(const struct CTestClock *clock);
+uint64_t test_clock_timestamp_ms(struct TestClockAPI *clock);
 
-uintptr_t test_clock_timer_count(struct CTestClock *clock);
+uint64_t test_clock_timestamp_us(struct TestClockAPI *clock);
+
+uint64_t test_clock_timestamp_ns(struct TestClockAPI *clock);
+
+PyObject *test_clock_timer_names(const struct TestClockAPI *clock);
+
+uintptr_t test_clock_timer_count(struct TestClockAPI *clock);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_set_time_alert_ns(struct CTestClock *clock,
+void test_clock_set_time_alert_ns(struct TestClockAPI *clock,
                                   const char *name_ptr,
                                   uint64_t alert_time_ns);
 
@@ -128,7 +140,7 @@ void test_clock_set_time_alert_ns(struct CTestClock *clock,
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_set_timer_ns(struct CTestClock *clock,
+void test_clock_set_timer_ns(struct TestClockAPI *clock,
                              const char *name_ptr,
                              uint64_t interval_ns,
                              uint64_t start_time_ns,
@@ -138,7 +150,7 @@ void test_clock_set_timer_ns(struct CTestClock *clock,
  * # Safety
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
-struct Vec_TimeEvent test_clock_advance_time(struct CTestClock *clock,
+struct Vec_TimeEvent test_clock_advance_time(struct TestClockAPI *clock,
                                              uint64_t to_time_ns,
                                              uint8_t set_time);
 
@@ -148,15 +160,27 @@ void vec_time_events_drop(struct Vec_TimeEvent v);
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-uint64_t test_clock_next_time_ns(struct CTestClock *clock, const char *name_ptr);
+uint64_t test_clock_next_time_ns(struct TestClockAPI *clock, const char *name_ptr);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_cancel_timer(struct CTestClock *clock, const char *name_ptr);
+void test_clock_cancel_timer(struct TestClockAPI *clock, const char *name_ptr);
 
-void test_clock_cancel_timers(struct CTestClock *clock);
+void test_clock_cancel_timers(struct TestClockAPI *clock);
+
+struct LiveClockAPI live_clock_new(void);
+
+void live_clock_free(struct LiveClockAPI clock);
+
+double live_clock_timestamp(struct LiveClockAPI *clock);
+
+uint64_t live_clock_timestamp_ms(struct LiveClockAPI *clock);
+
+uint64_t live_clock_timestamp_us(struct LiveClockAPI *clock);
+
+uint64_t live_clock_timestamp_ns(struct LiveClockAPI *clock);
 
 const char *component_state_to_cstr(enum ComponentState value);
 
