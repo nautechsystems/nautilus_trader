@@ -199,7 +199,7 @@ cdef class OrderEmulator(Actor):
                 self._handle_submit_order(command)
 
     cpdef void on_event(self, Event event):
-        self._log.info(f"Received {event}", LogColor.MAGENTA)
+        self._log.info(f"Received {event}.", LogColor.MAGENTA)
         if isinstance(event, OrderRejected):
             self._handle_order_rejected(event)
         elif isinstance(event, OrderCanceled):
@@ -210,6 +210,8 @@ cdef class OrderEmulator(Actor):
             self._handle_order_updated(event)
         elif isinstance(event, OrderFilled):
             self._handle_order_filled(event)
+        elif isinstance(event, PositionEvent):
+            self._handle_position_event(event)
 
     cpdef void on_stop(self):
         pass
@@ -587,18 +589,44 @@ cdef class OrderEmulator(Actor):
             ClientOrderId client_order_id
             SubmitOrderList submit_order_list
             Order contingent_order
+            Order spawned_order
+            list exec_spawn_orders
+            uint64_t raw_filled_qty
+            Quantity filled_qty
         if order.contingency_type == ContingencyType.OTO:
             assert order.linked_order_ids
             submit_order_list = self._commands_submit_order_list.get(order.order_list_id)
             assert submit_order_list
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
-                assert child_order
-                self._create_new_submit_order(
-                    order=child_order,
-                    position_id=submit_order_list.position_id,
-                    client_id=submit_order_list.client_id,
-                )
+                assert child_order, f"Cannot find child order for {repr(client_order_id)}"
+                if not (child_order.is_emulated_c() or child_order.is_open_c()):
+                    self._create_new_submit_order(
+                        order=child_order,
+                        position_id=submit_order_list.position_id,
+                        client_id=submit_order_list.client_id,
+                    )
+                    return
+
+                # Check if execution algorithm spawned order
+                if order.exec_spawn_id is None:
+                    return
+
+                raw_filled_qty = 0
+                filled_qty = None
+
+                # Get primary order for execution spawn sequence
+                exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
+                for spawned_order in exec_spawn_orders:
+                    raw_filled_qty += spawned_order.filled_qty._mem.raw
+                raw_filled_qty += order.filled_qty._mem.raw
+                if raw_filled_qty != child_order.quantity._mem.raw:
+                    filled_qty = Quantity.from_raw_c(raw_filled_qty, order.filled_qty._mem.precision)
+                    self._log.info(
+                        f"Updating quantity for {repr(child_order.client_order_id)} to {filled_qty}.",
+                        LogColor.MAGENTA,
+                    )
+                    self._update_order_quantity(child_order, filled_qty)
         elif order.contingency_type == ContingencyType.OCO:
             # Cancel all OCO orders
             for client_order_id in order.linked_order_ids:
@@ -608,6 +636,9 @@ cdef class OrderEmulator(Actor):
                     self._cancel_order(matching_core, contingent_order)
         elif order.contingency_type == ContingencyType.OUO:
             self._handle_contingencies(order)
+
+    cdef void _handle_position_event(self, PositionEvent event):
+        pass  # TBC
 
     cdef void _handle_contingencies(self, Order order):
         assert order.linked_order_ids
@@ -678,9 +709,7 @@ cdef class OrderEmulator(Actor):
                 ts_event=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            # TODO(cs): Determine a way of publishing event without applying
             order.apply(event)
-            # self._send_exec_event(event)
             self._fill_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
