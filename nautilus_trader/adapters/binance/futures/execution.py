@@ -74,9 +74,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
-    clock_sync_interval_secs : int, default 0
-        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
-        If zero, then will *not* perform syncing.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
     """
@@ -123,7 +120,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
-            clock_sync_interval_secs=clock_sync_interval_secs,
             warn_gtd_to_gtc=warn_gtd_to_gtc,
         )
 
