@@ -22,6 +22,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
+import msgspec
+
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common import Environment
@@ -380,7 +382,6 @@ class NautilusKernel:
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}.feather"
         self._writer = StreamingFeatherWriter(
             path=path,
-            config=self._config,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
             include_types=config.include_types,  # type: ignore  # TODO(cs)
@@ -388,6 +389,11 @@ class NautilusKernel:
         )
         self._trader.subscribe("*", self._writer.write)
         self.log.info(f"Writing data & events to {path}")
+
+        # Save a copy of the config for this kernel to the streaming folder.
+        full_path = f"{self._writer.path}/config.json"
+        with self._writer.fs.open(full_path, "wb") as f:
+            f.write(msgspec.json.encode(self._config))
 
     @property
     def environment(self) -> Environment:

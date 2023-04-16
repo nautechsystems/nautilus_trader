@@ -2,12 +2,10 @@ import datetime
 from typing import BinaryIO, Optional
 
 import fsspec
-import msgspec.json
 import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -46,7 +44,6 @@ class StreamingFeatherWriter:
         self,
         path: str,
         logger: LoggerAdapter,
-        config: NautilusKernelConfig,
         fs_protocol: Optional[str] = "file",
         flush_interval_ms: Optional[int] = None,
         replace: bool = False,
@@ -81,16 +78,10 @@ class StreamingFeatherWriter:
         self._files: dict[type, BinaryIO] = {}
         self._writers: dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
-        self._write_config(config)
 
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
         self.missing_writers: set[type] = set()
-
-    def _write_config(self, config: NautilusKernelConfig):
-        full_path = f"{self.path}/config.json"
-        with self.fs.open(full_path, "wb") as f:
-            f.write(msgspec.json.encode(config))
 
     def _create_writer(self, cls):
         if self.include_types is not None and cls.__name__ not in self.include_types:
