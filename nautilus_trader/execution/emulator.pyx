@@ -42,6 +42,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
@@ -600,13 +601,13 @@ cdef class OrderEmulator(Actor):
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order, f"Cannot find child order for {repr(client_order_id)}"
-                if not (child_order.is_emulated_c() or child_order.is_open_c()):
+                if not self.cache.load_submit_order_command(child_order.client_order_id):
                     self._create_new_submit_order(
                         order=child_order,
                         position_id=submit_order_list.position_id,
                         client_id=submit_order_list.client_id,
                     )
-                    return
+                    continue
 
                 # Check if execution algorithm spawned order
                 if order.exec_spawn_id is None:
@@ -623,7 +624,7 @@ cdef class OrderEmulator(Actor):
                 if raw_filled_qty != child_order.quantity._mem.raw:
                     filled_qty = Quantity.from_raw_c(raw_filled_qty, order.filled_qty._mem.precision)
                     self._log.info(
-                        f"Updating quantity for {repr(child_order.client_order_id)} to {filled_qty}.",
+                        f"Updating quantity for {child_order} to {filled_qty}.",
                         LogColor.MAGENTA,
                     )
                     self._update_order_quantity(child_order, filled_qty)
@@ -685,6 +686,8 @@ cdef class OrderEmulator(Actor):
             ts_init=timestamp,
         )
         order.apply(event)
+
+        self.cache.update_order(order)
 
         self._send_risk_event(event)
 
