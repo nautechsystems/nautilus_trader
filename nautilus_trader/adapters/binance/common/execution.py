@@ -249,11 +249,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._ping_listen_keys_task.cancel()
             self._ping_listen_keys_task.done()
 
-        if self._task_clock_sync:
-            self._log.debug("Canceling `task_clock_sync` task...")
-            self._task_clock_sync.cancel()
-            self._task_clock_sync.done()
-
         # Disconnect WebSocket clients
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
