@@ -13,18 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from threading import Timer as TimerThread
 from typing import Callable
 
 from libc.stdint cimport uint64_t
-
-from threading import Timer as TimerThread
 
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport time_event_free
-from nautilus_trader.core.rust.common cimport time_event_name_cstr
+from nautilus_trader.core.rust.common cimport time_event_name_to_cstr
 from nautilus_trader.core.rust.common cimport time_event_new
+from nautilus_trader.core.rust.common cimport time_event_to_cstr
 from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport uuid4_clone
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -55,7 +55,7 @@ cdef class TimeEvent(Event):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        Condition.valid_string(name, "name")
+        # Precondition: `name` validated in Rust
         super().__init__(event_id, ts_event, ts_init)
 
         self._mem = time_event_new(
@@ -70,7 +70,7 @@ cdef class TimeEvent(Event):
             time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return cstr_to_pystr(time_event_name_cstr(&self._mem))
+        return cstr_to_pystr(time_event_name_to_cstr(&self._mem))
 
     def __eq__(self, TimeEvent other) -> bool:
         return self.to_str() == other.to_str()
@@ -82,12 +82,7 @@ cdef class TimeEvent(Event):
         return self.to_str()
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"name={self.to_str()}, "
-            f"event_id={self.id}, "
-            f"ts_event={self.ts_event})"
-        )
+        return cstr_to_pystr(time_event_to_cstr(&self._mem))
 
     @property
     def name(self) -> str:
@@ -99,7 +94,7 @@ cdef class TimeEvent(Event):
         str
 
         """
-        return cstr_to_pystr(time_event_name_cstr((&self._mem)))
+        return cstr_to_pystr(time_event_name_to_cstr((&self._mem)))
 
     @staticmethod
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
@@ -239,7 +234,7 @@ cdef class LiveTimer:
         TimeEvent
 
         """
-        Condition.not_none(event_id, "event_id")
+        # Precondition: `event_id` validated in `TimeEvent`
 
         return TimeEvent(
             name=self.name,

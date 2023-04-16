@@ -280,4 +280,9 @@ struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
 
 void time_event_free(struct TimeEvent_t event);
 
-const char *time_event_name_cstr(const struct TimeEvent_t *event);
+const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
+
+/**
+ * Returns a [`TimeEvent`] as a C string pointer.
+ */
+const char *time_event_to_cstr(const struct TimeEvent_t *event);

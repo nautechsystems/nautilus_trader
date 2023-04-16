@@ -14,8 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::ffi::c_char;
+use std::fmt;
 use std::rc::Rc;
 
+use nautilus_core::correctness;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use nautilus_core::time::{TimedeltaNanos, UnixNanos};
 use nautilus_core::uuid::UUID4;
@@ -33,6 +35,30 @@ pub struct TimeEvent {
     pub ts_event: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the object was initialized.
     pub ts_init: UnixNanos,
+}
+
+impl TimeEvent {
+    #[must_use]
+    pub fn new(name: String, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+        correctness::valid_string(&name, "`TimeEvent` name");
+
+        TimeEvent {
+            name: Box::new(Rc::new(name)),
+            event_id,
+            ts_event,
+            ts_init,
+        }
+    }
+}
+
+impl fmt::Display for TimeEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "TimeEvent(name={}, event_id={}, ts_event={}, ts_init={})",
+            self.name, self.event_id, self.ts_event, self.ts_init
+        )
+    }
 }
 
 impl PartialEq for TimeEvent {
@@ -60,12 +86,7 @@ pub unsafe extern "C" fn time_event_new(
     ts_event: u64,
     ts_init: u64,
 ) -> TimeEvent {
-    TimeEvent {
-        name: Box::new(Rc::new(cstr_to_string(name))),
-        event_id,
-        ts_event,
-        ts_init,
-    }
+    TimeEvent::new(cstr_to_string(name), event_id, ts_event, ts_init)
 }
 
 #[no_mangle]
@@ -79,8 +100,14 @@ pub extern "C" fn time_event_free(event: TimeEvent) {
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_name_cstr(event: &TimeEvent) -> *const c_char {
+pub extern "C" fn time_event_name_to_cstr(event: &TimeEvent) -> *const c_char {
     string_to_cstr(&event.name)
+}
+
+/// Returns a [`TimeEvent`] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {
+    string_to_cstr(&event.to_string())
 }
 
 /// Represents a bundled event and it's handler.
@@ -93,7 +120,6 @@ pub struct TimeEventHandler {
 
 // TODO(cs): Implement
 // impl TimeEventHandler {
-//     #[inline]
 //     pub fn handle(&self) {
 //         self.handler.call((self.event,));
 //     }
@@ -129,6 +155,8 @@ impl TestTimer {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
     ) -> Self {
+        correctness::valid_string(&name, "`TestTimer` name");
+
         TestTimer {
             name,
             interval_ns,
