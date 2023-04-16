@@ -125,12 +125,14 @@ class EMACrossTWAP(Strategy):
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
+        # Order management
         self.twap_exec_algorithm_id = ExecAlgorithmId("TWAP")
         self.twap_exec_algorithm_params: dict[str, Any] = {
             "horizon_secs": config.twap_horizon_secs,
             "interval_secs": config.twap_interval_secs,
         }
         self.close_positions_on_stop = config.close_positions_on_stop
+
         self.instrument: Instrument = None
 
     def on_start(self) -> None:
@@ -147,16 +149,10 @@ class EMACrossTWAP(Strategy):
 
         # Get historical data
         self.request_bars(self.bar_type)
-        # self.request_quote_ticks(self.instrument_id)
-        # self.request_trade_ticks(self.instrument_id)
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-        # self.subscribe_trade_ticks(self.instrument_id)
-        # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
-        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
@@ -346,11 +342,6 @@ class EMACrossTWAP(Strategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_quote_ticks(self.instrument_id)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
-        # self.unsubscribe_ticker(self.instrument_id)
-        # self.unsubscribe_order_book_deltas(self.instrument_id)
-        # self.unsubscribe_order_book_snapshots(self.instrument_id)
 
     def on_reset(self) -> None:
         """
