@@ -398,7 +398,7 @@ cdef class OrderEmulator(Actor):
             trigger_price = order.trigger_price
 
         # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -410,8 +410,8 @@ cdef class OrderEmulator(Actor):
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
@@ -506,7 +506,7 @@ cdef class OrderEmulator(Actor):
         self._commands_submit_order.pop(order.client_order_id, None)
 
         # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         cdef OrderCanceled event = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -515,8 +515,8 @@ cdef class OrderEmulator(Actor):
             venue_order_id=order.venue_order_id,  # Probably None
             account_id=order.account_id,  # Probably None
             event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
         self._send_exec_event(event)
 
@@ -670,7 +670,7 @@ cdef class OrderEmulator(Actor):
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
         # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -682,8 +682,8 @@ cdef class OrderEmulator(Actor):
             price=None,
             trigger_price=None,
             event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
         order.apply(event)
 
@@ -892,7 +892,7 @@ cdef class OrderEmulator(Actor):
             return  # No updates
 
         # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -904,8 +904,8 @@ cdef class OrderEmulator(Actor):
             price=new_price,
             trigger_price=new_trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
         order.apply(event)
 
