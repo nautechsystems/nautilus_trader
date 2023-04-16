@@ -107,9 +107,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
-    clock_sync_interval_secs : int, default 0
-        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
-        If zero, then will *not* perform syncing.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
 
@@ -133,7 +130,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: Optional[str] = None,
-        clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ) -> None:
         super().__init__(
@@ -155,12 +151,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
-
-        # Clock sync
-        self._clock_sync_interval_secs = clock_sync_interval_secs
-
-        # Tasks
-        self._task_clock_sync: Optional[asyncio.Task] = None
 
         # Enum parser
         self._enum_parser = enum_parser
@@ -217,13 +207,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             self._log.exception(f"Error on connect: {e.message}", e)
             return
+
+        # Check Binance-Nautilus clock sync
+        server_time: int = await self._http_market.request_server_time()
+        self._log.info(f"Binance server time {server_time} UNIX (ms).")
+
+        nautilus_time: int = self._clock.timestamp_ms()
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
+
+        # Setup websocket listen key
         self._listen_key = response.listenKey
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
-
-        # Setup clock sync
-        if self._clock_sync_interval_secs > 0:
-            self._task_clock_sync = self.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -246,26 +241,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
         except asyncio.CancelledError:
             self._log.debug("`ping_listen_keys` task was canceled.")
-
-    async def _sync_clock_with_binance_server(self) -> None:
-        try:
-            while True:
-                # self._log.info(
-                #     f"Syncing Nautilus clock with Binance server...",
-                # )
-                server_time = await self._http_market.request_server_time()
-                self._log.info(f"Binance server time {server_time} UNIX (ms).")
-
-                nautilus_time = self._clock.timestamp_ms()
-                self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
-
-                # offset_ns = millis_to_nanos(nautilus_time - server_time)
-                # self._log.info(f"Setting Nautilus clock offset {offset_ns} (ns).")
-                # self._clock.set_offset(offset_ns)
-
-                await asyncio.sleep(self._clock_sync_interval_secs)
-        except asyncio.CancelledError:
-            self._log.debug("`sync_clock_with_binance_server` task was canceled.")
 
     async def _disconnect(self) -> None:
         # Cancel tasks
