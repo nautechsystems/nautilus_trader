@@ -360,7 +360,6 @@ class PortfolioAnalyzer:
 
         """
         realized_pnls = self.realized_pnls(currency)
-        assert realized_pnls
 
         output: dict[str, Any] = {
             "PnL (total)": self.total_pnl(currency, unrealized_pnl),
