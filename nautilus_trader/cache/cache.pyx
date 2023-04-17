@@ -783,7 +783,7 @@ cdef class Cache(CacheFacade):
                 else:
                     if order.exec_spawn_id not in self._index_exec_spawn_orders:
                         self._index_exec_spawn_orders[order.exec_spawn_id] = set()
-                    self._index_exec_algorithm_orders[order.exec_spawn_id].append(order.client_order_id)
+                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
             # 9: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
