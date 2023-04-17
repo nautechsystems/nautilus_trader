@@ -46,8 +46,10 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
@@ -300,7 +302,7 @@ class TestSimulatedExchange:
         assert len(self.strategy.store) == 3
         assert isinstance(self.strategy.store[2], OrderAccepted)
 
-    def test_submit_buy_limit_order_then_pending_update_accepts_order(self):
+    def test_submit_buy_limit_order_with_immediate_modify(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             USDJPY_SIM.id,
@@ -319,9 +321,32 @@ class TestSimulatedExchange:
         assert len(self.strategy.store) == 5
         assert isinstance(self.strategy.store[0], OrderInitialized)
         assert isinstance(self.strategy.store[1], OrderSubmitted)
-        assert isinstance(self.strategy.store[2], OrderPendingUpdate)
+        assert isinstance(self.strategy.store[2], OrderPendingUpdate)  # <-- Now in-flight
         assert isinstance(self.strategy.store[3], OrderAccepted)
         assert isinstance(self.strategy.store[4], OrderUpdated)
+
+    def test_submit_buy_limit_order_with_immediate_cancel(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("110.000"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.strategy.cancel_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert len(self.strategy.store) == 5
+        assert isinstance(self.strategy.store[0], OrderInitialized)
+        assert isinstance(self.strategy.store[1], OrderSubmitted)
+        assert isinstance(self.strategy.store[2], OrderPendingCancel)  # <-- Now in-flight
+        assert isinstance(self.strategy.store[3], OrderAccepted)
+        assert isinstance(self.strategy.store[4], OrderCanceled)
 
     def test_submit_sell_limit_order_with_no_market_accepts_order(self):
         # Arrange
