@@ -76,7 +76,7 @@ class PortfolioStatistic:
             A JSON serializable primitive.
 
         """
-        ...  # Override in implementation
+        # Override in implementation
 
     def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
         """
@@ -93,7 +93,7 @@ class PortfolioStatistic:
             A JSON serializable primitive.
 
         """
-        ...  # Override in implementation
+        # Override in implementation
 
     def calculate_from_orders(self, orders: list[Order]) -> Optional[Any]:
         """
@@ -110,7 +110,7 @@ class PortfolioStatistic:
             A JSON serializable primitive.
 
         """
-        ...  # Override in implementation
+        # Override in implementation
 
     def calculate_from_positions(self, positions: list[Position]) -> Optional[Any]:
         """
