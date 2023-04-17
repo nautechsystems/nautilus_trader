@@ -46,7 +46,12 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -294,6 +299,29 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.strategy.store) == 3
         assert isinstance(self.strategy.store[2], OrderAccepted)
+
+    def test_submit_buy_limit_order_then_pending_update_accepts_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("110.000"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.strategy.modify_order(order, price=Price.from_str("110.010"))
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.ACCEPTED
+        assert len(self.strategy.store) == 5
+        assert isinstance(self.strategy.store[0], OrderInitialized)
+        assert isinstance(self.strategy.store[1], OrderSubmitted)
+        assert isinstance(self.strategy.store[2], OrderPendingUpdate)
+        assert isinstance(self.strategy.store[3], OrderAccepted)
+        assert isinstance(self.strategy.store[4], OrderUpdated)
 
     def test_submit_sell_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -1821,7 +1849,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 1
         assert order.price == Price.from_str("90.005")
 
-    def test_order_fills_gets_commissioned(self):
+    def test_order_fills_gets_commissioned(self) -> None:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -1859,9 +1887,9 @@ class TestSimulatedExchange:
         self.exchange.process(0)
         self.strategy.submit_order(reduce_order, position_id=position_id)
         self.exchange.process(0)
-        fill_event1 = self.strategy.store[2]
-        fill_event2 = self.strategy.store[6]
-        fill_event3 = self.strategy.store[10]
+        fill_event1: OrderFilled = self.strategy.store[2]
+        fill_event2: OrderFilled = self.strategy.store[6]
+        fill_event3: OrderFilled = self.strategy.store[10]
 
         # Assert
         assert order.status == OrderStatus.FILLED

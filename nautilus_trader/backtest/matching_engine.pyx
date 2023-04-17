@@ -645,8 +645,6 @@ cdef class OrderMatchingEngine:
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id):
         cdef Order order = self._core.get_order(command.client_order_id)
         if order is None:
-            order = self.cache.order(command.client_order_id)
-        if order is None:
             self._generate_order_modify_rejected(
                 trader_id=command.trader_id,
                 strategy_id=command.strategy_id,
@@ -666,8 +664,6 @@ cdef class OrderMatchingEngine:
 
     cpdef void process_cancel(self, CancelOrder command, AccountId account_id):
         cdef Order order = self._core.get_order(command.client_order_id)
-        if order is None:
-            order = self.cache.order(command.client_order_id)
         if order is None:
             self._generate_order_cancel_rejected(
                 trader_id=command.trader_id,
@@ -1647,7 +1643,7 @@ cdef class OrderMatchingEngine:
                         f"Indexed {repr(order.position_id)} "
                         f"for {repr(child_order.client_order_id)}",
                     )
-                if not child_order.is_open_c():
+                if not child_order.is_open_c() or (child_order.status == OrderStatus.PENDING_UPDATE and child_order._previous_status == OrderStatus.SUBMITTED):
                     self.process_order(
                         order=child_order,
                         account_id=order.account_id or self._account_ids[order.trader_id],

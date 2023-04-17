@@ -21,7 +21,7 @@ Released on TBD (UTC).
 - Refined build and added additional `debug` Makefile convenience targets
 
 ### Fixes
-- None
+- Fixed processing of contingency orders when in a pending update state
 
 ---
 
