@@ -75,7 +75,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=3.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
