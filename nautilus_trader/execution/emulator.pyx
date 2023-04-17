@@ -685,8 +685,8 @@ cdef class OrderEmulator(Actor):
             ts_event=timestamp_ns,
             ts_init=timestamp_ns,
         )
-        order.apply(event)
 
+        order.apply(event)
         self.cache.update_order(order)
 
         self._send_risk_event(event)

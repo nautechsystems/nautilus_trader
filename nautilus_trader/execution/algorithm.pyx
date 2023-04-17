@@ -205,6 +205,7 @@ cdef class ExecAlgorithm(Actor):
         )
 
         primary.apply(updated)
+        self.cache.update_order(primary)
 
         # Publish updated event
         self._msgbus.publish_c(
