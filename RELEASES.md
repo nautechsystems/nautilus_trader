@@ -22,6 +22,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed processing of contingency orders when in a pending update state
+- Added missing `BinanceSymbolFilterType.NOTIONAL`
 
 ---
 
