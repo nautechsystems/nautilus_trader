@@ -239,8 +239,9 @@ cdef class ExecAlgorithm(Actor):
         if isinstance(command, SubmitOrder):
             self.on_order(command.order)
         elif isinstance(command, SubmitOrderList):
-            for order in command.order_list:
-                Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
+            for order in command.order_list.orders:
+                if order.exec_algorithm_id is not None:
+                    Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
             self.on_order_list(command.order_list)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
@@ -277,7 +278,7 @@ cdef class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
-        pass
+        self._log.error("Execution algorithms for order lists not supported in this version.")
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
