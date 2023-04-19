@@ -41,14 +41,18 @@ from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
+from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.list cimport OrderList
@@ -240,7 +244,27 @@ cdef class ExecAlgorithm(Actor):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
+        self._check_subscribed(command.strategy_id)
+
+    cdef void _check_subscribed(self, StrategyId strategy_id):
+        cdef str strategy_orders_topic = f"events.order.{strategy_id}"
+
+        if not self._msgbus.is_subscribed(topic=strategy_orders_topic, handler=self._handle_order_event):
+            self._log.info(f"Subscribing to {strategy_id} order events.", LogColor.BLUE)
+            self._msgbus.subscribe(topic=strategy_orders_topic, handler=self._handle_order_event)
+
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
+
+    cdef void _handle_order_event(self, OrderEvent event):
+        cdef Order order = self.cache.order(event.client_order_id)
+        if order is None:
+            self._log.error(f"No order found for {repr(event.client_order_id)}")
+            return
+
+        if order.exec_algorithm_id is None or order.exec_algorithm_id != self.id:
+            return  # Not for this algorithm
+
+        self.on_order_event(event)
 
     cpdef void on_order(self, Order order):
         """
@@ -273,6 +297,9 @@ cdef class ExecAlgorithm(Actor):
 
         """
         self._log.error("Execution algorithms for order lists not supported in this version.")
+
+    cpdef void on_order_event(self, OrderEvent event):
+        pass
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -603,6 +630,114 @@ cdef class ExecAlgorithm(Actor):
             )
             return
         self._send_risk_command(primary_command)
+
+    cpdef Order modify_order_in_place(
+        self,
+        Order order,
+        Quantity quantity = None,
+        Price price = None,
+        Price trigger_price = None,
+    ):
+        """
+        Modify the given order in place (immediately) with optional parameters.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update.
+        quantity : Quantity, optional
+            The updated quantity for the given order.
+        price : Price, optional
+            The updated price for the given order (if applicable).
+        trigger_price : Price, optional
+            The updated trigger price for the given order (if applicable).
+
+        Returns
+        -------
+        Order
+
+        Raises
+        ------
+        ValueError
+            If `order.status` is not ``INITIALIZED``.
+
+        ValueError
+            If `price` is not ``None`` and order does not have a `price`.
+        ValueError
+            If `trigger` is not ``None`` and order does not have a `trigger_price`.
+
+        Warnings
+        --------
+        If the order is already closed or at `PENDING_CANCEL` status
+        then the command will not be generated, and a warning will be logged.
+
+        References
+        ----------
+        https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
+
+        """
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
+        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+
+        cdef bint updating = False  # Set validation flag (must become true)
+
+        if quantity is not None and quantity != order.quantity:
+            updating = True
+
+        if price is not None:
+            Condition.true(
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
+            )
+            if price != order.price:
+                updating = True
+
+        if trigger_price is not None:
+            Condition.true(
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
+            )
+            if trigger_price != order.trigger_price:
+                updating = True
+
+        if not updating:
+            self.log.error(
+                "Cannot create command ModifyOrder: "
+                "quantity, price and trigger were either None "
+                "or the same as existing values.",
+            )
+            return
+
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot create command ModifyOrder: "
+                f"state is {order.status_string_c()}, {order}.",
+            )
+            return  # Cannot send command
+
+        # Generate event
+        cdef uint64_t now = self._clock.timestamp_ns()
+
+        cdef OrderUpdated updated = OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        order.apply(updated)
+        self.cache.update_order(order)
+
+        return order
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
