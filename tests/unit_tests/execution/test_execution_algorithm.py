@@ -435,6 +435,5 @@ class TestExecAlgorithm:
         ]
         # Assert final scheduled order quantity
         assert transformed_entry_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.004)
-        # TODO: WIP
-        # assert sl_order.quantity == quantity
-        # assert tp_order.quantity == quantity
+        assert sl_order.quantity == quantity
+        assert tp_order.quantity == quantity
