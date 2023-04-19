@@ -207,12 +207,6 @@ cdef class ExecAlgorithm(Actor):
         primary.apply(updated)
         self.cache.update_order(primary)
 
-        # Publish updated event
-        self._msgbus.publish_c(
-            topic=f"events.order.{primary.strategy_id.to_str()}",
-            msg=updated,
-        )
-
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, TradingCommand command):
