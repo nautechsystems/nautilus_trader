@@ -117,7 +117,7 @@ cdef class ExecAlgorithm(Actor):
     )
 
     cpdef void submit_order(self, Order order)
-    cpdef Order modify_order_in_place(self, Order order, Quantity quantity=*, Price price=*, Price trigger_price=*)
+    cpdef void modify_order_in_place(self, Order order, Quantity quantity=*, Price price=*, Price trigger_price=*)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
