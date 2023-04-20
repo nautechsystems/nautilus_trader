@@ -46,6 +46,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class ExecAlgorithm(Actor):
     cdef dict _exec_spawn_ids
+    cdef set _subscribed_strategies
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
@@ -70,7 +71,6 @@ cdef class ExecAlgorithm(Actor):
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, TradingCommand command)
-    cdef void _check_subscribed(self, StrategyId strategy_id)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
