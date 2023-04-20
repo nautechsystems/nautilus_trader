@@ -42,6 +42,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import Venue
@@ -183,7 +184,7 @@ class TestExecAlgorithm:
         self.strategy.start()
 
     def test_exec_algorithm_spawn_market_order(self) -> None:
-        """Test that the primary order was reduced and the spawned order has the expected properties"""
+        """Test that the primary order was reduced and the spawned order has the expected properties."""
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -194,6 +195,7 @@ class TestExecAlgorithm:
             clock=self.clock,
             logger=self.logger,
         )
+        exec_algorithm.start()
 
         primary_order = self.strategy.order_factory.market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -223,7 +225,7 @@ class TestExecAlgorithm:
         assert spawned_order.tags == "EXIT"
 
     def test_exec_algorithm_spawn_limit_order(self) -> None:
-        """Test that the primary order was reduced and the spawned order has the expected properties"""
+        """Test that the primary order was reduced and the spawned order has the expected properties."""
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -234,6 +236,7 @@ class TestExecAlgorithm:
             clock=self.clock,
             logger=self.logger,
         )
+        exec_algorithm.start()
 
         primary_order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -265,7 +268,7 @@ class TestExecAlgorithm:
         assert spawned_order.tags == "ENTRY"
 
     def test_exec_algorithm_spawn_market_to_limit_order(self) -> None:
-        """Test that the primary order was reduced and the spawned order has the expected properties"""
+        """Test that the primary order was reduced and the spawned order has the expected properties."""
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -276,6 +279,7 @@ class TestExecAlgorithm:
             clock=self.clock,
             logger=self.logger,
         )
+        exec_algorithm.start()
 
         primary_order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -307,6 +311,47 @@ class TestExecAlgorithm:
         assert not spawned_order.is_reduce_only
         assert spawned_order.tags == "ENTRY"
 
+    def test_exec_algorithm_modify_order_in_place(self) -> None:
+        """Test that the primary order is modified."""
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+
+        # Act
+        spawned_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        exec_algorithm.spawn_limit(
+            primary=primary_order,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(spawned_qty),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            time_in_force=TimeInForce.DAY,
+            reduce_only=False,
+            tags="ENTRY",
+        )
+
+        new_price = ETHUSDT_PERP_BINANCE.make_price(Decimal("5001.0"))
+        exec_algorithm.modify_order_in_place(primary_order, price=new_price)
+
+        # Assert
+        assert isinstance(primary_order.last_event, OrderUpdated)
+        assert primary_order.price == new_price
+
     def test_exec_algorithm_on_order(self) -> None:
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
@@ -318,6 +363,7 @@ class TestExecAlgorithm:
             clock=self.clock,
             logger=self.logger,
         )
+        exec_algorithm.start()
 
         order = self.strategy.order_factory.market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -351,6 +397,17 @@ class TestExecAlgorithm:
 
     def test_exec_algorithm_on_order_list_emulated_with_entry_exec_algorithm(self) -> None:
         # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             bid=ETHUSDT_PERP_BINANCE.make_price(5005.0),
@@ -373,16 +430,6 @@ class TestExecAlgorithm:
 
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
-
-        exec_algorithm = TWAPExecAlgorithm()
-        exec_algorithm.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
 
         quantity = ETHUSDT_PERP_BINANCE.make_qty(1)
         bracket: OrderList = self.strategy.order_factory.bracket(

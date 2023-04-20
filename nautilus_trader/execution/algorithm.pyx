@@ -751,7 +751,7 @@ cdef class ExecAlgorithm(Actor):
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
-            quantity=quantity,
+            quantity=quantity or order.quantity,
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
