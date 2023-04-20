@@ -25,6 +25,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
@@ -233,14 +234,25 @@ cdef class ExecAlgorithm(Actor):
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
+        if self._fsm.state != ComponentState.RUNNING:
+            return
+
         cdef Order order
         if isinstance(command, SubmitOrder):
-            self.on_order(command.order)
+            try:
+                self.on_order(command.order)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(command.order)}", e)
+                raise
         elif isinstance(command, SubmitOrderList):
             for order in command.order_list.orders:
                 if order.exec_algorithm_id is not None:
                     Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
-            self.on_order_list(command.order_list)
+            try:
+                self.on_order_list(command.order_list)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(command.order_list)}", e)
+                raise
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -258,13 +270,18 @@ cdef class ExecAlgorithm(Actor):
     cdef void _handle_order_event(self, OrderEvent event):
         cdef Order order = self.cache.order(event.client_order_id)
         if order is None:
-            self._log.error(f"No order found for {repr(event.client_order_id)}")
             return
-
         if order.exec_algorithm_id is None or order.exec_algorithm_id != self.id:
             return  # Not for this algorithm
 
-        self.on_order_event(event)
+        if self._fsm.state != ComponentState.RUNNING:
+            return
+
+        try:
+            self.on_order_event(event)
+        except Exception as e:
+            self.log.exception(f"Error on handling {repr(event)}", e)
+            raise
 
     cpdef void on_order(self, Order order):
         """
@@ -280,7 +297,7 @@ cdef class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_order_list(self, OrderList order_list):
         """
@@ -296,10 +313,23 @@ cdef class ExecAlgorithm(Actor):
         System method (not intended to be called by user code).
 
         """
-        self._log.error("Execution algorithms for order lists not supported in this version.")
+        # Optionally override in subclass
 
     cpdef void on_order_event(self, OrderEvent event):
-        pass
+        """
+        Actions to be performed when running and receives an order event.
+
+        Parameters
+        ----------
+        event : OrderEvent
+            The order event to be handled.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -553,7 +583,6 @@ cdef class ExecAlgorithm(Actor):
 
         If the client order ID is duplicate, then the order will be denied.
 
-
         Parameters
         ----------
         order : Order
@@ -631,7 +660,7 @@ cdef class ExecAlgorithm(Actor):
             return
         self._send_risk_command(primary_command)
 
-    cpdef Order modify_order_in_place(
+    cpdef void modify_order_in_place(
         self,
         Order order,
         Quantity quantity = None,
@@ -651,10 +680,6 @@ cdef class ExecAlgorithm(Actor):
             The updated price for the given order (if applicable).
         trigger_price : Price, optional
             The updated trigger price for the given order (if applicable).
-
-        Returns
-        -------
-        Order
 
         Raises
         ------
@@ -736,8 +761,6 @@ cdef class ExecAlgorithm(Actor):
 
         order.apply(updated)
         self.cache.update_order(order)
-
-        return order
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
