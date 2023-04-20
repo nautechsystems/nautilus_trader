@@ -98,6 +98,7 @@ cdef class ExecAlgorithm(Actor):
         self.config = config
 
         self._exec_spawn_ids: dict[ClientOrderId, int] = {}
+        self._subscribed_strategies: set[StrategyId] = set()
 
         # Public components
         self.portfolio = None  # Initialized when registered
@@ -174,6 +175,7 @@ cdef class ExecAlgorithm(Actor):
 
     cpdef void _reset(self):
         self._exec_spawn_ids.clear()
+        self._subscribed_strategies.clear()
 
         self.on_reset()
 
@@ -256,14 +258,12 @@ cdef class ExecAlgorithm(Actor):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-        self._check_subscribed(command.strategy_id)
+        if command.strategy_id in self._subscribed_strategies:
+            return  # Already subscribed
 
-    cdef void _check_subscribed(self, StrategyId strategy_id):
-        cdef str strategy_orders_topic = f"events.order.{strategy_id}"
-
-        if not self._msgbus.is_subscribed(topic=strategy_orders_topic, handler=self._handle_order_event):
-            self._log.info(f"Subscribing to {strategy_id} order events.", LogColor.BLUE)
-            self._msgbus.subscribe(topic=strategy_orders_topic, handler=self._handle_order_event)
+        self._log.info(f"Subscribing to {command.strategy_id} order events.", LogColor.BLUE)
+        self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self._handle_order_event)
+        self._subscribed_strategies.add(command.strategy_id)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
