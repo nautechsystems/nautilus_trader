@@ -32,11 +32,16 @@ use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
 const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
 
 pub struct MonotonicClock {
+    /// The last recorded duration value from the clock.
     last: Duration,
 }
 
-/// Provides a monotonic clock which will always produce unique timestamps.
+/// Provides a monotonic clock
+///
+/// Always produces unique and monotonically increasing timestamps.
 impl MonotonicClock {
+    /// Returns a monotonic `Duration` since the UNIX epoch, ensuring that the returned value is
+    /// always greater than the previously returned value.
     fn monotonic_duration_since_unix_epoch(&mut self) -> Duration {
         let now = duration_since_unix_epoch();
         let output = if now <= self.last {
@@ -48,28 +53,28 @@ impl MonotonicClock {
         output
     }
 
-    /// Initializes a new instance.
+    /// Initializes a new `MonotonicClock` instance.
     #[must_use]
     pub fn new() -> Self {
         MonotonicClock::default()
     }
 
-    /// Returns the current seconds since the UNIX epoch.
+    /// Returns the current seconds since the UNIX epoch (unique and monotonic).
     pub fn unix_timestamp_secs(&mut self) -> f64 {
         self.monotonic_duration_since_unix_epoch().as_secs_f64()
     }
 
-    /// Returns the current milliseconds since the UNIX epoch.
+    /// Returns the current milliseconds since the UNIX epoch (unique and monotonic).
     pub fn unix_timestamp_millis(&mut self) -> u64 {
         self.monotonic_duration_since_unix_epoch().as_millis() as u64
     }
 
-    /// Returns the current microseconds since the UNIX epoch.
+    /// Returns the current microseconds since the UNIX epoch (unique and monotonic).
     pub fn unix_timestamp_micros(&mut self) -> u64 {
         self.monotonic_duration_since_unix_epoch().as_micros() as u64
     }
 
-    /// Returns the current nanoseconds since the UNIX epoch.
+    /// Returns the current nanoseconds since the UNIX epoch (unique and monotonic).
     pub fn unix_timestamp_nanos(&mut self) -> u64 {
         self.monotonic_duration_since_unix_epoch().as_nanos() as u64
     }
@@ -84,6 +89,7 @@ impl Default for MonotonicClock {
 }
 
 /// Represents a type of clock.
+///
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 trait Clock {
