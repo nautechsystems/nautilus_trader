@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 
 import pytest
 
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
+from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
@@ -27,6 +29,22 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestCommonEvents:
+    def test_time_event_picking(self):
+        # Arrange
+        event = TimeEvent(
+            "TEST_EVENT",
+            UUID4(),
+            1,
+            2,
+        )
+
+        # Act
+        pickled = pickle.dumps(event)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert event == unpickled
+
     def test_component_state_changed(self):
         # Arrange
         uuid = UUID4()

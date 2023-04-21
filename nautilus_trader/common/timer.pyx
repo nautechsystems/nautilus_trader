@@ -27,6 +27,7 @@ from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
 from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport uuid4_clone
+from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
@@ -69,6 +70,24 @@ cdef class TimeEvent(Event):
         if self._mem.name != NULL:
             time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
+    def __getstate__(self):
+        return (
+            self.to_str(),
+            self.id.to_str(),
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.ts_event = state[2]
+        self.ts_init = state[3]
+        self._mem = time_event_new(
+            pystr_to_cstr(state[0]),
+            uuid4_from_cstr(pystr_to_cstr(state[1])),
+            self.ts_event,
+            self.ts_init,
+        )
+
     cdef str to_str(self):
         return cstr_to_pystr(time_event_name_to_cstr(&self._mem))
 
@@ -108,7 +127,7 @@ cdef class TimeEvent(Event):
 
 cdef class TimeEventHandler:
     """
-    Represents a bundled event and handler.
+    Represents a time event with its associated handler.
     """
 
     def __init__(
