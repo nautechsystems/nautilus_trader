@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::cmp::Ordering;
 use std::ffi::c_char;
 use std::fmt;
 use std::rc::Rc;
@@ -69,14 +70,6 @@ impl PartialEq for TimeEvent {
 }
 
 #[repr(C)]
-#[allow(non_camel_case_types)]
-/// Provides a vector of time event handlers.
-pub struct Vec_TimeEventHandler {
-    pub ptr: *const TimeEventHandler,
-    pub len: usize,
-}
-
-#[repr(C)]
 #[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
 pub struct TimeEventHandler {
@@ -84,6 +77,34 @@ pub struct TimeEventHandler {
     pub event: TimeEvent,
     /// The event ID.
     pub callback_ptr: *mut ffi::PyObject,
+}
+
+impl PartialOrd for TimeEventHandler {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for TimeEventHandler {
+    fn eq(&self, other: &Self) -> bool {
+        self.event.ts_event == other.event.ts_event
+    }
+}
+
+impl Eq for TimeEventHandler {}
+
+impl Ord for TimeEventHandler {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.event.ts_event.cmp(&other.event.ts_event)
+    }
+}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+/// Provides a vector of time event handlers.
+pub struct Vec_TimeEventHandler {
+    pub ptr: *const TimeEventHandler,
+    pub len: usize,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
