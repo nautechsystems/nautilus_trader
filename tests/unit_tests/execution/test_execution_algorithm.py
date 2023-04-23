@@ -69,7 +69,7 @@ class TestExecAlgorithm:
         self.logger = Logger(
             clock=TestClock(),
             level_stdout=LogLevel.INFO,
-            bypass=True,
+            bypass=False,  # TODO!
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -312,7 +312,7 @@ class TestExecAlgorithm:
         assert spawned_order.tags == "ENTRY"
 
     def test_exec_algorithm_modify_order_in_place(self) -> None:
-        """Test that the primary order is modified."""
+        """Test that the primary order is modified in place."""
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -351,6 +351,78 @@ class TestExecAlgorithm:
         # Assert
         assert isinstance(primary_order.last_event, OrderUpdated)
         assert primary_order.price == new_price
+
+    def test_exec_algorithm_modify_order(self) -> None:
+        """Test that the primary order is modified."""
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+        self.strategy.submit_order(primary_order)
+        self.exchange.process(0)
+
+        new_qty = ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.900"))
+        new_price = ETHUSDT_PERP_BINANCE.make_price(Decimal("5001.0"))
+
+        # Act
+        exec_algorithm.modify_order_in_place(
+            primary_order,
+            quantity=new_qty,
+            price=new_price,
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert isinstance(primary_order.last_event, OrderUpdated)
+        assert primary_order.status == OrderStatus.INITIALIZED
+        assert primary_order.price == new_price
+        assert primary_order.quantity == new_qty
+
+    def test_exec_algorithm_cancel_order(self) -> None:
+        """Test that the primary order is canceled."""
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1.000")),
+            price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
+        )
+        self.strategy.submit_order(primary_order)
+        self.exchange.process(0)
+
+        # Act
+        exec_algorithm.cancel_order(primary_order)
+        self.exchange.process(0)
+
+        # Assert
+        assert primary_order.status == OrderStatus.CANCELED
 
     def test_exec_algorithm_on_order(self) -> None:
         # Arrange
