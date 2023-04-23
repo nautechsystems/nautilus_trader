@@ -89,7 +89,6 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         instrument_provider: BinanceFuturesInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
-        clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ):
         PyCondition.true(

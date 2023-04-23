@@ -58,6 +58,7 @@ from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -707,9 +708,47 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return instrument_id
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
+        order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot modify order: order not found for {repr(command.client_order_id)}",
+            )
+        await self._cancel_order_single(
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
         )
+
+        try:
+            await self._submit_order_method[order.order_type](order)
+        except BinanceError as e:
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=e.message,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        now = self._clock.timestamp_ns()
+        updated = OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            quantity=command.quantity or order.quantity,
+            price=command.price,
+            trigger_price=command.trigger_price,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        order.apply(updated)
+        self._cache.update_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         await self._cancel_order_single(
