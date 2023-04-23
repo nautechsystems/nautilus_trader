@@ -198,7 +198,7 @@ cdef class ExecAlgorithm(Actor):
         cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
 
         # Generate event
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=primary.trader_id,
@@ -211,8 +211,8 @@ cdef class ExecAlgorithm(Actor):
             price=None,
             trigger_price=None,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
 
         primary.apply(updated)
@@ -243,22 +243,10 @@ cdef class ExecAlgorithm(Actor):
         if self._fsm.state != ComponentState.RUNNING:
             return
 
-        cdef Order order
         if isinstance(command, SubmitOrder):
-            try:
-                self.on_order(command.order)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(command.order)}", e)
-                raise
+            self._handle_submit_order(command)
         elif isinstance(command, SubmitOrderList):
-            for order in command.order_list.orders:
-                if order.exec_algorithm_id is not None:
-                    Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
-            try:
-                self.on_order_list(command.order_list)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(command.order_list)}", e)
-                raise
+            self._handle_submit_order_list(command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -268,6 +256,24 @@ cdef class ExecAlgorithm(Actor):
         self._log.info(f"Subscribing to {command.strategy_id} order events.", LogColor.BLUE)
         self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self._handle_order_event)
         self._subscribed_strategies.add(command.strategy_id)
+
+    cdef _handle_submit_order(self, SubmitOrder command):
+        try:
+            self.on_order(command.order)
+        except Exception as e:
+            self.log.exception(f"Error on handling {repr(command.order)}", e)
+            raise
+
+    cdef _handle_submit_order_list(self, SubmitOrderList command):
+        cdef Order order
+        for order in command.order_list.orders:
+            if order.exec_algorithm_id is not None:
+                Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
+        try:
+            self.on_order_list(command.order_list)
+        except Exception as e:
+            self.log.exception(f"Error on handling {repr(command.order_list)}", e)
+            raise
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -373,7 +379,7 @@ cdef class ExecAlgorithm(Actor):
         ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
-            If `quantity` is not positive (> 0) or not less than `primary.quantity`.
+            If `quantity` is not positive (> 0).
         ValueError
             If `time_in_force` is ``GTD``.
 
@@ -382,7 +388,6 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(quantity, "quantity")
         Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
-        Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
         self._reduce_primary_order(primary, spawn_qty=quantity)
 
@@ -457,7 +462,7 @@ cdef class ExecAlgorithm(Actor):
         ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
-            If `quantity` is not positive (> 0) or not less than `primary.quantity`.
+            If `quantity` is not positive (> 0).
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
@@ -468,7 +473,6 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(quantity, "quantity")
         Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
-        Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
         self._reduce_primary_order(primary, spawn_qty=quantity)
 
@@ -542,7 +546,7 @@ cdef class ExecAlgorithm(Actor):
         ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
-            If `quantity` is not positive (> 0) or not less than `primary.quantity`.
+            If `quantity` is not positive (> 0).
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
@@ -553,7 +557,6 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(quantity, "quantity")
         Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
-        Condition.true(quantity < primary.quantity, "spawning order quantity was not less than `primary.quantity`")
 
         self._reduce_primary_order(primary, spawn_qty=quantity)
 
@@ -875,7 +878,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         # Generate event
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=order.trader_id,
@@ -888,8 +891,8 @@ cdef class ExecAlgorithm(Actor):
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
 
         order.apply(updated)
@@ -958,7 +961,7 @@ cdef class ExecAlgorithm(Actor):
 # -- EVENTS ---------------------------------------------------------------------------------------
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -967,12 +970,12 @@ cdef class ExecAlgorithm(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
 
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -981,8 +984,8 @@ cdef class ExecAlgorithm(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
 
 # -- EGRESS ---------------------------------------------------------------------------------------

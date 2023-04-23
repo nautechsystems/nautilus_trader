@@ -66,6 +66,7 @@ from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -74,6 +75,7 @@ from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -791,6 +793,9 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
+        if order.exec_algorithm_id is not None:
+            self._send_algo_command(command)
+
         if order.is_emulated_c():
             self._send_emulator_command(command)
         else:
@@ -880,6 +885,17 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
+
+        # Cancel all execution algorithm orders
+        cdef set exec_algorithm_ids = self.cache.exec_algorithm_ids()
+
+        cdef:
+            ExecAlgorithmId exec_algorithm_id
+        for exec_algorithm_id in exec_algorithm_ids:
+            exec_algorithm_orders = self.cache.orders_for_exec_algorithm(exec_algorithm_id)
+            for order in exec_algorithm_orders:
+                if order.strategy_id == self.id and not order.is_closed_c():
+                    self._cancel_algo_order(order)
 
         self._send_risk_command(command)
         self._send_emulator_command(command)
@@ -1327,7 +1343,7 @@ cdef class Strategy(Actor):
 # -- EVENTS ---------------------------------------------------------------------------------------
 
     cdef OrderDenied _generate_order_denied(self, Order order, str reason):
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         return OrderDenied(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1335,11 +1351,11 @@ cdef class Strategy(Actor):
             client_order_id=order.client_order_id,
             reason=reason,
             event_id=UUID4(),
-            ts_init=now,
+            ts_init=timestamp_ns,
         )
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1348,12 +1364,12 @@ cdef class Strategy(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
 
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1362,8 +1378,22 @@ cdef class Strategy(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
+        )
+
+    cdef OrderCanceled _generate_order_canceled(self, Order order):
+        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        return OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=timestamp_ns,
+            ts_init=timestamp_ns,
         )
 
     cdef void _deny_order(self, Order order, str reason):
@@ -1392,6 +1422,22 @@ cdef class Strategy(Actor):
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
+
+    cdef void _cancel_algo_order(self, Order order):
+        # Generate event
+        cdef OrderCanceled event = self._generate_order_canceled(order)
+
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as e:
+            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            return
+
+        # Publish denied event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

@@ -273,6 +273,13 @@ class TestCache:
         # Assert
         assert result == set()
 
+    def test_get_exec_algorithm_ids_with_no_ids_returns_empty_set(self):
+        # Arrange, Act
+        result = self.cache.exec_algorithm_ids()
+
+        # Assert
+        assert result == set()
+
     def test_get_order_ids_with_no_ids_returns_empty_set(self):
         # Arrange, Act
         result = self.cache.client_order_ids()
@@ -413,6 +420,7 @@ class TestCache:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
             emulation_trigger=TriggerType.BID_ASK,
+            exec_algorithm_id=ExecAlgorithmId("ICE-SCALPER"),
         )
 
         position_id = PositionId("P-1")
@@ -425,6 +433,8 @@ class TestCache:
         assert order in self.cache.orders_emulated()
         assert self.cache.is_order_emulated(order.client_order_id)
         assert self.cache.orders_emulated_count() == 1
+        assert order.strategy_id in self.cache.strategy_ids()
+        assert order.exec_algorithm_id in self.cache.exec_algorithm_ids()
 
     def test_load_order(self):
         # Arrange
@@ -1429,6 +1439,7 @@ class TestCache:
         # Assert
         assert len(self.cache.actor_ids()) == 0
         assert len(self.cache.strategy_ids()) == 0
+        assert len(self.cache.exec_algorithm_ids()) == 0
         assert self.cache.orders_total_count() == 0
         assert self.cache.positions_total_count() == 0
 
