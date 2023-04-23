@@ -21,6 +21,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -74,6 +75,8 @@ cdef class ExecAlgorithm(Actor):
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, TradingCommand command)
+    cdef _handle_submit_order(self, SubmitOrder command)
+    cdef _handle_submit_order_list(self, SubmitOrderList command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
