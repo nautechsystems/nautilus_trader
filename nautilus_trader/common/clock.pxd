@@ -25,12 +25,10 @@ from nautilus_trader.common.timer cimport LiveTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.rust.common cimport LiveClockAPI
 from nautilus_trader.core.rust.common cimport TestClockAPI
+from nautilus_trader.core.rust.common cimport Vec_TimeEventHandler
 
 
 cdef class Clock:
-    cdef dict _handlers
-    cdef object _default_handler
-
     cpdef double timestamp(self)
     cpdef uint64_t timestamp_ms(self)
     cpdef uint64_t timestamp_ns(self)
@@ -74,11 +72,14 @@ cdef class TestClock(Clock):
     cdef TestClockAPI _mem
 
     cpdef void set_time(self, uint64_t to_time_ns)
+    cdef Vec_TimeEventHandler advance_time_c(self, uint64_t to_time_ns, bint set_time=*)
     cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=*)
 
 
 cdef class LiveClock(Clock):
     cdef LiveClockAPI _mem
+    cdef object _default_handler
+    cdef dict _handlers
 
     cdef object _loop
     cdef int _timer_count

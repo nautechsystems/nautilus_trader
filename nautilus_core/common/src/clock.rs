@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
 
-use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
+use crate::timer::{TestTimer, TimeEvent, TimeEventHandler, Vec_TimeEventHandler};
 
 const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
 
@@ -36,7 +36,7 @@ pub struct MonotonicClock {
     last: Duration,
 }
 
-/// Provides a monotonic clock
+/// Provides a monotonic clock.
 ///
 /// Always produces unique and monotonically increasing timestamps.
 impl MonotonicClock {
@@ -116,27 +116,29 @@ trait Clock {
 
     /// Register a default event handler for the clock. If a [Timer]
     /// does not have an event handler, then this handler is used.
-    fn register_default_handler(&mut self, handler: Box<dyn Fn(TimeEvent)>);
+    fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>);
+
+    fn register_default_handler_py(&mut self, callback_py: PyObject);
 
     /// Set a [Timer] to alert at a particular time. Optional
     /// callback gets used to handle generated events.
-    fn set_time_alert_ns(
+    fn set_time_alert_ns_py(
         &mut self,
         name: String,
         alert_time_ns: UnixNanos,
-        callback: Option<Box<dyn Fn(TimeEvent)>>,
+        callback_py: Option<PyObject>,
     );
 
     /// Set a [Timer] to start alerting at every interval
     /// between start and stop time. Optional callback gets
     /// used to handle generated event.
-    fn set_timer_ns(
+    fn set_timer_ns_py(
         &mut self,
         name: String,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: Option<Box<dyn Fn(TimeEvent)>>,
+        callback_py: Option<PyObject>,
     );
 
     fn next_time_ns(&mut self, name: &str) -> UnixNanos;
@@ -147,8 +149,10 @@ trait Clock {
 pub struct TestClock {
     time_ns: UnixNanos,
     timers: HashMap<String, TestTimer>,
-    handlers: HashMap<String, Box<dyn Fn(TimeEvent)>>,
-    default_handler: Option<Box<dyn Fn(TimeEvent)>>,
+    default_callback: Option<Box<dyn Fn(TimeEvent)>>,
+    default_callback_py: Option<PyObject>,
+    _callbacks: HashMap<String, Box<dyn Fn(TimeEvent)>>,
+    callbacks_py: HashMap<String, PyObject>,
 }
 
 impl TestClock {
@@ -168,24 +172,38 @@ impl TestClock {
             self.time_ns = to_time_ns;
         }
 
-        self.timers
+        let mut timers: Vec<TimeEvent> = self
+            .timers
             .iter_mut()
             .filter(|(_, timer)| !timer.is_expired)
             .flat_map(|(_, timer)| timer.advance(to_time_ns))
-            .collect()
+            .collect();
+
+        timers.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
+        timers
     }
 
-    // pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
-    //     events
-    //         .into_iter()
-    //         .map(|event| {
-    //             TimeEventHandler {
-    //                 event: event.clone(), // Clone for now
-    //                 handler: &self.handlers[event.name.as_str()],
-    //             }
-    //         })
-    //         .collect()
-    // }
+    /// Assumes time events are sorted by their `ts_event`.
+    pub fn match_handlers_py(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
+        events
+            .into_iter()
+            .map(|event| {
+                let callback_py = self
+                    .callbacks_py
+                    .get(event.name.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        // If callback_py is None, use the default_callback_py
+                        // TODO: clone for now
+                        self.default_callback_py.clone().unwrap()
+                    });
+                TimeEventHandler {
+                    event,
+                    callback_ptr: callback_py.as_ptr(),
+                }
+            })
+            .collect()
+    }
 }
 
 impl Clock for TestClock {
@@ -193,8 +211,10 @@ impl Clock for TestClock {
         TestClock {
             time_ns: 0,
             timers: HashMap::new(),
-            handlers: HashMap::new(),
-            default_handler: None,
+            default_callback: None,
+            default_callback_py: None,
+            _callbacks: HashMap::new(), // TBC
+            callbacks_py: HashMap::new(),
         }
     }
 
@@ -229,24 +249,28 @@ impl Clock for TestClock {
             .count()
     }
 
-    fn register_default_handler(&mut self, handler: Box<dyn Fn(TimeEvent)>) {
-        self.default_handler = Some(handler);
+    fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>) {
+        self.default_callback = Some(callback);
     }
 
-    fn set_time_alert_ns(
+    fn register_default_handler_py(&mut self, callback_py: PyObject) {
+        self.default_callback_py = Some(callback_py)
+    }
+
+    fn set_time_alert_ns_py(
         &mut self,
         name: String,
         alert_time_ns: UnixNanos,
-        callback: Option<Box<dyn Fn(TimeEvent)>>,
+        callback_py: Option<PyObject>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
-        // assert!(
-        //     callback.is_some() | self.default_handler.is_some(),
-        //     "`callback` and `default_handler` were none"
-        // );
+        assert!(
+            callback_py.is_some() | self.default_callback_py.is_some(),
+            "All Python handlers were `None`"
+        );
 
-        match callback {
-            Some(callback) => self.handlers.insert(name.clone(), callback),
+        match callback_py {
+            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
             None => None,
         };
 
@@ -259,22 +283,23 @@ impl Clock for TestClock {
         self.timers.insert(name, timer);
     }
 
-    fn set_timer_ns(
+    fn set_timer_ns_py(
         &mut self,
         name: String,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: Option<Box<dyn Fn(TimeEvent)>>,
+        callback_py: Option<PyObject>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
-        // assert!(
-        //     callback.is_some() | self.default_handler.is_some(),
-        //     "`callback` and `default_handler` were none"
-        // );
-        match callback {
+        assert!(
+            callback_py.is_some() | self.default_callback_py.is_some(),
+            "All Python handlers were `None`"
+        );
+
+        match callback_py {
+            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
             None => None,
-            Some(callback) => self.handlers.insert(name.clone(), callback),
         };
 
         let timer = TestTimer::new(name.clone(), interval_ns, start_time_ns, stop_time_ns);
@@ -308,8 +333,10 @@ impl Clock for TestClock {
 pub struct LiveClock {
     internal: MonotonicClock,
     timers: HashMap<String, TestTimer>,
-    handlers: HashMap<String, Box<dyn Fn(TimeEvent)>>,
-    default_handler: Option<Box<dyn Fn(TimeEvent)>>,
+    default_callback: Option<Box<dyn Fn(TimeEvent)>>,
+    default_callback_py: Option<PyObject>,
+    _callbacks: HashMap<String, Box<dyn Fn(TimeEvent)>>, // TBC
+    callbacks_py: HashMap<String, PyObject>,
 }
 
 impl Clock for LiveClock {
@@ -317,8 +344,10 @@ impl Clock for LiveClock {
         LiveClock {
             internal: MonotonicClock::default(),
             timers: HashMap::new(),
-            handlers: HashMap::new(),
-            default_handler: None,
+            default_callback: None,
+            default_callback_py: None,
+            _callbacks: HashMap::new(),
+            callbacks_py: HashMap::new(),
         }
     }
 
@@ -354,23 +383,27 @@ impl Clock for LiveClock {
     }
 
     fn register_default_handler(&mut self, handler: Box<dyn Fn(TimeEvent)>) {
-        self.default_handler = Some(handler);
+        self.default_callback = Some(handler);
     }
 
-    fn set_time_alert_ns(
+    fn register_default_handler_py(&mut self, callback_py: PyObject) {
+        self.default_callback_py = Some(callback_py)
+    }
+
+    fn set_time_alert_ns_py(
         &mut self,
         name: String,
         alert_time_ns: UnixNanos,
-        callback: Option<Box<dyn Fn(TimeEvent)>>,
+        callback_py: Option<PyObject>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
-        // assert!(
-        //     callback.is_some() | self.default_handler.is_some(),
-        //     "`callback` and `default_handler` were none"
-        // );
+        assert!(
+            callback_py.is_some() | self.default_callback_py.is_some(),
+            "All Python handlers were `None`"
+        );
 
-        match callback {
-            Some(callback) => self.handlers.insert(name.clone(), callback),
+        match callback_py {
+            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
             None => None,
         };
 
@@ -384,22 +417,23 @@ impl Clock for LiveClock {
         self.timers.insert(name, timer);
     }
 
-    fn set_timer_ns(
+    fn set_timer_ns_py(
         &mut self,
         name: String,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: Option<Box<dyn Fn(TimeEvent)>>,
+        callback_py: Option<PyObject>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
-        // assert!(
-        //     callback.is_some() | self.default_handler.is_some(),
-        //     "`callback` and `default_handler` were none"
-        // );
-        match callback {
+        assert!(
+            callback_py.is_some() | self.default_callback_py.is_some(),
+            "All Python handlers were `None`"
+        );
+
+        match callback_py {
+            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
             None => None,
-            Some(callback) => self.handlers.insert(name.clone(), callback),
         };
 
         let timer = TestTimer::new(name.clone(), interval_ns, start_time_ns, stop_time_ns);
@@ -461,6 +495,20 @@ pub extern "C" fn test_clock_free(clock: TestClockAPI) {
     drop(clock); // Memory freed here
 }
 
+/// # Safety
+/// - Assumes `callback_ptr` is a valid PyCallable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn test_clock_register_default_handler(
+    clock: &mut TestClockAPI,
+    callback_ptr: *mut ffi::PyObject,
+) {
+    assert!(!callback_ptr.is_null());
+    assert!(ffi::Py_None() != callback_ptr);
+
+    let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
+    clock.register_default_handler_py(callback_py);
+}
+
 #[no_mangle]
 pub extern "C" fn test_clock_set_time(clock: &mut TestClockAPI, to_time_ns: u64) {
     clock.set_time(to_time_ns);
@@ -506,18 +554,27 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClockAPI) -> usize {
 
 /// # Safety
 /// - Assumes `name_ptr` is a valid C string pointer.
+/// - Assumes `callback_ptr` is a valid PyCallable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     clock: &mut TestClockAPI,
     name_ptr: *const c_char,
     alert_time_ns: UnixNanos,
+    callback_ptr: *mut ffi::PyObject,
 ) {
+    assert!(!callback_ptr.is_null());
+
     let name = cstr_to_string(name_ptr);
-    clock.set_time_alert_ns(name, alert_time_ns, None);
+    let callback_py = Python::with_gil(|py| match callback_ptr {
+        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
+        _ => None,
+    });
+    clock.set_time_alert_ns_py(name, alert_time_ns, callback_py);
 }
 
 /// # Safety
 /// - Assumes `name_ptr` is a valid C string pointer.
+/// - Assumes `callback_ptr` is a valid PyCallable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock: &mut TestClockAPI,
@@ -525,13 +582,20 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
     interval_ns: u64,
     start_time_ns: UnixNanos,
     stop_time_ns: UnixNanos,
+    callback_ptr: *mut ffi::PyObject,
 ) {
+    assert!(!callback_ptr.is_null());
+
     let name = cstr_to_string(name_ptr);
     let stop_time_ns = match stop_time_ns {
         0 => None,
         _ => Some(stop_time_ns),
     };
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, None);
+    let callback_py = Python::with_gil(|py| match callback_ptr {
+        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
+        _ => None,
+    });
+    clock.set_timer_ns_py(name, interval_ns, start_time_ns, stop_time_ns, callback_py);
 }
 
 /// # Safety
@@ -541,15 +605,16 @@ pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut TestClockAPI,
     to_time_ns: u64,
     set_time: u8,
-) -> Vec_TimeEvent {
+) -> Vec_TimeEventHandler {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
-    let len = events.len();
-    let data = match events.is_empty() {
-        true => null() as *const TimeEvent,
-        false => &events.leak()[0],
+    let handlers: Vec<TimeEventHandler> = clock.match_handlers_py(events);
+    let len = handlers.len();
+    let data = match handlers.is_empty() {
+        true => null() as *const TimeEventHandler,
+        false => &handlers.leak()[0],
     };
-    Vec_TimeEvent {
-        ptr: data as *const TimeEvent,
+    Vec_TimeEventHandler {
+        ptr: data as *const TimeEventHandler,
         len,
     }
 }
@@ -558,7 +623,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
 // TODO: Skip clippy check for now since it requires large modification
 #[allow(clippy::drop_non_drop)]
 #[no_mangle]
-pub extern "C" fn vec_time_events_drop(v: Vec_TimeEvent) {
+pub extern "C" fn vec_time_event_handlers_drop(v: Vec_TimeEventHandler) {
     drop(v); // Memory freed here
 }
 
@@ -680,7 +745,7 @@ mod tests {
     #[test]
     fn test_set_timer_ns() {
         let mut clock = TestClock::new();
-        clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+        clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
     }
@@ -688,7 +753,7 @@ mod tests {
     #[test]
     fn test_cancel_timer() {
         let mut clock = TestClock::new();
-        clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+        clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
         clock.cancel_timer(String::from("TEST_TIME1").as_str());
         assert!(clock.timer_names().is_empty());
         assert_eq!(clock.timer_count(), 0);
@@ -697,7 +762,7 @@ mod tests {
     #[test]
     fn test_cancel_timers() {
         let mut clock = TestClock::new();
-        clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
+        clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
         clock.cancel_timers();
         assert!(clock.timer_names().is_empty());
         assert_eq!(clock.timer_count(), 0);
@@ -706,7 +771,7 @@ mod tests {
     #[test]
     fn test_advance_within_stop_time() {
         let mut clock = TestClock::new();
-        clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
+        clock.set_timer_ns_py(String::from("TEST_TIME1"), 1, 1, Some(3), None);
         clock.advance_time(2, true);
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
@@ -715,7 +780,7 @@ mod tests {
     #[test]
     fn test_advance_time_to_stop_time_with_set_time_true() {
         let mut clock = TestClock::new();
-        clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+        clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
         clock.advance_time(3, true);
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);
@@ -725,7 +790,7 @@ mod tests {
     #[test]
     fn test_advance_time_to_stop_time_with_set_time_false() {
         let mut clock = TestClock::new();
-        clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+        clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
         clock.advance_time(3, false);
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);

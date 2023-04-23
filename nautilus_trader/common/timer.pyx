@@ -138,13 +138,8 @@ cdef class TimeEventHandler:
         self.event = event
         self._handler = handler
 
-    def handle_py(self) -> None:
-        """
-        Python wrapper for testing.
-        """
-        self.handle()
-
     cpdef void handle(self):
+        """Call the handler with the contained time event."""
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:

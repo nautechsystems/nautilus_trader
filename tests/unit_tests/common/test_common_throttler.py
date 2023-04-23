@@ -149,7 +149,7 @@ class TestBufferingThrottler:
 
         # Act: Trigger refresh token time alert
         events = self.clock.advance_time(1_000_000_000)
-        events[0].handle_py()
+        events[0].handle()
 
         # Assert: Remaining items sent
         assert self.clock.timer_count == 0  # No longer timing to process
@@ -238,7 +238,7 @@ class TestDroppingThrottler:
 
         # Act: Trigger refresh token time alert
         events = self.clock.advance_time(1_000_000_000)
-        events[0].handle_py()
+        events[0].handle()
 
         # Assert: Remaining items sent
         assert self.clock.timer_count == 0  # No longer timing to process

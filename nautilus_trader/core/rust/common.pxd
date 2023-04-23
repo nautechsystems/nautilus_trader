@@ -81,8 +81,16 @@ cdef extern from "../includes/common.h":
         # The UNIX timestamp (nanoseconds) when the object was initialized.
         uint64_t ts_init;
 
-    cdef struct Vec_TimeEvent:
-        const TimeEvent_t *ptr;
+    # Represents a time event and its associated handler.
+    cdef struct TimeEventHandler_t:
+        # The event.
+        TimeEvent_t event;
+        # The event ID.
+        PyObject *callback_ptr;
+
+    # Provides a vector of time event handlers.
+    cdef struct Vec_TimeEventHandler:
+        const TimeEventHandler_t *ptr;
         uintptr_t len;
 
     cdef struct LiveClockAPI:
@@ -97,6 +105,10 @@ cdef extern from "../includes/common.h":
     TestClockAPI test_clock_new();
 
     void test_clock_free(TestClockAPI clock);
+
+    # # Safety
+    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    void test_clock_register_default_handler(TestClockAPI *clock, PyObject *callback_ptr);
 
     void test_clock_set_time(TestClockAPI *clock, uint64_t to_time_ns);
 
@@ -114,25 +126,29 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
+    # - Assumes `callback_ptr` is a valid PyCallable pointer.
     void test_clock_set_time_alert_ns(TestClockAPI *clock,
                                       const char *name_ptr,
-                                      uint64_t alert_time_ns);
+                                      uint64_t alert_time_ns,
+                                      PyObject *callback_ptr);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
+    # - Assumes `callback_ptr` is a valid PyCallable pointer.
     void test_clock_set_timer_ns(TestClockAPI *clock,
                                  const char *name_ptr,
                                  uint64_t interval_ns,
                                  uint64_t start_time_ns,
-                                 uint64_t stop_time_ns);
+                                 uint64_t stop_time_ns,
+                                 PyObject *callback_ptr);
 
     # # Safety
     # - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
-    Vec_TimeEvent test_clock_advance_time(TestClockAPI *clock,
-                                          uint64_t to_time_ns,
-                                          uint8_t set_time);
+    Vec_TimeEventHandler test_clock_advance_time(TestClockAPI *clock,
+                                                 uint64_t to_time_ns,
+                                                 uint8_t set_time);
 
-    void vec_time_events_drop(Vec_TimeEvent v);
+    void vec_time_event_handlers_drop(Vec_TimeEventHandler v);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
