@@ -92,10 +92,27 @@ typedef struct TimeEvent_t {
     uint64_t ts_init;
 } TimeEvent_t;
 
-typedef struct Vec_TimeEvent {
-    const struct TimeEvent_t *ptr;
+/**
+ * Represents a time event and its associated handler.
+ */
+typedef struct TimeEventHandler_t {
+    /**
+     * The event.
+     */
+    struct TimeEvent_t event;
+    /**
+     * The event ID.
+     */
+    PyObject *callback_ptr;
+} TimeEventHandler_t;
+
+/**
+ * Provides a vector of time event handlers.
+ */
+typedef struct Vec_TimeEventHandler {
+    const struct TimeEventHandler_t *ptr;
     uintptr_t len;
-} Vec_TimeEvent;
+} Vec_TimeEventHandler;
 
 typedef struct LiveClockAPI {
     struct LiveClock *_0;
@@ -114,6 +131,12 @@ struct TestClockAPI test_clock_new(void);
 
 void test_clock_free(struct TestClockAPI clock);
 
+/**
+ * # Safety
+ * - Assumes `callback_ptr` is a valid PyCallable pointer.
+ */
+void test_clock_register_default_handler(struct TestClockAPI *clock, PyObject *callback_ptr);
+
 void test_clock_set_time(struct TestClockAPI *clock, uint64_t to_time_ns);
 
 double test_clock_timestamp(struct TestClockAPI *clock);
@@ -131,30 +154,34 @@ uintptr_t test_clock_timer_count(struct TestClockAPI *clock);
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
+ * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
 void test_clock_set_time_alert_ns(struct TestClockAPI *clock,
                                   const char *name_ptr,
-                                  uint64_t alert_time_ns);
+                                  uint64_t alert_time_ns,
+                                  PyObject *callback_ptr);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
+ * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
 void test_clock_set_timer_ns(struct TestClockAPI *clock,
                              const char *name_ptr,
                              uint64_t interval_ns,
                              uint64_t start_time_ns,
-                             uint64_t stop_time_ns);
+                             uint64_t stop_time_ns,
+                             PyObject *callback_ptr);
 
 /**
  * # Safety
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
-struct Vec_TimeEvent test_clock_advance_time(struct TestClockAPI *clock,
-                                             uint64_t to_time_ns,
-                                             uint8_t set_time);
+struct Vec_TimeEventHandler test_clock_advance_time(struct TestClockAPI *clock,
+                                                    uint64_t to_time_ns,
+                                                    uint8_t set_time);
 
-void vec_time_events_drop(struct Vec_TimeEvent v);
+void vec_time_event_handlers_drop(struct Vec_TimeEventHandler v);
 
 /**
  * # Safety

@@ -466,8 +466,10 @@ class TestTestClock:
 
         # Act
         event_handlers = clock.advance_time(2 * 60 * 1_000_000_000)
+        event_handlers[0].handle()
 
         # Assert
+        assert len(handler) == 1
         assert len(event_handlers) == 1
         assert event_handlers[0].event.name == "TEST_ALERT"
         assert clock.timer_count == 0
