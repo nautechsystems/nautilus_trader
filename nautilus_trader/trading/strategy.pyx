@@ -436,7 +436,9 @@ cdef class Strategy(Actor):
         Submit the given order with optional position ID, execution algorithm
         and routing instructions.
 
-        A `SubmitOrder` command will be created and sent to the `RiskEngine`.
+        A `SubmitOrder` command will be created and sent to **either** an
+        `ExecAlgorithm`, the `OrderEmulator` or the `RiskEngine` (depending whether
+        the order is emulated and/or has an `exec_algorithm_id` specified).
 
         If the client order ID is duplicate, then the order will be denied.
 
@@ -516,7 +518,8 @@ cdef class Strategy(Actor):
         Submit the given order list with optional position ID, execution algorithm
         and routing instructions.
 
-        A `SubmitOrderList` command with be created and sent to the `RiskEngine`.
+        A `SubmitOrderList` command with be created and sent to **either** the
+        `OrderEmulator`, or the `RiskEngine` (depending whether an order is emulated).
 
         If the order list ID is duplicate, or any client order ID is duplicate,
         then all orders will be denied.
@@ -617,9 +620,10 @@ cdef class Strategy(Actor):
         """
         Modify the given order with optional parameters and routing instructions.
 
-        An `ModifyOrder` command is created and then sent to the
-        `ExecutionEngine`. Either one or both values must differ from the
-        original order for the command to be valid.
+        An `ModifyOrder` command will be created and then sent to **either** the
+        `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
+
+        At least one value must differ from the original order for the command to be valid.
 
         Will use an Order Cancel/Replace Request (a.k.a Order Modification)
         for FIX protocols, otherwise if order update is not available for
@@ -736,8 +740,8 @@ cdef class Strategy(Actor):
         """
         Cancel the given order with optional routing instructions.
 
-        A `CancelOrder` command will be created and then sent to the
-        `ExecutionEngine`.
+        A `CancelOrder` command will be created and then sent to **either** the
+        `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
 
         Logs an error if no `VenueOrderId` has been assigned to the order.
 
@@ -800,6 +804,9 @@ cdef class Strategy(Actor):
     ):
         """
         Cancel all orders for this strategy for the given instrument ID.
+
+        A `CancelAllOrders` command will be created and then sent to **both** the
+        `OrderEmulator` and the `RiskEngine`.
 
         Parameters
         ----------
