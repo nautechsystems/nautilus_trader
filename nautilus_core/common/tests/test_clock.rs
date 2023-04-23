@@ -16,6 +16,7 @@
 // use std::ffi::CStr;
 //
 // use nautilus_common::clock::{test_clock_new, test_clock_set_time_alert_ns};
+// use pyo3::ffi;
 // use pyo3::types::PyList;
 // use pyo3::{IntoPyPointer, Python};
 
@@ -64,10 +65,15 @@
 //             let py_list = PyList::empty(py);
 //             let py_append = py_list.getattr("append").unwrap();
 //
-//             test_clock_set_time_alert_ns(&mut test_clock, name_ptr, 2_000);
+//             test_clock_set_time_alert_ns(
+//                 &mut test_clock,
+//                 name_ptr,
+//                 2_000,
+//                 std::ptr::null_mut() as *mut ffi::PyObject,
+//             );
 //
 //             let events = test_clock.advance_time(3_000, true);
-//             assert_eq!(events.len(), 1); // TODO
+//             assert_eq!(events.len(), 1);
 //         })
 //     }
 // }
