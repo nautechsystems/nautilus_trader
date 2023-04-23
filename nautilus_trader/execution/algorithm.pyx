@@ -34,7 +34,9 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -43,6 +45,8 @@ from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderPendingCancel
+from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -595,6 +599,8 @@ cdef class ExecAlgorithm(Actor):
         ------
         ValueError
             If `order.status` is not ``INITIALIZED``.
+        ValueError
+            If `order.emulation_trigger` is not ``None``.
 
         Warning
         -------
@@ -602,10 +608,13 @@ cdef class ExecAlgorithm(Actor):
         position opened by the order will have this position ID assigned. This may
         not be what you intended.
 
+        Emulated orders cannot be sent from execution algorithms (intentioally constraining complexity).
+
         """
         Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
         Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
 
         cdef SubmitOrder primary_command = None
         cdef SubmitOrder spawned_command = None
@@ -660,6 +669,129 @@ cdef class ExecAlgorithm(Actor):
             return
         self._send_risk_command(primary_command)
 
+    cpdef void modify_order(
+        self,
+        Order order,
+        Quantity quantity = None,
+        Price price = None,
+        Price trigger_price = None,
+        ClientId client_id = None,
+    ):
+        """
+        Modify the given order with optional parameters and routing instructions.
+
+        An `ModifyOrder` command will be created and then sent to the `RiskEngine`.
+
+        At least one value must differ from the original order for the command to be valid.
+
+        Will use an Order Cancel/Replace Request (a.k.a Order Modification)
+        for FIX protocols, otherwise if order update is not available for
+        the API, then will cancel and replace with a new order using the
+        original `ClientOrderId`.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update.
+        quantity : Quantity, optional
+            The updated quantity for the given order.
+        price : Price, optional
+            The updated price for the given order (if applicable).
+        trigger_price : Price, optional
+            The updated trigger price for the given order (if applicable).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Raises
+        ------
+        ValueError
+            If `price` is not ``None`` and order does not have a `price`.
+        ValueError
+            If `trigger` is not ``None`` and order does not have a `trigger_price`.
+
+        Warnings
+        --------
+        If the order is already closed or at `PENDING_CANCEL` status
+        then the command will not be generated, and a warning will be logged.
+
+        References
+        ----------
+        https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
+
+        """
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
+
+        cdef bint updating = False  # Set validation flag (must become true)
+
+        if quantity is not None and quantity != order.quantity:
+            updating = True
+
+        if price is not None:
+            Condition.true(
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
+            )
+            if price != order.price:
+                updating = True
+
+        if trigger_price is not None:
+            Condition.true(
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
+            )
+            if trigger_price != order.trigger_price:
+                updating = True
+
+        if not updating:
+            self.log.error(
+                "Cannot create command ModifyOrder: "
+                "quantity, price and trigger were either None "
+                "or the same as existing values.",
+            )
+            return
+
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot create command ModifyOrder: "
+                f"state is {order.status_string_c()}, {order}.",
+            )
+            return  # Cannot send command
+
+        cdef OrderPendingUpdate event
+        if not order.is_emulated_c():
+            # Generate and apply event
+            event = self._generate_order_pending_update(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
+        cdef ModifyOrder command = ModifyOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
+        self._send_risk_command(command)
+
     cpdef void modify_order_in_place(
         self,
         Order order,
@@ -668,7 +800,9 @@ cdef class ExecAlgorithm(Actor):
         Price trigger_price = None,
     ):
         """
-        Modify the given order in place (immediately) with optional parameters.
+        Modify the given ``INITIALIZED`` order in place (immediately) with optional parameters.
+
+        At least one value must differ from the original order for the command to be valid.
 
         Parameters
         ----------
@@ -685,7 +819,6 @@ cdef class ExecAlgorithm(Actor):
         ------
         ValueError
             If `order.status` is not ``INITIALIZED``.
-
         ValueError
             If `price` is not ``None`` and order does not have a `price`.
         ValueError
@@ -761,6 +894,96 @@ cdef class ExecAlgorithm(Actor):
 
         order.apply(updated)
         self.cache.update_order(order)
+
+    cpdef void cancel_order(self, Order order, ClientId client_id = None):
+        """
+        Cancel the given order with optional routing instructions.
+
+        A `CancelOrder` command will be created and then sent to **either** the
+        `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
+
+        Logs an error if no `VenueOrderId` has been assigned to the order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to cancel.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        """
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
+
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
+            )
+            return  # Cannot send command
+
+        cdef OrderPendingCancel event
+        if not order.is_emulated_c():
+            # Generate and apply event
+            event = self._generate_order_pending_cancel(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
+        cdef CancelOrder command = CancelOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
+        if order.is_emulated_c():
+            self._send_emulator_command(command)
+        else:
+            self._send_risk_command(command)
+
+# -- EVENTS ---------------------------------------------------------------------------------------
+
+    cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
+        cdef uint64_t now = self._clock.timestamp_ns()
+        return OrderPendingUpdate(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+    cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
+        cdef uint64_t now = self._clock.timestamp_ns()
+        return OrderPendingCancel(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=now,
+            ts_init=now,
+        )
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

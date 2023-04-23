@@ -21,6 +21,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -28,6 +29,8 @@ from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderPendingCancel
+from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -117,7 +120,27 @@ cdef class ExecAlgorithm(Actor):
     )
 
     cpdef void submit_order(self, Order order)
-    cpdef void modify_order_in_place(self, Order order, Quantity quantity=*, Price price=*, Price trigger_price=*)
+    cpdef void modify_order(
+        self,
+        Order order,
+        Quantity quantity=*,
+        Price price=*,
+        Price trigger_price=*,
+        ClientId client_id=*,
+    )
+    cpdef void modify_order_in_place(
+        self,
+        Order order,
+        Quantity quantity=*,
+        Price price=*,
+        Price trigger_price=*,
+    )
+    cpdef void cancel_order(self, Order order, ClientId client_id=*)
+
+# -- EVENTS ---------------------------------------------------------------------------------------
+
+    cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
+    cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
