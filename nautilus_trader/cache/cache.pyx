@@ -1415,7 +1415,7 @@ cdef class Cache(CacheFacade):
             if not exec_algorithm_orders:
                 self._index_exec_algorithm_orders[order.exec_algorithm_id] = {order.client_order_id}
             else:
-                exec_algorithm_orders.add(order.exec_algorithm_id)
+                exec_algorithm_orders.add(order.client_order_id)
 
             # Set exec_spawn_id index
             if order.exec_spawn_id is None:
