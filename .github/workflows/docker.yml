@@ -3,8 +3,12 @@ name: docker
 # Build NautilusTrader docker images
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - build
     branches: [master, develop]
+    types:
+      - completed
 
 jobs:
   build-docker-images:
