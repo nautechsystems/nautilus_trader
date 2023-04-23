@@ -6,7 +6,7 @@ on:
   workflow_run:
     workflows:
       - build
-    branches: [master, develop]
+    branches: [develop]
     types:
       - completed
 
