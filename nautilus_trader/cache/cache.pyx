@@ -145,6 +145,7 @@ cdef class Cache(CacheFacade):
         self._index_positions_closed: set[PositionId] = set()
         self._index_actors: set[ComponentId] = set()
         self._index_strategies: set[StrategyId] = set()
+        self._index_exec_algorithms: set[ExecAlgorithmId] = set()
 
         self._log.info("READY.")
 
@@ -611,6 +612,14 @@ cdef class Cache(CacheFacade):
                 )
                 error_count += 1
 
+        for exec_algorithm_id in self._index_exec_algorithms:
+            if exec_algorithm_id not in self._index_exec_algorithm_orders:
+                self._log.error(
+                    f"{failure} in _index_exec_algorithms: "
+                    f"{repr(exec_algorithm_id)} not found in self._index_exec_algorithm_orders"
+                )
+                error_count += 1
+
         # Finally
         cdef uint64_t total_us = round(unix_timestamp_us() - timestamp_us)
         if error_count == 0:
@@ -681,6 +690,7 @@ cdef class Cache(CacheFacade):
         self._index_positions_closed.clear()
         self._index_actors.clear()
         self._index_strategies.clear()
+        self._index_exec_algorithms.clear()
 
         self._log.debug(f"Cleared index.")
 
@@ -806,6 +816,10 @@ cdef class Cache(CacheFacade):
 
             # 14: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
+
+            # 15: Build _index_strategies -> {ExecAlgorithmId}
+            if order.exec_algorithm_id is not None:
+                self._index_exec_algorithms.add(order.exec_algorithm_id)
 
     cdef void _build_indexes_from_positions(self):
         cdef ClientOrderId client_order_id
@@ -1366,6 +1380,7 @@ cdef class Cache(CacheFacade):
         self._orders[order.client_order_id] = order
         self._index_orders.add(order.client_order_id)
         self._index_order_strategy[order.client_order_id] = order.strategy_id
+        self._index_strategies.add(order.strategy_id)
 
         # Index: Venue -> set[ClientOrderId]
         cdef set venue_orders = self._index_venue_orders.get(order.instrument_id.venue)
@@ -1393,6 +1408,8 @@ cdef class Cache(CacheFacade):
         cdef set exec_algorithm_orders
         cdef set exec_spawn_orders
         if order.exec_algorithm_id is not None:
+            self._index_exec_algorithms.add(order.exec_algorithm_id)
+
             # Set exec_algorithm_orders index
             exec_algorithm_orders = self._index_exec_algorithm_orders.get(order.exec_algorithm_id)
             if not exec_algorithm_orders:
@@ -2845,6 +2862,17 @@ cdef class Cache(CacheFacade):
 
         """
         return self._index_strategies.copy()
+
+    cpdef set exec_algorithm_ids(self):
+        """
+        Return all execution algorithm IDs.
+
+        Returns
+        -------
+        set[ExecAlgorithmId]
+
+        """
+        return self._index_exec_algorithms.copy()
 
 # -- ORDER QUERIES --------------------------------------------------------------------------------
 

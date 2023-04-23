@@ -104,6 +104,7 @@ cdef class CacheFacade:
     cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set actor_ids(self)
     cpdef set strategy_ids(self)
+    cpdef set exec_algorithm_ids(self)
 
 # -- ORDER QUERIES --------------------------------------------------------------------------------
 
