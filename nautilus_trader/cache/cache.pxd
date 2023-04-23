@@ -92,6 +92,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_positions_closed
     cdef set _index_actors
     cdef set _index_strategies
+    cdef set _index_exec_algorithms
 
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
