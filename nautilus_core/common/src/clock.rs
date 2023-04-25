@@ -16,10 +16,10 @@
 use std::collections::HashMap;
 use std::ffi::c_char;
 use std::ops::{Deref, DerefMut};
-use std::ptr::null;
 use std::time::Duration;
 
 use nautilus_core::correctness;
+use nautilus_core::cvec::CVec;
 use nautilus_core::datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs};
 use nautilus_core::string::cstr_to_string;
 use nautilus_core::time::{duration_since_unix_epoch, UnixNanos};
@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
 
-use crate::timer::{TestTimer, TimeEvent, TimeEventHandler, Vec_TimeEventHandler};
+use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 
 const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
 
@@ -605,26 +605,20 @@ pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut TestClockAPI,
     to_time_ns: u64,
     set_time: u8,
-) -> Vec_TimeEventHandler {
+) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
-    let handlers: Vec<TimeEventHandler> = clock.match_handlers_py(events);
-    let len = handlers.len();
-    let data = match handlers.is_empty() {
-        true => null() as *const TimeEventHandler,
-        false => &handlers.leak()[0],
-    };
-    Vec_TimeEventHandler {
-        ptr: data as *const TimeEventHandler,
-        len,
-    }
+    clock.match_handlers_py(events).into()
 }
 
 // TODO: This struct implementation potentially leaks memory
 // TODO: Skip clippy check for now since it requires large modification
 #[allow(clippy::drop_non_drop)]
 #[no_mangle]
-pub extern "C" fn vec_time_event_handlers_drop(v: Vec_TimeEventHandler) {
-    drop(v); // Memory freed here
+pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
+    let CVec { ptr, len, cap } = v;
+    let data: Vec<TimeEventHandler> =
+        unsafe { Vec::from_raw_parts(ptr as *mut TimeEventHandler, len, cap) };
+    drop(data); // Memory freed here
 }
 
 /// # Safety

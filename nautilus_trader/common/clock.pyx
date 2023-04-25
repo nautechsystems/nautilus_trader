@@ -35,7 +35,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
-from nautilus_trader.core.rust.common cimport Vec_TimeEventHandler
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.common cimport live_clock_free
 from nautilus_trader.core.rust.common cimport live_clock_new
 from nautilus_trader.core.rust.common cimport live_clock_timestamp
@@ -532,10 +532,10 @@ cdef class TestClock(Clock):
         """
         test_clock_set_time(&self._mem, to_time_ns)
 
-    cdef Vec_TimeEventHandler advance_time_c(self, uint64_t to_time_ns, bint set_time=True):
+    cdef CVec advance_time_c(self, uint64_t to_time_ns, bint set_time=True):
         Condition.true(to_time_ns >= test_clock_timestamp_ns(&self._mem), "to_time_ns was < time_ns (not monotonic)")
 
-        return <Vec_TimeEventHandler>test_clock_advance_time(&self._mem, to_time_ns, set_time)
+        return <CVec>test_clock_advance_time(&self._mem, to_time_ns, set_time)
 
     cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=True):
         """
@@ -559,7 +559,8 @@ cdef class TestClock(Clock):
             If `to_time_ns` is < the clocks current time.
 
         """
-        cdef Vec_TimeEventHandler raw_handlers = self.advance_time_c(to_time_ns, set_time)
+        cdef CVec raw_handler_vec = self.advance_time_c(to_time_ns, set_time)
+        cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef list event_handlers = []
 
         cdef:
@@ -568,8 +569,8 @@ cdef class TestClock(Clock):
             TimeEvent event
             TimeEventHandler_t raw_handler
             TimeEventHandler event_handler
-        for i in range(raw_handlers.len):
-            raw_handler = <TimeEventHandler_t>raw_handlers.ptr[i]
+        for i in range(raw_handler_vec.len):
+            raw_handler = <TimeEventHandler_t>raw_handlers[i]
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`
@@ -578,7 +579,7 @@ cdef class TestClock(Clock):
             event_handler = TimeEventHandler(event, callback)
             event_handlers.append(event_handler)
 
-        vec_time_event_handlers_drop(raw_handlers)
+        vec_time_event_handlers_drop(raw_handler_vec)
 
         return event_handlers
 

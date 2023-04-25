@@ -60,7 +60,7 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_free
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
-from nautilus_trader.core.rust.common cimport Vec_TimeEventHandler
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
@@ -971,7 +971,7 @@ cdef class BacktestEngine:
         cdef uint64_t last_ns = 0
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
-        cdef Vec_TimeEventHandler raw_handlers
+        cdef CVec raw_handlers
         while data is not None:
             if data.ts_init > end_ns:
                 # End of backtest
@@ -1039,7 +1039,7 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef Vec_TimeEventHandler _advance_time(self, uint64_t now_ns, list clocks):
+    cdef CVec _advance_time(self, uint64_t now_ns, list clocks):
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
@@ -1049,7 +1049,7 @@ cdef class BacktestEngine:
                 False,
             )
 
-        cdef Vec_TimeEventHandler raw_handlers = time_event_accumulator_drain(&self._accumulator)
+        cdef CVec raw_handlers = time_event_accumulator_drain(&self._accumulator)
 
         # Handle all events prior to the `now_ns`
         self._process_raw_time_event_handlers(
@@ -1068,11 +1068,12 @@ cdef class BacktestEngine:
 
     cdef void _process_raw_time_event_handlers(
         self,
-        Vec_TimeEventHandler raw_handlers,
+        CVec raw_handler_vec,
         list clocks,
         uint64_t now_ns,
         bint only_now,
     ):
+        cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
             uint64_t i
             uint64_t event_ts_init
@@ -1080,8 +1081,8 @@ cdef class BacktestEngine:
             TimeEvent event
             TestClock clock
             object callback
-        for i in range(raw_handlers.len):
-            raw_handler = <TimeEventHandler_t>raw_handlers.ptr[i]
+        for i in range(raw_handler_vec.len):
+            raw_handler = <TimeEventHandler_t>raw_handlers[i]
             event_ts_init = raw_handler.event.ts_init
             if (only_now and event_ts_init < now_ns) or (not only_now and event_ts_init == now_ns):
                 continue

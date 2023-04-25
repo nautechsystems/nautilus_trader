@@ -21,7 +21,6 @@ header = '"../includes/backtest.h"'
 
 "nautilus_trader.core.rust.common" = [
     "TestClockAPI",
-    "Vec_TimeEventHandler",
 ]
 
 "nautilus_trader.core.rust.core" = [

@@ -2,7 +2,7 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.core cimport UUID4_t, CVec
 
 cdef extern from "../includes/common.h":
 
@@ -70,6 +70,15 @@ cdef extern from "../includes/common.h":
     cdef struct TestClockAPI:
         TestClock *_0;
 
+    cdef struct LiveClockAPI:
+        LiveClock *_0;
+
+    # Logger is not C FFI safe, so we box and pass it as an opaque pointer.
+    # This works because Logger fields don't need to be accessed, only functions
+    # are called.
+    cdef struct CLogger:
+        Logger_t *_0;
+
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:
         # The event name.
@@ -87,20 +96,6 @@ cdef extern from "../includes/common.h":
         TimeEvent_t event;
         # The event ID.
         PyObject *callback_ptr;
-
-    # Provides a vector of time event handlers.
-    cdef struct Vec_TimeEventHandler:
-        const TimeEventHandler_t *ptr;
-        uintptr_t len;
-
-    cdef struct LiveClockAPI:
-        LiveClock *_0;
-
-    # Logger is not C FFI safe, so we box and pass it as an opaque pointer.
-    # This works because Logger fields don't need to be accessed, only functions
-    # are called.
-    cdef struct CLogger:
-        Logger_t *_0;
 
     TestClockAPI test_clock_new();
 
@@ -144,11 +139,9 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     # - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
-    Vec_TimeEventHandler test_clock_advance_time(TestClockAPI *clock,
-                                                 uint64_t to_time_ns,
-                                                 uint8_t set_time);
+    CVec test_clock_advance_time(TestClockAPI *clock, uint64_t to_time_ns, uint8_t set_time);
 
-    void vec_time_event_handlers_drop(Vec_TimeEventHandler v);
+    void vec_time_event_handlers_drop(CVec v);
 
     # # Safety
     # - Assumes `name_ptr` is a valid C string pointer.
@@ -259,3 +252,5 @@ cdef extern from "../includes/common.h":
 
     # Returns a [`TimeEvent`] as a C string pointer.
     const char *time_event_to_cstr(const TimeEvent_t *event);
+
+    TimeEventHandler_t dummy(TimeEventHandler_t v);
