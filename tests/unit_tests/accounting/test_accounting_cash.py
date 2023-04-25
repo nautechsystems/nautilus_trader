@@ -455,8 +455,6 @@ class TestCashAccount:
             last_px=Price.from_str("45500.00"),
         )
 
-        position.apply(fill2)
-
         result2 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
             fill=fill2,
