@@ -13,22 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
 import shutil
 import tempfile
-import os
 
-import pytest
-
+from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
+from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
 from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
-from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
 
-from nautilus_trader.persistence.wranglers import list_from_capsule
-from nautilus_trader import PACKAGE_ROOT
 
-@pytest.mark.skip(reason="update tests for new API")
+# @pytest.mark.skip(reason="update tests for new API")
 class TestCatalogPerformance(PerformanceHarness):
     @staticmethod
     def test_load_quote_ticks_python(benchmark):
@@ -90,7 +88,6 @@ class TestCatalogPerformance(PerformanceHarness):
             assert count == 9689614
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
-
 
     @staticmethod
     def test_load_multi_stream_catalog_v2(benchmark):
