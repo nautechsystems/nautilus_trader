@@ -27,3 +27,10 @@ pin-project-lite = "0.2.9"
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]
 default = []
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "persistence_benchmark"
+harness = false
