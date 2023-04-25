@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::ffi::c_char;
 use std::fs::{create_dir_all, File};
 use std::io::{Stderr, Stdout};
-use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 use std::{
@@ -28,8 +27,6 @@ use std::{
 
 use chrono::prelude::*;
 use chrono::Utc;
-use governor::clock::{Clock, DefaultClock};
-use governor::{Quota, RateLimiter};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::parsing::optional_bytes_to_json;
 use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
@@ -53,8 +50,6 @@ pub struct Logger {
     pub level_stdout: LogLevel,
     /// The minimum log level to write to a log file.
     pub level_file: Option<LogLevel>,
-    /// The maximum messages per second which can be flushed to stdout or stderr.
-    pub rate_limit: usize,
     /// If logging is bypassed.
     pub is_bypassed: bool,
 }
@@ -86,7 +81,6 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         component_levels: Option<HashMap<String, Value>>,
-        rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
         let (tx, rx) = channel::<LogMessage>();
@@ -119,7 +113,6 @@ impl Logger {
                 file_name,
                 file_format,
                 level_filters,
-                rate_limit,
                 rx,
             )
         });
@@ -130,7 +123,6 @@ impl Logger {
             instance_id,
             level_stdout,
             level_file,
-            rate_limit,
             is_bypassed,
             tx,
         }
@@ -145,7 +137,6 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
-        rate_limit: usize,
         rx: Receiver<LogMessage>,
     ) {
         // Setup std I/O buffers
@@ -194,11 +185,6 @@ impl Logger {
         );
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
 
-        // Setup rate limiting
-        let quota = Quota::per_second(NonZeroU32::new(rate_limit as u32).unwrap());
-        let clock = DefaultClock::default();
-        let limiter = RateLimiter::direct(quota);
-
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
             let component_level = level_filters.get(&log_msg.component);
@@ -211,32 +197,10 @@ impl Logger {
             }
 
             if log_msg.level >= LogLevel::Error {
-                // Check rate limiter
-                loop {
-                    match limiter.check() {
-                        Ok(()) => break,
-                        Err(minimum_time) => {
-                            let wait_time = minimum_time.wait_time_from(clock.now());
-                            thread::sleep(wait_time);
-                        }
-                    }
-                }
-
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
             } else if log_msg.level >= level_stdout {
-                // Check rate limiter
-                loop {
-                    match limiter.check() {
-                        Ok(()) => break,
-                        Err(minimum_time) => {
-                            let wait_time = minimum_time.wait_time_from(clock.now());
-                            thread::sleep(wait_time);
-                        }
-                    }
-                }
-
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
@@ -518,7 +482,6 @@ pub unsafe extern "C" fn logger_new(
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
-    rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
@@ -535,7 +498,6 @@ pub unsafe extern "C" fn logger_new(
         optional_cstr_to_string(file_name_ptr),
         optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
-        rate_limit,
         is_bypassed != 0,
     )))
 }
@@ -628,7 +590,6 @@ mod tests {
             None,
             None,
             None,
-            100_000,
             false,
         );
         assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
@@ -647,7 +608,6 @@ mod tests {
             None,
             None,
             None,
-            100_000,
             false,
         );
 
@@ -683,7 +643,6 @@ mod tests {
             None,
             None,
             None,
-            100_000,
             false,
         );
 
@@ -740,7 +699,6 @@ mod tests {
             None,
             None,
             Some(component_levels),
-            100_000,
             false,
         );
 
@@ -784,7 +742,6 @@ mod tests {
             Some(log_file_path.to_str().unwrap().to_string()),
             Some("json".to_string()),
             None,
-            100_000,
             false,
         );
 

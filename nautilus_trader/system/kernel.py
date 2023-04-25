@@ -154,7 +154,6 @@ class NautilusKernel:
             file_name=logging.log_file_name,
             file_format=logging.log_file_format,
             component_levels=logging.log_component_levels,
-            rate_limit=logging.log_rate_limit,
             bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
         )
 

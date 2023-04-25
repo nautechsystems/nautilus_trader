@@ -93,8 +93,6 @@ cdef class Logger:
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
-    rate_limit : int, default 100_000
-        The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
         If the log output is bypassed.
     """
@@ -112,7 +110,6 @@ cdef class Logger:
         str file_name = None,
         str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
-        int rate_limit = 100_000,
         bint bypass = False,
     ):
         if trader_id is None:
@@ -137,7 +134,6 @@ cdef class Logger:
             pystr_to_cstr(file_name) if file_name else NULL,
             pystr_to_cstr(file_format) if file_format else NULL,
             pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
-            rate_limit,
             bypass,
         )
 
