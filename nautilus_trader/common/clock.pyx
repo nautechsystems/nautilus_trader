@@ -563,8 +563,8 @@ cdef class TestClock(Clock):
         cdef list event_handlers = []
 
         cdef:
-            cdef uint64_t i
-            cdef object callback
+            uint64_t i
+            object callback
             TimeEvent event
             TimeEventHandler_t raw_handler
             TimeEventHandler event_handler

@@ -1630,6 +1630,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus_backtest"
+version = "0.4.0"
+dependencies = [
+ "cbindgen",
+ "nautilus_common",
+ "nautilus_core",
+ "nautilus_model",
+ "pyo3",
+ "tempfile",
+]
+
+[[package]]
 name = "nautilus_common"
 version = "0.4.0"
 dependencies = [

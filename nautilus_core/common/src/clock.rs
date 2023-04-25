@@ -56,7 +56,9 @@ impl MonotonicClock {
     /// Initializes a new `MonotonicClock` instance.
     #[must_use]
     pub fn new() -> Self {
-        MonotonicClock::default()
+        MonotonicClock {
+            last: duration_since_unix_epoch(),
+        }
     }
 
     /// Returns the current seconds since the UNIX epoch (unique and monotonic).
@@ -82,9 +84,7 @@ impl MonotonicClock {
 
 impl Default for MonotonicClock {
     fn default() -> Self {
-        MonotonicClock {
-            last: duration_since_unix_epoch(),
-        }
+        MonotonicClock::new()
     }
 }
 
