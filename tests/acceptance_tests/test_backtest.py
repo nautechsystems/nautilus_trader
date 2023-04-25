@@ -428,7 +428,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
+            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -494,7 +494,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
+            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -533,8 +533,8 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Build ticks from bar data
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
-            ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
+            bid_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(ticks)
@@ -813,6 +813,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9860.37",
+            "9862.39",
             GBP,
         )

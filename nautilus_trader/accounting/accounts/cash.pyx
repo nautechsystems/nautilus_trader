@@ -15,6 +15,8 @@
 
 from typing import Optional
 
+from libc.math cimport fmin
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
@@ -302,6 +304,10 @@ cdef class CashAccount(Account):
 
         cdef double fill_qty = fill.last_qty.as_f64_c()
         cdef double fill_px = fill.last_px.as_f64_c()
+
+        if position is not None:
+            # Only book open quantity towards realized PnL
+            fill_qty = fmin(fill_qty, position.quantity.as_f64_c())
 
         if fill.order_side == OrderSide.BUY:
             if base_currency and not self.base_currency:

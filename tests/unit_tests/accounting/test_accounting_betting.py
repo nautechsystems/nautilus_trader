@@ -238,10 +238,9 @@ class TestBettingAccount:
         event = self._make_account_state(starting_balance=1000.0)
         account = BettingAccount(event)
         fill1 = self._make_fill(price="0.50", volume=100, side="BUY")
-        fill2 = self._make_fill(price="0.80", volume=100, side="SELL")
+        fill2 = self._make_fill(price="0.80", volume=50, side="SELL")
 
         position = Position(self.instrument, fill1)
-        position.apply(fill2)
 
         # Act
         result = account.calculate_pnls(
@@ -251,9 +250,7 @@ class TestBettingAccount:
         )
 
         # Assert
-        # TODO - this should really be 75 GBP given the position (but we are currently not using position?)
-        # assert result == [Money("75.00", GBP)]
-        assert result == [Money("80.00", GBP)]
+        assert result == [Money("40.00", GBP)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,

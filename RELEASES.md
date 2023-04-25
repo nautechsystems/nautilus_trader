@@ -22,6 +22,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed processing of contingency orders when in a pending update state
+- Fixed calculation of PnL for flipped positions (only book realized PnL against open position)
 - Added missing `BinanceSymbolFilterType.NOTIONAL`
 
 ---
