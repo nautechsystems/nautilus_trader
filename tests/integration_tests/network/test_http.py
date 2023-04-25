@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 
 import pytest
 import pytest_asyncio
@@ -33,7 +32,7 @@ async def client():
     return client
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
+@pytest.mark.skip(reason="Relies on external internet resource")
 @pytest.mark.asyncio
 async def test_client_get(client):
     resp = await client.get("https://httpbin.org/get")
@@ -43,7 +42,7 @@ async def test_client_get(client):
     assert client.avg_latency() > 0
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
+@pytest.mark.skip(reason="Relies on external internet resource")
 @pytest.mark.asyncio
 async def test_client_post(client):
     resp = await client.post("https://httpbin.org/post")
