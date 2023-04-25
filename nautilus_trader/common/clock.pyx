@@ -35,7 +35,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
-from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.common cimport live_clock_free
 from nautilus_trader.core.rust.common cimport live_clock_new
 from nautilus_trader.core.rust.common cimport live_clock_timestamp
@@ -59,6 +58,7 @@ from nautilus_trader.core.rust.common cimport test_clock_timestamp_ms
 from nautilus_trader.core.rust.common cimport test_clock_timestamp_ns
 from nautilus_trader.core.rust.common cimport test_clock_timestamp_us
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport nanos_to_millis
 from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport unix_timestamp
