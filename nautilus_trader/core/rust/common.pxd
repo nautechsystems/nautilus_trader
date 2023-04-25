@@ -2,7 +2,7 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.core cimport UUID4_t, CVec
 
 cdef extern from "../includes/common.h":
 
