@@ -1703,6 +1703,7 @@ version = "0.4.0"
 dependencies = [
  "binary-heap-plus",
  "compare",
+ "criterion",
  "datafusion",
  "futures",
  "nautilus_core",
