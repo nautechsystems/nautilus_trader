@@ -220,7 +220,6 @@ cdef extern from "../includes/common.h":
                        const char *file_name_ptr,
                        const char *file_format_ptr,
                        const char *component_levels_ptr,
-                       uintptr_t rate_limit,
                        uint8_t is_bypassed);
 
     void logger_free(CLogger logger);
