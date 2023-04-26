@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport time_event_clone
 from nautilus_trader.core.rust.common cimport time_event_free
 from nautilus_trader.core.rust.common cimport time_event_name_to_cstr
 from nautilus_trader.core.rust.common cimport time_event_new
@@ -118,7 +119,7 @@ cdef class TimeEvent(Event):
     @staticmethod
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
-        event._mem = mem
+        event._mem = time_event_clone(&mem)
         event.id = UUID4.from_mem_c(mem.event_id)
         event.ts_event = mem.ts_event
         event.ts_init = mem.ts_init
