@@ -24,6 +24,7 @@ header = '"../includes/backtest.h"'
 ]
 
 "nautilus_trader.core.rust.core" = [
+    "CVec",
     "UUID4_t",
 ]
 

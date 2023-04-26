@@ -20,6 +20,7 @@ header = '"../includes/common.h"'
 ]
 
 "nautilus_trader.core.rust.core" = [
+    "CVec",
     "UUID4_t",
 ]
 

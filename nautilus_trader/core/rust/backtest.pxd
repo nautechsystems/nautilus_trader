@@ -3,7 +3,7 @@
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 from nautilus_trader.core.rust.common cimport TestClockAPI
-from nautilus_trader.core.rust.core cimport UUID4_t, CVec
+from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/backtest.h":
 
