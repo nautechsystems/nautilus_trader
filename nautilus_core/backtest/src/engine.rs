@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut};
 
 use nautilus_common::clock::{TestClock, TestClockAPI};
@@ -44,12 +43,10 @@ impl TimeEventAccumulator {
 
     /// Drain the accumulated time event handlers in sorted order (by the events `ts_event`).
     pub fn drain(&mut self) -> Vec<TimeEventHandler> {
-        self.event_handlers.sort_by(|a, b| {
-            a.event
-                .ts_event
-                .partial_cmp(&b.event.ts_event)
-                .unwrap_or(Ordering::Equal)
-        });
+        // stable sort is not necessary since there is no relation between
+        // events of the same clock. Only time based ordering is needed.
+        self.event_handlers
+            .sort_unstable_by_key(|v| v.event.ts_event);
         self.event_handlers.drain(..).collect()
     }
 }
@@ -115,7 +112,6 @@ mod tests {
 
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
-    use pyo3::ffi::{self, Py_INCREF};
     use pyo3::types::PyList;
     use pyo3::{prelude::*, AsPyPointer};
 
@@ -125,7 +121,6 @@ mod tests {
 
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
 
             let mut accumulator = TimeEventAccumulator::new();
 
@@ -133,21 +128,24 @@ mod tests {
             let time_event2 = TimeEvent::new(String::from("TEST_EVENT_2"), UUID4::new(), 300, 300);
             let time_event3 = TimeEvent::new(String::from("TEST_EVENT_3"), UUID4::new(), 200, 200);
 
-            let callback_ptr = py_append.as_ptr() as *mut ffi::PyObject;
-            unsafe { Py_INCREF(callback_ptr) };
+            // Note: as_ptr returns a borrowed pointer. It is valid as long
+            // as the object is in scope. In this case `callback_ptr` is valid
+            // as long as `py_append` is in scope.
+            let callback_ptr = {
+                let py_append = Py::from(py_list.getattr("append").unwrap());
+                py_append.as_ptr() as *mut pyo3::ffi::PyObject
+            };
 
             let handler1 = TimeEventHandler {
                 event: time_event1.clone(),
                 callback_ptr,
             };
 
-            unsafe { Py_INCREF(callback_ptr) };
             let handler2 = TimeEventHandler {
                 event: time_event2.clone(),
                 callback_ptr,
             };
 
-            unsafe { Py_INCREF(callback_ptr) };
             let handler3 = TimeEventHandler {
                 event: time_event3.clone(),
                 callback_ptr,
