@@ -188,7 +188,7 @@ pub extern "C" fn bar_type_new(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_copy(bar_type: &BarType) -> BarType {
+pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
     bar_type.clone()
 }
 
@@ -313,7 +313,7 @@ pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_copy(bar: &Bar) -> Bar {
+pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
     bar.clone()
 }
 

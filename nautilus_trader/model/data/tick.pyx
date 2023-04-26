@@ -27,13 +27,13 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
-from nautilus_trader.core.rust.model cimport quote_tick_copy
+from nautilus_trader.core.rust.model cimport quote_tick_clone
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
-from nautilus_trader.core.rust.model cimport trade_tick_copy
+from nautilus_trader.core.rust.model cimport trade_tick_clone
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
@@ -290,7 +290,7 @@ cdef class QuoteTick(Data):
     @staticmethod
     cdef QuoteTick from_mem_c(QuoteTick_t mem):
         cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
-        quote_tick._mem = quote_tick_copy(&mem)
+        quote_tick._mem = quote_tick_clone(&mem)
         quote_tick.ts_event = mem.ts_event
         quote_tick.ts_init = mem.ts_init
 
@@ -681,7 +681,7 @@ cdef class TradeTick(Data):
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem):
         cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
-        trade_tick._mem = trade_tick_copy(&mem)
+        trade_tick._mem = trade_tick_clone(&mem)
 
         trade_tick.ts_event = mem.ts_event
         trade_tick.ts_init = mem.ts_init
@@ -715,7 +715,7 @@ cdef class TradeTick(Data):
             raise MemoryError()
 
         # create CVec
-        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cdef CVec* cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_

@@ -341,7 +341,7 @@ cdef extern from "../includes/model.h":
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
 
-    BarType_t bar_type_copy(const BarType_t *bar_type);
+    BarType_t bar_type_clone(const BarType_t *bar_type);
 
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
@@ -383,7 +383,7 @@ cdef extern from "../includes/model.h":
     # Returns a [`Bar`] as a C string.
     const char *bar_to_cstr(const Bar_t *bar);
 
-    Bar_t bar_copy(const Bar_t *bar);
+    Bar_t bar_clone(const Bar_t *bar);
 
     void bar_free(Bar_t bar);
 
@@ -393,7 +393,7 @@ cdef extern from "../includes/model.h":
 
     void quote_tick_free(QuoteTick_t tick);
 
-    QuoteTick_t quote_tick_copy(const QuoteTick_t *tick);
+    QuoteTick_t quote_tick_clone(const QuoteTick_t *tick);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid,
@@ -420,7 +420,7 @@ cdef extern from "../includes/model.h":
 
     void trade_tick_free(TradeTick_t tick);
 
-    TradeTick_t trade_tick_copy(const TradeTick_t *tick);
+    TradeTick_t trade_tick_clone(const TradeTick_t *tick);
 
     TradeTick_t trade_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t price,
