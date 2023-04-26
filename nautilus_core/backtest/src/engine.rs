@@ -15,10 +15,10 @@
 
 use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut};
-use std::ptr::null;
 
 use nautilus_common::clock::{TestClock, TestClockAPI};
-use nautilus_common::timer::{TimeEventHandler, Vec_TimeEventHandler};
+use nautilus_common::timer::TimeEventHandler;
+use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers.
@@ -102,19 +102,8 @@ pub extern "C" fn time_event_accumulator_advance_clock(
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_accumulator_drain(
-    accumulator: &mut TimeEventAccumulatorAPI,
-) -> Vec_TimeEventHandler {
-    let handlers = accumulator.drain();
-    let len = handlers.len();
-    let data = match handlers.is_empty() {
-        true => null() as *const TimeEventHandler,
-        false => &handlers.leak()[0],
-    };
-    Vec_TimeEventHandler {
-        ptr: data as *const TimeEventHandler,
-        len,
-    }
+pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
+    accumulator.drain().into()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

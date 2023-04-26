@@ -99,14 +99,6 @@ impl Ord for TimeEventHandler {
     }
 }
 
-#[repr(C)]
-#[allow(non_camel_case_types)]
-/// Provides a vector of time event handlers.
-pub struct Vec_TimeEventHandler {
-    pub ptr: *const TimeEventHandler,
-    pub len: usize,
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -153,6 +145,11 @@ pub trait Timer {
     fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent;
     fn iterate_next_time(&mut self, ts_now: UnixNanos);
     fn cancel(&mut self);
+}
+
+#[no_mangle]
+pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
+    v
 }
 
 #[derive(Clone)]

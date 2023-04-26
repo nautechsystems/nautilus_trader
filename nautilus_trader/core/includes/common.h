@@ -70,6 +70,19 @@ typedef struct TestClockAPI {
     struct TestClock *_0;
 } TestClockAPI;
 
+typedef struct LiveClockAPI {
+    struct LiveClock *_0;
+} LiveClockAPI;
+
+/**
+ * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
+ * This works because Logger fields don't need to be accessed, only functions
+ * are called.
+ */
+typedef struct CLogger {
+    struct Logger_t *_0;
+} CLogger;
+
 /**
  * Represents a time event occurring at the event timestamp.
  */
@@ -105,27 +118,6 @@ typedef struct TimeEventHandler_t {
      */
     PyObject *callback_ptr;
 } TimeEventHandler_t;
-
-/**
- * Provides a vector of time event handlers.
- */
-typedef struct Vec_TimeEventHandler {
-    const struct TimeEventHandler_t *ptr;
-    uintptr_t len;
-} Vec_TimeEventHandler;
-
-typedef struct LiveClockAPI {
-    struct LiveClock *_0;
-} LiveClockAPI;
-
-/**
- * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
- * This works because Logger fields don't need to be accessed, only functions
- * are called.
- */
-typedef struct CLogger {
-    struct Logger_t *_0;
-} CLogger;
 
 struct TestClockAPI test_clock_new(void);
 
@@ -177,11 +169,9 @@ void test_clock_set_timer_ns(struct TestClockAPI *clock,
  * # Safety
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
-struct Vec_TimeEventHandler test_clock_advance_time(struct TestClockAPI *clock,
-                                                    uint64_t to_time_ns,
-                                                    uint8_t set_time);
+CVec test_clock_advance_time(struct TestClockAPI *clock, uint64_t to_time_ns, uint8_t set_time);
 
-void vec_time_event_handlers_drop(struct Vec_TimeEventHandler v);
+void vec_time_event_handlers_drop(CVec v);
 
 /**
  * # Safety
@@ -312,3 +302,5 @@ const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
  * Returns a [`TimeEvent`] as a C string pointer.
  */
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

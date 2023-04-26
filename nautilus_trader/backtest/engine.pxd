@@ -21,7 +21,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
-from nautilus_trader.core.rust.common cimport Vec_TimeEventHandler
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 
@@ -50,10 +50,10 @@ cdef class BacktestEngine:
     cdef uint64_t _iteration
 
     cdef Data _next(self)
-    cdef Vec_TimeEventHandler _advance_time(self, uint64_t now_ns, list clocks)
+    cdef CVec _advance_time(self, uint64_t now_ns, list clocks)
     cdef void _process_raw_time_event_handlers(
         self,
-        Vec_TimeEventHandler raw_handlers,
+        CVec raw_handlers,
         list clocks,
         uint64_t now_ns,
         bint only_now,

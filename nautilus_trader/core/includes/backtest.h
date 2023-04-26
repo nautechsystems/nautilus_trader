@@ -23,4 +23,4 @@ void time_event_accumulator_advance_clock(struct TimeEventAccumulatorAPI *accumu
                                           uint64_t to_time_ns,
                                           uint8_t set_time);
 
-Vec_TimeEventHandler time_event_accumulator_drain(struct TimeEventAccumulatorAPI *accumulator);
+CVec time_event_accumulator_drain(struct TimeEventAccumulatorAPI *accumulator);
