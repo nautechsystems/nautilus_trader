@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut};
 
 use nautilus_common::clock::{TestClock, TestClockAPI};
@@ -44,12 +43,10 @@ impl TimeEventAccumulator {
 
     /// Drain the accumulated time event handlers in sorted order (by the events `ts_event`).
     pub fn drain(&mut self) -> Vec<TimeEventHandler> {
-        self.event_handlers.sort_by(|a, b| {
-            a.event
-                .ts_event
-                .partial_cmp(&b.event.ts_event)
-                .unwrap_or(Ordering::Equal)
-        });
+        // stable sort is not necessary since there is no relation between
+        // events of the same clock. Only time based ordering is needed.
+        self.event_handlers
+            .sort_unstable_by_key(|v| v.event.ts_event);
         self.event_handlers.drain(..).collect()
     }
 }
