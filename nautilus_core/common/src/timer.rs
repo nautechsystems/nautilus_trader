@@ -115,7 +115,7 @@ pub unsafe extern "C" fn time_event_new(
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_copy(event: &TimeEvent) -> TimeEvent {
+pub extern "C" fn time_event_clone(event: &TimeEvent) -> TimeEvent {
     event.clone()
 }
 

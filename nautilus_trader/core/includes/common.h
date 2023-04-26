@@ -292,7 +292,7 @@ struct TimeEvent_t time_event_new(const char *name,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
-struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
+struct TimeEvent_t time_event_clone(const struct TimeEvent_t *event);
 
 void time_event_free(struct TimeEvent_t event);
 

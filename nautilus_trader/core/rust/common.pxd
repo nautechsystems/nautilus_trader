@@ -244,7 +244,7 @@ cdef extern from "../includes/common.h":
                                uint64_t ts_event,
                                uint64_t ts_init);
 
-    TimeEvent_t time_event_copy(const TimeEvent_t *event);
+    TimeEvent_t time_event_clone(const TimeEvent_t *event);
 
     void time_event_free(TimeEvent_t event);
 
