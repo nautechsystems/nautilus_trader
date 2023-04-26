@@ -26,6 +26,7 @@ from nautilus_trader.test_kit.performance import PerformanceHarness
 from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
 
 
+# TODO: skip in CI
 # @pytest.mark.skip(reason="update tests for new API")
 class TestCatalogPerformance(PerformanceHarness):
     @staticmethod
