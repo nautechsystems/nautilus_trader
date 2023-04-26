@@ -579,7 +579,7 @@ cdef class TestClock(Clock):
             event_handler = TimeEventHandler(event, callback)
             event_handlers.append(event_handler)
 
-        vec_time_event_handlers_drop(raw_handler_vec)
+        # vec_time_event_handlers_drop(raw_handler_vec)
 
         return event_handlers
 
