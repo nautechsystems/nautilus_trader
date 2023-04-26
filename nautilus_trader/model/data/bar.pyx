@@ -34,7 +34,7 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
 from nautilus_trader.core.rust.model cimport bar_to_cstr
-from nautilus_trader.core.rust.model cimport bar_type_copy
+from nautilus_trader.core.rust.model cimport bar_type_clone
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_free
 from nautilus_trader.core.rust.model cimport bar_type_ge
@@ -541,7 +541,7 @@ cdef class BarType:
     @staticmethod
     cdef BarType from_mem_c(BarType_t mem):
         cdef BarType bar_type = BarType.__new__(BarType)
-        bar_type._mem = bar_type_copy(&mem)
+        bar_type._mem = bar_type_clone(&mem)
         return bar_type
 
     @staticmethod
@@ -703,7 +703,7 @@ cdef class Bar(Data):
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
-            bar_type_copy(&bar_type._mem),
+            bar_type_clone(&bar_type._mem),
             open._mem,
             high._mem,
             low._mem,

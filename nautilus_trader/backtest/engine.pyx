@@ -1013,7 +1013,7 @@ cdef class BacktestEngine:
                 )
 
                 # Drop processed event handlers
-                # vec_time_event_handlers_drop(raw_handlers)
+                vec_time_event_handlers_drop(raw_handlers)
                 raw_handlers_count = 0
 
             self._iteration += 1
@@ -1031,7 +1031,7 @@ cdef class BacktestEngine:
                 last_ns,
                 only_now=True,
             )
-            # vec_time_event_handlers_drop(raw_handlers)
+            vec_time_event_handlers_drop(raw_handlers)
 
     cdef Data _next(self):
         cdef uint64_t cursor = self._index
