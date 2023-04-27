@@ -23,6 +23,8 @@ use nautilus_core::parsing::precision_from_str;
 
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
+use super::fixed::FIXED_SCALAR;
+
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
 
@@ -157,7 +159,7 @@ impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         Quantity {
-            raw: self.raw * rhs.raw,
+            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as u64),
             precision: self.precision,
         }
     }
@@ -301,6 +303,54 @@ mod tests {
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_add() {
+        let quantity1 = Quantity::new(1.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        let quantity3 = quantity1 + quantity2;
+        assert_eq!(quantity3.raw, 3000000000);
+    }
+
+    #[test]
+    fn test_sub() {
+        let quantity1 = Quantity::new(3.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        let quantity3 = quantity1 - quantity2;
+        assert_eq!(quantity3.raw, 1000000000);
+    }
+
+    #[test]
+    fn test_add_assign() {
+        let mut quantity1 = Quantity::new(1.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        quantity1 += quantity2;
+        assert_eq!(quantity1.raw, 3000000000);
+    }
+
+    #[test]
+    fn test_sub_assign() {
+        let mut quantity1 = Quantity::new(3.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        quantity1 -= quantity2;
+        assert_eq!(quantity1.raw, 1000000000);
+    }
+
+    #[test]
+    fn test_mul() {
+        let quantity1 = Quantity::new(2.0, 1);
+        let quantity2 = Quantity::new(2.0, 1);
+        let quantity3 = quantity1 * quantity2;
+        assert_eq!(quantity3.raw, 4000000000);
+    }
+
+    #[test]
+    fn test_quantity_mul_assign() {
+        let mut q = Quantity::from_raw(100, 0);
+        q *= 2u64;
+
+        assert_eq!(q.raw, 200);
     }
 
     #[test]
