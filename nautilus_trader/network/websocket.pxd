@@ -21,20 +21,20 @@ cdef class WebSocketClient:
     cdef readonly LoggerAdapter _log
     cdef str _ws_url
     cdef dict _ws_kwargs
-    cdef object _ws
     cdef object _session
+    cdef object _ws
+    cdef object _task
     cdef object _handler
-    cdef list _tasks
     cdef bytes _pong_msg
     cdef bint _log_send
     cdef bint _log_recv
 
-    cdef readonly bint is_stopping
-    """If the client is stopping.\n\n:returns: `bool`"""
-    cdef readonly bint is_running
-    """If the client is running.\n\n:returns: `bool`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
+    cdef readonly bint is_running
+    """If the client is running.\n\n:returns: `bool`"""
+    cdef readonly bint is_stopping
+    """If the client is stopping.\n\n:returns: `bool`"""
     cdef readonly int max_retry_connection
     """The max connection retries.\n\n:returns: `int`"""
     cdef readonly int connection_retry_count
