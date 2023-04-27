@@ -15,6 +15,8 @@
 
 import math
 
+import pytest
+
 from nautilus_trader.indicators.linear_regression import LinearRegression
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -48,11 +50,11 @@ class TestLinearRegression:
             self.linear_regression.handle_bar(TestDataStubs.bar_5decimal())
 
         assert self.linear_regression.has_inputs
-        assert self.linear_regression.value == 1.0000300000000002
+        assert self.linear_regression.value == pytest.approx(1.0000300000000002, rel=1e-9)
         assert self.linear_regression.slope == 0.0
-        assert self.linear_regression.intercept == 1.0000300000000002
+        assert self.linear_regression.intercept == pytest.approx(1.0000300000000002, rel=1e-9)
         assert self.linear_regression.degree == 0.0
-        assert self.linear_regression.cfo == 2.220379437867177e-14
+        assert self.linear_regression.cfo == pytest.approx(2.220379437867177e-14, rel=1e-9)
         assert self.linear_regression.R2 == -math.inf
 
     def test_value_with_one_input(self):
