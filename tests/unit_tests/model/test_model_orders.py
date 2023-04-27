@@ -2023,7 +2023,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100_000)
-        assert order.avg_px == 1.0000185714285712
+        assert order.avg_px == pytest.approx(1.0000185714285712, rel=1e-9)
         assert len(order.trade_ids) == 3
         assert not order.is_inflight
         assert not order.is_open

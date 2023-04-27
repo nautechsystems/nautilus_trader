@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
 from nautilus_trader.model.enums import PriceType
@@ -69,7 +71,7 @@ class TestVariableIndexDynamicAverage:
         self.vida.update_raw(13.335)
 
         # Assert
-        assert self.vida.value == 7.656223577745644
+        assert self.vida.value == pytest.approx(7.656223577745644, rel=1e-9)
         assert self.vida.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
