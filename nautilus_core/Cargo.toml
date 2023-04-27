@@ -5,6 +5,7 @@ members = [
     "core",
     "indicators",
     "model",
+    "network",
     "persistence",
     "pyo3"
 ]
