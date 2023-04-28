@@ -66,7 +66,7 @@ pub extern "C" fn exec_algorithm_id_clone(exec_algorithm_id: &ExecAlgorithmId) -
 
 /// Frees the memory for the given `exec_algorithm_id` by dropping.
 #[no_mangle]
-pub extern "C" fn exec_algorithm_id_free(exec_algorithm_id: ExecAlgorithmId) {
+pub extern "C" fn exec_algorithm_id_drop(exec_algorithm_id: ExecAlgorithmId) {
     drop(exec_algorithm_id); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn exec_algorithm_id_hash(exec_algorithm_id: &ExecAlgorithmId) ->
 #[cfg(test)]
 mod tests {
     use super::ExecAlgorithmId;
-    use crate::identifiers::exec_algorithm_id::exec_algorithm_id_free;
+    use crate::identifiers::exec_algorithm_id::exec_algorithm_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,8 +112,8 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_algorithm_id_free() {
+    fn test_exec_algorithm_id_drop() {
         let id = ExecAlgorithmId::new("001");
-        exec_algorithm_id_free(id); // No panic
+        exec_algorithm_id_drop(id); // No panic
     }
 }

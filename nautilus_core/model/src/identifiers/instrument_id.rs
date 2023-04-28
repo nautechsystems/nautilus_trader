@@ -80,7 +80,7 @@ pub extern "C" fn instrument_id_clone(instrument_id: &InstrumentId) -> Instrumen
 
 /// Frees the memory for the given `instrument_id` by dropping.
 #[no_mangle]
-pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
+pub extern "C" fn instrument_id_drop(instrument_id: InstrumentId) {
     drop(instrument_id); // Memory freed here
 }
 
@@ -110,7 +110,7 @@ mod tests {
     use std::ffi::CStr;
 
     use super::InstrumentId;
-    use crate::identifiers::instrument_id::{instrument_id_free, instrument_id_to_cstr};
+    use crate::identifiers::instrument_id::{instrument_id_drop, instrument_id_to_cstr};
 
     #[test]
     fn test_equality() {
@@ -137,9 +137,9 @@ mod tests {
     }
 
     #[test]
-    fn test_instrument_id_free() {
+    fn test_instrument_id_drop() {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
 
-        instrument_id_free(id); // No panic
+        instrument_id_drop(id); // No panic
     }
 }

@@ -491,7 +491,7 @@ pub extern "C" fn test_clock_new() -> TestClockAPI {
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_free(clock: TestClockAPI) {
+pub extern "C" fn test_clock_drop(clock: TestClockAPI) {
     drop(clock); // Memory freed here
 }
 
@@ -675,7 +675,7 @@ pub extern "C" fn live_clock_new() -> LiveClockAPI {
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_free(clock: LiveClockAPI) {
+pub extern "C" fn live_clock_drop(clock: LiveClockAPI) {
     drop(clock); // Memory freed here
 }
 

@@ -28,13 +28,13 @@ from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_clone
-from nautilus_trader.core.rust.model cimport quote_tick_free
+from nautilus_trader.core.rust.model cimport quote_tick_drop
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_clone
-from nautilus_trader.core.rust.model cimport trade_tick_free
+from nautilus_trader.core.rust.model cimport trade_tick_drop
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -116,7 +116,7 @@ cdef class QuoteTick(Data):
 
     def __del__(self) -> None:
         if self._mem.instrument_id.symbol.value != NULL:
-            quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            quote_tick_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -542,7 +542,7 @@ cdef class TradeTick(Data):
 
     def __del__(self) -> None:
         if self._mem.instrument_id.symbol.value != NULL:
-            trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            trade_tick_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (

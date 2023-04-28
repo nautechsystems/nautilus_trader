@@ -13,57 +13,57 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.rust.model cimport account_id_drop
 from nautilus_trader.core.rust.model cimport account_id_eq
-from nautilus_trader.core.rust.model cimport account_id_free
 from nautilus_trader.core.rust.model cimport account_id_hash
 from nautilus_trader.core.rust.model cimport account_id_new
 from nautilus_trader.core.rust.model cimport account_id_to_cstr
+from nautilus_trader.core.rust.model cimport client_order_id_drop
 from nautilus_trader.core.rust.model cimport client_order_id_eq
-from nautilus_trader.core.rust.model cimport client_order_id_free
 from nautilus_trader.core.rust.model cimport client_order_id_hash
 from nautilus_trader.core.rust.model cimport client_order_id_new
 from nautilus_trader.core.rust.model cimport client_order_id_to_cstr
+from nautilus_trader.core.rust.model cimport component_id_drop
 from nautilus_trader.core.rust.model cimport component_id_eq
-from nautilus_trader.core.rust.model cimport component_id_free
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport component_id_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
+from nautilus_trader.core.rust.model cimport instrument_id_drop
 from nautilus_trader.core.rust.model cimport instrument_id_eq
-from nautilus_trader.core.rust.model cimport instrument_id_free
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
+from nautilus_trader.core.rust.model cimport order_list_id_drop
 from nautilus_trader.core.rust.model cimport order_list_id_eq
-from nautilus_trader.core.rust.model cimport order_list_id_free
 from nautilus_trader.core.rust.model cimport order_list_id_hash
 from nautilus_trader.core.rust.model cimport order_list_id_new
 from nautilus_trader.core.rust.model cimport order_list_id_to_cstr
+from nautilus_trader.core.rust.model cimport position_id_drop
 from nautilus_trader.core.rust.model cimport position_id_eq
-from nautilus_trader.core.rust.model cimport position_id_free
 from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
 from nautilus_trader.core.rust.model cimport position_id_to_cstr
 from nautilus_trader.core.rust.model cimport symbol_clone
+from nautilus_trader.core.rust.model cimport symbol_drop
 from nautilus_trader.core.rust.model cimport symbol_eq
-from nautilus_trader.core.rust.model cimport symbol_free
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
+from nautilus_trader.core.rust.model cimport trade_id_drop
 from nautilus_trader.core.rust.model cimport trade_id_eq
-from nautilus_trader.core.rust.model cimport trade_id_free
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
 from nautilus_trader.core.rust.model cimport venue_clone
+from nautilus_trader.core.rust.model cimport venue_drop
 from nautilus_trader.core.rust.model cimport venue_eq
-from nautilus_trader.core.rust.model cimport venue_free
 from nautilus_trader.core.rust.model cimport venue_hash
 from nautilus_trader.core.rust.model cimport venue_new
+from nautilus_trader.core.rust.model cimport venue_order_id_drop
 from nautilus_trader.core.rust.model cimport venue_order_id_eq
-from nautilus_trader.core.rust.model cimport venue_order_id_free
 from nautilus_trader.core.rust.model cimport venue_order_id_hash
 from nautilus_trader.core.rust.model cimport venue_order_id_new
 from nautilus_trader.core.rust.model cimport venue_order_id_to_cstr
@@ -142,7 +142,7 @@ cdef class Symbol(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            symbol_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -181,7 +181,7 @@ cdef class Venue(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            venue_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -225,7 +225,7 @@ cdef class InstrumentId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.symbol.value != NULL:
-            instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            instrument_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -323,7 +323,7 @@ cdef class ComponentId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            component_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -509,7 +509,7 @@ cdef class AccountId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            account_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -571,7 +571,7 @@ cdef class ClientOrderId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            client_order_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -610,7 +610,7 @@ cdef class VenueOrderId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            venue_order_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -649,7 +649,7 @@ cdef class OrderListId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            order_list_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -688,7 +688,7 @@ cdef class PositionId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            position_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -745,7 +745,7 @@ cdef class TradeId(Identifier):
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
-            trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            trade_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()

@@ -120,7 +120,7 @@ pub extern "C" fn time_event_clone(event: &TimeEvent) -> TimeEvent {
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_free(event: TimeEvent) {
+pub extern "C" fn time_event_drop(event: TimeEvent) {
     drop(event); // Memory freed here
 }
 

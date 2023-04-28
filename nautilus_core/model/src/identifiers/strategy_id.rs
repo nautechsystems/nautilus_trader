@@ -67,7 +67,7 @@ pub extern "C" fn strategy_id_clone(strategy_id: &StrategyId) -> StrategyId {
 
 /// Frees the memory for the given `strategy_id` by dropping.
 #[no_mangle]
-pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
+pub extern "C" fn strategy_id_drop(strategy_id: StrategyId) {
     drop(strategy_id); // Memory freed here
 }
 
@@ -83,7 +83,7 @@ pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char
 #[cfg(test)]
 mod tests {
     use super::StrategyId;
-    use crate::identifiers::strategy_id::strategy_id_free;
+    use crate::identifiers::strategy_id::strategy_id_drop;
 
     #[test]
     fn test_equality() {
@@ -101,8 +101,8 @@ mod tests {
     }
 
     #[test]
-    fn test_strategy_id_free() {
+    fn test_strategy_id_drop() {
         let id = StrategyId::new("EMACross-001");
-        strategy_id_free(id); // No panic
+        strategy_id_drop(id); // No panic
     }
 }

@@ -66,7 +66,7 @@ pub extern "C" fn order_list_id_clone(order_list_id: &OrderListId) -> OrderListI
 
 /// Frees the memory for the given `order_list_id` by dropping.
 #[no_mangle]
-pub extern "C" fn order_list_id_free(order_list_id: OrderListId) {
+pub extern "C" fn order_list_id_drop(order_list_id: OrderListId) {
     drop(order_list_id); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn order_list_id_hash(order_list_id: &OrderListId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::OrderListId;
-    use crate::identifiers::order_list_id::order_list_id_free;
+    use crate::identifiers::order_list_id::order_list_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn test_order_list_id_free() {
+    fn test_order_list_id_drop() {
         let id = OrderListId::new("001");
 
-        order_list_id_free(id); // No panic
+        order_list_id_drop(id); // No panic
     }
 }

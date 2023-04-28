@@ -121,7 +121,7 @@ typedef struct TimeEventHandler_t {
 
 struct TestClockAPI test_clock_new(void);
 
-void test_clock_free(struct TestClockAPI clock);
+void test_clock_drop(struct TestClockAPI clock);
 
 /**
  * # Safety
@@ -189,7 +189,7 @@ void test_clock_cancel_timers(struct TestClockAPI *clock);
 
 struct LiveClockAPI live_clock_new(void);
 
-void live_clock_free(struct LiveClockAPI clock);
+void live_clock_drop(struct LiveClockAPI clock);
 
 double live_clock_timestamp(struct LiveClockAPI *clock);
 
@@ -259,7 +259,7 @@ struct CLogger logger_new(const char *trader_id_ptr,
                           const char *component_levels_ptr,
                           uint8_t is_bypassed);
 
-void logger_free(struct CLogger logger);
+void logger_drop(struct CLogger logger);
 
 const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 
@@ -294,7 +294,7 @@ struct TimeEvent_t time_event_new(const char *name,
 
 struct TimeEvent_t time_event_clone(const struct TimeEvent_t *event);
 
-void time_event_free(struct TimeEvent_t event);
+void time_event_drop(struct TimeEvent_t event);
 
 const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
 

@@ -35,7 +35,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
-from nautilus_trader.core.rust.common cimport live_clock_free
+from nautilus_trader.core.rust.common cimport live_clock_drop
 from nautilus_trader.core.rust.common cimport live_clock_new
 from nautilus_trader.core.rust.common cimport live_clock_timestamp
 from nautilus_trader.core.rust.common cimport live_clock_timestamp_ms
@@ -44,7 +44,7 @@ from nautilus_trader.core.rust.common cimport live_clock_timestamp_us
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
-from nautilus_trader.core.rust.common cimport test_clock_free
+from nautilus_trader.core.rust.common cimport test_clock_drop
 from nautilus_trader.core.rust.common cimport test_clock_new
 from nautilus_trader.core.rust.common cimport test_clock_next_time_ns
 from nautilus_trader.core.rust.common cimport test_clock_register_default_handler
@@ -439,7 +439,7 @@ cdef class TestClock(Clock):
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
-            test_clock_free(self._mem)
+            test_clock_drop(self._mem)
 
     @property
     def timer_names(self) -> list[str]:
@@ -610,7 +610,7 @@ cdef class LiveClock(Clock):
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
-            live_clock_free(self._mem)
+            live_clock_drop(self._mem)
 
     @property
     def timer_names(self) -> list[str]:

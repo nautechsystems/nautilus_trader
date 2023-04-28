@@ -84,7 +84,7 @@ pub extern "C" fn time_event_accumulator_new() -> TimeEventAccumulatorAPI {
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_accumulator_free(accumulator: TimeEventAccumulatorAPI) {
+pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorAPI) {
     drop(accumulator); // Memory freed here
 }
 
