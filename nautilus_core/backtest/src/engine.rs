@@ -113,7 +113,7 @@ mod tests {
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
     use pyo3::types::PyList;
-    use pyo3::{prelude::*, AsPyPointer};
+    use pyo3::{AsPyPointer, Py, Python};
 
     #[test]
     fn test_accumulator_drain_sorted() {
@@ -121,6 +121,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
+            let py_append = Py::from(py_list.getattr("append").unwrap());
 
             let mut accumulator = TimeEventAccumulator::new();
 
@@ -131,10 +132,7 @@ mod tests {
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid
             // as long as `py_append` is in scope.
-            let callback_ptr = {
-                let py_append = Py::from(py_list.getattr("append").unwrap());
-                py_append.as_ptr() as *mut pyo3::ffi::PyObject
-            };
+            let callback_ptr = py_append.as_ptr() as *mut pyo3::ffi::PyObject;
 
             let handler1 = TimeEventHandler {
                 event: time_event1.clone(),
