@@ -57,7 +57,7 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_advance_clock
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
-from nautilus_trader.core.rust.backtest cimport time_event_accumulator_free
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
@@ -145,7 +145,7 @@ cdef class BacktestEngine:
 
     def __del__(self) -> None:
         if self._accumulator._0 != NULL:
-            time_event_accumulator_free(self._accumulator)
+            time_event_accumulator_drop(self._accumulator)
 
     @property
     def trader_id(self) -> TraderId:

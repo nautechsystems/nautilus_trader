@@ -99,7 +99,7 @@ cdef extern from "../includes/common.h":
 
     TestClockAPI test_clock_new();
 
-    void test_clock_free(TestClockAPI clock);
+    void test_clock_drop(TestClockAPI clock);
 
     # # Safety
     # - Assumes `callback_ptr` is a valid PyCallable pointer.
@@ -155,7 +155,7 @@ cdef extern from "../includes/common.h":
 
     LiveClockAPI live_clock_new();
 
-    void live_clock_free(LiveClockAPI clock);
+    void live_clock_drop(LiveClockAPI clock);
 
     double live_clock_timestamp(LiveClockAPI *clock);
 
@@ -215,7 +215,7 @@ cdef extern from "../includes/common.h":
                        const char *component_levels_ptr,
                        uint8_t is_bypassed);
 
-    void logger_free(CLogger logger);
+    void logger_drop(CLogger logger);
 
     const char *logger_get_trader_id_cstr(const CLogger *logger);
 
@@ -246,7 +246,7 @@ cdef extern from "../includes/common.h":
 
     TimeEvent_t time_event_clone(const TimeEvent_t *event);
 
-    void time_event_free(TimeEvent_t event);
+    void time_event_drop(TimeEvent_t event);
 
     const char *time_event_name_to_cstr(const TimeEvent_t *event);
 

@@ -66,7 +66,7 @@ pub extern "C" fn trade_id_clone(trade_id: &TradeId) -> TradeId {
 
 /// Frees the memory for the given `trade_id` by dropping.
 #[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
+pub extern "C" fn trade_id_drop(trade_id: TradeId) {
     drop(trade_id); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn trade_id_hash(trade_id: &TradeId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::TradeId;
-    use crate::identifiers::trade_id::trade_id_free;
+    use crate::identifiers::trade_id::trade_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,8 +112,8 @@ mod tests {
     }
 
     #[test]
-    fn test_trade_id_free() {
+    fn test_trade_id_drop() {
         let id = TradeId::new("123456789");
-        trade_id_free(id); // No panic
+        trade_id_drop(id); // No panic
     }
 }

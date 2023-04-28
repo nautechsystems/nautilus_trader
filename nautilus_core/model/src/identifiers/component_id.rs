@@ -66,7 +66,7 @@ pub extern "C" fn component_id_clone(component_id: &ComponentId) -> ComponentId 
 
 /// Frees the memory for the given `component_id` by dropping.
 #[no_mangle]
-pub extern "C" fn component_id_free(component_id: ComponentId) {
+pub extern "C" fn component_id_drop(component_id: ComponentId) {
     drop(component_id); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn component_id_hash(component_id: &ComponentId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::ComponentId;
-    use crate::identifiers::component_id::component_id_free;
+    use crate::identifiers::component_id::component_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn test_component_id_free() {
+    fn test_component_id_drop() {
         let id = ComponentId::new("001");
 
-        component_id_free(id); // No panic
+        component_id_drop(id); // No panic
     }
 }

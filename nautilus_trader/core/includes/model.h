@@ -431,7 +431,7 @@ uint64_t bar_type_hash(const struct BarType_t *bar_type);
  */
 const char *bar_type_to_cstr(const struct BarType_t *bar_type);
 
-void bar_type_free(struct BarType_t bar_type);
+void bar_type_drop(struct BarType_t bar_type);
 
 struct Bar_t bar_new(struct BarType_t bar_type,
                      struct Price_t open,
@@ -460,13 +460,13 @@ const char *bar_to_cstr(const struct Bar_t *bar);
 
 struct Bar_t bar_clone(const struct Bar_t *bar);
 
-void bar_free(struct Bar_t bar);
+void bar_drop(struct Bar_t bar);
 
 uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
 
-void quote_tick_free(struct QuoteTick_t tick);
+void quote_tick_drop(struct QuoteTick_t tick);
 
 struct QuoteTick_t quote_tick_clone(const struct QuoteTick_t *tick);
 
@@ -495,7 +495,7 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
  */
 const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
 
-void trade_tick_free(struct TradeTick_t tick);
+void trade_tick_drop(struct TradeTick_t tick);
 
 struct TradeTick_t trade_tick_clone(const struct TradeTick_t *tick);
 
@@ -514,7 +514,7 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
  */
 const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
 
-void data_free(struct Data_t data);
+void data_drop(struct Data_t data);
 
 struct Data_t data_clone(const struct Data_t *data);
 
@@ -781,7 +781,7 @@ struct AccountId_t account_id_clone(const struct AccountId_t *account_id);
 /**
  * Frees the memory for the given `account_id` by dropping.
  */
-void account_id_free(struct AccountId_t account_id);
+void account_id_drop(struct AccountId_t account_id);
 
 /**
  * Returns an [`AccountId`] as a C string pointer.
@@ -805,7 +805,7 @@ struct ClientId_t client_id_clone(const struct ClientId_t *client_id);
 /**
  * Frees the memory for the given `client_id` by dropping.
  */
-void client_id_free(struct ClientId_t client_id);
+void client_id_drop(struct ClientId_t client_id);
 
 /**
  * Returns a [`ClientId`] identifier as a C string pointer.
@@ -829,7 +829,7 @@ struct ClientOrderId_t client_order_id_clone(const struct ClientOrderId_t *clien
 /**
  * Frees the memory for the given `client_order_id` by dropping.
  */
-void client_order_id_free(struct ClientOrderId_t client_order_id);
+void client_order_id_drop(struct ClientOrderId_t client_order_id);
 
 /**
  * Returns a [`ClientOrderId`] as a C string pointer.
@@ -853,7 +853,7 @@ struct ComponentId_t component_id_clone(const struct ComponentId_t *component_id
 /**
  * Frees the memory for the given `component_id` by dropping.
  */
-void component_id_free(struct ComponentId_t component_id);
+void component_id_drop(struct ComponentId_t component_id);
 
 /**
  * Returns a [`ComponentId`] identifier as a C string pointer.
@@ -877,7 +877,7 @@ struct ExecAlgorithmId_t exec_algorithm_id_clone(const struct ExecAlgorithmId_t 
 /**
  * Frees the memory for the given `exec_algorithm_id` by dropping.
  */
-void exec_algorithm_id_free(struct ExecAlgorithmId_t exec_algorithm_id);
+void exec_algorithm_id_drop(struct ExecAlgorithmId_t exec_algorithm_id);
 
 /**
  * Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
@@ -904,7 +904,7 @@ struct InstrumentId_t instrument_id_clone(const struct InstrumentId_t *instrumen
 /**
  * Frees the memory for the given `instrument_id` by dropping.
  */
-void instrument_id_free(struct InstrumentId_t instrument_id);
+void instrument_id_drop(struct InstrumentId_t instrument_id);
 
 /**
  * Returns an [`InstrumentId`] as a C string pointer.
@@ -928,7 +928,7 @@ struct OrderListId_t order_list_id_clone(const struct OrderListId_t *order_list_
 /**
  * Frees the memory for the given `order_list_id` by dropping.
  */
-void order_list_id_free(struct OrderListId_t order_list_id);
+void order_list_id_drop(struct OrderListId_t order_list_id);
 
 /**
  * Returns an [`OrderListId`] as a C string pointer.
@@ -952,7 +952,7 @@ struct PositionId_t position_id_clone(const struct PositionId_t *position_id);
 /**
  * Frees the memory for the given `position_id` by dropping.
  */
-void position_id_free(struct PositionId_t position_id);
+void position_id_drop(struct PositionId_t position_id);
 
 /**
  * Returns a [`PositionId`] identifier as a C string pointer.
@@ -976,7 +976,7 @@ struct StrategyId_t strategy_id_clone(const struct StrategyId_t *strategy_id);
 /**
  * Frees the memory for the given `strategy_id` by dropping.
  */
-void strategy_id_free(struct StrategyId_t strategy_id);
+void strategy_id_drop(struct StrategyId_t strategy_id);
 
 /**
  * Returns a [`StrategyId`] as a C string pointer.
@@ -996,7 +996,7 @@ struct Symbol_t symbol_clone(const struct Symbol_t *symbol);
 /**
  * Frees the memory for the given [Symbol] by dropping.
  */
-void symbol_free(struct Symbol_t symbol);
+void symbol_drop(struct Symbol_t symbol);
 
 /**
  * Returns a [`Symbol`] as a C string pointer.
@@ -1020,7 +1020,7 @@ struct TradeId_t trade_id_clone(const struct TradeId_t *trade_id);
 /**
  * Frees the memory for the given `trade_id` by dropping.
  */
-void trade_id_free(struct TradeId_t trade_id);
+void trade_id_drop(struct TradeId_t trade_id);
 
 /**
  * Returns [TradeId] as a C string pointer.
@@ -1044,7 +1044,7 @@ struct TraderId_t trader_id_clone(const struct TraderId_t *trader_id);
 /**
  * Frees the memory for the given `trader_id` by dropping.
  */
-void trader_id_free(struct TraderId_t trader_id);
+void trader_id_drop(struct TraderId_t trader_id);
 
 /**
  * Returns a [`TraderId`] as a C string pointer.
@@ -1064,7 +1064,7 @@ struct Venue_t venue_clone(const struct Venue_t *venue);
 /**
  * Frees the memory for the given `venue` by dropping.
  */
-void venue_free(struct Venue_t venue);
+void venue_drop(struct Venue_t venue);
 
 /**
  * Returns a [`Venue`] identifier as a C string pointer.
@@ -1088,7 +1088,7 @@ struct VenueOrderId_t venue_order_id_clone(const struct VenueOrderId_t *venue_or
 /**
  * Frees the memory for the given `venue_order_id` by dropping.
  */
-void venue_order_id_free(struct VenueOrderId_t venue_order_id);
+void venue_order_id_drop(struct VenueOrderId_t venue_order_id);
 
 const char *venue_order_id_to_cstr(const struct VenueOrderId_t *venue_order_id);
 
@@ -1113,7 +1113,7 @@ struct Currency_t currency_from_py(const char *code_ptr,
 
 struct Currency_t currency_clone(const struct Currency_t *currency);
 
-void currency_free(struct Currency_t currency);
+void currency_drop(struct Currency_t currency);
 
 const char *currency_to_cstr(const struct Currency_t *currency);
 
@@ -1129,7 +1129,7 @@ struct Money_t money_new(double amount, struct Currency_t currency);
 
 struct Money_t money_from_raw(int64_t raw, struct Currency_t currency);
 
-void money_free(struct Money_t money);
+void money_drop(struct Money_t money);
 
 double money_as_f64(const struct Money_t *money);
 

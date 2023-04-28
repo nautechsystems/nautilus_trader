@@ -181,7 +181,7 @@ impl From<TradeTick> for Data {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn quote_tick_free(tick: QuoteTick) {
+pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
     drop(tick); // Memory freed here
 }
 
@@ -243,7 +243,7 @@ pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_free(tick: TradeTick) {
+pub extern "C" fn trade_tick_drop(tick: TradeTick) {
     drop(tick); // Memory freed here
 }
 
@@ -282,7 +282,7 @@ pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn data_free(data: Data) {
+pub extern "C" fn data_drop(data: Data) {
     drop(data); // Memory freed here
 }
 

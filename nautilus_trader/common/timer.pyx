@@ -22,7 +22,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport time_event_clone
-from nautilus_trader.core.rust.common cimport time_event_free
+from nautilus_trader.core.rust.common cimport time_event_drop
 from nautilus_trader.core.rust.common cimport time_event_name_to_cstr
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
@@ -69,7 +69,7 @@ cdef class TimeEvent(Event):
 
     def __del__(self) -> None:
         if self._mem.name != NULL:
-            time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            time_event_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (

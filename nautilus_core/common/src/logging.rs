@@ -486,7 +486,7 @@ pub unsafe extern "C" fn logger_new(
 }
 
 #[no_mangle]
-pub extern "C" fn logger_free(logger: CLogger) {
+pub extern "C" fn logger_drop(logger: CLogger) {
     drop(logger); // Memory freed here
 }
 
