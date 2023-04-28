@@ -583,7 +583,7 @@ mod tests {
         assert_eq!(logger.trader_id, TraderId::new("TRADER-001"));
         assert_eq!(logger.level_stdout, LogLevel::Info);
         assert_eq!(logger.level_file, None);
-        assert_eq!(logger.is_bypassed, false);
+        assert!(!logger.is_bypassed);
     }
 
     #[test]
