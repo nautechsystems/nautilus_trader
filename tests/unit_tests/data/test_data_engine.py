@@ -49,10 +49,10 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.orderbook import L2OrderBook
+from nautilus_trader.model.orderbook import OrderBookData
+from nautilus_trader.model.orderbook import OrderBookDeltas
+from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import write_objects

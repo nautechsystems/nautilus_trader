@@ -21,7 +21,9 @@ Released on TBD (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
-- Can now import all instruments directly from `nautilus_trader.model.instruments` module (denest namespace)
+- Define public API for instruments can now import directly from `nautilus_trader.model.instruments` (denest namespace)
+- Define public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
+- Define public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
 - Now stripping debug symbols after build (reduced binary sizes)
 - Refined build and added additional `debug` Makefile convenience targets
 

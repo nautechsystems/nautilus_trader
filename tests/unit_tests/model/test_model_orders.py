@@ -45,11 +45,11 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
-from nautilus_trader.model.orders.stop_limit import StopLimitOrder
-from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import MarketToLimitOrder
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.events import TestEventStubs

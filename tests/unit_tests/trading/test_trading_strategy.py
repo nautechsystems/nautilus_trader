@@ -52,8 +52,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.list import OrderList
-from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine

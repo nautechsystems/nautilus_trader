@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 
 

@@ -41,7 +41,7 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 from nautilus_trader.msgbus.bus import MessageBus
 
 

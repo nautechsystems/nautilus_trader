@@ -26,7 +26,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
