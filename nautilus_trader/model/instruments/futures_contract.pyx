@@ -31,9 +31,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Future(Instrument):
+cdef class FuturesContract(Instrument):
     """
-    Represents a generic deliverable Futures Contract instrument.
+    Represents a generic deliverable futures contract instrument.
 
     Parameters
     ----------
@@ -120,9 +120,9 @@ cdef class Future(Instrument):
         self.expiry_date = expiry_date
 
     @staticmethod
-    cdef Future from_dict_c(dict values):
+    cdef FuturesContract from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return Future(
+        return FuturesContract(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             native_symbol=Symbol(values["native_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
@@ -138,10 +138,10 @@ cdef class Future(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(Future obj):
+    cdef dict to_dict_c(FuturesContract obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "Future",
+            "type": "FuturesContract",
             "id": obj.id.to_str(),
             "native_symbol": obj.native_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
@@ -161,7 +161,7 @@ cdef class Future(Instrument):
         }
 
     @staticmethod
-    def from_dict(dict values) -> Instrument:
+    def from_dict(dict values) -> FuturesContract:
         """
         Return an instrument from the given initialization values.
 
@@ -172,13 +172,13 @@ cdef class Future(Instrument):
 
         Returns
         -------
-        Instrument
+        FuturesContract
 
         """
-        return Future.from_dict_c(values)
+        return FuturesContract.from_dict_c(values)
 
     @staticmethod
-    def to_dict(Instrument obj):
+    def to_dict(FuturesContract obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 
@@ -187,4 +187,4 @@ cdef class Future(Instrument):
         dict[str, object]
 
         """
-        return Future.to_dict_c(obj)
+        return FuturesContract.to_dict_c(obj)

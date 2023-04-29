@@ -3014,4 +3014,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "1cd951bab485ea8792e66ce54fffe35140cada88a663026237f94391d681b750"
+content-hash = "4021c4e6efddbfeb56b2871b094ab0f79f03e943397e55770a73999dd4a0ac07"

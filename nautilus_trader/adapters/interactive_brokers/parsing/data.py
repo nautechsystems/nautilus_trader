@@ -25,7 +25,7 @@ from nautilus_trader.model.data.bar_aggregation import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 MKT_DEPTH_OPERATIONS = {

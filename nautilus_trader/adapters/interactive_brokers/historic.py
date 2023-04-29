@@ -39,7 +39,7 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.enums import price_type_to_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog

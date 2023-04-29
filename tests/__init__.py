@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Contains the test suite for `NautilusTrader`.
+The test suite for `NautilusTrader` including unit, integration, acceptance and performance tests.
 """
 
 import os

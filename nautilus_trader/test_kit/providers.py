@@ -36,13 +36,13 @@ from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_future import CryptoFuture
-from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.instruments.future import Future
-from nautilus_trader.model.instruments.option import Option
+from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -415,8 +415,8 @@ class TestInstrumentProvider:
         return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
     @staticmethod
-    def es_future():
-        return Future(
+    def es_future() -> FuturesContract:
+        return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
             native_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
@@ -432,8 +432,8 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_option():
-        return Option(
+    def aapl_option() -> OptionsContract:
+        return OptionsContract(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
             native_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,

@@ -6,6 +6,8 @@ Released on TBD (UTC).
 - Removed legacy Rust parquet data catalog backend (based on arrow2)
 - Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
 - Removed redundant rate limiting from Rust logger (and associated `rate_limit` config params)
+- Renamed `Future` instrument to `FuturesContract` (avoids ambiguity)
+- Renamed `Option` instrument to `OptionsContract` (avoids ambiguity and naming conflicts in Rust)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
 - Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid).
 
@@ -19,6 +21,7 @@ Released on TBD (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
+- Can now import all instruments directly from `nautilus_trader.model.instruments` module (denest namespace)
 - Now stripping debug symbols after build (reduced binary sizes)
 - Refined build and added additional `debug` Makefile convenience targets
 
