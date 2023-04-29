@@ -215,7 +215,7 @@ class TestTradingNodeOperation:
 
     @pytest.mark.asyncio
     async def test_run_when_not_built_raises_runtime_error(self):
-        # Arrange, # Act
+        # Arrange, Act, Assert
         with pytest.raises(RuntimeError):
             config = TradingNodeConfig(
                 logging=LoggingConfig(bypass_logging=True),
@@ -230,8 +230,11 @@ class TestTradingNodeOperation:
             await node.run_async()
 
     @pytest.mark.asyncio
-    async def test_run_and_stop_with_client_factories(self):
+    async def test_run_and_stop_with_client_factories(self, monkeypatch):
         # Arrange
+        monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
+
         config = TradingNodeConfig(
             logging=LoggingConfig(bypass_logging=True),
             data_clients={
@@ -249,15 +252,18 @@ class TestTradingNodeOperation:
         node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
         node.build()
 
-        # Act
+        # Act, Assert
         node.run()
         await asyncio.sleep(2.0)
         await node.stop_async()
 
     @pytest.mark.skip(reason="WIP: continue adding tests here")
     @pytest.mark.asyncio
-    async def test_run_stop_and_dispose(self):
+    async def test_run_stop_and_dispose(self, monkeypatch):
         # Arrange
+        monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_API_SECRET", "SOME_API_SECRET")
+
         config = TradingNodeConfig(
             logging=LoggingConfig(bypass_logging=True),
             data_clients={
