@@ -197,61 +197,71 @@ impl Logger {
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
 
         // Continue to receive and handle log messages until channel is hung up
-        while let Ok(log_msg) = rx.recv() {
-            let component_level = level_filters.get(&log_msg.component);
+        loop {
+            match rx.recv() {
+                Ok(log_msg) => {
+                    let component_level = level_filters.get(&log_msg.component);
 
-            // Check if the component exists in level_filters and if its level is greater than log_msg.level
-            if let Some(&filter_level) = component_level {
-                if log_msg.level < filter_level {
-                    continue;
-                }
-            }
-
-            if log_msg.level >= LogLevel::Error {
-                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
-                Self::write_stderr(&mut err_buf, &line);
-                Self::flush_stderr(&mut err_buf);
-            } else if log_msg.level >= level_stdout {
-                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
-                Self::write_stdout(&mut out_buf, &line);
-                Self::flush_stdout(&mut out_buf);
-            }
-
-            if let Some(level_file) = level_file {
-                if Self::should_rotate_file(&file_path) {
-                    // Ensure previous file buffer flushed
-                    if let Some(file_buf) = file_buf.as_mut() {
-                        Self::flush_file(file_buf);
-                    };
-
-                    let file_path = Self::create_log_file_path(
-                        &directory,
-                        &file_name,
-                        trader_id,
-                        instance_id,
-                        is_json_format,
-                    );
-
-                    let file = File::options()
-                        .create(true)
-                        .append(true)
-                        .open(file_path)
-                        .expect("Error creating log file");
-
-                    file_buf = Some(BufWriter::new(file));
-                }
-
-                if log_msg.level >= level_file {
-                    if let Some(file_buf) = file_buf.as_mut() {
-                        let line = Self::format_log_line_file(
-                            &log_msg,
-                            trader_id,
-                            &template_file,
-                            is_json_format,
-                        );
-                        Self::write_file(file_buf, &line);
-                        Self::flush_file(file_buf);
+                    // Check if the component exists in level_filters and if its level is greater than log_msg.level
+                    if let Some(&filter_level) = component_level {
+                        if log_msg.level < filter_level {
+                            continue;
+                        }
                     }
+
+                    if log_msg.level >= LogLevel::Error {
+                        let line =
+                            Self::format_log_line_console(&log_msg, trader_id, &template_console);
+                        Self::write_stderr(&mut err_buf, &line);
+                        Self::flush_stderr(&mut err_buf);
+                    } else if log_msg.level >= level_stdout {
+                        let line =
+                            Self::format_log_line_console(&log_msg, trader_id, &template_console);
+                        Self::write_stdout(&mut out_buf, &line);
+                        Self::flush_stdout(&mut out_buf);
+                    }
+
+                    if let Some(level_file) = level_file {
+                        if Self::should_rotate_file(&file_path) {
+                            // Ensure previous file buffer flushed
+                            if let Some(file_buf) = file_buf.as_mut() {
+                                Self::flush_file(file_buf);
+                            };
+
+                            let file_path = Self::create_log_file_path(
+                                &directory,
+                                &file_name,
+                                trader_id,
+                                instance_id,
+                                is_json_format,
+                            );
+
+                            let file = File::options()
+                                .create(true)
+                                .append(true)
+                                .open(file_path)
+                                .expect("Error creating log file");
+
+                            file_buf = Some(BufWriter::new(file));
+                        }
+
+                        if log_msg.level >= level_file {
+                            if let Some(file_buf) = file_buf.as_mut() {
+                                let line = Self::format_log_line_file(
+                                    &log_msg,
+                                    trader_id,
+                                    &template_file,
+                                    is_json_format,
+                                );
+                                Self::write_file(file_buf, &line);
+                                Self::flush_file(file_buf);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error receiving log message: {}", e);
+                    break;
                 }
             }
         }
