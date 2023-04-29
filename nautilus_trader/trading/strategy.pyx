@@ -1343,7 +1343,7 @@ cdef class Strategy(Actor):
 # -- EVENTS ---------------------------------------------------------------------------------------
 
     cdef OrderDenied _generate_order_denied(self, Order order, str reason):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderDenied(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1351,11 +1351,11 @@ cdef class Strategy(Actor):
             client_order_id=order.client_order_id,
             reason=reason,
             event_id=UUID4(),
-            ts_init=timestamp_ns,
+            ts_init=ts_now,
         )
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1364,12 +1364,12 @@ cdef class Strategy(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1378,12 +1378,12 @@ cdef class Strategy(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
     cdef OrderCanceled _generate_order_canceled(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1392,8 +1392,8 @@ cdef class Strategy(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
     cdef void _deny_order(self, Order order, str reason):

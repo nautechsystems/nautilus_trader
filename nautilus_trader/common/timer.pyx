@@ -177,8 +177,8 @@ cdef class LiveTimer:
         The delegate to call at the next time.
     interval_ns : uint64_t
         The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
+    ts_now : uint64_t
+        The current UNIX time (nanoseconds).
     start_time_ns : uint64_t
         The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
@@ -199,7 +199,7 @@ cdef class LiveTimer:
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
-        uint64_t now_ns,
+        uint64_t ts_now,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -214,7 +214,7 @@ cdef class LiveTimer:
         self.stop_time_ns = stop_time_ns
         self.is_expired = False
 
-        self._internal = self._start_timer(now_ns)
+        self._internal = self._start_timer(ts_now)
 
     def __eq__(self, LiveTimer other) -> bool:
         return self.name == other.name
@@ -258,31 +258,31 @@ cdef class LiveTimer:
             ts_init=ts_init,
         )
 
-    cpdef void iterate_next_time(self, uint64_t now_ns):
+    cpdef void iterate_next_time(self, uint64_t ts_now):
         """
         Iterates the timers next time and checks if the timer is now expired.
 
         Parameters
         ----------
-        now_ns : uint64_t
-            The UNIX time now (nanoseconds).
+        ts_now : uint64_t
+            The current UNIX time (nanoseconds).
 
         """
         self.next_time_ns += self.interval_ns
-        if self.stop_time_ns and now_ns >= self.stop_time_ns:
+        if self.stop_time_ns and ts_now >= self.stop_time_ns:
             self.is_expired = True
 
-    cpdef void repeat(self, uint64_t now_ns):
+    cpdef void repeat(self, uint64_t ts_now):
         """
         Continue the timer.
 
         Parameters
         ----------
-        now_ns : uint64_t
+        ts_now : uint64_t
             The current time to continue timing from.
 
         """
-        self._internal = self._start_timer(now_ns)
+        self._internal = self._start_timer(ts_now)
 
     cpdef void cancel(self):
         """
@@ -290,7 +290,7 @@ cdef class LiveTimer:
         """
         self._internal.cancel()
 
-    cdef object _start_timer(self, uint64_t now_ns):
+    cdef object _start_timer(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -307,8 +307,8 @@ cdef class ThreadTimer(LiveTimer):
         The delegate to call at the next time.
     interval_ns : uint64_t
         The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
+    ts_now : uint64_t
+        The current UNIX time (nanoseconds).
     start_time_ns : uint64_t
         The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
@@ -325,7 +325,7 @@ cdef class ThreadTimer(LiveTimer):
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
-        uint64_t now_ns,
+        uint64_t ts_now,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -333,14 +333,14 @@ cdef class ThreadTimer(LiveTimer):
             name=name,
             callback=callback,
             interval_ns=interval_ns,
-            now_ns=now_ns,
+            ts_now=ts_now,
             start_time_ns=start_time_ns,
             stop_time_ns=stop_time_ns,
         )
 
-    cdef object _start_timer(self, uint64_t now_ns):
+    cdef object _start_timer(self, uint64_t ts_now):
         timer = TimerThread(
-            interval=nanos_to_secs(self.next_time_ns - now_ns),
+            interval=nanos_to_secs(self.next_time_ns - ts_now),
             function=self.callback,
             args=[self],
         )
@@ -363,9 +363,9 @@ cdef class LoopTimer(LiveTimer):
     callback : Callable[[TimeEvent], None]
         The delegate to call at the next time.
     interval_ns : uint64_t
-        The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
+        The time interval for the timer (nanoseconds).
+    ts_now : uint64_t
+        The current UNIX epoch (nanoseconds).
     start_time_ns : uint64_t
         The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
@@ -383,7 +383,7 @@ cdef class LoopTimer(LiveTimer):
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
-        uint64_t now_ns,
+        uint64_t ts_now,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -394,14 +394,14 @@ cdef class LoopTimer(LiveTimer):
             name=name,
             callback=callback,
             interval_ns=interval_ns,
-            now_ns=now_ns,
+            ts_now=ts_now,
             start_time_ns=start_time_ns,
             stop_time_ns=stop_time_ns,
         )
 
-    cdef object _start_timer(self, uint64_t now_ns):
+    cdef object _start_timer(self, uint64_t ts_now):
         return self._loop.call_later(
-            nanos_to_secs(self.next_time_ns - now_ns),
+            nanos_to_secs(self.next_time_ns - ts_now),
             self.callback,
             self,
         )

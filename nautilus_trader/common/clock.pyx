@@ -490,12 +490,12 @@ cdef class TestClock(Clock):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
 
-        cdef uint64_t now_ns = self.timestamp_ns()
+        cdef uint64_t ts_now = self.timestamp_ns()
 
         if start_time_ns == 0:
-            start_time_ns = now_ns
+            start_time_ns = ts_now
         if stop_time_ns:
-            Condition.true(stop_time_ns > now_ns, "stop_time was < now")
+            Condition.true(stop_time_ns > ts_now, "stop_time was < ts_now")
             Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time + interval was > stop_time")
 
         test_clock_set_timer_ns(
@@ -645,13 +645,13 @@ cdef class LiveClock(Clock):
         if callback is None:
             callback = self._default_handler
 
-        cdef uint64_t now_ns = self.timestamp_ns()
+        cdef uint64_t ts_now = self.timestamp_ns()
 
         cdef LiveTimer timer = self._create_timer(
             name=name,
             callback=callback,
-            interval_ns=alert_time_ns - now_ns,
-            start_time_ns=now_ns,
+            interval_ns=alert_time_ns - ts_now,
+            start_time_ns=ts_now,
             stop_time_ns=alert_time_ns,
         )
         self._add_timer(timer, callback)
@@ -666,7 +666,7 @@ cdef class LiveClock(Clock):
     ):
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
 
-        cdef uint64_t now_ns = self.timestamp_ns()  # Call here for greater accuracy
+        cdef uint64_t ts_now = self.timestamp_ns()  # Call here for greater accuracy
 
         Condition.valid_string(name, "name")
         if callback is None:
@@ -678,9 +678,9 @@ cdef class LiveClock(Clock):
         Condition.callable(callback, "callback")
 
         if start_time_ns == 0:
-            start_time_ns = now_ns
+            start_time_ns = ts_now
         if stop_time_ns:
-            Condition.true(stop_time_ns > now_ns, "stop_time was < now")
+            Condition.true(stop_time_ns > ts_now, "stop_time was < ts_now")
             Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time + interval was > stop_time")
 
         cdef LiveTimer timer = self._create_timer(
@@ -779,7 +779,7 @@ cdef class LiveClock(Clock):
                 name=name,
                 callback=self._raise_time_event,
                 interval_ns=interval_ns,
-                now_ns=self.timestamp_ns(),  # Timestamp here for accuracy
+                ts_now=self.timestamp_ns(),  # Timestamp here for accuracy
                 start_time_ns=start_time_ns,
                 stop_time_ns=stop_time_ns,
             )
@@ -788,7 +788,7 @@ cdef class LiveClock(Clock):
                 name=name,
                 callback=self._raise_time_event,
                 interval_ns=interval_ns,
-                now_ns=self.timestamp_ns(),  # Timestamp here for accuracy
+                ts_now=self.timestamp_ns(),  # Timestamp here for accuracy
                 start_time_ns=start_time_ns,
                 stop_time_ns=stop_time_ns,
             )
@@ -810,7 +810,7 @@ cdef class LiveClock(Clock):
         if timer.is_expired:
             self._remove_timer(timer)
         else:  # Continue timing
-            timer.repeat(now_ns=self.timestamp_ns())
+            timer.repeat(ts_now=self.timestamp_ns())
             self._update_timing()
 
     cdef void _handle_time_event(self, TimeEvent event):

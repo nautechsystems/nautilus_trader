@@ -50,11 +50,11 @@ cdef class BacktestEngine:
     cdef uint64_t _iteration
 
     cdef Data _next(self)
-    cdef CVec _advance_time(self, uint64_t now_ns, list clocks)
+    cdef CVec _advance_time(self, uint64_t ts_now, list clocks)
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handlers,
         list clocks,
-        uint64_t now_ns,
+        uint64_t ts_now,
         bint only_now,
     )

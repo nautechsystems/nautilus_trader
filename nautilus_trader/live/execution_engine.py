@@ -364,10 +364,10 @@ class LiveExecutionEngine(ExecutionEngine):
         inflight_len = len(inflight_orders)
         self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight.")
         for order in inflight_orders:
-            now_ns = self._clock.timestamp_ns()
+            ts_now = self._clock.timestamp_ns()
             ts_init_last = order.last_event.ts_event
-            self._log.debug(f"Checking in-flight order: {now_ns=}, {ts_init_last=}, {order=}...")
-            if now_ns > order.last_event.ts_event + self._inflight_check_threshold_ns:
+            self._log.debug(f"Checking in-flight order: {ts_now=}, {ts_init_last=}, {order=}...")
+            if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
                 self._log.debug(f"Querying {order} with exchange...")
                 query = QueryOrder(
                     trader_id=order.trader_id,

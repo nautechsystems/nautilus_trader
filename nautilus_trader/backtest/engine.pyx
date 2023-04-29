@@ -1039,55 +1039,55 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef CVec _advance_time(self, uint64_t now_ns, list clocks):
+    cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
                 &self._accumulator,
                 &clock._mem,
-                now_ns,
+                ts_now,
                 False,
             )
 
         cdef CVec raw_handlers = time_event_accumulator_drain(&self._accumulator)
 
-        # Handle all events prior to the `now_ns`
+        # Handle all events prior to the `ts_now`
         self._process_raw_time_event_handlers(
             raw_handlers,
             clocks,
-            now_ns,
+            ts_now,
             only_now=False,
         )
 
         # Set all clocks to now
         for clock in clocks:
-            clock.set_time(now_ns)
+            clock.set_time(ts_now)
 
-        # Return all remaining events to be handled (at `now_ns`)
+        # Return all remaining events to be handled (at `ts_now`)
         return raw_handlers
 
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handler_vec,
         list clocks,
-        uint64_t now_ns,
+        uint64_t ts_now,
         bint only_now,
     ):
         cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
             uint64_t i
-            uint64_t event_ts_init
+            uint64_t ts_event_init
             TimeEventHandler_t raw_handler
             TimeEvent event
             TestClock clock
             object callback
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
-            event_ts_init = raw_handler.event.ts_init
-            if (only_now and event_ts_init < now_ns) or (not only_now and event_ts_init == now_ns):
+            ts_event_init = raw_handler.event.ts_init
+            if (only_now and ts_event_init < ts_now) or (not only_now and ts_event_init == ts_now):
                 continue
             for clock in clocks:
-                clock.set_time(event_ts_init)
+                clock.set_time(ts_event_init)
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`

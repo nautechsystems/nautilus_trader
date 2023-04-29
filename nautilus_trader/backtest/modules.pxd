@@ -26,7 +26,7 @@ cdef class SimulationModule(Actor):
     cdef readonly SimulatedExchange exchange
 
     cpdef void register_venue(self, SimulatedExchange exchange)
-    cpdef void process(self, uint64_t now_ns)
+    cpdef void process(self, uint64_t ts_now)
     cpdef void log_diagnostics(self, LoggerAdapter log)
     cpdef void reset(self)
 

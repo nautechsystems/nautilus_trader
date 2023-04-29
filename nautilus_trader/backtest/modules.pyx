@@ -69,7 +69,7 @@ cdef class SimulationModule(Actor):
 
         self.exchange = exchange
 
-    cpdef void process(self, uint64_t now_ns):
+    cpdef void process(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -116,17 +116,17 @@ cdef class FXRolloverInterestModule(SimulationModule):
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, uint64_t now_ns):
+    cpdef void process(self, uint64_t ts_now):
         """
         Process the given tick through the module.
 
         Parameters
         ----------
-        now_ns : uint64_t
-            The current time in the simulated exchange.
+        ts_now : uint64_t
+            The current UNIX time (nanoseconds) in the simulated exchange.
 
         """
-        cdef datetime now = pd.Timestamp(now_ns, tz="UTC")
+        cdef datetime now = pd.Timestamp(ts_now, tz="UTC")
         cdef datetime rollover_local
         if self._day_number != now.day:
             # Set account statistics for new day
