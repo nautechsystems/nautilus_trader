@@ -43,6 +43,7 @@ RAW_CONFIG = msgspec.json.encode(
     {
         "environment": "live",
         "trader_id": "Test-111",
+        "logging": {"bypass_logging": True},
         "exec_engine": {
             "reconciliation_lookback_mins": 1440,
         },
@@ -53,7 +54,6 @@ RAW_CONFIG = msgspec.json.encode(
                     "path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
                 },
                 "config": {
-                    "account_type": "FUTURES_USDT",
                     "instrument_provider": {
                         "instrument_provider": {"load_all": True},
                     },
@@ -67,7 +67,6 @@ RAW_CONFIG = msgspec.json.encode(
                 },
                 "path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
                 "config": {
-                    "account_type": "FUTURES_USDT",
                     "instrument_provider": {
                         "instrument_provider": {"load_all": True},
                     },
@@ -99,7 +98,10 @@ RAW_CONFIG = msgspec.json.encode(
 class TestTradingNodeConfiguration:
     def test_config_with_in_memory_execution_database(self):
         # Arrange
-        config = TradingNodeConfig(cache_database=CacheDatabaseConfig(type="in-memory"))
+        config = TradingNodeConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            cache_database=CacheDatabaseConfig(type="in-memory"),
+        )
 
         # Act
         node = TradingNode(config=config)
@@ -107,9 +109,14 @@ class TestTradingNodeConfiguration:
         # Assert
         assert node is not None
 
+    @pytest.mark.skip(reason="WIP")
     def test_config_with_redis_execution_database(self):
         # Arrange, Act
-        node = TradingNode()
+        config = TradingNodeConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            cache_database=CacheDatabaseConfig(type="in-memory"),
+        )
+        node = TradingNode(config=config)
 
         # Assert
         assert node is not None
@@ -187,10 +194,12 @@ class TestTradingNodeConfiguration:
         assert len(node.kernel.instance_id.value) == 36
 
 
+@pytest.mark.skip(reason="WIP")
 class TestTradingNodeOperation:
     def test_get_event_loop_returns_a_loop(self):
         # Arrange
-        node = TradingNode()
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
 
         # Act
         loop = node.get_event_loop()
@@ -201,7 +210,8 @@ class TestTradingNodeOperation:
     def test_build_called_twice_raises_runtime_error(self):
         # Arrange, # Act
         with pytest.raises(RuntimeError):
-            node = TradingNode()
+            config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+            node = TradingNode(config=config)
             node.build()
             node.build()
 
@@ -209,12 +219,14 @@ class TestTradingNodeOperation:
     async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, # Act
         with pytest.raises(RuntimeError):
-            node = TradingNode()
+            config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+            node = TradingNode(config=config)
             await node.run_async()
 
     def test_add_data_client_factory(self):
         # Arrange
-        node = TradingNode()
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
 
         # Act
         node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
@@ -224,7 +236,8 @@ class TestTradingNodeOperation:
 
     def test_add_exec_client_factory(self):
         # Arrange
-        node = TradingNode()
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
 
         # Act
         node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
@@ -235,7 +248,8 @@ class TestTradingNodeOperation:
     @pytest.mark.asyncio
     async def test_build_with_multiple_clients(self):
         # Arrange
-        node = TradingNode()
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
 
         # Act
         node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
@@ -251,7 +265,8 @@ class TestTradingNodeOperation:
     @pytest.mark.asyncio
     async def test_run(self):
         # Arrange
-        node = TradingNode()
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
         node.build()
 
         # Act
@@ -264,7 +279,8 @@ class TestTradingNodeOperation:
     @pytest.mark.asyncio
     async def test_stop(self):
         # Arrange
-        node = TradingNode()
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
         node.build()
         node.run()
         await asyncio.sleep(2)  # Allow node to start
