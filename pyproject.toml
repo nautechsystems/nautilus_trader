@@ -51,7 +51,7 @@ cython = "==3.0.0b2"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.4"
 click = "^8.1.3"
-frozendict = "^2.3.7"
+frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
 msgspec = "^0.14.2"
 numpy = "^1.24.3"
@@ -95,6 +95,7 @@ optional = true
 [tool.poetry.group.test.dependencies]
 coverage = "^7.2.4"
 pytest = "^7.3.1"
+pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.0"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
@@ -225,7 +226,7 @@ max-complexity = 10
 ##########################################################
 [tool.mypy]
 python_version = "3.9"
-# disallow_incomplete_defs = true
+disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true
 namespace_packages = true
