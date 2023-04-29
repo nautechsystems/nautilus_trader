@@ -65,12 +65,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.orders.stop_limit import StopLimitOrder
-from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 

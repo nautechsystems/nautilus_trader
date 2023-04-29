@@ -18,8 +18,8 @@ from typing import Optional
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.execution.algorithm import ExecAlgorithm
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import OrderList
 
 
 class MyExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
