@@ -72,7 +72,7 @@ repos:
       - id: isort
         types_or: [python, cython]
         entry: "isort"
-        args: ["--settings-file", "pyproject.toml", "."]
+        args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/psf/black
     rev: 23.3.0
@@ -87,6 +87,7 @@ repos:
     rev: v0.0.263
     hooks:
       - id: ruff
+        args: ["--fix"]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.2.0
