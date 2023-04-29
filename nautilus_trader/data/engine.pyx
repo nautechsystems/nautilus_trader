@@ -585,7 +585,7 @@ cdef class DataEngine(Component):
             if client is None:
                 self._log.error(
                     f"Cannot execute command: "
-                    f"No data client configured for {command.client_id}, {command}."
+                    f"no data client configured for {command.venue}, {command}."
                 )
                 return  # No client to handle command
 
