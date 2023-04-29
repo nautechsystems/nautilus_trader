@@ -21,6 +21,7 @@ from typing import Optional
 import fsspec
 import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
+from pandas.io.parsers.readers import TextFileReader
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
@@ -508,7 +509,7 @@ class TestInstrumentProvider:
 
 class TestDataProvider:
     """
-    Provides an API to load data from either the 'test/' directory or GitHub repo.
+    Provides an API to load data from either the 'test/' directory or the projects GitHub repo.
 
     Parameters
     ----------
@@ -533,7 +534,7 @@ class TestDataProvider:
         else:
             return None
 
-    def _determine_filesystem(self):
+    def _determine_filesystem(self) -> None:
         test_data_dir = TestDataProvider._test_data_directory()
         if test_data_dir:
             self.root = test_data_dir
@@ -543,7 +544,7 @@ class TestDataProvider:
             self.root = "tests/test_data"
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
-    def _make_uri(self, path: str):
+    def _make_uri(self, path: str) -> str:
         # Moved here from top level import because GithubFileSystem has extra deps we may not have installed.
         from fsspec.implementations.github import GithubFileSystem
 
@@ -551,33 +552,35 @@ class TestDataProvider:
             return f"file://{self.root}/{path}"
         elif isinstance(self.fs, GithubFileSystem):
             return f"github://{self.fs.org}:{self.fs.repo}@{self.branch}/{self.root}/{path}"
+        else:
+            raise ValueError(f"Unsupported file system {self.fs}")
 
-    def read(self, path: str):
+    def read(self, path: str) -> fsspec.core.OpenFile:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str, **kwargs):
+    def read_csv(self, path: str, **kwargs) -> TextFileReader:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return pd.read_csv(f, **kwargs)
 
-    def read_csv_ticks(self, path: str):
+    def read_csv_ticks(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return CSVTickDataLoader.load(file_path=f)
 
-    def read_csv_bars(self, path: str):
+    def read_csv_bars(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return CSVBarDataLoader.load(file_path=f)
 
-    def read_parquet_ticks(self, path: str, timestamp_column: str = "timestamp"):
+    def read_parquet_ticks(self, path: str, timestamp_column: str = "timestamp") -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return ParquetTickDataLoader.load(file_path=f, timestamp_column=timestamp_column)
 
-    def read_parquet_bars(self, path: str):
+    def read_parquet_bars(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return ParquetBarDataLoader.load(file_path=f)
