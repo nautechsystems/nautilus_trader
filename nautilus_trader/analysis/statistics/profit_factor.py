@@ -31,4 +31,10 @@ class ProfitFactor(PortfolioStatistic):
         if not self._check_valid_returns(returns):
             return np.nan
 
-        return abs(returns[returns >= 0].sum() / returns[returns < 0].sum())
+        positive_returns_sum = returns[returns >= 0].sum()
+        negative_returns_sum = returns[returns < 0].sum()
+
+        if negative_returns_sum == 0:
+            return np.nan
+        else:
+            return abs(positive_returns_sum / negative_returns_sum)
