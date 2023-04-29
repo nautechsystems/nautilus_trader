@@ -135,6 +135,12 @@ class TestActor:
     def test_id(self):
         # Arrange, Act
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Assert
         assert actor.id == ComponentId(self.component_id)
@@ -198,6 +204,12 @@ class TestActor:
     def test_handle_event(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         event = TestEventStubs.cash_account_state()
 
@@ -210,6 +222,12 @@ class TestActor:
     def test_on_start_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_start()
@@ -220,6 +238,12 @@ class TestActor:
     def test_on_stop_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_stop()
@@ -230,6 +254,12 @@ class TestActor:
     def test_on_resume_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_resume()
@@ -240,6 +270,12 @@ class TestActor:
     def test_on_reset_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_reset()
@@ -250,6 +286,12 @@ class TestActor:
     def test_on_dispose_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_dispose()
@@ -260,6 +302,12 @@ class TestActor:
     def test_on_degrade_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_degrade()
@@ -270,6 +318,12 @@ class TestActor:
     def test_on_fault_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_fault()
@@ -280,6 +334,12 @@ class TestActor:
     def test_on_instrument_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_instrument(TestInstrumentProvider.btcusdt_binance())
@@ -290,6 +350,12 @@ class TestActor:
     def test_on_order_book_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_order_book(TestDataStubs.order_book())
@@ -300,6 +366,12 @@ class TestActor:
     def test_on_order_book_delta_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_order_book_delta(TestDataStubs.order_book_snapshot())
@@ -310,6 +382,12 @@ class TestActor:
     def test_on_ticker_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_ticker(TestDataStubs.ticker())
@@ -320,6 +398,12 @@ class TestActor:
     def test_on_venue_status_update_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_venue_status_update(TestDataStubs.venue_status_update())
@@ -330,6 +414,12 @@ class TestActor:
     def test_on_instrument_status_update_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_instrument_status_update(TestDataStubs.instrument_status_update())
@@ -340,6 +430,12 @@ class TestActor:
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.on_event(TestEventStubs.cash_account_state())
@@ -350,6 +446,12 @@ class TestActor:
     def test_on_quote_tick_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         tick = TestDataStubs.quote_tick_5decimal()
 
@@ -362,6 +464,12 @@ class TestActor:
     def test_on_trade_tick_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         tick = TestDataStubs.trade_tick_5decimal()
 
@@ -374,6 +482,12 @@ class TestActor:
     def test_on_bar_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         bar = TestDataStubs.bar_5decimal()
 
@@ -386,6 +500,12 @@ class TestActor:
     def test_on_historical_data_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         bar = TestDataStubs.bar_5decimal()
 
@@ -398,6 +518,13 @@ class TestActor:
     def test_on_data_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         news_event = NewsEvent(
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
@@ -415,72 +542,114 @@ class TestActor:
     def test_start_when_invalid_state_does_not_start(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.start()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.RUNNING
 
     def test_stop_when_invalid_state_does_not_stop(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.stop()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_resume_when_invalid_state_does_not_resume(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.resume()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_reset_when_invalid_state_does_not_reset(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.reset()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_dispose_when_invalid_state_does_not_dispose(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.dispose()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.DISPOSED
 
     def test_degrade_when_invalid_state_does_not_degrade(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.degrade()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_fault_when_invalid_state_does_not_fault(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         actor.fault()
 
         # Assert
-        assert actor.state == ComponentState.PRE_INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_start_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
