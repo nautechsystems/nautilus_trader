@@ -407,11 +407,11 @@ impl Clock for LiveClock {
             None => None,
         };
 
-        let now_ns = self.timestamp_ns();
+        let ts_now = self.timestamp_ns();
         let timer = TestTimer::new(
             name.clone(),
-            alert_time_ns - now_ns,
-            now_ns,
+            alert_time_ns - ts_now,
+            ts_now,
             Some(alert_time_ns),
         );
         self.timers.insert(name, timer);

@@ -198,7 +198,7 @@ cdef class ExecAlgorithm(Actor):
         cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=primary.trader_id,
@@ -211,8 +211,8 @@ cdef class ExecAlgorithm(Actor):
             price=None,
             trigger_price=None,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         primary.apply(updated)
@@ -878,7 +878,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=order.trader_id,
@@ -891,8 +891,8 @@ cdef class ExecAlgorithm(Actor):
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         order.apply(updated)
@@ -961,7 +961,7 @@ cdef class ExecAlgorithm(Actor):
 # -- EVENTS ---------------------------------------------------------------------------------------
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -970,12 +970,12 @@ cdef class ExecAlgorithm(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -984,8 +984,8 @@ cdef class ExecAlgorithm(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
 # -- EGRESS ---------------------------------------------------------------------------------------
