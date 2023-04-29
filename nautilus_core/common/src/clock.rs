@@ -393,7 +393,7 @@ impl Clock for LiveClock {
     fn set_time_alert_ns_py(
         &mut self,
         name: String,
-        alert_time_ns: UnixNanos,
+        mut alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
@@ -408,6 +408,7 @@ impl Clock for LiveClock {
         };
 
         let ts_now = self.timestamp_ns();
+        alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let timer = TestTimer::new(
             name.clone(),
             alert_time_ns - ts_now,

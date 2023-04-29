@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
 - Removed redundant rate limiting from Rust logger (and associated `rate_limit` config params)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
+- Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid).
 
 ### Enhancements
 - Added new DataFusion Rust parquet data catalog backend (yet to be integrated into Python)

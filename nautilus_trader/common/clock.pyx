@@ -244,12 +244,15 @@ cdef class Clock:
             If `name` is not a valid string.
         KeyError
             If `name` is not unique for this clock.
-        ValueError
-            If `alert_time` is not >= the clocks current time.
         TypeError
             If `handler` is not of type `Callable` or ``None``.
         ValueError
             If `handler` is ``None`` and no default handler is registered.
+
+        Warnings
+        --------
+        If `alert_time` is in the past or at current time, then an immediate
+        time event will be generated (rather than being invalid and failing a condition check).
 
         """
         self.set_time_alert_ns(
@@ -286,12 +289,15 @@ cdef class Clock:
             If `name` is not a valid string.
         ValueError
             If `name` is not unique for this clock.
-        ValueError
-            If `alert_time` is not >= the clocks current time.
         TypeError
             If `callback` is not of type `Callable` or ``None``.
         ValueError
             If `callback` is ``None`` and no default handler is registered.
+
+        Warnings
+        --------
+        If `alert_time_ns` is in the past or at current time, then an immediate
+        time event will be generated (rather than being invalid and failing a condition check).
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -495,8 +501,8 @@ cdef class TestClock(Clock):
         if start_time_ns == 0:
             start_time_ns = ts_now
         if stop_time_ns:
-            Condition.true(stop_time_ns > ts_now, "stop_time was < ts_now")
-            Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time + interval was > stop_time")
+            Condition.true(stop_time_ns > ts_now, "`stop_time_ns` was < `ts_now`")
+            Condition.true(start_time_ns + interval_ns <= stop_time_ns, "`start_time_ns` + `interval_ns` was > `stop_time_ns`")
 
         test_clock_set_timer_ns(
             &self._mem,
