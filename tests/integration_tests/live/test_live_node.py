@@ -19,8 +19,8 @@ import unittest.mock
 import msgspec
 import pytest
 
-from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
@@ -194,7 +194,7 @@ class TestTradingNodeConfiguration:
         assert len(node.kernel.instance_id.value) == 36
 
 
-@pytest.mark.skip(reason="WIP")
+# @pytest.mark.skip(reason="WIP")
 class TestTradingNodeOperation:
     def test_get_event_loop_returns_a_loop(self):
         # Arrange
@@ -219,78 +219,42 @@ class TestTradingNodeOperation:
     async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, # Act
         with pytest.raises(RuntimeError):
-            config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+            config = TradingNodeConfig(
+                logging=LoggingConfig(bypass_logging=True),
+                data_clients={
+                    "BINANCE": BinanceDataClientConfig(),
+                },
+                exec_clients={
+                    "BINANCE": BinanceExecClientConfig(),
+                },
+            )
             node = TradingNode(config=config)
             await node.run_async()
 
-    def test_add_data_client_factory(self):
-        # Arrange
-        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-        node = TradingNode(config=config)
-
-        # Act
-        node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-        node.build()
-
-        # TODO(cs): Assert existence of client
-
-    def test_add_exec_client_factory(self):
-        # Arrange
-        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-        node = TradingNode(config=config)
-
-        # Act
-        node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
-        node.build()
-
-        # TODO(cs): Assert existence of client
-
     @pytest.mark.asyncio
-    async def test_build_with_multiple_clients(self):
+    async def test_run_and_stop_with_client_factories(self):
         # Arrange
-        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        config = TradingNodeConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            data_clients={
+                "BINANCE": BinanceDataClientConfig(),
+            },
+            exec_clients={
+                "BINANCE": BinanceExecClientConfig(),
+            },
+            timeout_disconnection=1.0,  # Short timeout for testing
+            timeout_post_stop=1.0,  # Short timeout for testing
+        )
         node = TradingNode(config=config)
 
-        # Act
-        node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-        node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
-        node.build()
-
-        node.run()
-        await asyncio.sleep(1)
-
-        # assert self.node.kernel.data_engine.registered_clients
-        # TODO(cs): Assert existence of client
-
-    @pytest.mark.asyncio
-    async def test_run(self):
-        # Arrange
-        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-        node = TradingNode(config=config)
+        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
         node.build()
 
         # Act
         node.run()
-        await asyncio.sleep(2)
-
-        # Assert
-        assert node.trader.is_running
-
-    @pytest.mark.asyncio
-    async def test_stop(self):
-        # Arrange
-        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-        node = TradingNode(config=config)
-        node.build()
-        node.run()
-        await asyncio.sleep(2)  # Allow node to start
-
-        # Act
-        node.stop()
-        await asyncio.sleep(3)  # Allow node to stop
-
-        # Assert
-        assert node.trader.is_stopped
+        await asyncio.sleep(2.0)
+        await node.stop_async()
 
     @pytest.mark.skip(reason="setup sandbox environment")
     @pytest.mark.asyncio
