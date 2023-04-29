@@ -14,16 +14,32 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections.abc import Coroutine
 
 import pytest
 import pytest_asyncio
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from nautilus_trader.network.http import HttpClient
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
-@pytest_asyncio.fixture()
-async def client():
+@pytest.fixture(name="server")
+async def fixture_server(aiohttp_server):
+    async def hello(request):
+        return web.Response(text="Hello, world")
+
+    app = web.Application()
+    app.router.add_route("GET", "/get", hello)
+    app.router.add_route("POST", "/post", hello)
+
+    server = await aiohttp_server(app)
+    return server
+
+
+@pytest_asyncio.fixture(name="client")
+async def fixture_client() -> HttpClient:
     client = HttpClient(
         loop=asyncio.get_event_loop(),
         logger=TestComponentStubs.logger(),
@@ -32,18 +48,25 @@ async def client():
     return client
 
 
-@pytest.mark.skip(reason="Relies on external internet resource")
 @pytest.mark.asyncio
-async def test_client_get(client):
-    resp = await client.get("https://httpbin.org/get")
-    assert len(resp.data) > 100
+async def test_client_get(client: HttpClient, server: Coroutine) -> None:
+    test_server: TestServer = await server
+    url = f"http://{test_server.host}:{test_server.port}/get"
+    resp = await client.get(url)
+    assert resp.status == 200
+    assert len(resp.data) > 0
     assert client.max_latency() > 0
     assert client.min_latency() > 0
     assert client.avg_latency() > 0
 
 
-@pytest.mark.skip(reason="Relies on external internet resource")
 @pytest.mark.asyncio
-async def test_client_post(client):
-    resp = await client.post("https://httpbin.org/post")
-    assert len(resp.data) > 100
+async def test_client_post(client: HttpClient, server: Coroutine) -> None:
+    test_server = await server
+    url = f"http://{test_server.host}:{test_server.port}/post"
+    resp = await client.post(url)
+    assert resp.status == 200
+    assert len(resp.data) > 10
+    assert client.max_latency() > 0
+    assert client.min_latency() > 0
+    assert client.avg_latency() > 0
