@@ -266,7 +266,7 @@ impl Clock for TestClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -294,7 +294,7 @@ impl Clock for TestClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -399,7 +399,7 @@ impl Clock for LiveClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -428,7 +428,7 @@ impl Clock for LiveClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
