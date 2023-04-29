@@ -26,7 +26,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder

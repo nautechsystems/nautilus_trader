@@ -183,7 +183,7 @@ cdef class Equity(Instrument):
         return Equity.from_dict_c(values)
 
     @staticmethod
-    def to_dict(Instrument obj):
+    def to_dict(Instrument obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 

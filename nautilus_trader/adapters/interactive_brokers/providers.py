@@ -34,7 +34,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):

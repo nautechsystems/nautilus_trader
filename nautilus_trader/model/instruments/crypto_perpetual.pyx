@@ -272,7 +272,7 @@ cdef class CryptoPerpetual(Instrument):
         return CryptoPerpetual.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CryptoPerpetual obj):
+    def to_dict(CryptoPerpetual obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 
