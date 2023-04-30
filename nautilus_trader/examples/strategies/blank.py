@@ -20,11 +20,11 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
 
-class MyStrategyConfig(StrategyConfig):
+class MyStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``MyStrategy`` instances.
 
@@ -53,112 +53,32 @@ class MyStrategy(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: MyStrategyConfig):
+    def __init__(self, config: MyStrategyConfig) -> None:
         super().__init__(config)
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
-    def on_start(self):
-        """Actions to be performed on strategy start."""
-        pass
+    def on_start(self) -> None:
+        """Actions to be performed when the strategy is started."""
+        pass  # Optionally implement
 
-    def on_instrument(self, instrument: Instrument):
+    def on_stop(self) -> None:
+        """Actions to be performed when the strategy is stopped."""
+        pass  # Optionally implement
+
+    def on_reset(self) -> None:
+        """Actions to be performed when the strategy is reset."""
+        pass  # Optionally implement
+
+    def on_dispose(self) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is disposed.
 
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument received.
-
-        """
-        pass
-
-    def on_quote_tick(self, tick: QuoteTick):
-        """
-        Actions to be performed when the strategy is running and receives a quote tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick received.
+        Cleanup any resources used by the strategy here.
 
         """
-        pass
-
-    def on_trade_tick(self, tick: TradeTick):
-        """
-        Actions to be performed when the strategy is running and receives a trade tick.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick received.
-
-        """
-        pass
-
-    def on_bar(self, bar: Bar):
-        """
-        Actions to be performed when the strategy is running and receives a bar.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        """
-        pass
-
-    def buy(self):
-        """
-        Users simple buy method (example).
-        """
-        pass
-
-    def sell(self):
-        """
-        Users simple sell method (example).
-        """
-        pass
-
-    def on_data(self, data: Data):
-        """
-        Actions to be performed when the strategy is running and receives generic data.
-
-        Parameters
-        ----------
-        data : Data
-            The data received.
-
-        """
-        pass
-
-    def on_event(self, event: Event):
-        """
-        Actions to be performed when the strategy is running and receives an event.
-
-        Parameters
-        ----------
-        event : Event
-            The event received.
-
-        """
-        pass
-
-    def on_stop(self):
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        pass
-
-    def on_reset(self):
-        """
-        Actions to be performed when the strategy is reset.
-        """
-        pass
+        pass  # Optionally implement
 
     def on_save(self) -> dict[str, bytes]:
         """
@@ -172,9 +92,9 @@ class MyStrategy(Strategy):
             The strategy state dictionary.
 
         """
-        return {}
+        return {}  # Optionally implement
 
-    def on_load(self, state: dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -186,13 +106,89 @@ class MyStrategy(Strategy):
             The strategy state dictionary.
 
         """
-        pass
+        pass  # Optionally implement
 
-    def on_dispose(self):
+    def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is disposed.
+        Actions to be performed when the strategy is running and receives an
+        instrument.
 
-        Cleanup any resources used by the strategy here.
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
 
         """
-        pass
+        pass  # Optionally implement
+
+    def on_quote_tick(self, tick: QuoteTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick received.
+
+        """
+        pass  # Optionally implement
+
+    def on_trade_tick(self, tick: TradeTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick received.
+
+        """
+        pass  # Optionally implement
+
+    def on_bar(self, bar: Bar) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar received.
+
+        """
+        pass  # Optionally implement
+
+    def buy(self) -> None:
+        """
+        Users simple buy method (example).
+        """
+        pass  # Optionally implement
+
+    def sell(self) -> None:
+        """
+        Users simple sell method (example).
+        """
+        pass  # Optionally implement
+
+    def on_data(self, data: Data) -> None:
+        """
+        Actions to be performed when the strategy is running and receives generic data.
+
+        Parameters
+        ----------
+        data : Data
+            The data received.
+
+        """
+        pass  # Optionally implement
+
+    def on_event(self, event: Event) -> None:
+        """
+        Actions to be performed when the strategy is running and receives an event.
+
+        Parameters
+        ----------
+        event : Event
+            The event received.
+
+        """
+        pass  # Optionally implement

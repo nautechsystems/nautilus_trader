@@ -80,6 +80,8 @@ cdef class Cache(CacheFacade):
     cdef dict _index_instrument_positions
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
+    cdef dict _index_exec_algorithm_orders
+    cdef dict _index_exec_spawn_orders
     cdef set _index_orders
     cdef set _index_orders_open
     cdef set _index_orders_closed
@@ -90,6 +92,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_positions_closed
     cdef set _index_actors
     cdef set _index_strategies
+    cdef set _index_exec_algorithms
 
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""

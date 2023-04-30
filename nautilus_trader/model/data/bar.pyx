@@ -20,8 +20,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
+from nautilus_trader.core.rust.model cimport bar_drop
 from nautilus_trader.core.rust.model cimport bar_eq
-from nautilus_trader.core.rust.model cimport bar_free
 from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_new_from_raw
@@ -34,9 +34,9 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
 from nautilus_trader.core.rust.model cimport bar_to_cstr
-from nautilus_trader.core.rust.model cimport bar_type_copy
+from nautilus_trader.core.rust.model cimport bar_type_clone
+from nautilus_trader.core.rust.model cimport bar_type_drop
 from nautilus_trader.core.rust.model cimport bar_type_eq
-from nautilus_trader.core.rust.model cimport bar_type_free
 from nautilus_trader.core.rust.model cimport bar_type_ge
 from nautilus_trader.core.rust.model cimport bar_type_gt
 from nautilus_trader.core.rust.model cimport bar_type_hash
@@ -509,7 +509,7 @@ cdef class BarType:
 
     def __del__(self) -> None:
         if self._mem.instrument_id.symbol.value != NULL:
-            bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            bar_type_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
@@ -541,7 +541,7 @@ cdef class BarType:
     @staticmethod
     cdef BarType from_mem_c(BarType_t mem):
         cdef BarType bar_type = BarType.__new__(BarType)
-        bar_type._mem = bar_type_copy(&mem)
+        bar_type._mem = bar_type_clone(&mem)
         return bar_type
 
     @staticmethod
@@ -703,7 +703,7 @@ cdef class Bar(Data):
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
-            bar_type_copy(&bar_type._mem),
+            bar_type_clone(&bar_type._mem),
             open._mem,
             high._mem,
             low._mem,
@@ -760,7 +760,7 @@ cdef class Bar(Data):
 
     def __del__(self) -> None:
         if self._mem.bar_type.instrument_id.symbol.value != NULL:
-            bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            bar_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
         return bar_eq(&self._mem, &other._mem)

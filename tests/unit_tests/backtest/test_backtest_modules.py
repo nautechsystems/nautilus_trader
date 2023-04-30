@@ -70,7 +70,7 @@ class TestSimulationModules:
     def test_python_module(self):
         # Arrange
         class PythonModule(SimulationModule):
-            def process(self, now_ns: int):
+            def process(self, ts_now: int):
                 assert self.exchange
 
             def log_diagnostics(self, log: LoggerAdapter):

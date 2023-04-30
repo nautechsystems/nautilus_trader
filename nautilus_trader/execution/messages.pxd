@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -44,10 +43,10 @@ cdef class TradingCommand(Command):
 cdef class SubmitOrder(TradingCommand):
     cdef readonly Order order
     """The order to submit.\n\n:returns: `Order`"""
+    cdef readonly ExecAlgorithmId exec_algorithm_id
+    """The execution algorithm ID for the order.\n\n:returns: `ExecAlgorithmId` or ``None``"""
     cdef readonly PositionId position_id
     """The position ID to associate with the order.\n\n:returns: `PositionId` or ``None``"""
-    cdef readonly ExecAlgorithmSpecification exec_algorithm_spec
-    """The execution algorithm specification for the order.\n\n:returns: `ExecAlgorithmSpecification` or ``None``"""
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
@@ -59,10 +58,10 @@ cdef class SubmitOrder(TradingCommand):
 cdef class SubmitOrderList(TradingCommand):
     cdef readonly OrderList order_list
     """The order list to submit.\n\n:returns: `OrderList`"""
+    cdef readonly ExecAlgorithmId exec_algorithm_id
+    """The execution algorithm ID for the order list.\n\n:returns: `ExecAlgorithmId` or ``None``"""
     cdef readonly PositionId position_id
     """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""
-    cdef readonly list exec_algorithm_specs
-    """The execution algorithm specifications for the orders.\n\n:returns: `list[ExecAlgorithmSpecification]` or ``None``"""
     cdef readonly bint has_emulated_order
     """If the contained order_list holds at least one emulated order.\n\n:returns: `bool`"""
 
@@ -127,14 +126,3 @@ cdef class QueryOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(QueryOrder obj)
-
-
-cdef class ExecAlgorithmSpecification:
-    cdef frozenset _key
-
-    cdef readonly ClientOrderId client_order_id
-    """The client order ID for the order being executed.\n\n:returns: `ExecAlgorithmId`"""
-    cdef readonly ExecAlgorithmId exec_algorithm_id
-    """The execution algorithm ID.\n\n:returns: `ExecAlgorithmId`"""
-    cdef readonly dict params
-    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""

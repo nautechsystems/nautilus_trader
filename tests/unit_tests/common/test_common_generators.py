@@ -40,9 +40,9 @@ class TestOrderIdGenerator:
         result3 = self.generator.generate()
 
         # Assert
-        assert result1 == ClientOrderId("O-19700101-001-001-1")
-        assert result2 == ClientOrderId("O-19700101-001-001-2")
-        assert result3 == ClientOrderId("O-19700101-001-001-3")
+        assert result1 == ClientOrderId("O-19700101-0000-001-001-1")
+        assert result2 == ClientOrderId("O-19700101-0000-001-001-2")
+        assert result3 == ClientOrderId("O-19700101-0000-001-001-3")
 
     def test_reset_id_generator(self):
         # Arrange
@@ -55,7 +55,7 @@ class TestOrderIdGenerator:
         result1 = self.generator.generate()
 
         # Assert
-        assert result1 == ClientOrderId("O-19700101-001-001-1")
+        assert result1 == ClientOrderId("O-19700101-0000-001-001-1")
 
 
 class TestOrderListIdGenerator:
@@ -86,9 +86,9 @@ class TestOrderListIdGenerator:
         order_list_id3 = self.generator.generate()
 
         # Assert
-        assert order_list_id1 == OrderListId("OL-19700101-001-001-6")
-        assert order_list_id2 == OrderListId("OL-19700101-001-001-7")
-        assert order_list_id3 == OrderListId("OL-19700101-001-001-8")
+        assert order_list_id1 == OrderListId("OL-19700101-0000-001-001-6")
+        assert order_list_id2 == OrderListId("OL-19700101-0000-001-001-7")
+        assert order_list_id3 == OrderListId("OL-19700101-0000-001-001-8")
 
     def test_reset(self):
         # Arrange
@@ -116,9 +116,9 @@ class TestPositionIdGenerator:
         result3 = self.generator.generate(StrategyId("S-002"))
 
         # Assert
-        assert result1 == PositionId("P-19700101-001-002-1")
-        assert result2 == PositionId("P-19700101-001-002-2")
-        assert result3 == PositionId("P-19700101-001-002-3")
+        assert result1 == PositionId("P-19700101-0000-001-002-1")
+        assert result2 == PositionId("P-19700101-0000-001-002-2")
+        assert result3 == PositionId("P-19700101-0000-001-002-3")
 
     def test_generate_position_id_with_flip_appends_correctly(self):
         # Arrange, Act
@@ -127,9 +127,9 @@ class TestPositionIdGenerator:
         result3 = self.generator.generate(StrategyId("S-001"), flipped=True)
 
         # Assert
-        assert result1 == PositionId("P-19700101-001-001-1")
-        assert result2 == PositionId("P-19700101-001-002-1F")
-        assert result3 == PositionId("P-19700101-001-001-2F")
+        assert result1 == PositionId("P-19700101-0000-001-001-1")
+        assert result2 == PositionId("P-19700101-0000-001-002-1F")
+        assert result3 == PositionId("P-19700101-0000-001-001-2F")
 
     def test_set_count_with_valid_strategy_identifier(self):
         # Arrange
@@ -162,4 +162,4 @@ class TestPositionIdGenerator:
         result1 = self.generator.generate(StrategyId("S-002"))
 
         # Assert
-        assert result1 == PositionId("P-19700101-001-002-1")
+        assert result1 == PositionId("P-19700101-0000-001-002-1")

@@ -66,7 +66,7 @@ pub extern "C" fn venue_clone(venue: &Venue) -> Venue {
 
 /// Frees the memory for the given `venue` by dropping.
 #[no_mangle]
-pub extern "C" fn venue_free(venue: Venue) {
+pub extern "C" fn venue_drop(venue: Venue) {
     drop(venue); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::Venue;
-    use crate::identifiers::venue::venue_free;
+    use crate::identifiers::venue::venue_drop;
 
     #[test]
     fn test_equality() {
@@ -112,8 +112,8 @@ mod tests {
     }
 
     #[test]
-    fn test_venue_free() {
+    fn test_venue_drop() {
         let id = Venue::new("BINANCE");
-        venue_free(id); // No panic
+        venue_drop(id); // No panic
     }
 }

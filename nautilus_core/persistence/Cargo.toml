@@ -13,16 +13,17 @@ crate-type = ["rlib", "staticlib", "cdylib" ]
 [dependencies]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
-chrono.workspace = true
 pyo3.workspace = true
+pyo3-asyncio.workspace = true
 rand.workspace = true
-once_cell = "1.17.0"
-arrow2 = { version = "0.15.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
+tokio.workspace = true
+binary-heap-plus = "0.5.0"
+compare = "0.1.0"
+# FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
+datafusion = { version = "23.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions"] }
+futures = "0.3.28"
+pin-project-lite = "0.2.9"
 
 [features]
-extension-module = [
-    "pyo3/extension-module",
-    "nautilus_core/extension-module",
-    "nautilus_model/extension-module",
-]
+extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]
 default = []

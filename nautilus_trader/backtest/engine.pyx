@@ -48,12 +48,22 @@ from nautilus_trader.common.enums_c cimport log_level_from_str
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport log_memory
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_advance_clock
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
+from nautilus_trader.core.rust.common cimport TimeEventHandler_t
+from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -103,6 +113,7 @@ cdef class BacktestEngine:
 
         # Setup components
         self._clock: Clock = LiveClock()  # Real-time for the engine
+        self._accumulator = <TimeEventAccumulatorAPI>time_event_accumulator_new()
 
         # Run IDs
         self._run_config_id: Optional[str] = None
@@ -131,6 +142,10 @@ cdef class BacktestEngine:
             component_name=type(self).__name__,
             logger=self._kernel.logger,
         )
+
+    def __del__(self) -> None:
+        if self._accumulator._0 != NULL:
+            time_event_accumulator_drop(self._accumulator)
 
     @property
     def trader_id(self) -> TraderId:
@@ -675,6 +690,32 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
 
+    def add_exec_algorithm(self, exec_algorithm: ExecAlgorithm) -> None:
+        """
+        Add the given execution algorithm to the backtest engine.
+
+        Parameters
+        ----------
+        exec_algorithm : ExecAlgorithm
+            The execution algorithm to add.
+
+        """
+        # Checked inside trader
+        self.kernel.trader.add_exec_algorithm(exec_algorithm)
+
+    def add_exec_algorithms(self, exec_algorithms: list[ExecAlgorithm]) -> None:
+        """
+        Add the given list of execution algorithms to the backtest engine.
+
+        Parameters
+        ----------
+        exec_algorithms : list[ExecAlgorithm]
+            The execution algorithms to add.
+
+        """
+        # Checked inside trader
+        self.kernel.trader.add_exec_algorithms(exec_algorithms)
+
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -888,7 +929,7 @@ cdef class BacktestEngine:
         # Gather clocks
         cdef list clocks = [self.kernel.clock]
         cdef Actor actor
-        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies():
+        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies() + self._kernel.trader.exec_algorithms():
             clocks.append(actor.clock)
 
         # Set clocks
@@ -927,17 +968,18 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef TimeEventHandler event_handler
         cdef uint64_t last_ns = 0
-        cdef list now_events = []
+        cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
+        cdef CVec raw_handlers
         while data is not None:
             if data.ts_init > end_ns:
                 # End of backtest
                 break
             if data.ts_init > last_ns:
                 # Advance clocks to the next data time
-                now_events = self._advance_time(data.ts_init, clocks)
+                raw_handlers = self._advance_time(data.ts_init, clocks)
+                raw_handlers_count = raw_handlers.len
 
             # Process data through venue
             if isinstance(data, OrderBookData):
@@ -962,11 +1004,17 @@ cdef class BacktestEngine:
             last_ns = data.ts_init
             data = self._next()
             if data is None or data.ts_init > last_ns:
-                # Finally process the past time events
-                for event_handler in now_events:
-                    event_handler.handle()
-                # Clear processed events
-                now_events = []
+                # Finally process the time events
+                self._process_raw_time_event_handlers(
+                    raw_handlers,
+                    clocks,
+                    last_ns,
+                    only_now=True,
+                )
+
+                # Drop processed event handlers
+                vec_time_event_handlers_drop(raw_handlers)
+                raw_handlers_count = 0
 
             self._iteration += 1
         # ---------------------------------------------------------------------#
@@ -976,8 +1024,14 @@ cdef class BacktestEngine:
             exchange.process(self.kernel.clock.timestamp_ns())
 
         # Process remaining time events
-        for event_handler in now_events:
-            event_handler.handle()
+        if raw_handlers_count > 0:
+            self._process_raw_time_event_handlers(
+                raw_handlers,
+                clocks,
+                last_ns,
+                only_now=True,
+            )
+            vec_time_event_handlers_drop(raw_handlers)
 
     cdef Data _next(self):
         cdef uint64_t cursor = self._index
@@ -985,38 +1039,60 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef list _advance_time(self, uint64_t now_ns, list clocks):
-        cdef list all_events = []  # type: list[TimeEventHandler]
-        cdef list now_events = []  # type: list[TimeEventHandler]
+    cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
+        cdef TestClock clock
+        for clock in clocks:
+            time_event_accumulator_advance_clock(
+                &self._accumulator,
+                &clock._mem,
+                ts_now,
+                False,
+            )
 
-        cdef Actor actor
-        for actor in self._kernel.trader.actors():
-            all_events += actor.clock.advance_time(now_ns, set_time=False)
+        cdef CVec raw_handlers = time_event_accumulator_drain(&self._accumulator)
 
-        cdef Strategy strategy
-        for strategy in self._kernel.trader.strategies():
-            all_events += strategy.clock.advance_time(now_ns, set_time=False)
+        # Handle all events prior to the `ts_now`
+        self._process_raw_time_event_handlers(
+            raw_handlers,
+            clocks,
+            ts_now,
+            only_now=False,
+        )
 
-        all_events += self.kernel.clock.advance_time(now_ns, set_time=False)
+        # Set all clocks to now
+        for clock in clocks:
+            clock.set_time(ts_now)
 
-        # Handle all events prior to the `now_ns`
+        # Return all remaining events to be handled (at `ts_now`)
+        return raw_handlers
+
+    cdef void _process_raw_time_event_handlers(
+        self,
+        CVec raw_handler_vec,
+        list clocks,
+        uint64_t ts_now,
+        bint only_now,
+    ):
+        cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
-            TimeEventHandler event_handler
+            uint64_t i
+            uint64_t ts_event_init
+            TimeEventHandler_t raw_handler
+            TimeEvent event
             TestClock clock
-        for event_handler in sorted(all_events):
-            if event_handler.event.ts_init == now_ns:
-                now_events.append(event_handler)
+            object callback
+        for i in range(raw_handler_vec.len):
+            raw_handler = <TimeEventHandler_t>raw_handlers[i]
+            ts_event_init = raw_handler.event.ts_init
+            if (only_now and ts_event_init < ts_now) or (not only_now and ts_event_init == ts_now):
                 continue
             for clock in clocks:
-                clock.set_time(event_handler.event.ts_init)
-            event_handler.handle()
+                clock.set_time(ts_event_init)
+            event = TimeEvent.from_mem_c(raw_handler.event)
 
-        # Set all clocks
-        for clock in clocks:
-            clock.set_time(now_ns)
-
-        # Return all remaining events to be handled (at `now_ns`)
-        return now_events
+            # Cast raw `PyObject *` to a `PyObject`
+            callback = <object>raw_handler.callback_ptr
+            callback(event)
 
     def _log_pre_run(self):
         log_memory(self._log)

@@ -15,11 +15,12 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.10"]
+        python-version: ["3.9", "3.10", "3.11"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: debug
+      RUST_BACKTRACE: 1
 
     steps:
       - name: Checkout repository
@@ -120,6 +121,6 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           poetry install --with test --all-extras
-          poetry run pytest --ignore=tests/performance_tests -k "not no_ci" --new-first --failed-first
+          poetry run pytest --ignore=tests/performance_tests --new-first --failed-first
         env:
           PARALLEL_BUILD: false

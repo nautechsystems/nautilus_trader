@@ -24,6 +24,8 @@ from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
+cdef list capsule_to_data_list(object capsule)
+
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument
 

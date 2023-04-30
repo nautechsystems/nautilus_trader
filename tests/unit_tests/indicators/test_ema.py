@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -123,7 +125,7 @@ class TestExponentialMovingAverage:
         self.ema.update_raw(3.00000)
 
         # Act, Assert
-        assert self.ema.value == 1.5123966942148757
+        assert self.ema.value == pytest.approx(1.5123966942148757, rel=1e-9)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

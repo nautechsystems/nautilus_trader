@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.rust.core cimport cstr_free
+from nautilus_trader.core.rust.core cimport cstr_drop
 
 
 cdef extern from "Python.h":
@@ -55,8 +55,8 @@ cdef inline str cstr_to_pystr(const char* ptr):
     cdef str obj = PyUnicode_FromString(ptr)
 
     # Assumes `ptr` was created from Rust `CString::from_raw`,
-    # otherwise will lead to undefined behaviour when passed to `cstr_free`.
-    cstr_free(ptr)
+    # otherwise will lead to undefined behaviour when passed to `cstr_drop`.
+    cstr_drop(ptr)
     return obj
 
 

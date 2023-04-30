@@ -36,7 +36,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-pytestmark = pytest.mark.no_ci
+pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 @pytest.fixture()

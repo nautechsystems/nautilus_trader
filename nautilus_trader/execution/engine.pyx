@@ -33,6 +33,7 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config.error import InvalidConfiguration
 
 from libc.stdint cimport uint64_t
 
@@ -70,6 +71,7 @@ from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -113,7 +115,7 @@ cdef class ExecutionEngine(Component):
         Clock clock not None,
         Logger logger not None,
         config: Optional[ExecEngineConfig] = None,
-    ):
+    ) -> None:
         if config is None:
             config = ExecEngineConfig()
         Condition.type(config, ExecEngineConfig, "config")
@@ -125,27 +127,27 @@ cdef class ExecutionEngine(Component):
             config=config.dict(),
         )
 
-        self._cache = cache
+        self._cache: Cache = cache
 
         self._clients: dict[ClientId, ExecutionClient] = {}
         self._routing_map: dict[Venue, ExecutionClient] = {}
         self._default_client: Optional[ExecutionClient] = None
         self._oms_overrides: dict[StrategyId, OmsType] = {}
-        self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
+        self._external_order_claims: dict[InstrumentId, StrategyId] = {}
 
-        self._pos_id_generator = PositionIdGenerator(
+        self._pos_id_generator: PositionIdGenerator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
             clock=clock,
         )
 
         # Settings
-        self.debug = config.debug
-        self.allow_cash_positions = config.allow_cash_positions
+        self.debug: bool = config.debug
+        self.allow_cash_positions: bool = config.allow_cash_positions
 
         # Counters
-        self.command_count = 0
-        self.event_count = 0
-        self.report_count = 0
+        self.command_count: int = 0
+        self.event_count: int = 0
+        self.report_count: int = 0
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.execute", handler=self.execute)
@@ -248,6 +250,24 @@ cdef class ExecutionEngine(Component):
         """
         return self._cache.check_residuals()
 
+    cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id):
+        """
+        Get any external order claim for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the claim.
+
+        Returns
+        -------
+        StrategyId or ``None``
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self._external_order_claims.get(instrument_id)
+
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client):
@@ -346,27 +366,39 @@ cdef class ExecutionEngine(Component):
             f"for Strategy {strategy}.",
         )
 
-    cpdef void register_exec_algorithm(self, ExecAlgorithm exec_algorithm):
+    cpdef void register_external_order_claims(self, Strategy strategy):
         """
-        Register the given execution algorithm with the execution engine.
+        Register the given strategies external order claim instrument IDs (if any)
 
         Parameters
         ----------
-        exec_algorithm : ExecAlgorithm
-            The execution algorithm to register.
+        strategy : Strategy
+            The strategy for the registration.
 
         Raises
         ------
-        ValueError
-            If `exec_algorithm` is already registered with the execution engine.
+        InvalidConfiguration
+            If a strategy is already registered to claim external orders for an instrument ID.
 
         """
-        Condition.not_none(exec_algorithm, "exec_algorithm")
-        Condition.not_in(exec_algorithm.id, self._exec_algorithms, "exec_algorithm.id", "self._exec_algorithms")
+        Condition.not_none(strategy, "strategy")
 
-        self._exec_algorithms[exec_algorithm.id] = exec_algorithm
+        cdef:
+            InstrumentId instrument_id
+            StrategyId existing
+        for instrument_id in strategy.external_order_claims:
+            existing = self._external_order_claims.get(instrument_id)
+            if existing:
+                raise InvalidConfiguration(
+                    f"External order claim for {instrument_id} already exists for {existing}",
+                )
+            # Register strategy to claim external orders for this instrument
+            self._external_order_claims[instrument_id] = strategy.id
 
-        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
+        if strategy.external_order_claims:
+            self._log.info(
+                f"Registered external order claims for {strategy}: {strategy.external_order_claims}.",
+            )
 
     cpdef void deregister_client(self, ExecutionClient client):
         """
@@ -540,7 +572,8 @@ cdef class ExecutionEngine(Component):
             if client is None:
                 self._log.error(
                     f"Cannot execute command: "
-                    f"No execution client configured for {command.instrument_id}, {command}."
+                    f"no execution client configured for {command.instrument_id.venue} or `client_id` {command.client_id}, "
+                    f"{command}."
                 )
                 return  # No client to handle command
 

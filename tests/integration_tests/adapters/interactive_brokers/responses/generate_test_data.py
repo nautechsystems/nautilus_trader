@@ -44,7 +44,7 @@ CONTRACTS = [
 ]
 
 
-def generate_test_data():
+def generate_test_data() -> None:
     ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
     for spec in CONTRACTS:
         cls = spec.pop("cls")

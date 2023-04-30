@@ -105,7 +105,6 @@ cdef class RiskEngine(Component):
 
     cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command)
     cpdef void _send_to_execution(self, TradingCommand command)
-    cpdef void _send_to_emulator(self, TradingCommand command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

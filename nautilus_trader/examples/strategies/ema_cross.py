@@ -14,10 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -28,10 +28,10 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.orderbook import OrderBook
+from nautilus_trader.model.orderbook import OrderBookData
+from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -39,7 +39,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossConfig(StrategyConfig):
+class EMACrossConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``EMACross`` instances.
 
@@ -86,9 +86,18 @@ class EMACross(Strategy):
     ----------
     config : EMACrossConfig
         The configuration for the instance.
+
+    Raises
+    ------
+    ValueError
+        If `config.fast_ema_period` is not less than `config.slow_ema_period`.
     """
 
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config: EMACrossConfig) -> None:
+        PyCondition.true(
+            config.fast_ema_period < config.slow_ema_period,
+            "{config.fast_ema_period=} must be less than {config.slow_ema_period=}",
+        )
         super().__init__(config)
 
         # Configuration
@@ -101,9 +110,9 @@ class EMACross(Strategy):
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
         self.close_positions_on_stop = config.close_positions_on_stop
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.instrument: Instrument = None
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -128,7 +137,7 @@ class EMACross(Strategy):
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
-    def on_instrument(self, instrument: Instrument):
+    def on_instrument(self, instrument: Instrument) -> None:
         """
         Actions to be performed when the strategy is running and receives an
         instrument.
@@ -143,7 +152,7 @@ class EMACross(Strategy):
         # self.log.info(repr(instrument), LogColor.CYAN)
         pass
 
-    def on_order_book_delta(self, data: OrderBookData):
+    def on_order_book_delta(self, data: OrderBookData) -> None:
         """
         Actions to be performed when the strategy is running and receives order data.
 
@@ -157,7 +166,7 @@ class EMACross(Strategy):
         # self.log.info(repr(data), LogColor.CYAN)
         pass
 
-    def on_order_book(self, order_book: OrderBook):
+    def on_order_book(self, order_book: OrderBook) -> None:
         """
         Actions to be performed when the strategy is running and receives an order book.
 
@@ -171,7 +180,7 @@ class EMACross(Strategy):
         # self.log.info(repr(order_book), LogColor.CYAN)
         pass
 
-    def on_ticker(self, ticker: Ticker):
+    def on_ticker(self, ticker: Ticker) -> None:
         """
         Actions to be performed when the strategy is running and receives a ticker.
 
@@ -185,7 +194,7 @@ class EMACross(Strategy):
         # self.log.info(repr(ticker), LogColor.CYAN)
         pass
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
 
@@ -199,7 +208,7 @@ class EMACross(Strategy):
         # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
 
@@ -213,7 +222,7 @@ class EMACross(Strategy):
         # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -252,7 +261,7 @@ class EMACross(Strategy):
                 self.close_all_positions(self.instrument_id)
                 self.sell()
 
-    def buy(self):
+    def buy(self) -> None:
         """
         Users simple buy method (example).
         """
@@ -265,7 +274,7 @@ class EMACross(Strategy):
 
         self.submit_order(order)
 
-    def sell(self):
+    def sell(self) -> None:
         """
         Users simple sell method (example).
         """
@@ -278,7 +287,7 @@ class EMACross(Strategy):
 
         self.submit_order(order)
 
-    def on_data(self, data: Data):
+    def on_data(self, data: Data) -> None:
         """
         Actions to be performed when the strategy is running and receives generic data.
 
@@ -290,7 +299,7 @@ class EMACross(Strategy):
         """
         pass
 
-    def on_event(self, event: Event):
+    def on_event(self, event: Event) -> None:
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -302,7 +311,7 @@ class EMACross(Strategy):
         """
         pass
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Actions to be performed when the strategy is stopped.
         """
@@ -318,7 +327,7 @@ class EMACross(Strategy):
         # self.unsubscribe_order_book_deltas(self.instrument_id)
         # self.unsubscribe_order_book_snapshots(self.instrument_id)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         """
         Actions to be performed when the strategy is reset.
         """
@@ -340,7 +349,7 @@ class EMACross(Strategy):
         """
         return {}
 
-    def on_load(self, state: dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]) -> None:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -354,7 +363,7 @@ class EMACross(Strategy):
         """
         pass
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         """
         Actions to be performed when the strategy is disposed.
 

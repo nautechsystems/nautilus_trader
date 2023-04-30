@@ -58,15 +58,30 @@ typedef enum LogLevel {
     CRITICAL = 50,
 } LogLevel;
 
+typedef struct LiveClock LiveClock;
+
 typedef struct Logger_t Logger_t;
 
 typedef struct Rc_String Rc_String;
 
 typedef struct TestClock TestClock;
 
-typedef struct CTestClock {
+typedef struct TestClockAPI {
     struct TestClock *_0;
-} CTestClock;
+} TestClockAPI;
+
+typedef struct LiveClockAPI {
+    struct LiveClock *_0;
+} LiveClockAPI;
+
+/**
+ * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
+ * This works because Logger fields don't need to be accessed, only functions
+ * are called.
+ */
+typedef struct CLogger {
+    struct Logger_t *_0;
+} CLogger;
 
 /**
  * Represents a time event occurring at the event timestamp.
@@ -90,73 +105,99 @@ typedef struct TimeEvent_t {
     uint64_t ts_init;
 } TimeEvent_t;
 
-typedef struct Vec_TimeEvent {
-    const struct TimeEvent_t *ptr;
-    uintptr_t len;
-} Vec_TimeEvent;
+/**
+ * Represents a time event and its associated handler.
+ */
+typedef struct TimeEventHandler_t {
+    /**
+     * The event.
+     */
+    struct TimeEvent_t event;
+    /**
+     * The event ID.
+     */
+    PyObject *callback_ptr;
+} TimeEventHandler_t;
+
+struct TestClockAPI test_clock_new(void);
+
+void test_clock_drop(struct TestClockAPI clock);
 
 /**
- * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
- * This works because Logger fields don't need to be accessed, only functions
- * are called.
+ * # Safety
+ * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
-typedef struct CLogger {
-    struct Logger_t *_0;
-} CLogger;
+void test_clock_register_default_handler(struct TestClockAPI *clock, PyObject *callback_ptr);
 
-struct CTestClock test_clock_new(void);
+void test_clock_set_time(struct TestClockAPI *clock, uint64_t to_time_ns);
 
-void test_clock_free(struct CTestClock clock);
+double test_clock_timestamp(struct TestClockAPI *clock);
 
-void test_clock_set_time(struct CTestClock *clock, uint64_t to_time_ns);
+uint64_t test_clock_timestamp_ms(struct TestClockAPI *clock);
 
-uint64_t test_clock_time_ns(const struct CTestClock *clock);
+uint64_t test_clock_timestamp_us(struct TestClockAPI *clock);
 
-PyObject *test_clock_timer_names(const struct CTestClock *clock);
+uint64_t test_clock_timestamp_ns(struct TestClockAPI *clock);
 
-uintptr_t test_clock_timer_count(struct CTestClock *clock);
+PyObject *test_clock_timer_names(const struct TestClockAPI *clock);
+
+uintptr_t test_clock_timer_count(struct TestClockAPI *clock);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
+ * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
-void test_clock_set_time_alert_ns(struct CTestClock *clock,
+void test_clock_set_time_alert_ns(struct TestClockAPI *clock,
                                   const char *name_ptr,
-                                  uint64_t alert_time_ns);
+                                  uint64_t alert_time_ns,
+                                  PyObject *callback_ptr);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
+ * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
-void test_clock_set_timer_ns(struct CTestClock *clock,
+void test_clock_set_timer_ns(struct TestClockAPI *clock,
                              const char *name_ptr,
                              uint64_t interval_ns,
                              uint64_t start_time_ns,
-                             uint64_t stop_time_ns);
+                             uint64_t stop_time_ns,
+                             PyObject *callback_ptr);
 
 /**
  * # Safety
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
-struct Vec_TimeEvent test_clock_advance_time(struct CTestClock *clock,
-                                             uint64_t to_time_ns,
-                                             uint8_t set_time);
+CVec test_clock_advance_time(struct TestClockAPI *clock, uint64_t to_time_ns, uint8_t set_time);
 
-void vec_time_events_drop(struct Vec_TimeEvent v);
+void vec_time_event_handlers_drop(CVec v);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-uint64_t test_clock_next_time_ns(struct CTestClock *clock, const char *name_ptr);
+uint64_t test_clock_next_time_ns(struct TestClockAPI *clock, const char *name_ptr);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_cancel_timer(struct CTestClock *clock, const char *name_ptr);
+void test_clock_cancel_timer(struct TestClockAPI *clock, const char *name_ptr);
 
-void test_clock_cancel_timers(struct CTestClock *clock);
+void test_clock_cancel_timers(struct TestClockAPI *clock);
+
+struct LiveClockAPI live_clock_new(void);
+
+void live_clock_drop(struct LiveClockAPI clock);
+
+double live_clock_timestamp(struct LiveClockAPI *clock);
+
+uint64_t live_clock_timestamp_ms(struct LiveClockAPI *clock);
+
+uint64_t live_clock_timestamp_us(struct LiveClockAPI *clock);
+
+uint64_t live_clock_timestamp_ns(struct LiveClockAPI *clock);
 
 const char *component_state_to_cstr(enum ComponentState value);
 
@@ -216,10 +257,9 @@ struct CLogger logger_new(const char *trader_id_ptr,
                           const char *file_name_ptr,
                           const char *file_format_ptr,
                           const char *component_levels_ptr,
-                          uintptr_t rate_limit,
                           uint8_t is_bypassed);
 
-void logger_free(struct CLogger logger);
+void logger_drop(struct CLogger logger);
 
 const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 
@@ -252,8 +292,15 @@ struct TimeEvent_t time_event_new(const char *name,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
-struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
+struct TimeEvent_t time_event_clone(const struct TimeEvent_t *event);
 
-void time_event_free(struct TimeEvent_t event);
+void time_event_drop(struct TimeEvent_t event);
 
-const char *time_event_name_cstr(const struct TimeEvent_t *event);
+const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
+
+/**
+ * Returns a [`TimeEvent`] as a C string pointer.
+ */
+const char *time_event_to_cstr(const struct TimeEvent_t *event);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

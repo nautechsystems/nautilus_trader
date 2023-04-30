@@ -730,7 +730,7 @@ cdef class SimulatedExchange:
 
         matching_engine.process_status(update.status)
 
-    cpdef void process(self, uint64_t now_ns):
+    cpdef void process(self, uint64_t ts_now):
         """
         Process the exchange to the gives time.
 
@@ -738,18 +738,18 @@ cdef class SimulatedExchange:
 
         Parameters
         ----------
-        now_ns : uint64_t
-            The UNIX timestamp (nanoseconds) now.
+        ts_now : uint64_t
+            The current UNIX timestamp (nanoseconds).
 
         """
-        self._clock.set_time(now_ns)
+        self._clock.set_time(ts_now)
 
         cdef:
             uint64_t ts
         while self._inflight_queue:
             # Peek at timestamp of next in-flight message
             ts = self._inflight_queue[0][0][0]
-            if ts <= now_ns:
+            if ts <= ts_now:
                 # Place message on queue to be processed
                 self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
                 self._inflight_counter.pop(ts, None)
@@ -777,7 +777,7 @@ cdef class SimulatedExchange:
         # Iterate over modules
         cdef SimulationModule module
         for module in self.modules:
-            module.process(now_ns)
+            module.process(ts_now)
 
     cpdef void reset(self):
         """

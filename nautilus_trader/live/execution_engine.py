@@ -56,12 +56,12 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.unpacker import OrderUnpacker
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -364,10 +364,10 @@ class LiveExecutionEngine(ExecutionEngine):
         inflight_len = len(inflight_orders)
         self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight.")
         for order in inflight_orders:
-            now_ns = self._clock.timestamp_ns()
+            ts_now = self._clock.timestamp_ns()
             ts_init_last = order.last_event.ts_event
-            self._log.debug(f"Checking in-flight order: {now_ns=}, {ts_init_last=}, {order=}...")
-            if now_ns > order.last_event.ts_event + self._inflight_check_threshold_ns:
+            self._log.debug(f"Checking in-flight order: {ts_now=}, {ts_init_last=}, {order=}...")
+            if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
                 self._log.debug(f"Querying {order} with exchange...")
                 query = QueryOrder(
                     trader_id=order.trader_id,
@@ -779,9 +779,16 @@ class LiveExecutionEngine(ExecutionEngine):
             0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
         )
 
+        strategy_id = self.get_external_order_claim(report.instrument_id)
+        if strategy_id is None:
+            strategy_id = StrategyId("EXTERNAL")
+            tags = "EXTERNAL"
+        else:
+            tags = None
+
         initialized = OrderInitialized(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("EXTERNAL"),
+            strategy_id=strategy_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             order_side=report.order_side,
@@ -796,7 +803,10 @@ class LiveExecutionEngine(ExecutionEngine):
             order_list_id=report.order_list_id,
             linked_order_ids=None,
             parent_order_id=None,
-            tags="EXTERNAL",
+            exec_algorithm_id=None,
+            exec_algorithm_params=None,
+            exec_spawn_id=None,
+            tags=tags,
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,

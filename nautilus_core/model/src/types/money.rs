@@ -212,7 +212,7 @@ pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
 }
 
 #[no_mangle]
-pub extern "C" fn money_free(money: Money) {
+pub extern "C" fn money_drop(money: Money) {
     drop(money); // Memory freed here
 }
 

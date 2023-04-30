@@ -23,7 +23,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class InstrumentProvider:
@@ -49,7 +49,7 @@ class InstrumentProvider:
         venue: Venue,
         logger: Logger,
         config: Optional[InstrumentProviderConfig] = None,
-    ):
+    ) -> None:
         PyCondition.not_none(venue, "venue")
         PyCondition.not_none(logger, "logger")
 
@@ -125,7 +125,11 @@ class InstrumentProvider:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
+    async def load_async(
+        self,
+        instrument_id: InstrumentId,
+        filters: Optional[dict] = None,
+    ) -> None:
         """
         Load the instrument for the given ID into the provider asynchronously, optionally
         applying the given filters.
@@ -190,7 +194,11 @@ class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_all_async(filters))
 
-    def load_ids(self, instrument_ids: list[InstrumentId], filters: Optional[dict] = None):
+    def load_ids(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
+    ) -> None:
         """
         Load the instruments for the given IDs into the provider, optionally
         applying the given filters.
@@ -211,7 +219,11 @@ class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
-    def load(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
+    def load(
+        self,
+        instrument_id: InstrumentId,
+        filters: Optional[dict] = None,
+    ) -> None:
         """
         Load the instrument for the given ID into the provider, optionally
         applying the given filters.

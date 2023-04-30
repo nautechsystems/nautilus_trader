@@ -22,7 +22,7 @@ from typing import Any, Callable, Optional, Union
 import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class LinePreprocessor:

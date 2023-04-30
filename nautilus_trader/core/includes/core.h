@@ -92,7 +92,7 @@ uint8_t precision_from_cstr(const char *ptr);
  * # Panics
  * - If `ptr` is null.
  */
-void cstr_free(const char *ptr);
+void cstr_drop(const char *ptr);
 
 /**
  * Returns the current seconds since the UNIX epoch.
@@ -118,7 +118,7 @@ struct UUID4_t uuid4_new(void);
 
 struct UUID4_t uuid4_clone(const struct UUID4_t *uuid4);
 
-void uuid4_free(struct UUID4_t uuid4);
+void uuid4_drop(struct UUID4_t uuid4);
 
 /**
  * Returns a [`UUID4`] from C string pointer.

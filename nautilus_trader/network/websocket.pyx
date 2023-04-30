@@ -79,18 +79,18 @@ cdef class WebSocketClient:
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._ws_url = None
         self._ws_kwargs = {}
-        self._handler = handler
 
         self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
-        self._tasks: list[asyncio.Task] = []
+        self._task: Optional[asyncio.Task] = None
+        self._handler = handler
         self._pong_msg = pong_msg
         self._log_send = log_send
         self._log_recv = log_recv
 
-        self.is_stopping = False
-        self.is_running = False
         self.is_connected = False
+        self.is_running = False
+        self.is_stopping = False
         self.max_retry_connection = max_retry_connection
         self.connection_retry_count = 0
         self.unknown_message_count = 0
@@ -125,10 +125,10 @@ cdef class WebSocketClient:
         self._ws = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         await self.post_connection()
         if start:
-            task: Task = self._loop.create_task(self.start())
-            self._tasks.append(task)
+            self._task = self._loop.create_task(self.start())
             self._log.debug("WebSocket connected.")
         self.is_connected = True
+        self.is_stopping = False
 
     async def post_connection(self) -> None:
         """
@@ -137,7 +137,6 @@ cdef class WebSocketClient:
         """
         # Override to implement additional connection related behaviour
         # (sending other messages etc.).
-        pass
 
     async def reconnect(self) -> None:
         """
@@ -148,9 +147,17 @@ cdef class WebSocketClient:
         """
         self._log.debug(f"Reconnecting WebSocket to {self._ws_url}")
 
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(loop=self._loop)
         self._ws = await self._session.ws_connect(url=self._ws_url, **self._ws_kwargs)
-        await self.post_reconnection()
+        if not self.is_running:
+            # Create a new `start` task
+            await self.close()
+            self._task = self._loop.create_task(self.start())
         self._log.debug("WebSocket reconnected.")
+        await self.post_reconnection()
+        self.is_connected = True
+        self.is_stopping = False
 
     async def post_reconnection(self) -> None:
         """
@@ -159,7 +166,6 @@ cdef class WebSocketClient:
         """
         # Override to implement additional reconnection related behaviour
         # (resubscribing etc.).
-        pass
 
     async def disconnect(self) -> None:
         """
@@ -173,9 +179,12 @@ cdef class WebSocketClient:
         await self._ws.close()
         while self.is_running:
             await sleep0()
-        self.is_connected = False
-        await self.post_disconnection()
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
         self._log.debug("WebSocket closed.")
+        self.is_connected = False
+        self.is_stopping = False
+        await self.post_disconnection()
 
     async def post_disconnection(self) -> None:
         """
@@ -184,7 +193,6 @@ cdef class WebSocketClient:
         """
         # Override to implement additional disconnection related behaviour
         # (canceling ping tasks etc.).
-        pass
 
     async def send_json(self, dict msg) -> None:
         await self.send(msgspec.json.encode(msg))
@@ -259,6 +267,10 @@ cdef class WebSocketClient:
         await asyncio.sleep(backoff)
 
     async def start(self) -> None:
+        if self.is_running:
+            self._log.warning("Receive loop is already running.")
+            return
+
         self._log.debug("Starting recv loop...")
         self.is_running = True
         cdef bytes raw
@@ -280,6 +292,6 @@ cdef class WebSocketClient:
         self.is_running = False
 
     async def close(self):
-        for task in self._tasks:
-            self._log.debug(f"Canceling {task}...")
-            task.cancel()
+        if self._task is not None:
+            self._log.debug(f"Canceling {self._task}...")
+            self._task.cancel()

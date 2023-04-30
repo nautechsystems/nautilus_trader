@@ -125,7 +125,7 @@ cdef class SimulatedExchange:
     cpdef void process_bar(self, Bar bar)
     cpdef void process_venue_status(self, VenueStatusUpdate update)
     cpdef void process_instrument_status(self, InstrumentStatusUpdate update)
-    cpdef void process(self, uint64_t now_ns)
+    cpdef void process(self, uint64_t ts_now)
     cpdef void reset(self)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------

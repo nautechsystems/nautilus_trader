@@ -8,6 +8,7 @@ import subprocess
 import sysconfig
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from Cython.Build import build_ext
@@ -68,6 +69,7 @@ else:  # Linux
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
 RUST_LIB_PATHS: list[Path] = [
+    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_backtest.{RUST_STATIC_LIB_EXT}",
     TARGET_DIR / f"{RUST_LIB_PFX}nautilus_common.{RUST_STATIC_LIB_EXT}",
     TARGET_DIR / f"{RUST_LIB_PFX}nautilus_core.{RUST_STATIC_LIB_EXT}",
     TARGET_DIR / f"{RUST_LIB_PFX}nautilus_model.{RUST_STATIC_LIB_EXT}",
@@ -80,11 +82,21 @@ def _build_rust_libs() -> None:
     try:
         # Build the Rust libraries using Cargo
         build_options = " --release" if BUILD_MODE == "release" else ""
-        extra_flags = ""
         print("Compiling Rust libraries...")
-        build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
-        print(build_cmd)
-        os.system(build_cmd)
+
+        cmd_args = [
+            "cargo",
+            "build",
+            *build_options.split(),
+            "--all-features",
+        ]
+        print(" ".join(cmd_args))
+
+        subprocess.run(
+            cmd_args,  # noqa
+            cwd="nautilus_core",
+            check=True,
+        )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error running cargo: {e.stderr.decode()}",
@@ -121,7 +133,9 @@ def _build_extensions() -> list[Extension]:
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
-    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+    define_macros: list[tuple[str, Optional[str]]] = [
+        ("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"),
+    ]
     if PROFILE_MODE or ANNOTATION_MODE:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
@@ -131,6 +145,9 @@ def _build_extensions() -> list[Extension]:
 
     if platform.system() == "Darwin":
         extra_compile_args.append("-Wno-unreachable-code-fallthrough")
+        extra_link_args.append("-flat_namespace")
+        extra_link_args.append("-undefined")
+        extra_link_args.append("suppress")
 
     if platform.system() != "Windows":
         # Suppress warnings produced by Cython boilerplate
@@ -216,9 +233,8 @@ def _copy_rust_dylibs_to_project() -> None:
 def _get_clang_version() -> str:
     try:
         result = subprocess.run(
-            "clang --version",
+            ["clang", "--version"],  # noqa
             check=True,
-            shell=True,
             capture_output=True,
         )
         output = (
@@ -239,9 +255,8 @@ def _get_clang_version() -> str:
 def _get_rustc_version() -> str:
     try:
         result = subprocess.run(
-            "rustc --version",
+            ["rustc", "--version"],  # noqa
             check=True,
-            shell=True,
             capture_output=True,
         )
         output = result.stdout.decode().lstrip("rustc ")[:-1]
@@ -252,6 +267,26 @@ def _get_rustc_version() -> str:
             "Find more information at https://www.rust-lang.org/tools/install\n"
             f"Error running rustc: {e.stderr.decode()}",
         ) from e
+
+
+def _strip_unneeded_symbols() -> None:
+    try:
+        print("Stripping unneeded symbols from binaries...")
+        for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
+            if platform.system() == "Linux":
+                strip_cmd = f"strip --strip-unneeded {so}"
+            elif platform.system() == "Darwin":
+                strip_cmd = f"strip -x {so}"
+            else:
+                raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
+            subprocess.run(
+                strip_cmd,  # noqa
+                check=True,
+                shell=True,  # noqa
+                capture_output=True,
+            )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error when stripping symbols.\n{e.stderr.decode()}") from e
 
 
 def build() -> None:
@@ -275,6 +310,9 @@ def build() -> None:
         if COPY_TO_SOURCE:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
+
+    if platform.system() in ("Linux", "Darwin"):
+        _strip_unneeded_symbols()
 
 
 if __name__ == "__main__":

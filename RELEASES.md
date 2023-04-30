@@ -1,3 +1,41 @@
+# NautilusTrader 1.172.0 Beta
+
+Released on 30th April 2023 (UTC).
+
+### Breaking Changes
+- Removed legacy Rust parquet data catalog backend (based on arrow2)
+- Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
+- Removed redundant rate limiting from Rust logger (and associated `rate_limit` config params)
+- Renamed `Future` instrument to `FuturesContract` (avoids ambiguity)
+- Renamed `Option` instrument to `OptionsContract` (avoids ambiguity and naming conflicts in Rust)
+- Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
+- Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid).
+
+### Enhancements
+- Added new DataFusion Rust parquet data catalog backend (yet to be integrated into Python)
+- Added `external_order_claims` config option for `StrategyConfig` (for claiming external orders per instrument)
+- Added `Order.signed_decimal_qty()`
+- Added `Cache.orders_for_exec_algorithm(...)`
+- Added `Cache.orders_for_exec_spawn(...)`
+- Added `TWAPExecAlgorithm` and `TWAPExecAlgorithmConfig` to examples
+- Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
+- Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
+- Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
+- Define public API for instruments can now import directly from `nautilus_trader.model.instruments` (denest namespace)
+- Define public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
+- Define public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
+- Now stripping debug symbols after build (reduced binary sizes)
+- Refined build and added additional `debug` Makefile convenience targets
+
+### Fixes
+- Fixed processing of contingency orders when in a pending update state
+- Fixed calculation of PnL for flipped positions (only book realized PnL against open position)
+- Fixed `WebSocketClient` session disconnect, thanks for reporting @miller-moore
+- Added missing `BinanceSymbolFilterType.NOTIONAL`
+- Fixed incorrect `Mul` trait for `Price` and `Quantity` (not being used in Cython/Python layer)
+
+---
+
 # NautilusTrader 1.171.0 Beta
 
 Released on 30th March 2023 (UTC).

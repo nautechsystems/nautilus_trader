@@ -15,6 +15,9 @@
 
 from decimal import Decimal
 
+from libc.math cimport fabs
+from libc.math cimport fmin
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
@@ -723,6 +726,9 @@ cdef class Position:
         double avg_px_close,
         double quantity,
     ):
+        # Only book open quantity towards PnL
+        quantity = fmin(quantity, fabs(self.signed_qty))
+
         if self.is_inverse:
             # In base currency
             return quantity * self.multiplier.as_f64_c() * self._calculate_points_inverse(avg_px_open, avg_px_close)

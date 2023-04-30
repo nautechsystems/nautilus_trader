@@ -65,7 +65,7 @@ pub extern "C" fn trader_id_clone(trader_id: &TraderId) -> TraderId {
 
 /// Frees the memory for the given `trader_id` by dropping.
 #[no_mangle]
-pub extern "C" fn trader_id_free(trader_id: TraderId) {
+pub extern "C" fn trader_id_drop(trader_id: TraderId) {
     drop(trader_id); // Memory freed here
 }
 
@@ -81,7 +81,7 @@ pub extern "C" fn trader_id_to_cstr(trader_id: &TraderId) -> *const c_char {
 #[cfg(test)]
 mod tests {
     use super::TraderId;
-    use crate::identifiers::trader_id::trader_id_free;
+    use crate::identifiers::trader_id::trader_id_drop;
 
     #[test]
     fn test_equality() {
@@ -99,8 +99,8 @@ mod tests {
     }
 
     #[test]
-    fn test_trader_id_free() {
+    fn test_trader_id_drop() {
         let id = TraderId::new("TRADER-001");
-        trader_id_free(id); // No panic
+        trader_id_drop(id); // No panic
     }
 }

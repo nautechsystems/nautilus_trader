@@ -188,7 +188,7 @@ pub extern "C" fn bar_type_new(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_copy(bar_type: &BarType) -> BarType {
+pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
     bar_type.clone()
 }
 
@@ -231,7 +231,7 @@ pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_free(bar_type: BarType) {
+pub extern "C" fn bar_type_drop(bar_type: BarType) {
     drop(bar_type); // Memory freed here
 }
 
@@ -313,12 +313,12 @@ pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_copy(bar: &Bar) -> Bar {
+pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
     bar.clone()
 }
 
 #[no_mangle]
-pub extern "C" fn bar_free(bar: Bar) {
+pub extern "C" fn bar_drop(bar: Bar) {
     drop(bar); // Memory freed here
 }
 

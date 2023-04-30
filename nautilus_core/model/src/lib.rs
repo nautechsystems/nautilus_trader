@@ -26,8 +26,10 @@ pub mod data;
 pub mod enums;
 pub mod events;
 pub mod identifiers;
+pub mod instruments;
 pub mod orderbook;
 pub mod orders;
+pub mod position;
 pub mod types;
 
 /// Loaded as nautilus_model

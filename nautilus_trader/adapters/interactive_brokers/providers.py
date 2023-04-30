@@ -34,7 +34,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):
@@ -197,12 +197,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
         return [x for d in details for x in d]
 
-    async def load(
+    async def load(  # type: ignore
         self,
         build_options_chain=False,
         option_kwargs=None,
         **kwargs,
-    ):
+    ) -> None:
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 

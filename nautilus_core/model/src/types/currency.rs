@@ -88,7 +88,7 @@ pub extern "C" fn currency_clone(currency: &Currency) -> Currency {
 }
 
 #[no_mangle]
-pub extern "C" fn currency_free(currency: Currency) {
+pub extern "C" fn currency_drop(currency: Currency) {
     drop(currency); // Memory freed here
 }
 

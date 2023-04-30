@@ -74,7 +74,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=2.0,
+    timeout_post_stop=5.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
@@ -82,6 +82,7 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
     instrument_id="ETHUSDT.BINANCE",
+    external_order_claims=["ETHUSDT.BINANCE"],
     bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
     atr_period=20,
     atr_multiple=6.0,

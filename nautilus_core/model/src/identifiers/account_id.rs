@@ -48,6 +48,14 @@ impl AccountId {
     }
 }
 
+impl Default for AccountId {
+    fn default() -> Self {
+        AccountId {
+            value: Box::new(Rc::new(String::from("SIM-001"))),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,7 +75,7 @@ pub extern "C" fn account_id_clone(account_id: &AccountId) -> AccountId {
 
 /// Frees the memory for the given `account_id` by dropping.
 #[no_mangle]
-pub extern "C" fn account_id_free(account_id: AccountId) {
+pub extern "C" fn account_id_drop(account_id: AccountId) {
     drop(account_id); // Memory freed here
 }
 
@@ -142,9 +150,9 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_free_c() {
+    fn test_account_id_drop_c() {
         let id = AccountId::new("IB-1234567890");
-        account_id_free(id); // No panic
+        account_id_drop(id); // No panic
     }
 
     #[test]

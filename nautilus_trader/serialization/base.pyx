@@ -18,8 +18,8 @@ from typing import Any, Callable
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 
-from nautilus_trader.common.events.risk cimport TradingStateChanged
-from nautilus_trader.common.events.system cimport ComponentStateChanged
+from nautilus_trader.common.messages cimport ComponentStateChanged
+from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -56,8 +56,8 @@ from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
-from nautilus_trader.model.instruments.future cimport Future
-from nautilus_trader.model.instruments.option cimport Option
+from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
+from nautilus_trader.model.instruments.options_contract cimport OptionsContract
 
 
 # Default mappings for Nautilus objects
@@ -89,8 +89,8 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Instrument.__name__: Instrument.base_to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
     Equity.__name__: Equity.to_dict_c,
-    Future.__name__: Future.to_dict_c,
-    Option.__name__: Option.to_dict_c,
+    FuturesContract.__name__: FuturesContract.to_dict_c,
+    OptionsContract.__name__: OptionsContract.to_dict_c,
     CurrencyPair.__name__: CurrencyPair.to_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
     CryptoFuture.__name__: CryptoFuture.to_dict_c,
@@ -135,8 +135,8 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Instrument.__name__: Instrument.base_from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
     Equity.__name__: Equity.from_dict_c,
-    Future.__name__: Future.from_dict_c,
-    Option.__name__: Option.from_dict_c,
+    FuturesContract.__name__: FuturesContract.from_dict_c,
+    OptionsContract.__name__: OptionsContract.from_dict_c,
     CurrencyPair.__name__: CurrencyPair.from_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,
     CryptoFuture.__name__: CryptoFuture.from_dict_c,

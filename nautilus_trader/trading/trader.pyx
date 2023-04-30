@@ -21,7 +21,7 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
-from asyncio import AbstractEventLoop
+import asyncio
 from typing import Any, Callable, Optional
 
 import pandas as pd
@@ -71,7 +71,7 @@ cdef class Trader(Component):
         The clock for the trader.
     logger : Logger
         The logger for the trader.
-    loop : AbstractEventLoop, optional
+    loop : asyncio.AbstractEventLoop, optional
         The event loop for the trader.
     config : dict[str, Any]
         The configuration for the trader.
@@ -99,9 +99,9 @@ cdef class Trader(Component):
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
-        loop: Optional[AbstractEventLoop] = None,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
         dict config = None,
-    ):
+    ) -> None:
         if config is None:
             config = {}
         super().__init__(
@@ -425,6 +425,7 @@ cdef class Trader(Component):
         )
 
         self._exec_engine.register_oms_type(strategy)
+        self._exec_engine.register_external_order_claims(strategy)
         self._strategies.append(strategy)
 
         self._log.info(f"Registered Strategy {strategy}.")
@@ -496,10 +497,9 @@ cdef class Trader(Component):
             logger=self._log.get_logger(),
         )
 
-        self._exec_engine.register_exec_algorithm(exec_algorithm)
         self._exec_algorithms.append(exec_algorithm)
 
-        self._log.info(f"Registered Execution Algorithm {exec_algorithm}.")
+        self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
 
     cpdef void add_exec_algorithms(self, list exec_algorithms: [ExecAlgorithm]):
         """

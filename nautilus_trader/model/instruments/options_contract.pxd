@@ -20,14 +20,14 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 
 
-cdef class Option(Instrument):
+cdef class OptionsContract(Instrument):
     cdef readonly str underlying
     cdef readonly date expiry_date
     cdef readonly Price strike_price
     cdef readonly OptionKind kind
 
     @staticmethod
-    cdef Option from_dict_c(dict values)
+    cdef OptionsContract from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(Option obj)
+    cdef dict to_dict_c(OptionsContract obj)

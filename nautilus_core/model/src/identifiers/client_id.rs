@@ -66,7 +66,7 @@ pub extern "C" fn client_id_clone(client_id: &ClientId) -> ClientId {
 
 /// Frees the memory for the given `client_id` by dropping.
 #[no_mangle]
-pub extern "C" fn client_id_free(client_id: ClientId) {
+pub extern "C" fn client_id_drop(client_id: ClientId) {
     drop(client_id); // Memory freed here
 }
 
@@ -124,9 +124,9 @@ mod tests {
     }
 
     #[test]
-    fn test_client_id_free_c() {
+    fn test_client_id_drop_c() {
         let id = ClientId::new("BINANCE");
-        client_id_free(id);
+        client_id_drop(id);
     }
 
     #[test]

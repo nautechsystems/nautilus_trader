@@ -61,11 +61,11 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -135,7 +135,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect client
         if not self._client.isConnected():
             await self._client.connectAsync()
@@ -146,7 +146,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._set_connected(True)
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         # Disconnect clients
         if self._client.isConnected():
             self._client.disconnect()

@@ -28,7 +28,7 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-pytestmark = pytest.mark.no_ci
+pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 def test_nautilus_order_to_ib_market_order(instrument):

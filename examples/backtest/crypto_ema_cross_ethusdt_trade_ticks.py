@@ -21,8 +21,9 @@ import pandas as pd
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -62,16 +63,23 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossConfig(
+    config = EMACrossTWAPConfig(
         instrument_id=str(ETHUSDT_BINANCE.id),
         bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
         trade_size=Decimal("0.05"),
         fast_ema_period=10,
         slow_ema_period=20,
+        twap_horizon_secs=10.0,
+        twap_interval_secs=2.5,
     )
+
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = EMACrossTWAP(config=config)
     engine.add_strategy(strategy=strategy)
+
+    # Instantiate and add your execution algorithm
+    exec_algorithm = TWAPExecAlgorithm()
+    engine.add_exec_algorithm(exec_algorithm)
 
     time.sleep(0.1)
     input("Press Enter to continue...")  # noqa (always Python 3)

@@ -23,12 +23,12 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import option_kind_from_str
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_future import CryptoFuture
-from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.instruments.future import Future
-from nautilus_trader.model.instruments.option import Option
+from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -247,10 +247,10 @@ class TestInstrument:
 
     def test_future_instrument_to_dict(self):
         # Arrange, Act
-        result = Future.to_dict(ES_FUTURE)
+        result = FuturesContract.to_dict(ES_FUTURE)
 
         # Assert
-        assert Future.from_dict(result) == ES_FUTURE
+        assert FuturesContract.from_dict(result) == ES_FUTURE
         assert result == {
             "asset_class": "INDEX",
             "currency": "USD",
@@ -267,16 +267,16 @@ class TestInstrument:
             "size_precision": 0,
             "ts_event": 0,
             "ts_init": 0,
-            "type": "Future",
+            "type": "FuturesContract",
             "underlying": "ES",
         }
 
     def test_option_instrument_to_dict(self):
         # Arrange, Act
-        result = Option.to_dict(AAPL_OPTION)
+        result = OptionsContract.to_dict(AAPL_OPTION)
 
         # Assert
-        assert Option.from_dict(result) == AAPL_OPTION
+        assert OptionsContract.from_dict(result) == AAPL_OPTION
         assert result == {
             "asset_class": "EQUITY",
             "currency": "USD",
@@ -295,7 +295,7 @@ class TestInstrument:
             "strike_price": "149.00",
             "ts_event": 0,
             "ts_init": 0,
-            "type": "Option",
+            "type": "OptionsContract",
             "underlying": "AAPL",
         }
 

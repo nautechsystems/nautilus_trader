@@ -25,6 +25,7 @@ from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -103,6 +104,7 @@ cdef class CacheFacade:
     cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set actor_ids(self)
     cpdef set strategy_ids(self)
+    cpdef set exec_algorithm_ids(self)
 
 # -- ORDER QUERIES --------------------------------------------------------------------------------
 
@@ -115,6 +117,8 @@ cdef class CacheFacade:
     cpdef list orders_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef list orders_for_position(self, PositionId position_id)
+    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
+    cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id)
     cpdef bint order_exists(self, ClientOrderId client_order_id)
     cpdef bint is_order_open(self, ClientOrderId client_order_id)
     cpdef bint is_order_closed(self, ClientOrderId client_order_id)

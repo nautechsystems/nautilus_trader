@@ -37,7 +37,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
-from nautilus_trader.core.rust.common cimport logger_free
+from nautilus_trader.core.rust.common cimport logger_drop
 from nautilus_trader.core.rust.common cimport logger_get_instance_id
 from nautilus_trader.core.rust.common cimport logger_get_machine_id_cstr
 from nautilus_trader.core.rust.common cimport logger_get_trader_id_cstr
@@ -93,8 +93,6 @@ cdef class Logger:
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
-    rate_limit : int, default 100_000
-        The maximum messages per second which can be flushed to stdout or stderr.
     bypass : bool
         If the log output is bypassed.
     """
@@ -112,7 +110,6 @@ cdef class Logger:
         str file_name = None,
         str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
-        int rate_limit = 100_000,
         bint bypass = False,
     ):
         if trader_id is None:
@@ -137,13 +134,12 @@ cdef class Logger:
             pystr_to_cstr(file_name) if file_name else NULL,
             pystr_to_cstr(file_format) if file_format else NULL,
             pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
-            rate_limit,
             bypass,
         )
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
-            logger_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            logger_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     @property
     def trader_id(self) -> TraderId:

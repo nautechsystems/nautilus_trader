@@ -4,6 +4,16 @@
 .. automodule:: nautilus_trader.execution
 ```
 
+## Components
+
+```{eval-rst}
+.. automodule:: nautilus_trader.execution.algorithm
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ```{eval-rst}
 .. automodule:: nautilus_trader.execution.client
    :show-inheritance:
@@ -13,7 +23,23 @@
 ```
 
 ```{eval-rst}
+.. automodule:: nautilus_trader.execution.emulator
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
 .. automodule:: nautilus_trader.execution.engine
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
+.. automodule:: nautilus_trader.execution.matching_core
    :show-inheritance:
    :inherited-members:
    :members:

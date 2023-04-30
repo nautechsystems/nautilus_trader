@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-from libc.stdint cimport uint64_t
+from decimal import Decimal
 
 from nautilus_trader.model.enums import order_status_to_str
+
+from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -95,6 +97,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PENDING_UPDATE, OrderStatus.CANCELED): OrderStatus.CANCELED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.EXPIRED): OrderStatus.EXPIRED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
+    (OrderStatus.PENDING_UPDATE, OrderStatus.SUBMITTED): OrderStatus.PENDING_UPDATE,  # Real world possibility
     (OrderStatus.PENDING_UPDATE, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,  # Allow multiple requests
     (OrderStatus.PENDING_UPDATE, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.PENDING_UPDATE, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
@@ -173,6 +176,9 @@ cdef class Order:
         self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None
         self.parent_order_id = init.parent_order_id  # Can be None
+        self.exec_algorithm_id = init.exec_algorithm_id  # Can be None
+        self.exec_algorithm_params = init.exec_algorithm_params  # Can be None
+        self.exec_spawn_id = init.exec_spawn_id  # Can be None
         self.tags = init.tags
 
         # Execution
@@ -195,17 +201,23 @@ cdef class Order:
     def __repr__(self) -> str:
         cdef ClientOrderId coi
         cdef str contingency_str = "" if self.contingency_type == ContingencyType.NO_CONTINGENCY else f", contingency_type={contingency_type_to_str(self.contingency_type)}"
-        cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
         cdef str linked_order_ids_str = "" if self.linked_order_ids is None else f", linked_order_ids=[{', '.join([coi.to_str() for coi in self.linked_order_ids])}]" if self.linked_order_ids is not None else None  # noqa
+        cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
+        cdef str exec_algorithm_id_str = "" if self.exec_algorithm_id is None else f", exec_algorithm_id={self.exec_algorithm_id.to_str()}"
+        cdef str exec_algorithm_params_str = "" if self.exec_algorithm_params is None else f", exec_algorithm_params={self.exec_algorithm_params}"
+        cdef str exec_spawn_id_str = "" if self.exec_spawn_id is None else f", exec_spawn_id={self.exec_spawn_id.to_str()}"
         return (
             f"{type(self).__name__}("
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}"  # Can be None
+            f"venue_order_id={self.venue_order_id}"  # Can be None (no whitespace before contingency_str)
             f"{contingency_str}"
-            f"{parent_order_id_str}"
             f"{linked_order_ids_str}"
+            f"{parent_order_id_str}"
+            f"{exec_algorithm_id_str}"
+            f"{exec_algorithm_params_str}"
+            f"{exec_spawn_id_str}"
             f", tags={self.tags})"
         )
 
@@ -748,6 +760,27 @@ cdef class Order:
         """
         return Order.closing_side_c(position_side)
 
+    cpdef signed_decimal_qty(self):
+        """
+        Return a signed decimal representation of the remaining quantity.
+
+         - If the order is a BUY, the value is positive (e.g. Decimal('10.25'))
+         - If the order is a SELL, the value is negative (e.g. Decimal('-10.25'))
+
+        Returns
+        -------
+        Decimal
+
+        """
+        if self.side == OrderSide.BUY:
+            return Decimal(f"{self.leaves_qty.as_f64_c():.{self.leaves_qty._mem.precision}}")
+        elif self.side == OrderSide.SELL:
+            return -Decimal(f"{self.leaves_qty.as_f64_c():.{self.leaves_qty._mem.precision}}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {order_side_to_str(self.side)}",  # pragma: no cover (design-time error)
+            )
+
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty):
         """
         Whether the current order would only reduce the given position if applied
@@ -924,7 +957,7 @@ cdef class Order:
                 f"fill={fill}",
             )
         self.filled_qty.add_assign(fill.last_qty)
-        self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty._mem.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side

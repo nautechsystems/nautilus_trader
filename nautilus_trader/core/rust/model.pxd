@@ -255,6 +255,15 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    cpdef enum Data_t_Tag:
+        TRADE,
+        QUOTE,
+
+    cdef struct Data_t:
+        Data_t_Tag tag;
+        TradeTick_t trade;
+        QuoteTick_t quote;
+
     cdef struct AccountId_t:
         Rc_String *value;
 
@@ -332,7 +341,7 @@ cdef extern from "../includes/model.h":
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
 
-    BarType_t bar_type_copy(const BarType_t *bar_type);
+    BarType_t bar_type_clone(const BarType_t *bar_type);
 
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
@@ -349,7 +358,7 @@ cdef extern from "../includes/model.h":
     # Returns a [`BarType`] as a C string pointer.
     const char *bar_type_to_cstr(const BarType_t *bar_type);
 
-    void bar_type_free(BarType_t bar_type);
+    void bar_type_drop(BarType_t bar_type);
 
     Bar_t bar_new(BarType_t bar_type,
                   Price_t open,
@@ -374,17 +383,17 @@ cdef extern from "../includes/model.h":
     # Returns a [`Bar`] as a C string.
     const char *bar_to_cstr(const Bar_t *bar);
 
-    Bar_t bar_copy(const Bar_t *bar);
+    Bar_t bar_clone(const Bar_t *bar);
 
-    void bar_free(Bar_t bar);
+    void bar_drop(Bar_t bar);
 
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
     uint64_t bar_hash(const Bar_t *bar);
 
-    void quote_tick_free(QuoteTick_t tick);
+    void quote_tick_drop(QuoteTick_t tick);
 
-    QuoteTick_t quote_tick_copy(const QuoteTick_t *tick);
+    QuoteTick_t quote_tick_clone(const QuoteTick_t *tick);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid,
@@ -409,9 +418,9 @@ cdef extern from "../includes/model.h":
     # Returns a [`QuoteTick`] as a C string pointer.
     const char *quote_tick_to_cstr(const QuoteTick_t *tick);
 
-    void trade_tick_free(TradeTick_t tick);
+    void trade_tick_drop(TradeTick_t tick);
 
-    TradeTick_t trade_tick_copy(const TradeTick_t *tick);
+    TradeTick_t trade_tick_clone(const TradeTick_t *tick);
 
     TradeTick_t trade_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t price,
@@ -425,6 +434,10 @@ cdef extern from "../includes/model.h":
 
     # Returns a [`TradeTick`] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);
+
+    void data_drop(Data_t data);
+
+    Data_t data_clone(const Data_t *data);
 
     const char *account_type_to_cstr(AccountType value);
 
@@ -635,7 +648,7 @@ cdef extern from "../includes/model.h":
     AccountId_t account_id_clone(const AccountId_t *account_id);
 
     # Frees the memory for the given `account_id` by dropping.
-    void account_id_free(AccountId_t account_id);
+    void account_id_drop(AccountId_t account_id);
 
     # Returns an [`AccountId`] as a C string pointer.
     const char *account_id_to_cstr(const AccountId_t *account_id);
@@ -653,7 +666,7 @@ cdef extern from "../includes/model.h":
     ClientId_t client_id_clone(const ClientId_t *client_id);
 
     # Frees the memory for the given `client_id` by dropping.
-    void client_id_free(ClientId_t client_id);
+    void client_id_drop(ClientId_t client_id);
 
     # Returns a [`ClientId`] identifier as a C string pointer.
     const char *client_id_to_cstr(const ClientId_t *client_id);
@@ -671,7 +684,7 @@ cdef extern from "../includes/model.h":
     ClientOrderId_t client_order_id_clone(const ClientOrderId_t *client_order_id);
 
     # Frees the memory for the given `client_order_id` by dropping.
-    void client_order_id_free(ClientOrderId_t client_order_id);
+    void client_order_id_drop(ClientOrderId_t client_order_id);
 
     # Returns a [`ClientOrderId`] as a C string pointer.
     const char *client_order_id_to_cstr(const ClientOrderId_t *client_order_id);
@@ -689,7 +702,7 @@ cdef extern from "../includes/model.h":
     ComponentId_t component_id_clone(const ComponentId_t *component_id);
 
     # Frees the memory for the given `component_id` by dropping.
-    void component_id_free(ComponentId_t component_id);
+    void component_id_drop(ComponentId_t component_id);
 
     # Returns a [`ComponentId`] identifier as a C string pointer.
     const char *component_id_to_cstr(const ComponentId_t *component_id);
@@ -707,7 +720,7 @@ cdef extern from "../includes/model.h":
     ExecAlgorithmId_t exec_algorithm_id_clone(const ExecAlgorithmId_t *exec_algorithm_id);
 
     # Frees the memory for the given `exec_algorithm_id` by dropping.
-    void exec_algorithm_id_free(ExecAlgorithmId_t exec_algorithm_id);
+    void exec_algorithm_id_drop(ExecAlgorithmId_t exec_algorithm_id);
 
     # Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
     const char *exec_algorithm_id_to_cstr(const ExecAlgorithmId_t *exec_algorithm_id);
@@ -727,7 +740,7 @@ cdef extern from "../includes/model.h":
     InstrumentId_t instrument_id_clone(const InstrumentId_t *instrument_id);
 
     # Frees the memory for the given `instrument_id` by dropping.
-    void instrument_id_free(InstrumentId_t instrument_id);
+    void instrument_id_drop(InstrumentId_t instrument_id);
 
     # Returns an [`InstrumentId`] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);
@@ -745,7 +758,7 @@ cdef extern from "../includes/model.h":
     OrderListId_t order_list_id_clone(const OrderListId_t *order_list_id);
 
     # Frees the memory for the given `order_list_id` by dropping.
-    void order_list_id_free(OrderListId_t order_list_id);
+    void order_list_id_drop(OrderListId_t order_list_id);
 
     # Returns an [`OrderListId`] as a C string pointer.
     const char *order_list_id_to_cstr(const OrderListId_t *order_list_id);
@@ -763,7 +776,7 @@ cdef extern from "../includes/model.h":
     PositionId_t position_id_clone(const PositionId_t *position_id);
 
     # Frees the memory for the given `position_id` by dropping.
-    void position_id_free(PositionId_t position_id);
+    void position_id_drop(PositionId_t position_id);
 
     # Returns a [`PositionId`] identifier as a C string pointer.
     const char *position_id_to_cstr(const PositionId_t *position_id);
@@ -781,7 +794,7 @@ cdef extern from "../includes/model.h":
     StrategyId_t strategy_id_clone(const StrategyId_t *strategy_id);
 
     # Frees the memory for the given `strategy_id` by dropping.
-    void strategy_id_free(StrategyId_t strategy_id);
+    void strategy_id_drop(StrategyId_t strategy_id);
 
     # Returns a [`StrategyId`] as a C string pointer.
     const char *strategy_id_to_cstr(const StrategyId_t *strategy_id);
@@ -795,7 +808,7 @@ cdef extern from "../includes/model.h":
     Symbol_t symbol_clone(const Symbol_t *symbol);
 
     # Frees the memory for the given [Symbol] by dropping.
-    void symbol_free(Symbol_t symbol);
+    void symbol_drop(Symbol_t symbol);
 
     # Returns a [`Symbol`] as a C string pointer.
     const char *symbol_to_cstr(const Symbol_t *symbol);
@@ -813,7 +826,7 @@ cdef extern from "../includes/model.h":
     TradeId_t trade_id_clone(const TradeId_t *trade_id);
 
     # Frees the memory for the given `trade_id` by dropping.
-    void trade_id_free(TradeId_t trade_id);
+    void trade_id_drop(TradeId_t trade_id);
 
     # Returns [TradeId] as a C string pointer.
     const char *trade_id_to_cstr(const TradeId_t *trade_id);
@@ -831,7 +844,7 @@ cdef extern from "../includes/model.h":
     TraderId_t trader_id_clone(const TraderId_t *trader_id);
 
     # Frees the memory for the given `trader_id` by dropping.
-    void trader_id_free(TraderId_t trader_id);
+    void trader_id_drop(TraderId_t trader_id);
 
     # Returns a [`TraderId`] as a C string pointer.
     const char *trader_id_to_cstr(const TraderId_t *trader_id);
@@ -845,7 +858,7 @@ cdef extern from "../includes/model.h":
     Venue_t venue_clone(const Venue_t *venue);
 
     # Frees the memory for the given `venue` by dropping.
-    void venue_free(Venue_t venue);
+    void venue_drop(Venue_t venue);
 
     # Returns a [`Venue`] identifier as a C string pointer.
     const char *venue_to_cstr(const Venue_t *venue);
@@ -863,7 +876,7 @@ cdef extern from "../includes/model.h":
     VenueOrderId_t venue_order_id_clone(const VenueOrderId_t *venue_order_id);
 
     # Frees the memory for the given `venue_order_id` by dropping.
-    void venue_order_id_free(VenueOrderId_t venue_order_id);
+    void venue_order_id_drop(VenueOrderId_t venue_order_id);
 
     const char *venue_order_id_to_cstr(const VenueOrderId_t *venue_order_id);
 
@@ -886,7 +899,7 @@ cdef extern from "../includes/model.h":
 
     Currency_t currency_clone(const Currency_t *currency);
 
-    void currency_free(Currency_t currency);
+    void currency_drop(Currency_t currency);
 
     const char *currency_to_cstr(const Currency_t *currency);
 
@@ -902,7 +915,7 @@ cdef extern from "../includes/model.h":
 
     Money_t money_from_raw(int64_t raw, Currency_t currency);
 
-    void money_free(Money_t money);
+    void money_drop(Money_t money);
 
     double money_as_f64(const Money_t *money);
 

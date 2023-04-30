@@ -36,7 +36,7 @@ class PortfolioAnalyzer:
     performance metrics and statistics.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._statistics: dict[str, PortfolioStatistic] = {}
 
         # Data
@@ -361,7 +361,7 @@ class PortfolioAnalyzer:
         """
         realized_pnls = self.realized_pnls(currency)
 
-        output = {
+        output: dict[str, Any] = {
             "PnL (total)": self.total_pnl(currency, unrealized_pnl),
             "PnL% (total)": self.total_pnl_percentage(currency, unrealized_pnl),
         }

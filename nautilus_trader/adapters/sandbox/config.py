@@ -16,7 +16,7 @@
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class SandboxExecutionClientConfig(LiveExecClientConfig):
+class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``SandboxExecClient`` instances.
 
@@ -30,6 +30,6 @@ class SandboxExecutionClientConfig(LiveExecClientConfig):
         The starting balance for this venue
     """
 
-    venue: str
-    currency: str
-    balance: int
+    venue: str  # type: ignore
+    currency: str  # type: ignore
+    balance: int  # type: ignore

@@ -20,6 +20,7 @@ header = '"../includes/common.h"'
 ]
 
 "nautilus_trader.core.rust.core" = [
+    "CVec",
     "UUID4_t",
 ]
 
@@ -31,6 +32,7 @@ rename_variants = "ScreamingSnakeCase"
 "UnixNanos" = "uint64_t"
 "TimedeltaNanos" = "int64_t"
 "TimeEvent" = "TimeEvent_t"
+"TimeEventHandler" = "TimeEventHandler_t"
 "UUID4" = "UUID4_t"
 "Logger" = "Logger_t"
 "TestTimer" = "TestTimer_t"

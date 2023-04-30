@@ -66,7 +66,7 @@ pub extern "C" fn symbol_clone(symbol: &Symbol) -> Symbol {
 
 /// Frees the memory for the given [Symbol] by dropping.
 #[no_mangle]
-pub extern "C" fn symbol_free(symbol: Symbol) {
+pub extern "C" fn symbol_drop(symbol: Symbol) {
     drop(symbol); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn symbol_hash(symbol: &Symbol) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::Symbol;
-    use crate::identifiers::symbol::symbol_free;
+    use crate::identifiers::symbol::symbol_drop;
 
     #[test]
     fn test_equality() {
@@ -112,8 +112,8 @@ mod tests {
     }
 
     #[test]
-    fn test_symbol_free() {
+    fn test_symbol_drop() {
         let id = Symbol::new("ETH-PERP");
-        symbol_free(id); // No panic
+        symbol_drop(id); // No panic
     }
 }

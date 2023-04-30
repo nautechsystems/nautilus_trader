@@ -16,6 +16,7 @@
 import sys
 from collections import Counter
 
+import msgspec.json
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -27,6 +28,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
@@ -209,3 +211,40 @@ class TestPersistenceStreaming:
         assert instance.ts_event == 0
         assert instance.value == 5.0
         assert instance.ts_init == 0
+
+    def test_config_write(self):
+        # Arrange
+        instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=self.catalog.path,
+        )
+        data_config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="memory",
+            data_cls=TradeTick,
+        )
+
+        run_config = BacktestRunConfig(
+            engine=BacktestEngineConfig(
+                streaming=streaming,
+                strategies=[
+                    ImportableStrategyConfig(
+                        strategy_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategy",
+                        config_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategyConfig",
+                        config={"instrument_id": instrument_id},
+                    ),
+                ],
+            ),
+            data=[data_config],
+            venues=[BetfairTestStubs.betfair_venue_config()],
+        )
+
+        # Act
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
+
+        # Assert
+        config_file = f"{self.catalog.path}/backtest/{r[0].instance_id}.feather/config.json"
+        assert self.catalog.fs.exists(config_file)
+        raw = self.catalog.fs.open(config_file, "rb").read()
+        assert msgspec.json.decode(raw, type=NautilusKernelConfig)
