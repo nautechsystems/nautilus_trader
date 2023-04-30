@@ -79,7 +79,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
     def on_start(self) -> None:
         """Actions to be performed when the algorithm component is started."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_stop(self) -> None:
         """Actions to be performed when the algorithm component is stopped."""
@@ -115,9 +115,9 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             The algorithm component state dictionary.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
-    def round_decimal_down(self, amount: Decimal, precision: int):
+    def round_decimal_down(self, amount: Decimal, precision: int) -> Decimal:
         return amount.quantize(Decimal(f"1e-{precision}"), rounding=ROUND_DOWN)
 
     def on_order(self, order: Order) -> None:  # noqa (too complex)
