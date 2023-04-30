@@ -1,6 +1,6 @@
 # NautilusTrader 1.172.0 Beta
 
-Released on TBD (UTC).
+Released on 30th April 2023 (UTC).
 
 ### Breaking Changes
 - Removed legacy Rust parquet data catalog backend (based on arrow2)
