@@ -195,6 +195,10 @@ cdef class ExecAlgorithm(Actor):
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
         cdef uint8_t size_precision = primary.quantity._mem.precision
         cdef uint64_t new_raw = primary.quantity._mem.raw - spawn_qty._mem.raw
+        if new_raw <= 0:
+            self._log.error("Cannot reduce primary order to non-positive quantity.")
+            return
+
         cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
 
         # Generate event
@@ -350,6 +354,7 @@ cdef class ExecAlgorithm(Actor):
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
         str tags = None,
+        bint reduce_primary = True,
     ):
         """
         Spawn a new ``MARKET`` order from the given primary order.
@@ -367,6 +372,8 @@ cdef class ExecAlgorithm(Actor):
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        reduce_primary : bool, default True
+            If the primary order quantity should be reduced by the given `quantity`.
 
         Returns
         -------
@@ -389,7 +396,8 @@ cdef class ExecAlgorithm(Actor):
         Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
-        self._reduce_primary_order(primary, spawn_qty=quantity)
+        if reduce_primary:
+            self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return MarketOrder(
             trader_id=primary.trader_id,
@@ -423,6 +431,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
         str tags = None,
+        bint reduce_primary = True,
     ):
         """
         Spawn a new ``LIMIT`` order from the given primary order.
@@ -450,6 +459,8 @@ cdef class ExecAlgorithm(Actor):
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        reduce_primary : bool, default True
+            If the primary order quantity should be reduced by the given `quantity`.
 
         Returns
         -------
@@ -474,7 +485,8 @@ cdef class ExecAlgorithm(Actor):
         Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
-        self._reduce_primary_order(primary, spawn_qty=quantity)
+        if reduce_primary:
+            self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return LimitOrder(
             trader_id=primary.trader_id,
@@ -511,6 +523,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
         str tags = None,
+        bint reduce_primary = True,
     ):
         """
         Spawn a new ``MARKET_TO_LIMIT`` order from the given primary order.
@@ -534,6 +547,8 @@ cdef class ExecAlgorithm(Actor):
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        reduce_primary : bool, default True
+            If the primary order quantity should be reduced by the given `quantity`.
 
         Returns
         -------
@@ -558,7 +573,8 @@ cdef class ExecAlgorithm(Actor):
         Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
-        self._reduce_primary_order(primary, spawn_qty=quantity)
+        if reduce_primary:
+            self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return MarketToLimitOrder(
             trader_id=primary.trader_id,
