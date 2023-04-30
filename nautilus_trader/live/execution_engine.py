@@ -647,7 +647,7 @@ class LiveExecutionEngine(ExecutionEngine):
             )
         return True
 
-    def _reconcile_position_report(self, report) -> bool:
+    def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
@@ -865,7 +865,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {triggered}.")
         self._handle_event(triggered)
 
-    def _generate_order_updated(self, order: Order, report: OrderStatusReport):
+    def _generate_order_updated(self, order: Order, report: OrderStatusReport) -> None:
         updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
