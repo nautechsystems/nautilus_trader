@@ -18,8 +18,8 @@ from decimal import Decimal
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.message import Event
@@ -395,7 +395,7 @@ class TestRiskEngineWithCashAccount:
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000-None-1"),
+            position_id=PositionId("P-19700101-0000-000-None-1"),
             order=order2,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -409,7 +409,7 @@ class TestRiskEngineWithCashAccount:
         submit_order3 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000-None-1"),
+            position_id=PositionId("P-19700101-0000-000-None-1"),
             order=order3,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -469,7 +469,7 @@ class TestRiskEngineWithCashAccount:
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000-None-1"),
+            position_id=PositionId("P-19700101-0000-000-None-1"),
             order=order2,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -1514,7 +1514,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Act
-        self.risk_engine.execute(submit_bracket)
+        self.emulator.execute(submit_bracket)
 
         # Assert
         assert submit_bracket.has_emulated_order

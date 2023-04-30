@@ -53,7 +53,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -322,6 +322,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
 
+        snapshot: Optional[OrderBookSnapshot] = None
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
@@ -339,7 +340,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             while not self._ws_client.is_connected:
                 await asyncio.sleep(self._connect_websockets_interval)
 
-            snapshot: OrderBookSnapshot = await self._http_market.request_order_book_snapshot(
+            snapshot = await self._http_market.request_order_book_snapshot(
                 instrument_id=instrument_id,
                 limit=depth,
                 ts_init=self._clock.timestamp_ns(),
@@ -353,7 +354,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         book_buffer = self._book_buffer.pop(instrument_id, [])
         for deltas in book_buffer:
-            if deltas.sequence <= snapshot.sequence:
+            if snapshot and deltas.sequence <= snapshot.sequence:
                 continue
             self._handle_data(deltas)
 
@@ -390,6 +391,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(
                 f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
             )
+            return
 
         self._ws_client.subscribe_bars(
             symbol=bar_type.instrument_id.symbol.value,
@@ -534,6 +536,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 f"Cannot create Binance Kline interval. {bar_type.spec.step}{resolution} "
                 "not supported.",
             )
+            return
 
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
@@ -571,7 +574,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        nautilus_symbol: str = BinanceSymbol(symbol).parse_binance_to_internal(
+        binance_symbol = BinanceSymbol(symbol)
+        assert binance_symbol
+        nautilus_symbol: str = binance_symbol.parse_binance_to_internal(
             self._binance_account_type,
         )
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)

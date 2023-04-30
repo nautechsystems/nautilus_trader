@@ -13,14 +13,76 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
+from nautilus_trader.core.message import Command
 from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Event
+from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
 
 
 class TestMessage:
-    def test_event_equality(self):
+    def test_command_message_picking(self):
+        # Arrange
+        command = Command(
+            UUID4(),
+            0,
+        )
+
+        # Act
+        pickled = pickle.dumps(command)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert command == unpickled
+
+    def test_document_message_picking(self):
+        # Arrange
+        doc = Document(
+            UUID4(),
+            0,
+        )
+
+        # Act
+        pickled = pickle.dumps(doc)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert doc == unpickled
+
+    def test_request_message_pickling(self):
+        # Arrange
+        req = Request(
+            print,
+            UUID4(),
+            0,
+        )
+
+        # Act
+        pickled = pickle.dumps(req)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert req == unpickled
+
+    def test_response_message_pickling(self):
+        # Arrange
+        res = Response(
+            UUID4(),
+            UUID4(),
+            0,
+        )
+
+        # Act
+        pickled = pickle.dumps(res)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert res == unpickled
+
+    def test_event_message_equality(self):
         # Arrange
         uuid = UUID4()
 
@@ -47,7 +109,22 @@ class TestMessage:
         assert event1 == event2
         assert event1 != event3
 
-    def test_message_hash(self):
+    def test_event_message_picking(self):
+        # Arrange
+        event = Event(
+            UUID4(),
+            1,
+            2,
+        )
+
+        # Act
+        pickled = pickle.dumps(event)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert event == unpickled
+
+    def test_document_message_hash(self):
         # Arrange
         message = Document(
             document_id=UUID4(),
@@ -57,7 +134,7 @@ class TestMessage:
         # Act, Assert
         assert isinstance(hash(message), int)
 
-    def test_message_str_and_repr(self):
+    def test_document_message_str_and_repr(self):
         # Arrange
         uuid = UUID4()
         message = Document(

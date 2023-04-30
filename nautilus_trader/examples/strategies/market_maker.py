@@ -24,10 +24,10 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.model.orderbook import OrderBook
+from nautilus_trader.model.orderbook import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -50,7 +50,7 @@ class MarketMaker(Strategy):
         instrument_id: InstrumentId,
         trade_size: Decimal,
         max_size: Decimal,
-    ):
+    ) -> None:
         super().__init__()
 
         # Configuration
@@ -63,7 +63,7 @@ class MarketMaker(Strategy):
         self._mid: Optional[Decimal] = None
         self._adj = Decimal(0)
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -76,7 +76,7 @@ class MarketMaker(Strategy):
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)
 
-    def on_order_book_delta(self, delta: OrderBookData):
+    def on_order_book_delta(self, delta: OrderBookData) -> None:
         if not self._book:
             self.log.error("No book being maintained.")
             return
@@ -93,7 +93,7 @@ class MarketMaker(Strategy):
                 self.buy(price=val * Decimal(1.01))
                 self.sell(price=val * Decimal(0.99))
 
-    def on_event(self, event: Event):
+    def on_event(self, event: Event) -> None:
         if isinstance(event, (PositionOpened, PositionChanged)):
             signed_qty = event.quantity.as_decimal()
             if event.side == PositionSide.SHORT:
@@ -102,7 +102,7 @@ class MarketMaker(Strategy):
         elif isinstance(event, PositionClosed):
             self._adj = Decimal(0)
 
-    def buy(self, price: Decimal):
+    def buy(self, price: Decimal) -> None:
         """
         Users simple buy method (example).
         """
@@ -119,7 +119,7 @@ class MarketMaker(Strategy):
 
         self.submit_order(order)
 
-    def sell(self, price: Decimal):
+    def sell(self, price: Decimal) -> None:
         """
         Users simple sell method (example).
         """
@@ -136,7 +136,7 @@ class MarketMaker(Strategy):
 
         self.submit_order(order)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         """
         Actions to be performed when the strategy is stopped.
         """

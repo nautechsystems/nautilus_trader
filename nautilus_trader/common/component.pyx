@@ -24,9 +24,9 @@ from nautilus_trader.common.enums import component_trigger_to_str
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.common.enums_c cimport ComponentTrigger
-from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.messages cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
@@ -593,7 +593,7 @@ cdef class Component:
         if self._fsm == ComponentState.PRE_INITIALIZED:
             return  # Cannot publish event
 
-        cdef uint64_t now = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef ComponentStateChanged event = ComponentStateChanged(
             trader_id=self.trader_id,
             component_id=self.id,
@@ -601,8 +601,8 @@ cdef class Component:
             state=self._fsm.state,
             config=self._config,
             event_id=UUID4(),
-            ts_event=now,
-            ts_init=now,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         self._msgbus.publish(

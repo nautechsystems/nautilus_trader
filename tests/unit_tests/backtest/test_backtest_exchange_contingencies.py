@@ -211,6 +211,85 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[1].status == OrderStatus.ACCEPTED
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
 
+    def test_submit_bracket_market_entry_with_immediate_modify_accepts_sl_and_tp(self):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
+        )
+
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        new_sl_trigger_price = ETHUSDT_PERP_BINANCE.make_price(3151.0)
+        new_tp_price = ETHUSDT_PERP_BINANCE.make_price(3051.0)
+
+        # Act
+        self.strategy.submit_order_list(bracket)
+        self.strategy.modify_order(sl_order, trigger_price=new_sl_trigger_price)
+        self.strategy.modify_order(tp_order, price=new_tp_price)
+        self.exchange.process(0)
+
+        # Assert
+        assert bracket.orders[0].status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.ACCEPTED
+        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.trigger_price == new_sl_trigger_price
+        assert tp_order.price == new_tp_price
+
+    def test_submit_bracket_market_entry_with_immediate_cancel(self):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid=ETHUSDT_PERP_BINANCE.make_price(3090.2),
+            ask=ETHUSDT_PERP_BINANCE.make_price(3090.5),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
+        )
+
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        # Act
+        self.strategy.submit_order_list(bracket)
+        self.strategy.cancel_order(sl_order)
+        self.strategy.cancel_order(tp_order)
+        self.exchange.process(0)
+
+        # Assert
+        assert bracket.orders[0].status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.CANCELED
+        assert tp_order.status == OrderStatus.CANCELED
+
     def test_submit_bracket_limit_entry_buy_has_sl_tp_pending(self):
         # Arrange: Prepare market
         tick = QuoteTick(

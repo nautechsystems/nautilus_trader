@@ -21,6 +21,7 @@ from typing import Optional
 import fsspec
 import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
+from pandas.io.parsers.readers import TextFileReader
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
@@ -35,13 +36,13 @@ from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_future import CryptoFuture
-from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.instruments.future import Future
-from nautilus_trader.model.instruments.option import Option
+from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -414,8 +415,8 @@ class TestInstrumentProvider:
         return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
     @staticmethod
-    def es_future():
-        return Future(
+    def es_future() -> FuturesContract:
+        return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
             native_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
@@ -431,8 +432,8 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_option():
-        return Option(
+    def aapl_option() -> OptionsContract:
+        return OptionsContract(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
             native_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
@@ -508,7 +509,7 @@ class TestInstrumentProvider:
 
 class TestDataProvider:
     """
-    Provides an API to load data from either the 'test/' directory or GitHub repo.
+    Provides an API to load data from either the 'test/' directory or the projects GitHub repo.
 
     Parameters
     ----------
@@ -516,7 +517,7 @@ class TestDataProvider:
         The NautilusTrader GitHub branch for the path.
     """
 
-    def __init__(self, branch="develop"):
+    def __init__(self, branch="develop") -> None:
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()
@@ -533,7 +534,7 @@ class TestDataProvider:
         else:
             return None
 
-    def _determine_filesystem(self):
+    def _determine_filesystem(self) -> None:
         test_data_dir = TestDataProvider._test_data_directory()
         if test_data_dir:
             self.root = test_data_dir
@@ -543,7 +544,7 @@ class TestDataProvider:
             self.root = "tests/test_data"
             self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
 
-    def _make_uri(self, path: str):
+    def _make_uri(self, path: str) -> str:
         # Moved here from top level import because GithubFileSystem has extra deps we may not have installed.
         from fsspec.implementations.github import GithubFileSystem
 
@@ -551,33 +552,35 @@ class TestDataProvider:
             return f"file://{self.root}/{path}"
         elif isinstance(self.fs, GithubFileSystem):
             return f"github://{self.fs.org}:{self.fs.repo}@{self.branch}/{self.root}/{path}"
+        else:
+            raise ValueError(f"Unsupported file system {self.fs}")
 
-    def read(self, path: str):
+    def read(self, path: str) -> fsspec.core.OpenFile:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str, **kwargs):
+    def read_csv(self, path: str, **kwargs) -> TextFileReader:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return pd.read_csv(f, **kwargs)
 
-    def read_csv_ticks(self, path: str):
+    def read_csv_ticks(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return CSVTickDataLoader.load(file_path=f)
 
-    def read_csv_bars(self, path: str):
+    def read_csv_bars(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return CSVBarDataLoader.load(file_path=f)
 
-    def read_parquet_ticks(self, path: str, timestamp_column: str = "timestamp"):
+    def read_parquet_ticks(self, path: str, timestamp_column: str = "timestamp") -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return ParquetTickDataLoader.load(file_path=f, timestamp_column=timestamp_column)
 
-    def read_parquet_bars(self, path: str):
+    def read_parquet_bars(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return ParquetBarDataLoader.load(file_path=f)

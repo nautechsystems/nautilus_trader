@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
 from decimal import Decimal
 
 from nautilus_trader.core.inspect import get_size_of
@@ -23,7 +22,6 @@ from nautilus_trader.test_kit.performance import PerformanceBench
 from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
-_PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = Decimal("1.00000")
 _BUILTIN_DECIMAL2 = Decimal("1.00001")
 

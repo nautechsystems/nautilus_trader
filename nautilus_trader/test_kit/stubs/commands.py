@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 

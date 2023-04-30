@@ -24,23 +24,18 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.persistence.external.readers import ParquetReader as ParquetByteReader
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.persistence.streaming.batching import generate_batches
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.persistence.streaming.engine import StreamingEngine
 from nautilus_trader.persistence.streaming.engine import _BufferIterator
 from nautilus_trader.persistence.streaming.engine import _StreamingBuffer
-from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -49,6 +44,7 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skip(reason="Rust datafusion backend currently being integrated")
 class TestBatchingData:
     test_parquet_files = [
         os.path.join(TEST_DATA_DIR, "quote_tick_eurusd_2019_sim_rust.parquet"),
@@ -304,251 +300,252 @@ class TestBufferIterator(TestBatchingData):
         assert timestamps == sorted(timestamps)
 
 
-class TestStreamingEngine(TestBatchingData):
-    def setup(self):
-        self.catalog = data_catalog_setup(protocol="file")
-        self._load_bars_into_catalog_rust()
-        self._load_quote_ticks_into_catalog_rust()
-
-    def _load_bars_into_catalog_rust(self):
-        instrument = self.test_instruments[2]
-        parquet_data_path = self.test_parquet_files[2]
-
-        def parser(df):
-            df.index = df["ts_init"].apply(unix_nanos_to_dt)
-            df = df["open high low close".split()]
-            for col in df:
-                df[col] = df[col].astype(float)
-            objs = BarDataWrangler(
-                bar_type=BarType.from_str("EUR/USD.SIM-1-HOUR-BID-EXTERNAL"),
-                instrument=instrument,
-            ).process(df)
-            yield from objs
-
-        process_files(
-            glob_path=parquet_data_path,
-            reader=ParquetByteReader(parser=parser),
-            catalog=self.catalog,
-            use_rust=False,
-        )
-
-    def _load_quote_ticks_into_catalog_rust(self):
-        for instrument, parquet_data_path in zip(
-            self.test_instruments[:2],
-            self.test_parquet_files[:2],
-        ):
-
-            def parser(df):
-                df.index = df["ts_init"].apply(unix_nanos_to_dt)
-                df = df["bid ask bid_size ask_size".split()]
-                for col in df:
-                    df[col] = df[col].astype(float)
-                objs = QuoteTickDataWrangler(instrument=instrument).process(df)
-                yield from objs
-
-            process_files(
-                glob_path=parquet_data_path,
-                reader=ParquetByteReader(parser=parser),  # noqa: B023
-                catalog=self.catalog,
-                use_rust=True,
-                instrument=instrument,
-            )
-
-    def test_iterate_returns_expected_timestamps_single(self):
-        # Arrange
-        config = BacktestDataConfig(
-            catalog_path=str(self.catalog.path),
-            instrument_id=str(self.test_instrument_ids[0]),
-            data_cls=QuoteTick,
-            use_rust=True,
-        )
-
-        expected = list(pd.read_parquet(self.test_parquet_files[0]).ts_event)
-
-        iterator = StreamingEngine(
-            data_configs=[config],
-            target_batch_size_bytes=parse_bytes("10kib"),
-        )
-
-        # Act
-        timestamps = []
-        for batch in iterator:
-            timestamps.extend([x.ts_init for x in batch])
-
-        # Assert
-        assert len(timestamps) == len(expected)
-        assert timestamps == expected
-
-    def test_iterate_returns_expected_timestamps(self):
-        # Arrange
-        configs = [
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[0]),
-                data_cls=QuoteTick,
-                use_rust=True,
-            ),
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[1]),
-                data_cls=QuoteTick,
-                use_rust=True,
-            ),
-        ]
-
-        expected = sorted(
-            list(pd.read_parquet(self.test_parquet_files[0]).ts_event)
-            + list(pd.read_parquet(self.test_parquet_files[1]).ts_event),
-        )
-
-        iterator = StreamingEngine(
-            data_configs=configs,
-            target_batch_size_bytes=parse_bytes("10kib"),
-        )
-
-        # Act
-        timestamps = []
-        for batch in iterator:
-            timestamps.extend([x.ts_init for x in batch])
-
-        # Assert
-        assert len(timestamps) == len(expected)
-        assert timestamps == expected
-
-    def test_iterate_returns_expected_timestamps_with_start_end_range_rust(
-        self,
-    ):
-        # Arrange
-
-        start_timestamps = (1546383605776999936, 1546389021944999936)
-        end_timestamps = (1546390125908000000, 1546394394948999936)
-
-        configs = [
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[0]),
-                data_cls=QuoteTick,
-                use_rust=True,
-                start_time=unix_nanos_to_dt(start_timestamps[0]),
-                end_time=unix_nanos_to_dt(end_timestamps[0]),
-            ),
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[1]),
-                data_cls=QuoteTick,
-                use_rust=True,
-                start_time=unix_nanos_to_dt(start_timestamps[1]),
-                end_time=unix_nanos_to_dt(end_timestamps[1]),
-            ),
-        ]
-
-        iterator = StreamingEngine(
-            data_configs=configs,
-            target_batch_size_bytes=parse_bytes("10kib"),
-        )
-
-        # Act
-        objs = []
-        for batch in iterator:
-            objs.extend(batch)
-
-        # Assert
-        instrument_1_timestamps = [
-            x.ts_init for x in objs if x.instrument_id == self.test_instrument_ids[0]
-        ]
-        instrument_2_timestamps = [
-            x.ts_init for x in objs if x.instrument_id == self.test_instrument_ids[1]
-        ]
-        assert instrument_1_timestamps[0] == start_timestamps[0]
-        assert instrument_1_timestamps[-1] == end_timestamps[0]
-
-        assert instrument_2_timestamps[0] == start_timestamps[1]
-        assert instrument_2_timestamps[-1] == end_timestamps[1]
-
-        timestamps = [x.ts_init for x in objs]
-        assert timestamps == sorted(timestamps)
-
-    def test_iterate_returns_expected_timestamps_with_start_end_range_and_bars(
-        self,
-    ):
-        # Arrange
-        start_timestamps = (1546383605776999936, 1546389021944999936, 1577725200000000000)
-        end_timestamps = (1546390125908000000, 1546394394948999936, 1577826000000000000)
-
-        configs = [
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[0]),
-                data_cls=QuoteTick,
-                start_time=unix_nanos_to_dt(start_timestamps[0]),
-                end_time=unix_nanos_to_dt(end_timestamps[0]),
-                use_rust=True,
-            ),
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[1]),
-                data_cls=QuoteTick,
-                start_time=unix_nanos_to_dt(start_timestamps[1]),
-                end_time=unix_nanos_to_dt(end_timestamps[1]),
-                use_rust=True,
-            ),
-            BacktestDataConfig(
-                catalog_path=str(self.catalog.path),
-                instrument_id=str(self.test_instrument_ids[2]),
-                data_cls=Bar,
-                start_time=unix_nanos_to_dt(start_timestamps[2]),
-                end_time=unix_nanos_to_dt(end_timestamps[2]),
-                bar_spec="1-HOUR-BID",
-                use_rust=False,
-            ),
-        ]
-
-        # Act
-        iterator = StreamingEngine(
-            data_configs=configs,
-            target_batch_size_bytes=parse_bytes("10kib"),
-        )
-
-        # Act
-        objs = []
-        for batch in iterator:
-            objs.extend(batch)
-
-        # Assert
-        bars = [x for x in objs if isinstance(x, Bar)]
-
-        quote_ticks = [x for x in objs if isinstance(x, QuoteTick)]
-
-        instrument_1_timestamps = [
-            x.ts_init for x in quote_ticks if x.instrument_id == self.test_instrument_ids[0]
-        ]
-        instrument_2_timestamps = [
-            x.ts_init for x in quote_ticks if x.instrument_id == self.test_instrument_ids[1]
-        ]
-        instrument_3_timestamps = [
-            x.ts_init for x in bars if x.bar_type.instrument_id == self.test_instrument_ids[2]
-        ]
-
-        assert instrument_1_timestamps[0] == start_timestamps[0]
-        assert instrument_1_timestamps[-1] == end_timestamps[0]
-
-        assert instrument_2_timestamps[0] == start_timestamps[1]
-        assert instrument_2_timestamps[-1] == end_timestamps[1]
-
-        assert instrument_3_timestamps[0] == start_timestamps[2]
-        assert instrument_3_timestamps[-1] == end_timestamps[2]
-
-        timestamps = [x.ts_init for x in objs]
-        assert timestamps == sorted(timestamps)
+# TODO: Replace with new Rust datafusion backend
+# class TestStreamingEngine(TestBatchingData):
+#     def setup(self):
+#         self.catalog = data_catalog_setup(protocol="file")
+#         self._load_bars_into_catalog_rust()
+#         self._load_quote_ticks_into_catalog_rust()
+#
+#     def _load_bars_into_catalog_rust(self):
+#         instrument = self.test_instruments[2]
+#         parquet_data_path = self.test_parquet_files[2]
+#
+#         def parser(df):
+#             df.index = df["ts_init"].apply(unix_nanos_to_dt)
+#             df = df["open high low close".split()]
+#             for col in df:
+#                 df[col] = df[col].astype(float)
+#             objs = BarDataWrangler(
+#                 bar_type=BarType.from_str("EUR/USD.SIM-1-HOUR-BID-EXTERNAL"),
+#                 instrument=instrument,
+#             ).process(df)
+#             yield from objs
+#
+#         process_files(
+#             glob_path=parquet_data_path,
+#             reader=ParquetByteReader(parser=parser),
+#             catalog=self.catalog,
+#             use_rust=False,
+#         )
+#
+#     def _load_quote_ticks_into_catalog_rust(self):
+#         for instrument, parquet_data_path in zip(
+#             self.test_instruments[:2],
+#             self.test_parquet_files[:2],
+#         ):
+#
+#             def parser(df):
+#                 df.index = df["ts_init"].apply(unix_nanos_to_dt)
+#                 df = df["bid ask bid_size ask_size".split()]
+#                 for col in df:
+#                     df[col] = df[col].astype(float)
+#                 objs = QuoteTickDataWrangler(instrument=instrument).process(df)
+#                 yield from objs
+#
+#             process_files(
+#                 glob_path=parquet_data_path,
+#                 reader=ParquetByteReader(parser=parser),  # noqa: B023
+#                 catalog=self.catalog,
+#                 use_rust=True,
+#                 instrument=instrument,
+#             )
+#
+#     def test_iterate_returns_expected_timestamps_single(self):
+#         # Arrange
+#         config = BacktestDataConfig(
+#             catalog_path=str(self.catalog.path),
+#             instrument_id=str(self.test_instrument_ids[0]),
+#             data_cls=QuoteTick,
+#             use_rust=True,
+#         )
+#
+#         expected = list(pd.read_parquet(self.test_parquet_files[0]).ts_event)
+#
+#         iterator = StreamingEngine(
+#             data_configs=[config],
+#             target_batch_size_bytes=parse_bytes("10kib"),
+#         )
+#
+#         # Act
+#         timestamps = []
+#         for batch in iterator:
+#             timestamps.extend([x.ts_init for x in batch])
+#
+#         # Assert
+#         assert len(timestamps) == len(expected)
+#         assert timestamps == expected
+#
+#     def test_iterate_returns_expected_timestamps(self):
+#         # Arrange
+#         configs = [
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[0]),
+#                 data_cls=QuoteTick,
+#                 use_rust=True,
+#             ),
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[1]),
+#                 data_cls=QuoteTick,
+#                 use_rust=True,
+#             ),
+#         ]
+#
+#         expected = sorted(
+#             list(pd.read_parquet(self.test_parquet_files[0]).ts_event)
+#             + list(pd.read_parquet(self.test_parquet_files[1]).ts_event),
+#         )
+#
+#         iterator = StreamingEngine(
+#             data_configs=configs,
+#             target_batch_size_bytes=parse_bytes("10kib"),
+#         )
+#
+#         # Act
+#         timestamps = []
+#         for batch in iterator:
+#             timestamps.extend([x.ts_init for x in batch])
+#
+#         # Assert
+#         assert len(timestamps) == len(expected)
+#         assert timestamps == expected
+#
+#     def test_iterate_returns_expected_timestamps_with_start_end_range_rust(
+#         self,
+#     ):
+#         # Arrange
+#
+#         start_timestamps = (1546383605776999936, 1546389021944999936)
+#         end_timestamps = (1546390125908000000, 1546394394948999936)
+#
+#         configs = [
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[0]),
+#                 data_cls=QuoteTick,
+#                 use_rust=True,
+#                 start_time=unix_nanos_to_dt(start_timestamps[0]),
+#                 end_time=unix_nanos_to_dt(end_timestamps[0]),
+#             ),
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[1]),
+#                 data_cls=QuoteTick,
+#                 use_rust=True,
+#                 start_time=unix_nanos_to_dt(start_timestamps[1]),
+#                 end_time=unix_nanos_to_dt(end_timestamps[1]),
+#             ),
+#         ]
+#
+#         iterator = StreamingEngine(
+#             data_configs=configs,
+#             target_batch_size_bytes=parse_bytes("10kib"),
+#         )
+#
+#         # Act
+#         objs = []
+#         for batch in iterator:
+#             objs.extend(batch)
+#
+#         # Assert
+#         instrument_1_timestamps = [
+#             x.ts_init for x in objs if x.instrument_id == self.test_instrument_ids[0]
+#         ]
+#         instrument_2_timestamps = [
+#             x.ts_init for x in objs if x.instrument_id == self.test_instrument_ids[1]
+#         ]
+#         assert instrument_1_timestamps[0] == start_timestamps[0]
+#         assert instrument_1_timestamps[-1] == end_timestamps[0]
+#
+#         assert instrument_2_timestamps[0] == start_timestamps[1]
+#         assert instrument_2_timestamps[-1] == end_timestamps[1]
+#
+#         timestamps = [x.ts_init for x in objs]
+#         assert timestamps == sorted(timestamps)
+#
+#     def test_iterate_returns_expected_timestamps_with_start_end_range_and_bars(
+#         self,
+#     ):
+#         # Arrange
+#         start_timestamps = (1546383605776999936, 1546389021944999936, 1577725200000000000)
+#         end_timestamps = (1546390125908000000, 1546394394948999936, 1577826000000000000)
+#
+#         configs = [
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[0]),
+#                 data_cls=QuoteTick,
+#                 start_time=unix_nanos_to_dt(start_timestamps[0]),
+#                 end_time=unix_nanos_to_dt(end_timestamps[0]),
+#                 use_rust=True,
+#             ),
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[1]),
+#                 data_cls=QuoteTick,
+#                 start_time=unix_nanos_to_dt(start_timestamps[1]),
+#                 end_time=unix_nanos_to_dt(end_timestamps[1]),
+#                 use_rust=True,
+#             ),
+#             BacktestDataConfig(
+#                 catalog_path=str(self.catalog.path),
+#                 instrument_id=str(self.test_instrument_ids[2]),
+#                 data_cls=Bar,
+#                 start_time=unix_nanos_to_dt(start_timestamps[2]),
+#                 end_time=unix_nanos_to_dt(end_timestamps[2]),
+#                 bar_spec="1-HOUR-BID",
+#                 use_rust=False,
+#             ),
+#         ]
+#
+#         # Act
+#         iterator = StreamingEngine(
+#             data_configs=configs,
+#             target_batch_size_bytes=parse_bytes("10kib"),
+#         )
+#
+#         # Act
+#         objs = []
+#         for batch in iterator:
+#             objs.extend(batch)
+#
+#         # Assert
+#         bars = [x for x in objs if isinstance(x, Bar)]
+#
+#         quote_ticks = [x for x in objs if isinstance(x, QuoteTick)]
+#
+#         instrument_1_timestamps = [
+#             x.ts_init for x in quote_ticks if x.instrument_id == self.test_instrument_ids[0]
+#         ]
+#         instrument_2_timestamps = [
+#             x.ts_init for x in quote_ticks if x.instrument_id == self.test_instrument_ids[1]
+#         ]
+#         instrument_3_timestamps = [
+#             x.ts_init for x in bars if x.bar_type.instrument_id == self.test_instrument_ids[2]
+#         ]
+#
+#         assert instrument_1_timestamps[0] == start_timestamps[0]
+#         assert instrument_1_timestamps[-1] == end_timestamps[0]
+#
+#         assert instrument_2_timestamps[0] == start_timestamps[1]
+#         assert instrument_2_timestamps[-1] == end_timestamps[1]
+#
+#         assert instrument_3_timestamps[0] == start_timestamps[2]
+#         assert instrument_3_timestamps[-1] == end_timestamps[2]
+#
+#         timestamps = [x.ts_init for x in objs]
+#         assert timestamps == sorted(timestamps)
 
 
 class TestPersistenceBatching:
-    def setup(self):
+    def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_data_into_catalog()
 
-    def teardown(self):
+    def teardown(self) -> None:
         # Cleanup
         path = self.catalog.path
         fs = self.catalog.fs

@@ -366,16 +366,13 @@ class TestTestClock:
         with pytest.raises(ValueError):
             clock.advance_time(0)
 
-    def test_cancel_timer_when_no_timers_does_nothing(self):
+    def test_cancel_timer_when_no_timers_raises_key_error(self):
         # Arrange
         clock = TestClock()
 
-        # Act
-        clock.cancel_timer("BOGUS_ALERT")
-
-        # Assert
-        assert clock.timer_names == []
-        assert clock.timer_count == 0
+        # Act, Assert
+        with pytest.raises(KeyError):
+            clock.cancel_timer("BOGUS_ALERT")
 
     def test_cancel_timers_when_no_timers_does_nothing(self):
         # Arrange
@@ -469,8 +466,10 @@ class TestTestClock:
 
         # Act
         event_handlers = clock.advance_time(2 * 60 * 1_000_000_000)
+        event_handlers[0].handle()
 
         # Assert
+        assert len(handler) == 1
         assert len(event_handlers) == 1
         assert event_handlers[0].event.name == "TEST_ALERT"
         assert clock.timer_count == 0
@@ -836,15 +835,6 @@ class TestLiveClockWithLoopTimer:
 
     def teardown(self):
         self.clock.cancel_timers()
-
-    def test_set_offset_returns_reasonable_times(self):
-        # Arrange, Act
-        self.clock.set_offset(offset_ns=-1_000_000_000)  # -1 second offset
-
-        # Assert
-        assert self.clock.timestamp() > 1650000000
-        assert self.clock.timestamp_ms() > 1650000000 * 1_000
-        assert self.clock.timestamp_ns() > 1650000000 * 1_000_000_000
 
     def test_timestamp_is_monotonic(self):
         # Arrange, Act

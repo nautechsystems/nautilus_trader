@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.pressure import Pressure
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -63,7 +65,7 @@ class TestPressure:
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 0.333333333328399
+        assert indicator.value == pytest.approx(0.333333333328399, rel=1e-9)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

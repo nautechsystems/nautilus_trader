@@ -20,7 +20,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 
 
 """

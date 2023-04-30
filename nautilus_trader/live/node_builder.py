@@ -65,7 +65,7 @@ class TradingNodeBuilder:
         clock: LiveClock,
         logger: Logger,
         log: LoggerAdapter,
-    ):
+    ) -> None:
         self._msgbus = msgbus
         self._cache = cache
         self._clock = clock
@@ -79,7 +79,7 @@ class TradingNodeBuilder:
         self._data_factories: dict[str, type[LiveDataClientFactory]] = {}
         self._exec_factories: dict[str, type[LiveExecClientFactory]] = {}
 
-    def add_data_client_factory(self, name: str, factory):
+    def add_data_client_factory(self, name: str, factory: type[LiveDataClientFactory]) -> None:
         """
         Add the given data client factory to the builder.
 
@@ -87,7 +87,7 @@ class TradingNodeBuilder:
         ----------
         name : str
             The name of the client.
-        factory : LiveDataClientFactory or LiveExecClientFactory
+        factory : type[LiveDataClientFactory]
             The factory to add.
 
         Raises
@@ -103,12 +103,12 @@ class TradingNodeBuilder:
         PyCondition.not_in(name, self._data_factories, "name", "_data_factories")
 
         if not issubclass(factory, LiveDataClientFactory):
-            self._log.error(f"Factory was not of type `LiveDataClientFactory` " f"was {factory}.")
+            self._log.error(f"Factory was not of type `LiveDataClientFactory`, was {factory}.")
             return
 
         self._data_factories[name] = factory
 
-    def add_exec_client_factory(self, name: str, factory):
+    def add_exec_client_factory(self, name: str, factory: type[LiveExecClientFactory]) -> None:
         """
         Add the given client factory to the builder.
 
@@ -116,7 +116,7 @@ class TradingNodeBuilder:
         ----------
         name : str
             The name of the client.
-        factory : LiveDataClientFactory or LiveExecClientFactory
+        factory : type[LiveExecClientFactory]
             The factory to add.
 
         Raises
@@ -132,12 +132,15 @@ class TradingNodeBuilder:
         PyCondition.not_in(name, self._exec_factories, "name", "_exec_factories")
 
         if not issubclass(factory, LiveExecClientFactory):
-            self._log.error(f"Factory was not of type `LiveExecClientFactory` " f"was {factory}.")
+            self._log.error(f"Factory was not of type `LiveExecClientFactory`, was {factory}.")
             return
 
         self._exec_factories[name] = factory
 
-    def build_data_clients(self, config: dict[str, ImportableConfig]):
+    def build_data_clients(
+        self,
+        config: dict[str, LiveDataClientConfig],
+    ) -> None:
         """
         Build the data clients with the given configuration.
 
@@ -185,7 +188,10 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
                 self._data_engine.register_venue_routing(client, venue)
 
-    def build_exec_clients(self, config: dict[str, ImportableConfig]):
+    def build_exec_clients(
+        self,
+        config: dict[str, LiveExecClientConfig],
+    ) -> None:
         """
         Build the execution clients with the given configuration.
 

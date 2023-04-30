@@ -109,7 +109,7 @@ class LiveExecutionClient(ExecutionClient):
         clock: LiveClock,
         logger: Logger,
         config: Optional[dict[str, Any]] = None,
-    ):
+    ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
         super().__init__(

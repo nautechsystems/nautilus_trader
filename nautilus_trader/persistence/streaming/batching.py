@@ -25,12 +25,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReader
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetReaderType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.persistence.external.util import py_type_to_parquet_type
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 
 
@@ -84,24 +81,26 @@ def _generate_batches_rust(
 ) -> Generator[list[Union[QuoteTick, TradeTick]], None, None]:
     assert cls in (QuoteTick, TradeTick)
 
-    files = sorted(files, key=lambda x: Path(x).stem)
-    for file in files:
-        reader = ParquetReader(
-            file,
-            batch_size,
-            py_type_to_parquet_type(cls),
-            ParquetReaderType.File,
-        )
-        for capsule in reader:
-            # PyCapsule > List
-            if cls == QuoteTick:
-                objs = QuoteTick.list_from_capsule(capsule)
-            elif cls == TradeTick:
-                objs = TradeTick.list_from_capsule(capsule)
-            else:
-                raise RuntimeError(f"Data type {cls} unsupported for Rust.")
-
-            yield objs
+    # TODO: Replace with new Rust datafusion backend
+    yield []
+    # files = sorted(files, key=lambda x: Path(x).stem)
+    # for file in files:
+    #     reader = ParquetReader(
+    #         file,
+    #         batch_size,
+    #         py_type_to_parquet_type(cls),
+    #         ParquetReaderType.File,
+    #     )
+    #     for capsule in reader:
+    #         # PyCapsule > List
+    #         if cls == QuoteTick:
+    #             objs = QuoteTick.list_from_capsule(capsule)
+    #         elif cls == TradeTick:
+    #             objs = TradeTick.list_from_capsule(capsule)
+    #         else:
+    #             raise RuntimeError(f"Data type {cls} unsupported for Rust.")
+    #
+    #         yield objs
 
 
 def generate_batches_rust(
@@ -119,7 +118,7 @@ def _generate_batches(
     files: list[str],
     cls: type,
     fs: fsspec.AbstractFileSystem,
-    instrument_id: Optional[InstrumentId] = None,  # should be stored in metadata of parquet file?
+    instrument_id: Optional[InstrumentId] = None,  # Should be stored in metadata of parquet file?
     batch_size: int = 10_000,
 ) -> Generator[list[Data], None, None]:
     files = sorted(files, key=lambda x: Path(x).stem)

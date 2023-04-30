@@ -66,7 +66,7 @@ pub extern "C" fn position_id_clone(position_id: &PositionId) -> PositionId {
 
 /// Frees the memory for the given `position_id` by dropping.
 #[no_mangle]
-pub extern "C" fn position_id_free(position_id: PositionId) {
+pub extern "C" fn position_id_drop(position_id: PositionId) {
     drop(position_id); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn position_id_hash(position_id: &PositionId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::PositionId;
-    use crate::identifiers::position_id::position_id_free;
+    use crate::identifiers::position_id::position_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,8 +112,8 @@ mod tests {
     }
 
     #[test]
-    fn test_position_id_free() {
+    fn test_position_id_drop() {
         let id = PositionId::new("001");
-        position_id_free(id); // No panic
+        position_id_drop(id); // No panic
     }
 }

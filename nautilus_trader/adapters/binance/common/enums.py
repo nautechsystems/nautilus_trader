@@ -25,7 +25,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import bar_aggregation_to_str
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 
 
 """
@@ -96,6 +96,7 @@ class BinanceSymbolFilterType(Enum):
     PERCENT_PRICE_BY_SIDE = "PERCENT_PRICE_BY_SIDE"
     LOT_SIZE = "LOT_SIZE"
     MIN_NOTIONAL = "MIN_NOTIONAL"
+    NOTIONAL = "NOTIONAL"
     ICEBERG_PARTS = "ICEBERG_PARTS"
     MARKET_LOT_SIZE = "MARKET_LOT_SIZE"
     MAX_NUM_ORDERS = "MAX_NUM_ORDERS"

@@ -18,8 +18,8 @@ from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport currency_code_to_cstr
+from nautilus_trader.core.rust.model cimport currency_drop
 from nautilus_trader.core.rust.model cimport currency_eq
-from nautilus_trader.core.rust.model cimport currency_free
 from nautilus_trader.core.rust.model cimport currency_from_py
 from nautilus_trader.core.rust.model cimport currency_hash
 from nautilus_trader.core.rust.model cimport currency_name_to_cstr
@@ -84,7 +84,7 @@ cdef class Currency:
 
     def __del__(self) -> None:
         if self._mem.code != NULL:
-            currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            currency_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (

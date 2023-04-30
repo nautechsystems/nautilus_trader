@@ -42,6 +42,16 @@ cdef class Command:
         self.id = command_id
         self.ts_init = ts_init
 
+    def __getstate__(self):
+        return (
+            self.id.to_str(),
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.id = UUID4(state[0])
+        self.ts_init = state[1]
+
     def __eq__(self, Command other) -> bool:
         return self.id == other.id
 
@@ -75,6 +85,16 @@ cdef class Document:
     ):
         self.id = document_id
         self.ts_init = ts_init
+
+    def __getstate__(self):
+        return (
+            self.id.to_str(),
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.id = UUID4(state[0])
+        self.ts_init = state[1]
 
     def __eq__(self, Document other) -> bool:
         return self.id == other.id
@@ -114,6 +134,18 @@ cdef class Event:
         self.ts_event = ts_event
         self.ts_init = ts_init
 
+    def __getstate__(self):
+        return (
+            self.id.to_str(),
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.id = UUID4(state[0])
+        self.ts_event = state[1]
+        self.ts_init = state[2]
+
     def __eq__(self, Event other) -> bool:
         return self.id == other.id
 
@@ -152,6 +184,18 @@ cdef class Request:
         self.id = request_id
         self.ts_init = ts_init
 
+    def __getstate__(self):
+        return (
+            self.callback,
+            self.id.to_str(),
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.callback = state[0]
+        self.id = UUID4(state[1])
+        self.ts_init = state[2]
+
     def __eq__(self, Request other) -> bool:
         return self.id == other.id
 
@@ -189,6 +233,18 @@ cdef class Response:
         self.correlation_id = correlation_id
         self.id = response_id
         self.ts_init = ts_init
+
+    def __getstate__(self):
+        return (
+            self.correlation_id.to_str(),
+            self.id.to_str(),
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.correlation_id = UUID4(state[0])
+        self.id = UUID4(state[1])
+        self.ts_init = state[2]
 
     def __eq__(self, Response other) -> bool:
         return self.id == other.id

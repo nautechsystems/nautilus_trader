@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import fsspec
 
 from nautilus_trader.model.identifiers import Venue
@@ -23,11 +24,11 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 class TestPersistenceBatching:
-    def setup(self):
+    def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
-    def test_metadata_multiple_instruments(self):
+    def test_metadata_multiple_instruments(self) -> None:
         # Arrange
         audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("OANDA"))
         gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD", Venue("OANDA"))

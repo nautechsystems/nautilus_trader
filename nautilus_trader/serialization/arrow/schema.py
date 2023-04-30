@@ -17,8 +17,8 @@ import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
-from nautilus_trader.common.events.risk import TradingStateChanged
-from nautilus_trader.common.events.system import ComponentStateChanged
+from nautilus_trader.common.messages import ComponentStateChanged
+from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -44,13 +44,13 @@ from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
-from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_future import CryptoFuture
-from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.instruments.future import Future
-from nautilus_trader.model.instruments.option import Option
+from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
@@ -218,6 +218,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "order_list_id": pa.string(),
             "linked_order_ids": pa.string(),
             "parent_order_id": pa.string(),
+            "exec_algorithm_id": pa.string(),
+            "exec_algorithm_params": pa.binary(),
+            "exec_spawn_id": pa.binary(),
             "tags": pa.string(),
             "event_id": pa.string(),
             "ts_init": pa.uint64(),
@@ -635,7 +638,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.uint64(),
         },
     ),
-    Future: pa.schema(
+    FuturesContract: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "native_symbol": pa.string(),
@@ -653,7 +656,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.uint64(),
         },
     ),
-    Option: pa.schema(
+    OptionsContract: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "native_symbol": pa.string(),

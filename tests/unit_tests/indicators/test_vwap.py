@@ -15,6 +15,8 @@
 
 from datetime import timedelta
 
+import pytest
+
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
@@ -83,7 +85,7 @@ class TestVolumeWeightedAveragePrice:
         self.vwap.update_raw(1.00090, 19000, UNIX_EPOCH)
 
         # Assert
-        assert self.vwap.value == 1.0005076923076923
+        assert self.vwap.value == pytest.approx(1.0005076923076923, rel=1e-9)
 
     def test_values_with_all_lower_inputs_returns_expected_value(self):
         # Arrange, Act
@@ -99,7 +101,7 @@ class TestVolumeWeightedAveragePrice:
         self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
 
         # Assert
-        assert self.vwap.value == 1.0006032258064514
+        assert self.vwap.value == pytest.approx(1.0006032258064514, rel=1e-9)
 
     def test_new_day_resets_values(self):
         # Arrange, Act

@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.model.orderbook.book import L3OrderBook
+from nautilus_trader.model.orderbook import L3OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR

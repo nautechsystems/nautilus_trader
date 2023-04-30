@@ -401,11 +401,14 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+    external_order_claims : list[str], optional
+        The external order claim instrument IDs.
     """
 
     strategy_id: Optional[str] = None
     order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
+    external_order_claims: Optional[list[str]] = None
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):
@@ -545,8 +548,6 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_component_levels : dict[str, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
-    log_rate_limit : int, default 100_000
-        The maximum messages per second which can be flushed to stdout or stderr.
     bypass_logging : bool, default False
         If all logging should be bypassed.
     """
@@ -557,7 +558,6 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_file_name: Optional[str] = None
     log_file_format: Optional[str] = None
     log_component_levels: Optional[dict[str, str]] = None
-    log_rate_limit: int = 100_000
     bypass_logging: bool = False
 
 
@@ -630,7 +630,7 @@ class ImportableFactoryConfig(NautilusConfig, frozen=True):
 
 class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable (typically live data client or live execution client) configuration.
+    Represents an importable configuration (typically live data client or live execution client).
     """
 
     path: str

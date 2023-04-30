@@ -149,16 +149,44 @@ impl Display for TradeTick {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub enum Data {
+    Trade(TradeTick),
+    Quote(QuoteTick),
+}
+
+impl Data {
+    pub fn get_ts_init(&self) -> UnixNanos {
+        match self {
+            Data::Trade(t) => t.ts_init,
+            Data::Quote(q) => q.ts_init,
+        }
+    }
+}
+
+impl From<QuoteTick> for Data {
+    fn from(value: QuoteTick) -> Self {
+        Self::Quote(value)
+    }
+}
+
+impl From<TradeTick> for Data {
+    fn from(value: TradeTick) -> Self {
+        Self::Trade(value)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn quote_tick_free(tick: QuoteTick) {
+pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
     drop(tick); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn quote_tick_copy(tick: &QuoteTick) -> QuoteTick {
+pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
     tick.clone()
 }
 
@@ -215,12 +243,12 @@ pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_free(tick: TradeTick) {
+pub extern "C" fn trade_tick_drop(tick: TradeTick) {
     drop(tick); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_copy(tick: &TradeTick) -> TradeTick {
+pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
     tick.clone()
 }
 
@@ -251,6 +279,16 @@ pub extern "C" fn trade_tick_from_raw(
 #[no_mangle]
 pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
     string_to_cstr(&tick.to_string())
+}
+
+#[no_mangle]
+pub extern "C" fn data_drop(data: Data) {
+    drop(data); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn data_clone(data: &Data) -> Data {
+    data.clone()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

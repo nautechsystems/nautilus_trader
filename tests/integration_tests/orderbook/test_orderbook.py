@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orderbook.book import L1OrderBook
-from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import L3OrderBook
+from nautilus_trader.model.orderbook import L1OrderBook
+from nautilus_trader.model.orderbook import L2OrderBook
+from nautilus_trader.model.orderbook import L3OrderBook
 from nautilus_trader.model.orderbook.error import BookIntegrityError
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -30,6 +30,7 @@ class TestOrderBook:
             price_precision=5,
             size_precision=0,
         )
+        i = 0
         for i, m in enumerate(TestDataStubs.l1_feed()):  # noqa (B007)
             # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
             # print("")

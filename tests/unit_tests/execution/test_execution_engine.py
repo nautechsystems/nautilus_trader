@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
@@ -21,6 +23,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -38,6 +41,7 @@ from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -205,6 +209,85 @@ class TestExecutionEngine:
             exec_client.id,
             self.exec_client.id,
         ]
+
+    def test_register_strategy_with_external_order_claims_when_claim(self):
+        # Arrange
+        config = StrategyConfig(external_order_claims=["ETHUSDT-PERP.DYDX"])
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        expected_instrument_id = InstrumentId.from_str("ETHUSDT-PERP.DYDX")
+
+        # Act
+        self.exec_engine.register_external_order_claims(strategy)
+        claim = self.exec_engine.get_external_order_claim(expected_instrument_id)
+
+        # Assert
+        assert claim == strategy.id
+
+    def test_register_strategy_with_external_order_claims_when_no_claim(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        instrument_id = InstrumentId.from_str("ETHUSDT-PERP.DYDX")
+
+        # Act
+        self.exec_engine.register_external_order_claims(strategy)
+        claim = self.exec_engine.get_external_order_claim(instrument_id)
+
+        # Assert
+        assert claim is None
+
+    def test_register_external_order_claims_conflict(self):
+        # Arrange
+        config1 = StrategyConfig(
+            order_id_tag="000",
+            external_order_claims=["ETHUSDT-PERP.DYDX"],
+        )
+        strategy1 = Strategy(config=config1)
+        strategy1.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        config2 = StrategyConfig(
+            order_id_tag="001",
+            external_order_claims=["ETHUSDT-PERP.DYDX"],  # <-- Already claimed
+        )
+        strategy2 = Strategy(config=config2)
+        strategy2.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_external_order_claims(strategy1)
+
+        # Act, Assert
+        with pytest.raises(InvalidConfiguration):
+            self.exec_engine.register_external_order_claims(strategy2)
 
     def test_deregister_client_removes_client(self):
         # Arrange, Act
@@ -1057,7 +1140,7 @@ class TestExecutionEngine:
             ),
         )
 
-        expected_position_id = PositionId("P-19700101-000-None-1")
+        expected_position_id = PositionId("P-19700101-0000-000-None-1")
 
         # Assert
         assert self.cache.position_exists(expected_position_id)
@@ -1109,7 +1192,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestEventStubs.order_accepted(order))
         self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
 
-        expected_position_id = PositionId("P-19700101-000-None-1")
+        expected_position_id = PositionId("P-19700101-0000-000-None-1")
 
         # Assert
         assert self.cache.position_exists(expected_position_id)
@@ -1159,7 +1242,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestEventStubs.order_accepted(order))
 
         # Act
-        expected_position_id = PositionId("P-19700101-000-None-1")
+        expected_position_id = PositionId("P-19700101-0000-000-None-1")
 
         self.exec_engine.process(
             TestEventStubs.order_filled(
@@ -1235,7 +1318,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestEventStubs.order_accepted(order))
         self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
 
-        expected_id = PositionId("P-19700101-000-None-1")  # Generated inside engine
+        expected_id = PositionId("P-19700101-0000-000-None-1")  # Generated inside engine
 
         # Assert
         assert self.cache.position_exists(expected_id)
@@ -1291,7 +1374,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestEventStubs.order_accepted(order1))
         self.exec_engine.process(TestEventStubs.order_filled(order1, AUDUSD_SIM))
 
-        expected_position_id = PositionId("P-19700101-000-None-1")
+        expected_position_id = PositionId("P-19700101-0000-000-None-1")
 
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
@@ -1666,7 +1749,7 @@ class TestExecutionEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        position_id = PositionId("P-19700101-000-000-1")
+        position_id = PositionId("P-19700101-0000-000-000-1")
 
         self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestEventStubs.order_submitted(order1))
@@ -1693,7 +1776,7 @@ class TestExecutionEngine:
         )
 
         # Assert
-        position_id_flipped = PositionId("P-19700101-000-None-1F")
+        position_id_flipped = PositionId("P-19700101-0000-000-None-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
         assert position_flipped.signed_qty == -50_000
@@ -1745,7 +1828,7 @@ class TestExecutionEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        position_id = PositionId("P-19700101-000-None-1")
+        position_id = PositionId("P-19700101-0000-000-None-1")
 
         self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestEventStubs.order_submitted(order1))
@@ -1772,7 +1855,7 @@ class TestExecutionEngine:
         )
 
         # Assert
-        position_id_flipped = PositionId("P-19700101-000-None-1F")
+        position_id_flipped = PositionId("P-19700101-0000-000-None-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
         assert position_flipped.signed_qty == 50_000
@@ -1830,7 +1913,7 @@ class TestExecutionEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        position_id = PositionId("P-19700101-000-001-1")
+        position_id = PositionId("P-19700101-0000-000-001-1")
 
         self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestEventStubs.order_submitted(order1))
@@ -1910,7 +1993,7 @@ class TestExecutionEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        position_id = PositionId("P-19700101-000-001-1")
+        position_id = PositionId("P-19700101-0000-000-001-1")
 
         self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestEventStubs.order_submitted(order1))

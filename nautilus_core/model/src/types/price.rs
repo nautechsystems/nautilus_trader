@@ -23,6 +23,8 @@ use nautilus_core::parsing::precision_from_str;
 
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
+use super::fixed::FIXED_SCALAR;
+
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
@@ -162,7 +164,7 @@ impl Mul for Price {
     type Output = Self;
     fn mul(self, rhs: Price) -> Self {
         Price {
-            raw: self.raw * rhs.raw,
+            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as i64),
             precision: self.precision,
         }
     }
@@ -323,6 +325,14 @@ mod tests {
     }
 
     #[test]
+    fn test_sub() {
+        let price1 = Price::new(1.011, 3);
+        let price2 = Price::new(1.000, 3);
+        let price3 = price1 - price2;
+        assert_eq!(price3.raw, 11000000);
+    }
+
+    #[test]
     fn test_add_assign() {
         let mut price = Price::new(1.000, 3);
         price += Price::new(1.011, 3);
@@ -334,6 +344,22 @@ mod tests {
         let mut price = Price::new(1.000, 3);
         price -= Price::new(0.011, 3);
         assert_eq!(price.raw, 989000000)
+    }
+
+    #[test]
+    fn test_mul() {
+        let price1 = Price::new(1.000, 3);
+        let price2 = Price::new(1.011, 3);
+        let price3 = price1 * price2;
+        assert_eq!(price3.raw, 1011000000);
+    }
+
+    #[test]
+    fn test_mul_assign() {
+        let mut price1 = Price::new(1.000, 3);
+        let price2 = Price::new(1.011, 3);
+        price1 *= price2;
+        assert_eq!(price1.raw, 1011000000000000000);
     }
 
     #[test]

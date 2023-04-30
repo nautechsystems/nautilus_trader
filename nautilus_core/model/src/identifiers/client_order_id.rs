@@ -66,7 +66,7 @@ pub extern "C" fn client_order_id_clone(client_order_id: &ClientOrderId) -> Clie
 
 /// Frees the memory for the given `client_order_id` by dropping.
 #[no_mangle]
-pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
+pub extern "C" fn client_order_id_drop(client_order_id: ClientOrderId) {
     drop(client_order_id); // Memory freed here
 }
 
@@ -94,7 +94,7 @@ pub extern "C" fn client_order_id_hash(client_order_id: &ClientOrderId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::ClientOrderId;
-    use crate::identifiers::client_order_id::client_order_id_free;
+    use crate::identifiers::client_order_id::client_order_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn test_client_order_id_free() {
+    fn test_client_order_id_drop() {
         let id = ClientOrderId::new("O-20200814-102234-001-001-1");
 
-        client_order_id_free(id); // No panic
+        client_order_id_drop(id); // No panic
     }
 }

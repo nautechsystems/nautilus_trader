@@ -13,4 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Defines common event types."""
+from cpython.datetime cimport date
+
+from nautilus_trader.model.instruments.base cimport Instrument
+
+
+cdef class FuturesContract(Instrument):
+    cdef readonly str underlying
+    """The underlying asset for the contract.\n\n:returns: `str`"""
+    cdef readonly date expiry_date
+    """The expiry date for the contract.\n\n:returns: `date`"""
+
+    @staticmethod
+    cdef FuturesContract from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(FuturesContract obj)

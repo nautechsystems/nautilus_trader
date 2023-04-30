@@ -22,6 +22,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
+import msgspec
+
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common import Environment
@@ -112,6 +114,7 @@ class NautilusKernel:
         PyCondition.valid_string(name, "name")
         PyCondition.type(config, NautilusKernelConfig, "config")
 
+        self._config = config
         self._environment = config.environment
         self._load_state = config.load_state
         self._save_state = config.save_state
@@ -151,7 +154,6 @@ class NautilusKernel:
             file_name=logging.log_file_name,
             file_format=logging.log_file_format,
             component_levels=logging.log_component_levels,
-            rate_limit=logging.log_rate_limit,
             bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
         )
 
@@ -339,6 +341,7 @@ class NautilusKernel:
             strategy: Strategy = StrategyFactory.create(strategy_config)
             self._trader.add_strategy(strategy)
 
+        # Create importable execution algorithms
         for exec_algorithm_config in config.exec_algorithms:
             exec_algorithm: ExecAlgorithm = ExecAlgorithmFactory.create(exec_algorithm_config)
             self._trader.add_exec_algorithm(exec_algorithm)
@@ -385,6 +388,11 @@ class NautilusKernel:
         )
         self._trader.subscribe("*", self._writer.write)
         self.log.info(f"Writing data & events to {path}")
+
+        # Save a copy of the config for this kernel to the streaming folder.
+        full_path = f"{self._writer.path}/config.json"
+        with self._writer.fs.open(full_path, "wb") as f:
+            f.write(msgspec.json.encode(self._config))
 
     @property
     def environment(self) -> Environment:

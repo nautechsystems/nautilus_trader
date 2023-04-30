@@ -26,15 +26,15 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.model.orderbook import OrderBook
+from nautilus_trader.model.orderbook import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY ***
 
 
-class SubscribeStrategyConfig(StrategyConfig):
+class SubscribeStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``SubscribeStrategy`` instances.
     """
@@ -57,12 +57,12 @@ class SubscribeStrategy(Strategy):
         The configuration for the instance.
     """
 
-    def __init__(self, config: SubscribeStrategyConfig):
+    def __init__(self, config: SubscribeStrategyConfig) -> None:
         super().__init__(config)
         self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
         self.book: Optional[OrderBook] = None
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -102,7 +102,7 @@ class SubscribeStrategy(Strategy):
             )
             self.subscribe_bars(bar_type)
 
-    def on_order_book_delta(self, data: OrderBookData):
+    def on_order_book_delta(self, data: OrderBookData) -> None:
         if not self.book:
             self.log.error("No book being maintained.")
             return
@@ -110,15 +110,15 @@ class SubscribeStrategy(Strategy):
         self.book.apply(data)
         self.log.info(str(self.book))
 
-    def on_order_book(self, order_book: OrderBook):
+    def on_order_book(self, order_book: OrderBook) -> None:
         self.book = order_book
         self.log.info(str(self.book))
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_trade_tick(self, tick: TradeTick) -> None:
         self.log.info(str(tick))
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_quote_tick(self, tick: QuoteTick) -> None:
         self.log.info(str(tick))
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         self.log.info(str(bar))

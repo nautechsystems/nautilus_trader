@@ -12,6 +12,7 @@
    instruments.md
    adapters.md
    orders.md
+   execution.md
    logging.md
    advanced/index.md
 ```

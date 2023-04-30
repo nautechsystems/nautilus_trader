@@ -46,11 +46,11 @@ from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook import L2OrderBook
+from nautilus_trader.model.orderbook import OrderBookDelta
+from nautilus_trader.model.orderbook import OrderBookDeltas
+from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -407,7 +407,7 @@ def test_instrument_closing_events(data_client):
     )
 
 
-def test_betfair_ticker(data_client, mock_data_engine_process):
+def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     # Arrange
     raw = BetfairStreaming.mcm_UPDATE_tv()
 
@@ -460,7 +460,7 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
     assert len(starting_prices) == 36
 
 
-def test_betfair_orderbook(data_client):
+def test_betfair_orderbook(data_client) -> None:
     # Arrange
     books: dict[InstrumentId, L2OrderBook] = {}
     parser = BetfairParser()

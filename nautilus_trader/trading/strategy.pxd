@@ -19,7 +19,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.execution.messages cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
@@ -29,6 +28,7 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
@@ -57,10 +57,12 @@ cdef class Strategy(Actor):
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
-    cdef readonly OmsType oms_type
-    """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly str order_id_tag
     """The order ID tag for the strategy.\n\n:returns: `str`"""
+    cdef readonly OmsType oms_type
+    """The order management system for the strategy.\n\n:returns: `OmsType`"""
+    cdef readonly list external_order_claims
+    """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
 
     cpdef bint indicators_initialized(self)
 
@@ -86,7 +88,6 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id=*,
         bint manage_gtd_expiry=*,
-        ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
     )
     cpdef void submit_order_list(
@@ -94,7 +95,6 @@ cdef class Strategy(Actor):
         OrderList order_list,
         PositionId position_id=*,
         bint manage_gtd_expiry=*,
-        list exec_algorithm_specs=*,
         ClientId client_id=*,
     )
     cpdef void modify_order(
@@ -127,10 +127,14 @@ cdef class Strategy(Actor):
     cdef OrderDenied _generate_order_denied(self, Order order, str reason)
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
+    cdef OrderCanceled _generate_order_canceled(self, Order order)
     cdef void _deny_order(self, Order order, str reason)
     cdef void _deny_order_list(self, OrderList order_list, str reason)
+    cdef void _cancel_algo_order(self, Order order)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
+    cdef void _send_emulator_command(self, TradingCommand command)
+    cdef void _send_algo_command(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
     cdef void _send_exec_command(self, TradingCommand command)

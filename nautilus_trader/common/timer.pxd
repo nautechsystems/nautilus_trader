@@ -58,8 +58,8 @@ cdef class LiveTimer:
     cpdef TimeEvent pop_event(self, UUID4 event_id, uint64_t ts_init)
     cpdef void iterate_next_time(self, uint64_t to_time_ns)
     cpdef void cancel(self)
-    cpdef void repeat(self, uint64_t now_ns)
-    cdef object _start_timer(self, uint64_t now_ns)
+    cpdef void repeat(self, uint64_t ts_now)
+    cdef object _start_timer(self, uint64_t ts_now)
 
 
 cdef class ThreadTimer(LiveTimer):

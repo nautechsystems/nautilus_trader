@@ -13,11 +13,12 @@
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform          | Rust      | Python |
-|:------------------|:----------|:-------|
-| Linux (x86\_64)   | `1.68.2+` | `3.9+` |
-| macOS (x86\_64)   | `1.68.2+` | `3.9+` |
-| Windows (x86\_64) | `1.68.2+` | `3.9+` |
+| Platform           | Rust    | Python |
+|:-------------------|:--------|:-------|
+| `Linux (x86_64)`   | 1.69.0+ | 3.9+   |
+| `macOS (x86_64)`   | 1.69.0+ | 3.9+   |
+| `macOS (arm64)`    | 1.69.0+ | 3.9+   |
+| `Windows (x86_64)` | 1.69.0+ | 3.9+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -113,6 +114,10 @@ The project increasingly utilizes Rust for core performance-critical components.
 Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
 [PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
+
+This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
+> “The intent of this project is to be free of soundness bugs. 
+> The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
 
 ## Architecture (data flow)
 
@@ -212,13 +217,16 @@ point we will follow a formal process for releases, with deprecation periods for
 ## Makefile
 
 A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
-- `make install` -- Installs the main, dev and test dependencies then installs the package using poetry
-- `make install-just-deps` -- Installs just the main, dev and test dependencies (does not install package)
-- `make build` -- Runs the Cython build script
-- `make clean` -- Cleans all non-source artifacts from the repository
+- `make install` -- Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default)
+- `make install-debug` -- Same as `make install` but with `debug` build mode
+- `make install-just-deps` -- Installs just the `main`, `dev` and `test` dependencies (does not install package)
+- `make install-just-deps-all` -- Same as `make install-just-deps` and additionally installs `docs` dependencies
+- `make build` -- Runs the Cython build script in `release` build mode (default)
+- `make build-debug` -- Runs the Cython build script in `debug` build mode
+- `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
-- `make ruff` -- Runs ruff over all files using the pyproject.toml config
+- `make ruff` -- Runs ruff over all files using the `pyproject.toml` config
 - `make pytest` -- Runs all tests with `pytest` (except performance tests)
 - `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
 
@@ -395,6 +403,9 @@ Contributions to the project are welcome and require the completion of a standar
 
 NautilusTrader is developed and maintained by Nautech Systems, a technology 
 company specializing in the development of high-performance trading systems. 
+Although the project utilizes the Rust programming language and benefits from its ecosystem, 
+Nautech Systems is not affiliated with the Rust Foundation, and this project is not an official 
+work of the Rust Foundation.
 For more information, visit https://nautilustrader.io.
 
 Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.

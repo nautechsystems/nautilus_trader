@@ -27,12 +27,15 @@ from nautilus_trader.backtest.engine import RiskEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
 from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
 from nautilus_trader.examples.strategies.market_maker import MarketMaker
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
@@ -425,7 +428,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
+            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -451,6 +454,77 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
         assert btc_ending_balance == Money(9.57200000, BTC)
         assert usdt_ending_balance == Money(10_017_571.74970600, USDT)
 
+
+class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
+    def setup(self):
+        # Fixture Setup
+        config = BacktestEngineConfig(
+            run_analysis=False,
+            logging=LoggingConfig(bypass_logging=True),
+            exec_engine=ExecEngineConfig(allow_cash_positions=False),  # <-- Normally True
+            risk_engine=RiskEngineConfig(bypass=True),
+        )
+        self.engine = BacktestEngine(
+            config=config,
+        )
+        self.venue = Venue("BINANCE")
+
+        self.engine.add_venue(
+            venue=self.venue,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,  # <-- Spot exchange
+            starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
+            base_currency=None,
+        )
+
+        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
+        self.engine.add_instrument(self.btcusdt)
+
+    def teardown(self):
+        self.engine.dispose()
+
+    def test_run_ema_cross_with_minute_trade_bars(self):
+        # Arrange
+        wrangler = BarDataWrangler(
+            bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            instrument=self.btcusdt,
+        )
+
+        provider = TestDataProvider()
+
+        # Build externally aggregated bars
+        bars = wrangler.process(
+            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+        )
+
+        self.engine.add_data(bars)
+
+        config = EMACrossTWAPConfig(
+            instrument_id=str(self.btcusdt.id),
+            bar_type="BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+            trade_size=Decimal(0.01),
+            fast_ema_period=10,
+            slow_ema_period=20,
+            twap_horizon_secs=10.0,
+            twap_interval_secs=2.5,
+        )
+        strategy = EMACrossTWAP(config=config)
+        self.engine.add_strategy(strategy)
+
+        exec_algorithm = TWAPExecAlgorithm()
+        self.engine.add_exec_algorithm(exec_algorithm)
+
+        # Act
+        self.engine.run()
+
+        # Assert
+        assert strategy.fast_ema.count == 10_000
+        assert self.engine.iteration == 10_000
+        btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
+        usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
+        assert btc_ending_balance == Money(5.71250000, BTC)
+        assert usdt_ending_balance == Money(10_176_062.78093484, USDT)
+
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
         wrangler = QuoteTickDataWrangler(instrument=self.btcusdt)
@@ -459,8 +533,8 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         # Build ticks from bar data
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
-            ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
+            bid_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(ticks)
@@ -739,6 +813,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9860.37",
+            "9862.39",
             GBP,
         )

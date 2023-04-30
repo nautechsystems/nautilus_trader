@@ -16,6 +16,7 @@
 
 import asyncio
 import traceback
+from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
@@ -94,7 +95,7 @@ async def main(market_id: str):
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id.value,
-                max_trade_size=5,
+                max_trade_size=Decimal(5),
                 order_id_tag=instrument.selection_id,
                 subscribe_ticker=True,
             ),

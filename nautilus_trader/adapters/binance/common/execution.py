@@ -65,12 +65,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.orders.stop_limit import StopLimitOrder
-from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -107,9 +107,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
-    clock_sync_interval_secs : int, default 0
-        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
-        If zero, then will *not* perform syncing.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
 
@@ -133,7 +130,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: Optional[str] = None,
-        clock_sync_interval_secs: int = 0,
         warn_gtd_to_gtc: bool = True,
     ) -> None:
         super().__init__(
@@ -155,12 +151,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
-
-        # Clock sync
-        self._clock_sync_interval_secs = clock_sync_interval_secs
-
-        # Tasks
-        self._task_clock_sync: Optional[asyncio.Task] = None
 
         # Enum parser
         self._enum_parser = enum_parser
@@ -188,6 +178,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
+        self._modifying_orders: dict[ClientOrderId, VenueOrderId] = {}
 
         # Order submission method hashmap
         self._submit_order_method = {
@@ -217,13 +208,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             self._log.exception(f"Error on connect: {e.message}", e)
             return
+
+        # Check Binance-Nautilus clock sync
+        server_time: int = await self._http_market.request_server_time()
+        self._log.info(f"Binance server time {server_time} UNIX (ms).")
+
+        nautilus_time: int = self._clock.timestamp_ms()
+        self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
+
+        # Setup websocket listen key
         self._listen_key = response.listenKey
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
-
-        # Setup clock sync
-        if self._clock_sync_interval_secs > 0:
-            self._task_clock_sync = self.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -247,37 +243,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except asyncio.CancelledError:
             self._log.debug("`ping_listen_keys` task was canceled.")
 
-    async def _sync_clock_with_binance_server(self) -> None:
-        try:
-            while True:
-                # self._log.info(
-                #     f"Syncing Nautilus clock with Binance server...",
-                # )
-                server_time = await self._http_market.request_server_time()
-                self._log.info(f"Binance server time {server_time} UNIX (ms).")
-
-                nautilus_time = self._clock.timestamp_ms()
-                self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
-
-                # offset_ns = millis_to_nanos(nautilus_time - server_time)
-                # self._log.info(f"Setting Nautilus clock offset {offset_ns} (ns).")
-                # self._clock.set_offset(offset_ns)
-
-                await asyncio.sleep(self._clock_sync_interval_secs)
-        except asyncio.CancelledError:
-            self._log.debug("`sync_clock_with_binance_server` task was canceled.")
-
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
             self._ping_listen_keys_task.done()
-
-        if self._task_clock_sync:
-            self._log.debug("Canceling `task_clock_sync` task...")
-            self._task_clock_sync.cancel()
-            self._task_clock_sync.done()
 
         # Disconnect WebSocket clients
         if self._ws_client.is_connected:
@@ -737,9 +708,53 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return instrument_id
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
-        )
+        self._log.error("Cannot modify order: not supported by the venue.")
+        # TODO: Below is an experimental WIP (will potentially be removed)
+
+        # order = self._cache.order(command.client_order_id)
+        # if order is None:
+        #     self._log.error(
+        #         f"Cannot modify order: order not found for {repr(command.client_order_id)}",
+        #     )
+        #
+        # self._modifying_orders[order.client_order_id] = order.venue_order_id
+        #
+        # await self._cancel_order_single(
+        #     instrument_id=command.instrument_id,
+        #     client_order_id=command.client_order_id,
+        #     venue_order_id=command.venue_order_id,
+        # )
+        #
+        # try:
+        #     await self._submit_order_method[order.order_type](order)
+        # except BinanceError as e:
+        #     self.generate_order_rejected(
+        #         strategy_id=order.strategy_id,
+        #         instrument_id=order.instrument_id,
+        #         client_order_id=order.client_order_id,
+        #         reason=e.message,
+        #         ts_event=self._clock.timestamp_ns(),
+        #     )
+        #     return
+
+        # now = self._clock.timestamp_ns()
+        # updated = OrderUpdated(
+        #     trader_id=order.trader_id,
+        #     strategy_id=order.strategy_id,
+        #     instrument_id=order.instrument_id,
+        #     client_order_id=order.client_order_id,
+        #     venue_order_id=order.venue_order_id,
+        #     account_id=order.account_id,
+        #     quantity=command.quantity or order.quantity,
+        #     price=command.price,
+        #     trigger_price=command.trigger_price,
+        #     event_id=UUID4(),
+        #     ts_event=now,
+        #     ts_init=now,
+        # )
+        #
+        # order.apply(updated)
+        # self._cache.update_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         await self._cancel_order_single(

@@ -364,7 +364,7 @@ class TestBacktestConfigParsing:
                     account_type="MARGIN",
                     starting_balances=["1_000_000 USD"],
                     modules=[
-                        ImportableActorConfig(
+                        ImportableActorConfig(  # type: ignore
                             actor_path=FXRolloverInterestModule.fully_qualified_name(),
                             config_path=FXRolloverInterestConfig.fully_qualified_name(),
                             config={"rate_data": interest_rate_data},
@@ -379,8 +379,8 @@ class TestBacktestConfigParsing:
         engine = node._create_engine(
             run_config_id=run_config.id,
             config=run_config.engine,
-            venue_configs=run_config.venues,
-            data_configs=run_config.data,
+            venue_configs=run_config.venues or [],
+            data_configs=run_config.data or [],
         )
 
         # Assert

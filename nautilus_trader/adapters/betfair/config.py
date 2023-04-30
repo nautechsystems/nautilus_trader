@@ -19,7 +19,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class BetfairDataClientConfig(LiveDataClientConfig):
+class BetfairDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``BetfairDataClient`` instances.
 
@@ -42,7 +42,7 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     market_filter: Optional[tuple] = None
 
 
-class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True):
+class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     """
     Configuration for ``BetfairExecClient`` instances.
 

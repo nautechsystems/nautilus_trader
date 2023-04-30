@@ -15,9 +15,9 @@
 
 use std::collections::HashMap;
 use std::ffi::c_char;
+use std::fmt;
 use std::fs::{create_dir_all, File};
 use std::io::{Stderr, Stdout};
-use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 use std::{
@@ -28,8 +28,6 @@ use std::{
 
 use chrono::prelude::*;
 use chrono::Utc;
-use governor::clock::{Clock, DefaultClock};
-use governor::{Quota, RateLimiter};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::parsing::optional_bytes_to_json;
 use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
@@ -53,8 +51,6 @@ pub struct Logger {
     pub level_stdout: LogLevel,
     /// The minimum log level to write to a log file.
     pub level_file: Option<LogLevel>,
-    /// The maximum messages per second which can be flushed to stdout or stderr.
-    pub rate_limit: usize,
     /// If logging is bypassed.
     pub is_bypassed: bool,
 }
@@ -67,6 +63,16 @@ pub struct LogMessage {
     color: LogColor,
     component: String,
     msg: String,
+}
+
+impl fmt::Display for LogMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} [{}] {}: {}",
+            self.timestamp_ns, self.level, self.component, self.msg
+        )
+    }
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -86,7 +92,6 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         component_levels: Option<HashMap<String, Value>>,
-        rate_limit: usize,
         is_bypassed: bool,
     ) -> Self {
         let (tx, rx) = channel::<LogMessage>();
@@ -119,7 +124,6 @@ impl Logger {
                 file_name,
                 file_format,
                 level_filters,
-                rate_limit,
                 rx,
             )
         });
@@ -130,7 +134,6 @@ impl Logger {
             instance_id,
             level_stdout,
             level_file,
-            rate_limit,
             is_bypassed,
             tx,
         }
@@ -145,7 +148,6 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
-        rate_limit: usize,
         rx: Receiver<LogMessage>,
     ) {
         // Setup std I/O buffers
@@ -158,7 +160,7 @@ impl Logger {
             None => false,
             Some(ref unrecognized) => {
                 eprintln!(
-                    "Error: Unrecognized log file format: {}. Using plain text format as default.",
+                    "Unrecognized log file format: {}. Using plain text format as default.",
                     unrecognized
                 );
                 false
@@ -194,11 +196,6 @@ impl Logger {
         );
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
 
-        // Setup rate limiting
-        let quota = Quota::per_second(NonZeroU32::new(rate_limit as u32).unwrap());
-        let clock = DefaultClock::default();
-        let limiter = RateLimiter::direct(quota);
-
         // Continue to receive and handle log messages until channel is hung up
         while let Ok(log_msg) = rx.recv() {
             let component_level = level_filters.get(&log_msg.component);
@@ -211,32 +208,10 @@ impl Logger {
             }
 
             if log_msg.level >= LogLevel::Error {
-                // Check rate limiter
-                loop {
-                    match limiter.check() {
-                        Ok(()) => break,
-                        Err(minimum_time) => {
-                            let wait_time = minimum_time.wait_time_from(clock.now());
-                            thread::sleep(wait_time);
-                        }
-                    }
-                }
-
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
             } else if log_msg.level >= level_stdout {
-                // Check rate limiter
-                loop {
-                    match limiter.check() {
-                        Ok(()) => break,
-                        Err(minimum_time) => {
-                            let wait_time = minimum_time.wait_time_from(clock.now());
-                            thread::sleep(wait_time);
-                        }
-                    }
-                }
-
                 let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
@@ -415,7 +390,7 @@ impl Logger {
         color: LogColor,
         component: String,
         msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    ) {
         let log_message = LogMessage {
             timestamp_ns,
             level,
@@ -423,56 +398,28 @@ impl Logger {
             component,
             msg,
         };
-        self.tx.send(log_message)
+        if let Err(SendError(msg)) = self.tx.send(log_message) {
+            eprintln!("Error sending log message: {}", msg);
+        }
     }
 
-    pub fn debug(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn debug(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
     }
 
-    pub fn info(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn info(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Info, color, component, msg)
     }
 
-    pub fn warn(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn warn(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
     }
 
-    pub fn error(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn error(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Error, color, component, msg)
     }
 
-    pub fn critical(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn critical(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
     }
 }
@@ -518,7 +465,6 @@ pub unsafe extern "C" fn logger_new(
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
-    rate_limit: usize,
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
@@ -535,13 +481,12 @@ pub unsafe extern "C" fn logger_new(
         optional_cstr_to_string(file_name_ptr),
         optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
-        rate_limit,
         is_bypassed != 0,
     )))
 }
 
 #[no_mangle]
-pub extern "C" fn logger_free(logger: CLogger) {
+pub extern "C" fn logger_drop(logger: CLogger) {
     drop(logger); // Memory freed here
 }
 
@@ -581,7 +526,7 @@ pub unsafe extern "C" fn logger_log(
 ) {
     let component = cstr_to_string(component_ptr);
     let msg = cstr_to_string(msg_ptr);
-    let _ = logger.send(timestamp_ns, level, color, component, msg);
+    logger.send(timestamp_ns, level, color, component, msg);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -596,6 +541,21 @@ mod tests {
     use nautilus_model::identifiers::trader_id::TraderId;
     use std::{cell::RefCell, fs, path::PathBuf, time::Duration};
     use tempfile::NamedTempFile;
+
+    fn create_logger() -> Logger {
+        Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+    }
 
     #[test]
     fn log_message_serialization() {
@@ -618,47 +578,60 @@ mod tests {
 
     #[test]
     fn test_new_logger() {
-        let logger = Logger::new(
-            TraderId::new("TRADER-000"),
-            String::from("user-01"),
-            UUID4::new(),
-            LogLevel::Debug,
-            Some(LogLevel::Debug),
-            None,
-            None,
-            None,
-            None,
-            100_000,
-            false,
-        );
-        assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
-        assert_eq!(logger.level_stdout, LogLevel::Debug);
+        let logger = create_logger();
+
+        assert_eq!(logger.trader_id, TraderId::new("TRADER-001"));
+        assert_eq!(logger.level_stdout, LogLevel::Info);
+        assert_eq!(logger.level_file, None);
+        assert!(!logger.is_bypassed);
     }
 
     #[test]
     fn test_logger_debug() {
-        let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
-            String::from("user-01"),
-            UUID4::new(),
-            LogLevel::Info,
-            Some(LogLevel::Debug),
-            None,
-            None,
-            None,
-            None,
-            100_000,
-            false,
-        );
+        let mut logger = create_logger();
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.debug(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test debug message."),
+        );
+    }
+
+    #[test]
+    fn test_logger_info() {
+        let mut logger = create_logger();
+
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test info message."),
+        );
+    }
+
+    #[test]
+    fn test_logger_error() {
+        let mut logger = create_logger();
+
+        logger.error(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test error message."),
+        );
+    }
+
+    #[test]
+    fn test_logger_critical() {
+        let mut logger = create_logger();
+
+        logger.critical(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test critical message."),
+        );
     }
 
     #[ignore]
@@ -683,18 +656,15 @@ mod tests {
             None,
             None,
             None,
-            100_000,
             false,
         );
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test."),
+        );
 
         let mut log_contents = String::new();
 
@@ -740,18 +710,15 @@ mod tests {
             None,
             None,
             Some(component_levels),
-            100_000,
             false,
         );
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test."),
+        );
 
         thread::sleep(Duration::from_secs(1));
 
@@ -784,18 +751,15 @@ mod tests {
             Some(log_file_path.to_str().unwrap().to_string()),
             Some("json".to_string()),
             None,
-            100_000,
             false,
         );
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test."),
+        );
 
         let mut log_contents = String::new();
 
