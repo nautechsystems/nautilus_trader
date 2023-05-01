@@ -9,7 +9,8 @@ None
 None
 
 ### Fixes
-None
+- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string)
+- Fixed trailing stop type order updates for `reduce_only` instruction
 
 ---
 
