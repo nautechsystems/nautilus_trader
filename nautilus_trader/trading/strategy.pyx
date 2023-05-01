@@ -1411,6 +1411,8 @@ cdef class Strategy(Actor):
             self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
 
+        self.cache.update_order(order)
+
         # Publish denied event
         self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.to_str()}",
@@ -1432,6 +1434,8 @@ cdef class Strategy(Actor):
         except InvalidStateTrigger as e:
             self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
+
+        self.cache.update_order(order)
 
         # Publish denied event
         self._msgbus.publish_c(
