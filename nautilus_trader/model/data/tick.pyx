@@ -485,6 +485,24 @@ cdef class QuoteTick(Data):
         else:
             raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
+    @staticmethod
+    cdef dict to_raw_c(QuoteTick obj):
+        return {
+            "instrument_id": InstrumentId.from_mem_c(obj._mem.instrument_id).to_str(),
+            "bid": obj._mem.bid.raw,
+            "ask": obj._mem.ask.raw,
+            "bid_size": obj._mem.bid_size.raw,
+            "ask_size": obj._mem.ask_size.raw,
+            "ts_event": obj._mem.ts_event,
+            "ts_init": obj._mem.ts_init,
+        }
+
+    @staticmethod
+    def to_raw(QuoteTick obj) -> dict:
+        """
+        Return the raw representation of this object.
+        """
+        return QuoteTick.to_raw_c(obj)
 
 cdef class TradeTick(Data):
     """
