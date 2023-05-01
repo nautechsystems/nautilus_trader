@@ -69,6 +69,7 @@ DOT = Currency("DOT", precision=8, iso4217=0, name="Polkadot", currency_type=Cur
 EOS = Currency("EOS", precision=8, iso4217=0, name="EOS", currency_type=CurrencyType.CRYPTO)
 ETH = Currency("ETH", precision=8, iso4217=0, name="Ether", currency_type=CurrencyType.CRYPTO)
 ETHW = Currency("ETHW", precision=8, iso4217=0, name="EthereumPoW", currency_type=CurrencyType.CRYPTO)
+EZ = Currency("EZ", precision=8, iso4217=0, name="EasyFi", currency_type=CurrencyType.CRYPTO)
 FTT = Currency("FTT", precision=8, iso4217=0, name="FTT", currency_type=CurrencyType.CRYPTO)
 JOE = Currency("JOE", precision=8, iso4217=0, name="JOE", currency_type=CurrencyType.CRYPTO)
 LINK = Currency("LINK", precision=8, iso4217=0, name="Chainlink", currency_type=CurrencyType.CRYPTO)
@@ -142,6 +143,7 @@ _CURRENCY_MAP = {
     "EOS": EOS,
     "ETH": ETH,
     "ETHW": ETHW,
+    "EZ": EZ,
     "FTT": FTT,
     "JOE": JOE,
     "LINK": LINK,
