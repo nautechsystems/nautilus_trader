@@ -13,6 +13,7 @@ None
 - Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string)
 - Fixed trailing stop type order updates for `reduce_only` instruction
 - Fixed updating of active execution algorithm orders (events weren't being cached)
+- Fixed condition check for applying pending events (do not apply to orders at `INITIALIZED` status)
 
 ---
 
