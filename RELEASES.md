@@ -9,6 +9,7 @@ None
 None
 
 ### Fixes
+- Fixed `BacktestEngine` processing of venue(s) message queue based off time event `ts_init`
 - Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string)
 - Fixed trailing stop type order updates for `reduce_only` instruction
 - Fixed updating of active execution algorithm orders (events weren't being cached)
