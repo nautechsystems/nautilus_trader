@@ -507,6 +507,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _submit_order(self, command: SubmitOrder) -> None:
         order: Order = command.order
 
+        if order.is_closed:
+            self.log.warning(f"Cannot submit already closed order {command.order}.")
+            return
+
         # Check validity
         self._check_order_validity(order)
         self._log.debug(f"Submitting {order}.")
@@ -531,7 +535,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except KeyError:
             raise RuntimeError(f"unsupported order type, was {order.order_type}")
 
-    def _check_order_validity(self, order: Order):
+    def _check_order_validity(self, order: Order) -> None:
         # Implement in child class
         raise NotImplementedError
 
