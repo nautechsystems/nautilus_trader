@@ -777,7 +777,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
@@ -940,7 +940,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
