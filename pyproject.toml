@@ -64,7 +64,7 @@ toml = "^0.10.2"
 tqdm = "^4.65.0"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.2", optional = true}
-ib_insync = {version = "^0.9.82", optional = true}
+ib_insync = {version = "^0.9.83", optional = true}
 redis = {version = "^4.5.4", optional = true}
 docker = {version = "^6.0.1", optional = true}
 betfair_parser = {version = "==0.1.21", optional = true}
@@ -82,8 +82,8 @@ optional = true
 black = "^23.3.0"
 isort = "^5.12.0"
 mypy = "^1.2.0"
-pre-commit = "^3.2.2"
-ruff = "^0.0.263"
+pre-commit = "^3.3.1"
+ruff = "^0.0.264"
 types-pytz = "^2022.3.0"
 types-redis = "^4.5.4"
 types-requests = "^2.29.0"

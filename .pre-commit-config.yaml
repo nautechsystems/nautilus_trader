@@ -84,7 +84,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.263
+    rev: v0.0.264
     hooks:
       - id: ruff
         args: ["--fix"]
