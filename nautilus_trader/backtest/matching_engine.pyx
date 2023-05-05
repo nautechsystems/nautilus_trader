@@ -987,7 +987,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_market_if_touched_order(
         self,
-        MarketIfTouchedOrder order,
+        Order order,
         Quantity qty,
         Price trigger_price,
     ):
@@ -1010,7 +1010,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_limit_if_touched_order(
         self,
-        LimitIfTouchedOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -1789,6 +1789,16 @@ cdef class OrderMatchingEngine:
                 trigger_price = order.trigger_price
             self._update_market_if_touched_order(order, qty, trigger_price)
         elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
+            if price is None:
+                price = order.price
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_limit_if_touched_order(order, qty, price, trigger_price)
+        elif order.order_type == OrderType.TRAILING_STOP_MARKET:
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_market_if_touched_order(order, qty, trigger_price)
+        elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if price is None:
                 price = order.price
             if trigger_price is None:

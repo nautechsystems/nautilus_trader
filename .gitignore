@@ -40,7 +40,7 @@ logs/
 venv*/
 
 .DS_Store
-null-ls*
+.null-ls*
 PERF.JSON
 output.json
 *dask-worker-space*

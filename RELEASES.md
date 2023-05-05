@@ -1,3 +1,22 @@
+# NautilusTrader 1.173.0 Beta
+
+Released on 5th May 2023 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed `BacktestEngine` processing of venue(s) message queue based off time event `ts_init`
+- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string), thanks for reporting @rsmb7z
+- Fixed trailing stop type order updates for `reduce_only` instruction, thanks for reporting @Otlk
+- Fixed updating of active execution algorithm orders (events weren't being cached)
+- Fixed condition check for applying pending events (do not apply to orders at `INITIALIZED` status)
+
+---
+
 # NautilusTrader 1.172.0 Beta
 
 Released on 30th April 2023 (UTC).
@@ -9,7 +28,7 @@ Released on 30th April 2023 (UTC).
 - Renamed `Future` instrument to `FuturesContract` (avoids ambiguity)
 - Renamed `Option` instrument to `OptionsContract` (avoids ambiguity and naming conflicts in Rust)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
-- Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid).
+- Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid)
 
 ### Enhancements
 - Added new DataFusion Rust parquet data catalog backend (yet to be integrated into Python)
@@ -21,7 +40,7 @@ Released on 30th April 2023 (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
-- Define public API for instruments can now import directly from `nautilus_trader.model.instruments` (denest namespace)
+- Define public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
 - Define public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
 - Define public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
 - Now stripping debug symbols after build (reduced binary sizes)

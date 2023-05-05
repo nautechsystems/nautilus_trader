@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.172.0"
+version = "1.173.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -63,8 +63,8 @@ tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.65.0"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
-hiredis = {version = "^2.2.2", optional = true}
-ib_insync = {version = "^0.9.82", optional = true}
+hiredis = {version = "^2.2.3", optional = true}
+ib_insync = {version = "^0.9.83", optional = true}
 redis = {version = "^4.5.4", optional = true}
 docker = {version = "^6.0.1", optional = true}
 betfair_parser = {version = "==0.1.21", optional = true}
@@ -82,8 +82,8 @@ optional = true
 black = "^23.3.0"
 isort = "^5.12.0"
 mypy = "^1.2.0"
-pre-commit = "^3.2.2"
-ruff = "^0.0.263"
+pre-commit = "^3.3.1"
+ruff = "^0.0.264"
 types-pytz = "^2022.3.0"
 types-redis = "^4.5.4"
 types-requests = "^2.29.0"
@@ -93,7 +93,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.2.4"
+coverage = "^7.2.5"
 pytest = "^7.3.1"
 pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.0"

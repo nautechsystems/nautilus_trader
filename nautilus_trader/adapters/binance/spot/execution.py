@@ -172,7 +172,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _check_order_validity(self, order: Order):
+    def _check_order_validity(self, order: Order) -> None:
         # Check order type valid
         if order.order_type not in self._spot_enum_parser.spot_valid_order_types:
             self._log.error(

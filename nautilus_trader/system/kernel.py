@@ -367,7 +367,7 @@ class NautilusKernel:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self.log.debug(f"Event loop signal handling setup for {signals}.")
 
-    def _loop_sig_handler(self, sig) -> None:
+    def _loop_sig_handler(self, sig: signal.Signals) -> None:
         if self._loop is None:
             raise RuntimeError("No event loop available for the node")
 

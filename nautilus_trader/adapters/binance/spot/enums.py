@@ -20,6 +20,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.orders import Order
 
 
@@ -128,5 +129,5 @@ class BinanceSpotEnumParser(BinanceEnumParser):
             return BinanceOrderType.TAKE_PROFIT_LIMIT
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid or unsupported `OrderType`, was {order.order_type}",  # pragma: no cover
+                f"invalid or unsupported `OrderType`, was {order_type_to_str(order.order_type)}",  # pragma: no cover
             )

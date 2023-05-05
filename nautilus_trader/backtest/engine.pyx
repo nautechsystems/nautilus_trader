@@ -1077,10 +1077,12 @@ cdef class BacktestEngine:
         cdef:
             uint64_t i
             uint64_t ts_event_init
+            uint64_t ts_last_init = 0
             TimeEventHandler_t raw_handler
             TimeEvent event
             TestClock clock
             object callback
+            SimulatedExchange exchange
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
@@ -1093,6 +1095,12 @@ cdef class BacktestEngine:
             # Cast raw `PyObject *` to a `PyObject`
             callback = <object>raw_handler.callback_ptr
             callback(event)
+
+            if ts_event_init != ts_last_init:
+                # Process exchange messages
+                ts_last_init = ts_event_init
+                for exchange in self._venues.values():
+                    exchange.process(ts_event_init)
 
     def _log_pre_run(self):
         log_memory(self._log)

@@ -703,7 +703,7 @@ cdef class Strategy(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
@@ -766,7 +766,7 @@ cdef class Strategy(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
@@ -1411,6 +1411,8 @@ cdef class Strategy(Actor):
             self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
 
+        self.cache.update_order(order)
+
         # Publish denied event
         self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.to_str()}",
@@ -1432,6 +1434,8 @@ cdef class Strategy(Actor):
         except InvalidStateTrigger as e:
             self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
+
+        self.cache.update_order(order)
 
         # Publish denied event
         self._msgbus.publish_c(

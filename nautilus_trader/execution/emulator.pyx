@@ -466,16 +466,18 @@ cdef class OrderEmulator(Actor):
         PositionId position_id,
         ClientId client_id,
     ):
-        cdef SubmitOrder submit = SubmitOrder(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            order=order,
-            position_id=position_id,
-            client_id=client_id,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-        self.cache.add_submit_order_command(submit)
+        cdef SubmitOrder submit = self.cache.load_submit_order_command(order.client_order_id)
+        if submit is None:
+            submit = SubmitOrder(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                order=order,
+                position_id=position_id,
+                client_id=client_id,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+            self.cache.add_submit_order_command(submit)
 
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
             if order.exec_algorithm_id is not None:
