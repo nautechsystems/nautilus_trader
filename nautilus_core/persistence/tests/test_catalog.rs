@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::tick::{Data, QuoteTick, TradeTick};
+use nautilus_model::data::tick::{QuoteTick, TradeTick};
+use nautilus_model::data::Data;
 use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
 
 // Note: "current_thread" hangs up for some reason
@@ -54,6 +55,7 @@ async fn test_quote_ticks() {
     match &ticks[0] {
         Data::Trade(_) => assert!(false),
         Data::Quote(q) => assert_eq!("EUR/USD.SIM", q.instrument_id.to_string()),
+        Data::Bar(_) => assert!(false),
     }
     assert_eq!(ticks.len(), 19000);
     assert!(is_ascending_by_init(&ticks));

@@ -258,11 +258,13 @@ cdef extern from "../includes/model.h":
     cpdef enum Data_t_Tag:
         TRADE,
         QUOTE,
+        BAR,
 
     cdef struct Data_t:
         Data_t_Tag tag;
         TradeTick_t trade;
         QuoteTick_t quote;
+        Bar_t bar;
 
     cdef struct AccountId_t:
         Rc_String *value;
