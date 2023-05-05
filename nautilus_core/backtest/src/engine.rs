@@ -53,7 +53,7 @@ impl TimeEventAccumulator {
 
 impl Default for TimeEventAccumulator {
     fn default() -> Self {
-        TimeEventAccumulator::new()
+        Self::new()
     }
 }
 

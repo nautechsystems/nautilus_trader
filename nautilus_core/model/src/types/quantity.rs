@@ -40,32 +40,35 @@ impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
-        Quantity {
+        Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
+    #[must_use]
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        Quantity { raw, precision }
+        Self { raw, precision }
     }
 
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
 }
 
 impl From<Quantity> for f64 {
-    fn from(value: Quantity) -> f64 {
+    fn from(value: Quantity) -> Self {
         value.as_f64()
     }
 }
 
 impl From<&Quantity> for f64 {
-    fn from(value: &Quantity) -> f64 {
+    fn from(value: &Quantity) -> Self {
         value.as_f64()
     }
 }
@@ -77,13 +80,13 @@ impl From<&str> for Quantity {
             Ok(number) => number,
             Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
         };
-        Quantity::new(float_res, precision_from_str(input))
+        Self::new(float_res, precision_from_str(input))
     }
 }
 
 impl From<i64> for Quantity {
     fn from(input: i64) -> Self {
-        Quantity::new(input as f64, 0)
+        Self::new(input as f64, 0)
     }
 }
 
@@ -138,7 +141,7 @@ impl Deref for Quantity {
 impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        Quantity {
+        Self {
             raw: self.raw + rhs.raw,
             precision: self.precision,
         }
@@ -148,7 +151,7 @@ impl Add for Quantity {
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        Quantity {
+        Self {
             raw: self.raw - rhs.raw,
             precision: self.precision,
         }
@@ -158,7 +161,7 @@ impl Sub for Quantity {
 impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
-        Quantity {
+        Self {
             raw: (self.raw * rhs.raw) / (FIXED_SCALAR as u64),
             precision: self.precision,
         }
@@ -166,13 +169,13 @@ impl Mul for Quantity {
 }
 
 impl From<Quantity> for u64 {
-    fn from(value: Quantity) -> u64 {
+    fn from(value: Quantity) -> Self {
         value.raw
     }
 }
 
 impl From<&Quantity> for u64 {
-    fn from(value: &Quantity) -> u64 {
+    fn from(value: &Quantity) -> Self {
         value.raw
     }
 }
@@ -272,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_qty_minimum() {
-        let qty = Quantity::new(0.000000001, 9);
+        let qty = Quantity::new(0.000_000_001, 9);
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -310,7 +313,7 @@ mod tests {
         let quantity1 = Quantity::new(1.0, 0);
         let quantity2 = Quantity::new(2.0, 0);
         let quantity3 = quantity1 + quantity2;
-        assert_eq!(quantity3.raw, 3000000000);
+        assert_eq!(quantity3.raw, 3_000_000_000);
     }
 
     #[test]
@@ -318,7 +321,7 @@ mod tests {
         let quantity1 = Quantity::new(3.0, 0);
         let quantity2 = Quantity::new(2.0, 0);
         let quantity3 = quantity1 - quantity2;
-        assert_eq!(quantity3.raw, 1000000000);
+        assert_eq!(quantity3.raw, 1_000_000_000);
     }
 
     #[test]
@@ -326,7 +329,7 @@ mod tests {
         let mut quantity1 = Quantity::new(1.0, 0);
         let quantity2 = Quantity::new(2.0, 0);
         quantity1 += quantity2;
-        assert_eq!(quantity1.raw, 3000000000);
+        assert_eq!(quantity1.raw, 3_000_000_000);
     }
 
     #[test]
@@ -334,7 +337,7 @@ mod tests {
         let mut quantity1 = Quantity::new(3.0, 0);
         let quantity2 = Quantity::new(2.0, 0);
         quantity1 -= quantity2;
-        assert_eq!(quantity1.raw, 1000000000);
+        assert_eq!(quantity1.raw, 1_000_000_000);
     }
 
     #[test]
@@ -342,7 +345,7 @@ mod tests {
         let quantity1 = Quantity::new(2.0, 1);
         let quantity2 = Quantity::new(2.0, 1);
         let quantity3 = quantity1 * quantity2;
-        assert_eq!(quantity3.raw, 4000000000);
+        assert_eq!(quantity3.raw, 4_000_000_000);
     }
 
     #[test]

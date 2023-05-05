@@ -14,30 +14,34 @@
 // -------------------------------------------------------------------------------------------------
 
 pub const FIXED_PRECISION: u8 = 9;
-pub const FIXED_SCALAR: f64 = 1000000000.0; // 10.0**FIXED_PRECISION
+pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
+#[must_use]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
-    let pow1 = 10_i64.pow(precision as u32);
-    let pow2 = 10_i64.pow((FIXED_PRECISION - precision) as u32);
+    let pow1 = 10_i64.pow(u32::from(precision));
+    let pow2 = 10_i64.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as i64;
     rounded * pow2
 }
 
+#[must_use]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
-    let pow1 = 10_u64.pow(precision as u32);
-    let pow2 = 10_u64.pow((FIXED_PRECISION - precision) as u32);
+    let pow1 = 10_u64.pow(u32::from(precision));
+    let pow2 = 10_u64.pow(u32::from(FIXED_PRECISION - precision));
     let rounded = (value * pow1 as f64).round() as u64;
     rounded * pow2
 }
 
+#[must_use]
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
-    (value as f64) * 0.000000001
+    (value as f64) * 0.000_000_001
 }
 
+#[must_use]
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
-    (value as f64) * 0.000000001
+    (value as f64) * 0.000_000_001
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -45,7 +49,7 @@ pub fn fixed_u64_to_f64(value: u64) -> f64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use rstest::*;
+    use rstest::rstest;
 
     use super::*;
 
@@ -53,11 +57,11 @@ mod tests {
         case(0, 0.0),
         case(1, 1.0),
         case(1, 1.1),
-        case(9, 0.000000001),
+        case(9, 0.000_000_001),
         case(0, -0.0),
         case(1, -1.0),
         case(1, -1.1),
-        case(9, -0.000000001),
+        case(9, -0.000_000_001),
     )]
     fn test_f64_to_fixed_i64_to_fixed(precision: u8, value: f64) {
         let fixed = f64_to_fixed_i64(value, precision);
@@ -71,7 +75,7 @@ mod tests {
         case(0, 0.0),
         case(1, 1.0),
         case(1, 1.1),
-        case(9, 0.000000001)
+        case(9, 0.000_000_001)
     )]
     fn test_f64_to_fixed_u64_to_fixed(precision: u8, value: f64) {
         let fixed = f64_to_fixed_u64(value, precision);
@@ -83,41 +87,41 @@ mod tests {
         precision,
         value,
         expected,
-        case(0, 123456.0, 123456000000000),
-        case(0, 123456.7, 123457000000000),
-        case(0, 123456.4, 123456000000000),
-        case(1, 123456.0, 123456000000000),
-        case(1, 123456.7, 123456700000000),
-        case(1, 123456.4, 123456400000000),
-        case(2, 123456.0, 123456000000000),
-        case(2, 123456.7, 123456700000000),
-        case(2, 123456.4, 123456400000000)
+        case(0, 123_456.0, 123_456_000_000_000),
+        case(0, 123_456.7, 123_457_000_000_000),
+        case(0, 123_456.4, 123_456_000_000_000),
+        case(1, 123_456.0, 123_456_000_000_000),
+        case(1, 123_456.7, 123_456_700_000_000),
+        case(1, 123_456.4, 123_456_400_000_000),
+        case(2, 123_456.0, 123_456_000_000_000),
+        case(2, 123_456.7, 123_456_700_000_000),
+        case(2, 123_456.4, 123_456_400_000_000)
     )]
     fn test_f64_to_fixed_i64_with_precision(precision: u8, value: f64, expected: i64) {
         assert_eq!(f64_to_fixed_i64(value, precision), expected);
     }
 
     #[rstest(precision, value, expected,
-        case(0, 5.5, 6000000000),
-        case(1, 5.55, 5600000000),
-        case(2, 5.555, 5560000000),
-        case(3, 5.5555, 5556000000),
-        case(4, 5.55555, 5555600000),
-        case(5, 5.555555, 5555560000),
-        case(6, 5.5555555, 5555556000),
-        case(7, 5.55555555, 5555555600),
-        case(8, 5.555555555, 5555555560),
-        case(9, 5.5555555555, 5555555556),
-        case(0, -5.5, -6000000000),
-        case(1, -5.55, -5600000000),
-        case(2, -5.555, -5560000000),
-        case(3, -5.5555, -5556000000),
-        case(4, -5.55555, -5555600000),
-        case(5, -5.555555, -5555560000),
-        case(6, -5.5555555, -5555556000),
-        case(7, -5.55555555, -5555555600),
-        case(8, -5.555555555, -5555555560),
-        case(9, -5.5555555555, -5555555556),
+        case(0, 5.5, 6_000_000_000),
+        case(1, 5.55, 5_600_000_000),
+        case(2, 5.555, 5_560_000_000),
+        case(3, 5.5555, 5_556_000_000),
+        case(4, 5.55555, 5_555_600_000),
+        case(5, 5.555_555, 5_555_560_000),
+        case(6, 5.555_555_5, 5_555_556_000),
+        case(7, 5.555_555_55, 5_555_555_600),
+        case(8, 5.555_555_555, 5_555_555_560),
+        case(9, 5.555_555_555_5, 5_555_555_556),
+        case(0, -5.5, -6_000_000_000),
+        case(1, -5.55, -5_600_000_000),
+        case(2, -5.555, -5_560_000_000),
+        case(3, -5.5555, -5_556_000_000),
+        case(4, -5.55555, -5_555_600_000),
+        case(5, -5.555_555, -5_555_560_000),
+        case(6, -5.555_555_5, -5_555_556_000),
+        case(7, -5.555_555_55, -5_555_555_600),
+        case(8, -5.555_555_555, -5_555_555_560),
+        case(9, -5.555_555_555_5, -5_555_555_556),
     )]
     fn test_f64_to_fixed_i64(precision: u8, value: f64, expected: i64) {
         assert_eq!(f64_to_fixed_i64(value, precision), expected);
@@ -127,16 +131,16 @@ mod tests {
         precision,
         value,
         expected,
-        case(0, 5.5, 6000000000),
-        case(1, 5.55, 5600000000),
-        case(2, 5.555, 5560000000),
-        case(3, 5.5555, 5556000000),
-        case(4, 5.55555, 5555600000),
-        case(5, 5.555555, 5555560000),
-        case(6, 5.5555555, 5555556000),
-        case(7, 5.55555555, 5555555600),
-        case(8, 5.555555555, 5555555560),
-        case(9, 5.5555555555, 5555555556)
+        case(0, 5.5, 6_000_000_000),
+        case(1, 5.55, 5_600_000_000),
+        case(2, 5.555, 5_560_000_000),
+        case(3, 5.5555, 5_556_000_000),
+        case(4, 5.55555, 5_555_600_000),
+        case(5, 5.555_555, 5_555_560_000),
+        case(6, 5.555_555_5, 5_555_556_000),
+        case(7, 5.555_555_55, 5_555_555_600),
+        case(8, 5.555_555_555, 5_555_555_560),
+        case(9, 5.555_555_555_5, 5_555_555_556)
     )]
     fn test_f64_to_fixed_u64(precision: u8, value: f64, expected: u64) {
         assert_eq!(f64_to_fixed_u64(value, precision), expected);
@@ -146,7 +150,7 @@ mod tests {
     fn test_fixed_i64_to_f64(
         #[values(1, -1, 2, -2, 10, -10, 100, -100, 1_000, -1_000)] value: i64,
     ) {
-        assert_eq!(fixed_i64_to_f64(value), value as f64 * 0.000000001);
+        assert_eq!(fixed_i64_to_f64(value), value as f64 * 0.000_000_001);
     }
 
     #[rstest]
@@ -175,6 +179,6 @@ mod tests {
         value: u64,
     ) {
         let result = fixed_u64_to_f64(value);
-        assert_eq!(result, (value as f64) * 0.000000001);
+        assert_eq!(result, (value as f64) * 0.000_000_001);
     }
 }

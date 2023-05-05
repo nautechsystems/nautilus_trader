@@ -41,7 +41,7 @@ impl ExecAlgorithmId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`ExecAlgorithmId` value");
 
-        ExecAlgorithmId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }

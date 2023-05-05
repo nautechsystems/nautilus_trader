@@ -828,7 +828,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `trade_id` by dropping.
     void trade_id_drop(TradeId_t trade_id);
 
-    # Returns [TradeId] as a C string pointer.
+    # Returns [`TradeId`] as a C string pointer.
     const char *trade_id_to_cstr(const TradeId_t *trade_id);
 
     uint8_t trade_id_eq(const TradeId_t *lhs, const TradeId_t *rhs);

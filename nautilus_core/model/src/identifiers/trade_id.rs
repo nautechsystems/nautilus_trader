@@ -41,7 +41,7 @@ impl TradeId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`TradeId` value");
 
-        TradeId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -70,7 +70,7 @@ pub extern "C" fn trade_id_drop(trade_id: TradeId) {
     drop(trade_id); // Memory freed here
 }
 
-/// Returns [TradeId] as a C string pointer.
+/// Returns [`TradeId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
     string_to_cstr(&trade_id.value)

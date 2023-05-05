@@ -40,7 +40,7 @@ impl TraderId {
         correctness::valid_string(s, "`TraderId` value");
         correctness::string_contains(s, "-", "`TraderId` value");
 
-        TraderId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }

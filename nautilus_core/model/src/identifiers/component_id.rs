@@ -41,7 +41,7 @@ impl ComponentId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`ComponentId` value");
 
-        ComponentId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
