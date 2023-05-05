@@ -1,6 +1,6 @@
 # NautilusTrader 1.173.0 Beta
 
-Released on TBD (UTC).
+Released on 5th May 2023 (UTC).
 
 ### Breaking Changes
 None
@@ -10,8 +10,8 @@ None
 
 ### Fixes
 - Fixed `BacktestEngine` processing of venue(s) message queue based off time event `ts_init`
-- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string)
-- Fixed trailing stop type order updates for `reduce_only` instruction
+- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string), thanks for reporting @rsmb7z
+- Fixed trailing stop type order updates for `reduce_only` instruction, thanks for reporting @Otlk
 - Fixed updating of active execution algorithm orders (events weren't being cached)
 - Fixed condition check for applying pending events (do not apply to orders at `INITIALIZED` status)
 
