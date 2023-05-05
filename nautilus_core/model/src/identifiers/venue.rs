@@ -41,7 +41,7 @@ impl Venue {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`Venue` value");
 
-        Venue {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }

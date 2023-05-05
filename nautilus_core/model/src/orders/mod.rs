@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
-use rust_fsm::*;
+use rust_fsm::{StateMachine, StateMachineImpl, TransitionImpossibleError};
 use thiserror::Error;
 
 use crate::enums::{
@@ -53,7 +53,7 @@ pub enum OrderError {
 
 impl From<TransitionImpossibleError> for OrderError {
     fn from(_: TransitionImpossibleError) -> Self {
-        OrderError::InvalidStateTransition
+        Self::InvalidStateTransition
     }
 }
 
@@ -564,7 +564,10 @@ impl Order {
         let filled_qty = self.filled_qty.as_f64();
         let total_qty = filled_qty + last_qty.as_f64();
 
-        let avg_px = ((self.avg_px.unwrap() * filled_qty) + (last_px.as_f64() * last_qty.as_f64()))
+        let avg_px = self
+            .avg_px
+            .unwrap()
+            .mul_add(filled_qty, last_px.as_f64() * last_qty.as_f64())
             / total_qty;
         self.avg_px = Some(avg_px);
     }
@@ -574,12 +577,11 @@ impl Order {
             self.price
                 .as_ref()
                 .map(|price| fixed_i64_to_f64(price.raw))
-                .map(|price| match self.side {
+                .and_then(|price| match self.side {
                     OrderSide::Buy if avg_px > price => Some(avg_px - price),
                     OrderSide::Sell if avg_px < price => Some(price - avg_px),
                     _ => None,
                 })
-                .unwrap_or(None)
         })
     }
 }
@@ -589,11 +591,14 @@ impl Order {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use rstest::*;
+    use rstest::rstest;
 
     use super::*;
-    use crate::enums::*;
-    use crate::events::order::*;
+    use crate::enums::{OrderSide, OrderStatus, PositionSide};
+    use crate::events::order::{
+        OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderInitializedBuilder,
+        OrderSubmittedBuilder,
+    };
 
     #[test]
     fn test_order_initialized() {

@@ -42,7 +42,7 @@ impl AccountId {
         correctness::valid_string(s, "`AccountId` value");
         correctness::string_contains(s, "-", "`TraderId` value");
 
-        AccountId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -50,7 +50,7 @@ impl AccountId {
 
 impl Default for AccountId {
     fn default() -> Self {
-        AccountId {
+        Self {
             value: Box::new(Rc::new(String::from("SIM-001"))),
         }
     }

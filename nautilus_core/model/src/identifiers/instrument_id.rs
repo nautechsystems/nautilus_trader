@@ -34,7 +34,7 @@ pub struct InstrumentId {
 impl From<&str> for InstrumentId {
     fn from(s: &str) -> Self {
         let pieces = s.rsplit_once('.').expect("rsplit_once failed");
-        InstrumentId {
+        Self {
             symbol: Symbol::new(pieces.0),
             venue: Venue::new(pieces.1),
         }
@@ -50,7 +50,7 @@ impl Display for InstrumentId {
 impl InstrumentId {
     #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
-        InstrumentId { symbol, venue }
+        Self { symbol, venue }
     }
 }
 

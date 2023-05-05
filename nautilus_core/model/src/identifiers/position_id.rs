@@ -41,7 +41,7 @@ impl PositionId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`PositionId` value");
 
-        PositionId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }

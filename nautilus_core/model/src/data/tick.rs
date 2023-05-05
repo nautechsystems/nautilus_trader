@@ -64,7 +64,7 @@ impl QuoteTick {
             "bid_size.precision",
             "ask_size.precision",
         );
-        QuoteTick {
+        Self {
             instrument_id,
             bid,
             ask,
@@ -75,6 +75,7 @@ impl QuoteTick {
         }
     }
 
+    #[must_use]
     pub fn extract_price(&self, price_type: PriceType) -> Price {
         match price_type {
             PriceType::Bid => self.bid.clone(),
@@ -122,7 +123,7 @@ impl TradeTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        TradeTick {
+        Self {
             instrument_id,
             price,
             size,
@@ -157,10 +158,11 @@ pub enum Data {
 }
 
 impl Data {
+    #[must_use]
     pub fn get_ts_init(&self) -> UnixNanos {
         match self {
-            Data::Trade(t) => t.ts_init,
-            Data::Quote(q) => q.ts_init,
+            Self::Trade(t) => t.ts_init,
+            Self::Quote(q) => q.ts_init,
         }
     }
 }
@@ -325,9 +327,9 @@ mod tests {
     #[rstest(
         input,
         expected,
-        case(PriceType::Bid, 10000000000000),
-        case(PriceType::Ask, 10001000000000),
-        case(PriceType::Mid, 10000500000000)
+        case(PriceType::Bid, 10_000_000_000_000),
+        case(PriceType::Ask, 10_001_000_000_000),
+        case(PriceType::Mid, 10_000_500_000_000)
     )]
     fn test_quote_tick_extract_price(input: PriceType, expected: i64) {
         let tick = QuoteTick {

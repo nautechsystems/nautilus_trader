@@ -41,7 +41,7 @@ impl Symbol {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`Symbol` value");
 
-        Symbol {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }

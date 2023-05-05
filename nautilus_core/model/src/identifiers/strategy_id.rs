@@ -42,7 +42,7 @@ impl StrategyId {
             correctness::string_contains(s, "-", "`StrategyId` value");
         }
 
-        StrategyId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }

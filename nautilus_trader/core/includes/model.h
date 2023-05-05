@@ -1023,7 +1023,7 @@ struct TradeId_t trade_id_clone(const struct TradeId_t *trade_id);
 void trade_id_drop(struct TradeId_t trade_id);
 
 /**
- * Returns [TradeId] as a C string pointer.
+ * Returns [`TradeId`] as a C string pointer.
  */
 const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
 

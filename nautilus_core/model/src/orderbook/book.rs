@@ -31,7 +31,7 @@ pub struct OrderBook {
 impl OrderBook {
     #[must_use]
     pub fn new(instrument_id: InstrumentId, book_level: BookType) -> Self {
-        OrderBook {
+        Self {
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
             instrument_id,

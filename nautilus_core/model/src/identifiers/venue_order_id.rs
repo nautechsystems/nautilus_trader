@@ -41,7 +41,7 @@ impl VenueOrderId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`VenueOrderId` value");
 
-        VenueOrderId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -49,7 +49,7 @@ impl VenueOrderId {
 
 impl Default for VenueOrderId {
     fn default() -> Self {
-        VenueOrderId {
+        Self {
             value: Box::new(Rc::new(String::from("001"))),
         }
     }

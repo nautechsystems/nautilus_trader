@@ -30,7 +30,7 @@ pub struct BookOrder {
 impl BookOrder {
     #[must_use]
     pub fn new(price: Price, size: Quantity, side: OrderSide, order_id: u64) -> Self {
-        BookOrder {
+        Self {
             price,
             size,
             side,
@@ -38,6 +38,7 @@ impl BookOrder {
         }
     }
 
+    #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
         BookPrice::new(self.price.clone(), self.side)
     }
@@ -53,7 +54,7 @@ impl From<Vec<&str>> for BookOrder {
             "S" => OrderSide::Sell,
             _ => panic!("Cannot parse side, was {}", vec[2]),
         };
-        BookOrder::new(price, size, side, 0)
+        Self::new(price, size, side, 0)
     }
 }
 
