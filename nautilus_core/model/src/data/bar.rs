@@ -18,6 +18,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 use nautilus_core::string::string_to_cstr;
 use nautilus_core::time::UnixNanos;
@@ -123,6 +124,28 @@ pub struct BarType {
     pub instrument_id: InstrumentId,
     pub spec: BarSpecification,
     pub aggregation_source: AggregationSource,
+}
+
+impl From<&str> for BarType {
+    fn from(s: &str) -> Self {
+        let pieces: Vec<&str> = s.splitn(5, '-').collect();
+        let step = pieces[1].parse().expect("error parsing `step` u64");
+        let aggregation =
+            BarAggregation::from_str(pieces[2]).expect("error parsing `BarAggregation`");
+        let price_type = PriceType::from_str(pieces[3]).expect("error parsing `PriceType`");
+        let aggregation_source =
+            AggregationSource::from_str(pieces[4]).expect("error parsing `AggregationSource`");
+
+        Self {
+            instrument_id: InstrumentId::from(pieces[0]),
+            spec: BarSpecification {
+                step,
+                aggregation,
+                price_type,
+            },
+            aggregation_source,
+        }
+    }
 }
 
 impl PartialEq for BarType {

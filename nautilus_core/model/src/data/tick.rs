@@ -28,6 +28,8 @@ use crate::types::fixed::FIXED_PRECISION;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 
+use super::Data;
+
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -147,35 +149,6 @@ impl Display for TradeTick {
             self.trade_id,
             self.ts_event,
         )
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub enum Data {
-    Trade(TradeTick),
-    Quote(QuoteTick),
-}
-
-impl Data {
-    #[must_use]
-    pub fn get_ts_init(&self) -> UnixNanos {
-        match self {
-            Self::Trade(t) => t.ts_init,
-            Self::Quote(q) => q.ts_init,
-        }
-    }
-}
-
-impl From<QuoteTick> for Data {
-    fn from(value: QuoteTick) -> Self {
-        Self::Quote(value)
-    }
-}
-
-impl From<TradeTick> for Data {
-    fn from(value: TradeTick) -> Self {
-        Self::Trade(value)
     }
 }
 

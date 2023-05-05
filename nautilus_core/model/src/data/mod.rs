@@ -15,3 +15,47 @@
 
 pub mod bar;
 pub mod tick;
+
+use nautilus_core::time::UnixNanos;
+
+use self::{
+    bar::Bar,
+    tick::{QuoteTick, TradeTick},
+};
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub enum Data {
+    Trade(TradeTick),
+    Quote(QuoteTick),
+    Bar(Bar),
+}
+
+impl Data {
+    #[must_use]
+    pub fn get_ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Trade(t) => t.ts_init,
+            Self::Quote(q) => q.ts_init,
+            Self::Bar(b) => b.ts_init,
+        }
+    }
+}
+
+impl From<QuoteTick> for Data {
+    fn from(value: QuoteTick) -> Self {
+        Self::Quote(value)
+    }
+}
+
+impl From<TradeTick> for Data {
+    fn from(value: TradeTick) -> Self {
+        Self::Trade(value)
+    }
+}
+
+impl From<Bar> for Data {
+    fn from(value: Bar) -> Self {
+        Self::Bar(value)
+    }
+}

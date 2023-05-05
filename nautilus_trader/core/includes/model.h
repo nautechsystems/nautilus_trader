@@ -300,6 +300,7 @@ typedef struct TradeTick_t {
 typedef enum Data_t_Tag {
     TRADE,
     QUOTE,
+    BAR,
 } Data_t_Tag;
 
 typedef struct Data_t {
@@ -310,6 +311,9 @@ typedef struct Data_t {
         };
         struct {
             struct QuoteTick_t quote;
+        };
+        struct {
+            struct Bar_t bar;
         };
     };
 } Data_t;
