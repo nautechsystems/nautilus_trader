@@ -382,8 +382,6 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `primary.status` is not ``INITIALIZED``.
-        ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
             If `quantity` is not positive (> 0).
@@ -393,7 +391,6 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
         if reduce_primary:
@@ -469,8 +466,6 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `primary.status` is not ``INITIALIZED``.
-        ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
             If `quantity` is not positive (> 0).
@@ -482,7 +477,6 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
         if reduce_primary:
@@ -557,8 +551,6 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `primary.status` is not ``INITIALIZED``.
-        ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
             If `quantity` is not positive (> 0).
@@ -570,7 +562,6 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
         if reduce_primary:
@@ -679,6 +670,13 @@ cdef class ExecAlgorithm(Actor):
 
         # Handle primary (original) order
         primary_command = self.cache.load_submit_order_command(order.client_order_id)
+        cdef Order cached_order = self.cache.order(order.client_order_id)
+        if cached_order.order_type != order.order_type:
+            self.cache.add_order(order, primary_command.position_id, override=True)
+
+        # Replace commands order with transformed order
+        primary_command.order = order
+
         Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
         if primary_command is None:
             self._log.error(
@@ -779,7 +777,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
@@ -942,7 +940,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:

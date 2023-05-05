@@ -97,7 +97,7 @@ class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        positions = [p.to_dict() for p in positions if p.is_closed]
+        positions = [p.to_dict() for p in positions]
         if not positions:
             return pd.DataFrame()
 
