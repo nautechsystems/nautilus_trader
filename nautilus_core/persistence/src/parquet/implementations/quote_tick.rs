@@ -88,3 +88,62 @@ impl DecodeDataFromRecordBatch for QuoteTick {
         Schema::new_with_metadata(fields, metadata).into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use datafusion::arrow::record_batch::RecordBatch;
+    use std::{collections::HashMap, sync::Arc};
+
+    fn create_metadata() -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), "AAPL.NASDAQ".to_string());
+        metadata.insert("price_precision".to_string(), "2".to_string());
+        metadata.insert("size_precision".to_string(), "0".to_string());
+        metadata
+    }
+
+    #[test]
+    fn test_get_schema() {
+        let metadata = create_metadata();
+        let schema = QuoteTick::get_schema(metadata.clone());
+        let expected_fields = vec![
+            Field::new("bid", DataType::Int64, false),
+            Field::new("ask", DataType::Int64, false),
+            Field::new("bid_size", DataType::UInt64, false),
+            Field::new("ask_size", DataType::UInt64, false),
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("ts_init", DataType::UInt64, false),
+        ];
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata).into();
+        assert_eq!(schema, expected_schema);
+    }
+
+    #[test]
+    fn test_decode_batch() {
+        let metadata = create_metadata();
+
+        let bid = Int64Array::from(vec![10000, 9900]);
+        let ask = Int64Array::from(vec![10100, 10000]);
+        let bid_size = UInt64Array::from(vec![100, 90]);
+        let ask_size = UInt64Array::from(vec![110, 100]);
+        let ts_event = UInt64Array::from(vec![1, 2]);
+        let ts_init = UInt64Array::from(vec![3, 4]);
+
+        let record_batch = RecordBatch::try_new(
+            QuoteTick::get_schema(metadata.clone()),
+            vec![
+                Arc::new(bid),
+                Arc::new(ask),
+                Arc::new(bid_size),
+                Arc::new(ask_size),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let decoded_data = QuoteTick::decode_batch(&metadata, record_batch);
+        assert_eq!(decoded_data.len(), 2);
+    }
+}
