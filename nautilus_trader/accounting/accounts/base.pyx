@@ -15,6 +15,8 @@
 
 from typing import Optional
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport account_type_to_str
@@ -379,7 +381,7 @@ cdef class Account:
         self._events.append(event)
         self.update_balances(event.balances)
 
-    cpdef void update_balances(self, list balances, bint allow_zero=True):
+    cpdef void update_balances(self, list balances, bint allow_zero=False):
         """
         Update the account balances.
 
@@ -390,7 +392,7 @@ cdef class Account:
         ----------
         balances : list[AccountBalance]
             The balances for the update.
-        allow_zero : bool, default True
+        allow_zero : bool, default False
             If zero balances are allowed (will then just clear the assets balance).
 
         Raises
@@ -405,13 +407,9 @@ cdef class Account:
         for balance in balances:
             if not balance.total._mem.raw > 0:
                 if balance.total._mem.raw < 0:
-                    raise RuntimeError(
-                        f"account blow up (balance was {balance.total}).",
-                    )
+                    raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
                 if balance.total.is_zero() and not allow_zero:
-                    raise RuntimeError(
-                        f"account blow up (balance was {balance.total}).",
-                    )
+                    raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
                 else:
                     # Clear asset balance
                     self._balances.pop(balance.currency, None)

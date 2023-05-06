@@ -291,7 +291,7 @@ cdef class CashAccount(Account):
 
         Returns
         -------
-        list[Money] or ``None``
+        list[Money]
 
         """
         Condition.not_none(instrument, "instrument")
