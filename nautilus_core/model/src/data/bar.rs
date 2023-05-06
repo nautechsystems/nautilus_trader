@@ -128,7 +128,7 @@ pub struct BarType {
 }
 
 #[derive(Debug, Error)]
-#[error("error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
+#[error("Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
 pub struct BarTypeParseError {
     input: String,
     token: String,
@@ -245,7 +245,7 @@ pub extern "C" fn bar_type_new(
     aggregation_source: u8,
 ) -> BarType {
     let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
-        .expect("error converting enum from integer");
+        .expect("Error converting enum from integer");
     BarType {
         instrument_id,
         spec,
@@ -497,7 +497,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!("error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0")
+            format!("Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0")
         );
     }
 
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
             )
         );
     }
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
             )
         );
     }
@@ -535,7 +535,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
             )
         );
     }
@@ -549,7 +549,7 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
             )
         );
     }
