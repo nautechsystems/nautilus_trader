@@ -306,7 +306,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             retries += 1
             self._generate_order_status_retries[client_order_id] = retries
             if not client_order_id:
-                self.log.warning("Cannot retry without a client order ID.")
+                self._log.warning("Cannot retry without a client order ID.")
             else:
                 order: Optional[Order] = self._cache.order(client_order_id)
                 if order is None:
@@ -461,7 +461,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
             if trade.symbol is None:
-                self.log.warning(f"No symbol for trade {trade}.")
+                self._log.warning(f"No symbol for trade {trade}.")
                 continue
             report = trade.parse_to_trade_report(
                 account_id=self.account_id,
@@ -508,7 +508,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         if order.is_closed:
-            self.log.warning(f"Cannot submit already closed order {command.order}.")
+            self._log.warning(f"Cannot submit already closed order {command.order}.")
             return
 
         # Check validity
