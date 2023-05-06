@@ -9,5 +9,6 @@ async def make_request(client: HttpClient):
 
 if __name__ == "__main__":
     client = HttpClient()
-    body = asyncio.run(make_request(client))
-    assert len(body) != 0
+    res = asyncio.run(make_request(client))
+    assert res.status == 200
+    assert len(res.body) != 0
