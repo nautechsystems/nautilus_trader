@@ -34,7 +34,7 @@ pub struct InstrumentId {
 }
 
 #[derive(Debug, Error)]
-#[error("error parsing `InstrumentId` from '{input}'")]
+#[error("Error parsing `InstrumentId` from '{input}'")]
 pub struct InstrumentIdParseError {
     input: String,
 }
@@ -144,7 +144,7 @@ mod tests {
         assert!(matches!(error, InstrumentIdParseError { .. }));
         assert_eq!(
             error.to_string(),
-            "error parsing `InstrumentId` from 'ETHUSDT-BINANCE'"
+            "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE'"
         );
     }
 
@@ -158,7 +158,7 @@ mod tests {
         assert!(matches!(error, InstrumentIdParseError { .. }));
         assert_eq!(
             error.to_string(),
-            "error parsing `InstrumentId` from 'ETH.USDT.BINANCE'"
+            "Error parsing `InstrumentId` from 'ETH.USDT.BINANCE'"
         );
     }
 
