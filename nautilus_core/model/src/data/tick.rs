@@ -271,6 +271,8 @@ pub extern "C" fn data_clone(data: &Data) -> Data {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::rstest;
 
     use crate::data::tick::{QuoteTick, TradeTick};
@@ -283,7 +285,7 @@ mod tests {
     #[test]
     fn test_quote_tick_to_string() {
         let tick = QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             bid: Price::new(10000.0, 4),
             ask: Price::new(10001.0, 4),
             bid_size: Quantity::new(1.0, 8),
@@ -306,7 +308,7 @@ mod tests {
     )]
     fn test_quote_tick_extract_price(input: PriceType, expected: i64) {
         let tick = QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             bid: Price::new(10000.0, 4),
             ask: Price::new(10001.0, 4),
             bid_size: Quantity::new(1.0, 8),
@@ -322,7 +324,7 @@ mod tests {
     #[test]
     fn test_trade_tick_to_string() {
         let tick = TradeTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
             aggressor_side: AggressorSide::Buyer,
