@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use datafusion::arrow::array::*;
 use datafusion::arrow::datatypes::*;
@@ -28,7 +29,8 @@ use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
 impl DecodeDataFromRecordBatch for QuoteTick {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        let instrument_id = InstrumentId::from(metadata.get("instrument_id").unwrap().as_str());
+        let instrument_id =
+            InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
         let price_precision = metadata
             .get("price_precision")
             .unwrap()

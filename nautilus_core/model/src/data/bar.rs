@@ -128,7 +128,7 @@ pub struct BarType {
 }
 
 #[derive(Debug, Error)]
-#[error("error parsing `BarType` from {input}, invalid token: {token} at position {position}")]
+#[error("error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
 pub struct BarTypeParseError {
     input: String,
     token: String,
@@ -139,8 +139,9 @@ impl FromStr for BarType {
     type Err = BarTypeParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let pieces: Vec<&str> = s.splitn(5, '-').collect();
-        if pieces.len() != 5 {
+        let pieces: Vec<&str> = s.rsplitn(5, '-').collect();
+        let rev_pieces: Vec<&str> = pieces.into_iter().rev().collect();
+        if rev_pieces.len() != 5 {
             return Err(BarTypeParseError {
                 input: s.to_string(),
                 token: "".to_string(),
@@ -148,30 +149,38 @@ impl FromStr for BarType {
             });
         }
 
-        let step = pieces[1].parse().map_err(|_| BarTypeParseError {
+        let instrument_id =
+            InstrumentId::from_str(rev_pieces[0]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[0].to_string(),
+                position: 0,
+            })?;
+
+        let step = rev_pieces[1].parse().map_err(|_| BarTypeParseError {
             input: s.to_string(),
-            token: pieces[1].to_string(),
+            token: rev_pieces[1].to_string(),
             position: 1,
         })?;
-        let aggregation = BarAggregation::from_str(pieces[2]).map_err(|_| BarTypeParseError {
+        let aggregation =
+            BarAggregation::from_str(rev_pieces[2]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[2].to_string(),
+                position: 2,
+            })?;
+        let price_type = PriceType::from_str(rev_pieces[3]).map_err(|_| BarTypeParseError {
             input: s.to_string(),
-            token: pieces[2].to_string(),
-            position: 2,
-        })?;
-        let price_type = PriceType::from_str(pieces[3]).map_err(|_| BarTypeParseError {
-            input: s.to_string(),
-            token: pieces[3].to_string(),
+            token: rev_pieces[3].to_string(),
             position: 3,
         })?;
         let aggregation_source =
-            AggregationSource::from_str(pieces[4]).map_err(|_| BarTypeParseError {
+            AggregationSource::from_str(rev_pieces[4]).map_err(|_| BarTypeParseError {
                 input: s.to_string(),
-                token: pieces[4].to_string(),
+                token: rev_pieces[4].to_string(),
                 position: 4,
             })?;
 
         Ok(BarType {
-            instrument_id: InstrumentId::from(pieces[0]),
+            instrument_id,
             spec: BarSpecification {
                 step,
                 aggregation,
@@ -459,6 +468,97 @@ mod tests {
         };
         assert_eq!(bar_spec.to_string(), "1-MINUTE-BID");
         assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
+    }
+
+    #[test]
+    fn test_bar_type_parse_valid() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+        let bar_type = BarType::from_str(input).unwrap();
+
+        assert_eq!(
+            bar_type.instrument_id,
+            InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+        );
+        assert_eq!(
+            bar_type.spec,
+            BarSpecification {
+                step: 1,
+                aggregation: BarAggregation::Minute,
+                price_type: PriceType::Last,
+            }
+        );
+        assert_eq!(bar_type.aggregation_source, AggregationSource::External);
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_0() {
+        let input = "BTCUSDT-PERP-1-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "error parsing `BarType` from '{}', invalid token: 'BTCUSDT-PERP' at position 0",
+                input
+            ),
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_1() {
+        let input = "BTCUSDT-PERP.BINANCE-INVALID-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 1",
+                input
+            ),
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_2() {
+        let input = "BTCUSDT-PERP.BINANCE-1-INVALID-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 2",
+                input
+            ),
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_3() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-INVALID-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 3",
+                input
+            ),
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_4() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-BID-INVALID";
+        let result = BarType::from_str(input);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 4",
+                input
+            ),
+        );
     }
 
     #[test]
