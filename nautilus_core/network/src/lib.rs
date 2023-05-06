@@ -29,7 +29,7 @@ use pyo3::prelude::*;
 /// for the give `header_keys`.
 #[pyclass]
 #[derive(Clone)]
-struct HttpClient {
+pub struct HttpClient {
     client: Client<HttpsConnector<hyper::client::HttpConnector>>,
     header_keys: Vec<String>,
 }
@@ -37,9 +37,9 @@ struct HttpClient {
 /// HttpResponse contains relevant data from an HTTP request to an exchange
 #[pyclass]
 #[derive(Debug, Clone)]
-struct HttpResponse {
+pub struct HttpResponse {
     #[pyo3(get)]
-    status: u16,
+    pub status: u16,
     #[pyo3(get)]
     headers: HashMap<String, String>,
     #[pyo3(get)]
