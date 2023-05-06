@@ -1751,7 +1751,6 @@ dependencies = [
  "nautilus_core",
  "pyo3",
  "rstest",
- "rust-fsm",
  "rust_decimal",
  "strum",
  "thiserror",
@@ -2395,25 +2394,6 @@ dependencies = [
  "rustc_version",
  "syn 1.0.109",
  "unicode-ident",
-]
-
-[[package]]
-name = "rust-fsm"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "021d7de715253e45ad24a2fbb0725a0f7f271fd8d3163b130bd65ce2816a860d"
-dependencies = [
- "rust-fsm-dsl",
-]
-
-[[package]]
-name = "rust-fsm-dsl"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a66b1273014079e4cf2b04aad1f3a2849e26e9a106f0411be2b1c15c23a791a"
-dependencies = [
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
