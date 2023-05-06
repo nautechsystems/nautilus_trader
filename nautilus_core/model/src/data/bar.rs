@@ -497,10 +497,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            format!(
-                "error parsing `BarType` from '{}', invalid token: 'BTCUSDT-PERP' at position 0",
-                input
-            ),
+            format!("error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0")
         );
     }
 
@@ -512,9 +509,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 1",
-                input
-            ),
+                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
+            )
         );
     }
 
@@ -526,9 +522,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 2",
-                input
-            ),
+                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
+            )
         );
     }
 
@@ -540,9 +535,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 3",
-                input
-            ),
+                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
+            )
         );
     }
 
@@ -555,9 +549,8 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-                "error parsing `BarType` from '{}', invalid token: 'INVALID' at position 4",
-                input
-            ),
+                "error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
+            )
         );
     }
 
