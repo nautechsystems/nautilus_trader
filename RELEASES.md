@@ -1,3 +1,19 @@
+# NautilusTrader 1.174.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Better handling for backtest account blow-up scenarios (balance negative or margin exceeded)
+- Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.173.0 Beta
 
 Released on 5th May 2023 (UTC).
