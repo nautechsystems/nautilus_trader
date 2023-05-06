@@ -16,12 +16,13 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use nautilus_core::string::string_to_cstr;
 use nautilus_core::time::UnixNanos;
+use thiserror::Error;
 
 use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
@@ -37,7 +38,7 @@ pub struct BarSpecification {
 }
 
 impl Display for BarSpecification {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
     }
 }
@@ -126,17 +127,50 @@ pub struct BarType {
     pub aggregation_source: AggregationSource,
 }
 
-impl From<&str> for BarType {
-    fn from(s: &str) -> Self {
-        let pieces: Vec<&str> = s.splitn(5, '-').collect();
-        let step = pieces[1].parse().expect("error parsing `step` u64");
-        let aggregation =
-            BarAggregation::from_str(pieces[2]).expect("error parsing `BarAggregation`");
-        let price_type = PriceType::from_str(pieces[3]).expect("error parsing `PriceType`");
-        let aggregation_source =
-            AggregationSource::from_str(pieces[4]).expect("error parsing `AggregationSource`");
+#[derive(Debug, Error)]
+#[error("error parsing `BarType` from {input}, invalid token: {token} at position {position}")]
+pub struct BarTypeParseError {
+    input: String,
+    token: String,
+    position: usize,
+}
 
-        Self {
+impl FromStr for BarType {
+    type Err = BarTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let pieces: Vec<&str> = s.splitn(5, '-').collect();
+        if pieces.len() != 5 {
+            return Err(BarTypeParseError {
+                input: s.to_string(),
+                token: "".to_string(),
+                position: 0,
+            });
+        }
+
+        let step = pieces[1].parse().map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: pieces[1].to_string(),
+            position: 1,
+        })?;
+        let aggregation = BarAggregation::from_str(pieces[2]).map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: pieces[2].to_string(),
+            position: 2,
+        })?;
+        let price_type = PriceType::from_str(pieces[3]).map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: pieces[3].to_string(),
+            position: 3,
+        })?;
+        let aggregation_source =
+            AggregationSource::from_str(pieces[4]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: pieces[4].to_string(),
+                position: 4,
+            })?;
+
+        Ok(BarType {
             instrument_id: InstrumentId::from(pieces[0]),
             spec: BarSpecification {
                 step,
@@ -144,7 +178,7 @@ impl From<&str> for BarType {
                 price_type,
             },
             aggregation_source,
-        }
+        })
     }
 }
 
@@ -186,7 +220,7 @@ impl PartialOrd for BarType {
 }
 
 impl Display for BarType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}-{}-{}",
@@ -272,7 +306,7 @@ pub struct Bar {
 }
 
 impl Display for Bar {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{},{}",
@@ -499,6 +533,7 @@ mod tests {
         assert!(bar_type3 > bar_type1);
         assert!(bar_type3 >= bar_type1);
     }
+
     #[test]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {

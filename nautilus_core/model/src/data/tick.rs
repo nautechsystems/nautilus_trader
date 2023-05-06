@@ -15,7 +15,7 @@
 
 use std::cmp;
 use std::ffi::c_char;
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{Display, Formatter};
 
 use nautilus_core::correctness;
 use nautilus_core::string::string_to_cstr;
@@ -92,7 +92,7 @@ impl QuoteTick {
 }
 
 impl Display for QuoteTick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{}",
@@ -138,7 +138,7 @@ impl TradeTick {
 }
 
 impl Display for TradeTick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{}",

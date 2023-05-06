@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use datafusion::arrow::array::*;
 use datafusion::arrow::datatypes::*;
@@ -26,7 +27,7 @@ use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
 impl DecodeDataFromRecordBatch for Bar {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        let bar_type = BarType::from(metadata.get("bar_type").unwrap().as_str());
+        let bar_type = BarType::from_str(metadata.get("bar_type").unwrap().as_str()).unwrap();
         let price_precision = metadata
             .get("price_precision")
             .unwrap()

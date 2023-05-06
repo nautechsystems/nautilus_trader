@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
@@ -42,7 +42,7 @@ impl From<&str> for InstrumentId {
 }
 
 impl Display for InstrumentId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.symbol, self.venue)
     }
 }

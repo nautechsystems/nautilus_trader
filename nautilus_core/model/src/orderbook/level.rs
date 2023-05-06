@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 
 use crate::orderbook::ladder::BookPrice;
 use crate::orderbook::order::BookOrder;
@@ -147,13 +147,13 @@ impl Ord for Level {
 }
 
 impl Debug for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Level(price={})", self.price.value)
     }
 }
 
 impl Display for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Level(price={})", self.price.value)
     }
 }
