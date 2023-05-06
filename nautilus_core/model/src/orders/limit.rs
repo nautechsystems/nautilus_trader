@@ -16,7 +16,6 @@
 use std::rc::Rc;
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
-use rust_fsm::StateMachine;
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
@@ -92,7 +91,6 @@ impl LimitOrder for Order {
             events: Vec::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
-            fsm: StateMachine::new(),
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
