@@ -43,20 +43,15 @@ impl FromStr for InstrumentId {
     type Err = InstrumentIdParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut split_iter = s.split('.');
-
-        if let (Some(symbol_part), Some(venue_part)) = (split_iter.next(), split_iter.next()) {
-            if split_iter.next().is_none() {
-                return Ok(Self {
-                    symbol: Symbol::new(symbol_part),
-                    venue: Venue::new(venue_part),
-                });
-            }
+        match s.rsplit_once('.') {
+            Some((symbol_part, venue_part)) => Ok(Self {
+                symbol: Symbol::new(symbol_part),
+                venue: Venue::new(venue_part),
+            }),
+            None => Err(InstrumentIdParseError {
+                input: s.to_string(),
+            }),
         }
-
-        Err(InstrumentIdParseError {
-            input: s.to_string(),
-        })
     }
 }
 
@@ -153,6 +148,7 @@ mod tests {
         );
     }
 
+    #[ignore] // Cannot implement yet due Betfair instrument IDs
     #[test]
     fn test_instrument_id_parse_failure_multiple_dots() {
         let result = InstrumentId::from_str("ETH.USDT.BINANCE");
