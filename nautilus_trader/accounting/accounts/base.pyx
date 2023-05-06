@@ -381,7 +381,7 @@ cdef class Account:
         self._events.append(event)
         self.update_balances(event.balances)
 
-    cpdef void update_balances(self, list balances, bint allow_zero=False):
+    cpdef void update_balances(self, list balances, bint allow_zero=True):
         """
         Update the account balances.
 
@@ -392,7 +392,7 @@ cdef class Account:
         ----------
         balances : list[AccountBalance]
             The balances for the update.
-        allow_zero : bool, default False
+        allow_zero : bool, default True
             If zero balances are allowed (will then just clear the assets balance).
 
         Raises
