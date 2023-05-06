@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt;
+use std::fmt::{Display, Formatter};
 
 use crate::types::currency::Currency;
 use crate::types::money::Money;
@@ -25,8 +25,8 @@ pub struct AccountBalance {
     pub free: Money,
 }
 
-impl fmt::Display for AccountBalance {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for AccountBalance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{} {} {} {}",

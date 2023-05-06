@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
 
@@ -199,13 +199,13 @@ impl<T: Into<u64>> MulAssign<T> for Quantity {
 }
 
 impl Debug for Quantity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
 
 impl Display for Quantity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }

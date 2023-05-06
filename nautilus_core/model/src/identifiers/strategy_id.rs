@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
 
 use nautilus_core::correctness;
@@ -29,7 +29,7 @@ pub struct StrategyId {
 }
 
 impl Display for StrategyId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }

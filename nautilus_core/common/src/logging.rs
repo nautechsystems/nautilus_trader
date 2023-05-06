@@ -66,7 +66,7 @@ pub struct LogMessage {
 }
 
 impl fmt::Display for LogMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{} [{}] {}: {}",

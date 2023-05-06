@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -213,13 +213,13 @@ impl Mul<f64> for Price {
 }
 
 impl Debug for Price {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
 
 impl Display for Price {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }

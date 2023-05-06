@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -190,7 +190,7 @@ impl Mul<f64> for Money {
 }
 
 impl Display for Money {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:.*} {}",
