@@ -16,21 +16,23 @@
 use std::collections::HashMap;
 
 use hyper::{Body, Client, Method, Request, Response};
+use hyper_tls::HttpsConnector;
 use pyo3::prelude::*;
 
 #[pyclass]
 #[derive(Clone)]
 struct HttpClient {
-    client: Client<hyper::client::HttpConnector>,
+    client: Client<HttpsConnector<hyper::client::HttpConnector>>,
 }
 
 #[pymethods]
 impl HttpClient {
     #[new]
     fn new() -> Self {
-        Self {
-            client: Client::new(),
-        }
+        let https = HttpsConnector::new();
+        let client = Client::builder().build::<_, hyper::Body>(https);
+
+        Self { client }
     }
 
     pub fn request<'py>(
@@ -91,16 +93,18 @@ impl HttpClient {
 
 /// Loaded as nautilus_pyo3.network
 #[pymodule]
+#[pyo3(name = "nautilus_network")]
 pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpClient>()?;
     Ok(())
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io};
+    use std::{collections::HashMap, io, result};
 
-    use hyper::{Client, Method};
+    use hyper::{Client, Method, StatusCode};
+    use pyo3::{prepare_freethreaded_python, Python};
 
     use crate::HttpClient;
 
@@ -108,22 +112,9 @@ mod tests {
     async fn rust_test() {
         let http_client = HttpClient::new();
         let response = http_client
-            .send_request(Method::GET, "http://httpbin.org/get".into(), HashMap::new())
-            .await;
-        dbg!(response);
-    }
-
-    #[tokio::test]
-    async fn hyper_test() {
-        // Still inside `async fn main`...
-        let client = Client::new();
-
-        // Parse an `http::Uri`...
-        let uri = "http://httpbin.org/get".parse().unwrap();
-
-        // Await the response...
-        let mut resp = client.get(uri).await.unwrap();
-
-        println!("Response: {}", resp.status());
+            .send_request(Method::GET, "https://github.com".into(), HashMap::new())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
