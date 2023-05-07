@@ -652,6 +652,10 @@ cdef class OrderEmulator(Actor):
             if matching_core is not None:
                 matching_core.delete_order(order)
 
+        if order.exec_spawn_id is not None:
+            # Do not handle contingencies based on spawned execution algorithm orders
+            return
+
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
         for client_order_id in order.linked_order_ids:

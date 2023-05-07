@@ -11,7 +11,7 @@ None
 - Various improvements to `Binance` clients error handling and logging
 
 ### Fixes
-None
+- Fix handling of emulated order contingencies (not based on status of spawned algorithm orders)
 
 ---
 
