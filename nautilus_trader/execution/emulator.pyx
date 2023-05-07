@@ -593,6 +593,7 @@ cdef class OrderEmulator(Actor):
             SubmitOrderList submit_order_list
             Order contingent_order
             Order spawned_order
+            Order primary_order
             list exec_spawn_orders
             uint64_t raw_filled_qty
             Quantity filled_qty
@@ -611,14 +612,23 @@ cdef class OrderEmulator(Actor):
                     )
                     continue
 
-                # Check if execution algorithm spawned order
+                # Check if execution algorithm spawned order (only update based on primary)
                 if order.exec_spawn_id is None:
+                    return
+
+                primary_order = self.cache.order(order.exec_spawn_id)
+                if primary_order is None:
+                    self._log.error(f"Cannot find primary order {repr(order.exec_spawn_id)}.")
+                    return
+
+                # Check if primary already pending cancel or completed (no need to update)
+                if primary_order.status == OrderStatus.PENDING_CANCEL or primary_order.is_closed_c():
                     return
 
                 raw_filled_qty = 0
                 filled_qty = None
 
-                # Get primary order for execution spawn sequence
+                # Check total size of execution spawn sequence
                 exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
                 for spawned_order in exec_spawn_orders:
                     raw_filled_qty += spawned_order.filled_qty._mem.raw
