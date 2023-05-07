@@ -603,7 +603,7 @@ cdef class OrderMatchingEngine:
 
         # Check reduce-only instruction
         cdef Position position
-        if order.is_reduce_only:
+        if order.is_reduce_only and not order.is_closed_c():
             position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
@@ -1632,7 +1632,7 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
-                if child_order.position_id is None:
+                if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
                         venue=self.venue,
