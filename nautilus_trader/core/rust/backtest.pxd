@@ -2,8 +2,8 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.common cimport TestClockAPI, Vec_TimeEventHandler
-from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.common cimport TestClockAPI
+from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/backtest.h":
 
@@ -16,11 +16,11 @@ cdef extern from "../includes/backtest.h":
 
     TimeEventAccumulatorAPI time_event_accumulator_new();
 
-    void time_event_accumulator_free(TimeEventAccumulatorAPI accumulator);
+    void time_event_accumulator_drop(TimeEventAccumulatorAPI accumulator);
 
     void time_event_accumulator_advance_clock(TimeEventAccumulatorAPI *accumulator,
                                               TestClockAPI *clock,
                                               uint64_t to_time_ns,
                                               uint8_t set_time);
 
-    Vec_TimeEventHandler time_event_accumulator_drain(TimeEventAccumulatorAPI *accumulator);
+    CVec time_event_accumulator_drain(TimeEventAccumulatorAPI *accumulator);

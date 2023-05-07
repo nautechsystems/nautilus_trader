@@ -26,10 +26,10 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import Order
 
 
 class TWAPExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
@@ -79,7 +79,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
     def on_start(self) -> None:
         """Actions to be performed when the algorithm component is started."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_stop(self) -> None:
         """Actions to be performed when the algorithm component is stopped."""
@@ -115,9 +115,9 @@ class TWAPExecAlgorithm(ExecAlgorithm):
             The algorithm component state dictionary.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
-    def round_decimal_down(self, amount: Decimal, precision: int):
+    def round_decimal_down(self, amount: Decimal, precision: int) -> Decimal:
         return amount.quantize(Decimal(f"1e-{precision}"), rounding=ROUND_DOWN)
 
     def on_order(self, order: Order) -> None:  # noqa (too complex)

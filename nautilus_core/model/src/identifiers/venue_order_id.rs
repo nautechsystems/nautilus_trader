@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ pub struct VenueOrderId {
 }
 
 impl Display for VenueOrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -41,7 +41,7 @@ impl VenueOrderId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`VenueOrderId` value");
 
-        VenueOrderId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -49,7 +49,7 @@ impl VenueOrderId {
 
 impl Default for VenueOrderId {
     fn default() -> Self {
-        VenueOrderId {
+        Self {
             value: Box::new(Rc::new(String::from("001"))),
         }
     }
@@ -74,7 +74,7 @@ pub extern "C" fn venue_order_id_clone(venue_order_id: &VenueOrderId) -> VenueOr
 
 /// Frees the memory for the given `venue_order_id` by dropping.
 #[no_mangle]
-pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
+pub extern "C" fn venue_order_id_drop(venue_order_id: VenueOrderId) {
     drop(venue_order_id); // Memory freed here
 }
 
@@ -101,7 +101,7 @@ pub extern "C" fn venue_order_id_hash(venue_order_id: &VenueOrderId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::VenueOrderId;
-    use crate::identifiers::venue_order_id::venue_order_id_free;
+    use crate::identifiers::venue_order_id::venue_order_id_drop;
 
     #[test]
     fn test_equality() {
@@ -122,6 +122,6 @@ mod tests {
     #[test]
     fn test_venue_order_id() {
         let id = VenueOrderId::new("001");
-        venue_order_id_free(id); // No panic
+        venue_order_id_drop(id); // No panic
     }
 }

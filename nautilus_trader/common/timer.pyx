@@ -21,7 +21,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.common cimport time_event_free
+from nautilus_trader.core.rust.common cimport time_event_clone
+from nautilus_trader.core.rust.common cimport time_event_drop
 from nautilus_trader.core.rust.common cimport time_event_name_to_cstr
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
@@ -68,7 +69,7 @@ cdef class TimeEvent(Event):
 
     def __del__(self) -> None:
         if self._mem.name != NULL:
-            time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            time_event_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -118,7 +119,7 @@ cdef class TimeEvent(Event):
     @staticmethod
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
-        event._mem = mem
+        event._mem = time_event_clone(&mem)
         event.id = UUID4.from_mem_c(mem.event_id)
         event.ts_event = mem.ts_event
         event.ts_init = mem.ts_init
@@ -176,8 +177,8 @@ cdef class LiveTimer:
         The delegate to call at the next time.
     interval_ns : uint64_t
         The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
+    ts_now : uint64_t
+        The current UNIX time (nanoseconds).
     start_time_ns : uint64_t
         The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
@@ -198,7 +199,7 @@ cdef class LiveTimer:
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
-        uint64_t now_ns,
+        uint64_t ts_now,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -213,7 +214,7 @@ cdef class LiveTimer:
         self.stop_time_ns = stop_time_ns
         self.is_expired = False
 
-        self._internal = self._start_timer(now_ns)
+        self._internal = self._start_timer(ts_now)
 
     def __eq__(self, LiveTimer other) -> bool:
         return self.name == other.name
@@ -257,31 +258,31 @@ cdef class LiveTimer:
             ts_init=ts_init,
         )
 
-    cpdef void iterate_next_time(self, uint64_t now_ns):
+    cpdef void iterate_next_time(self, uint64_t ts_now):
         """
         Iterates the timers next time and checks if the timer is now expired.
 
         Parameters
         ----------
-        now_ns : uint64_t
-            The UNIX time now (nanoseconds).
+        ts_now : uint64_t
+            The current UNIX time (nanoseconds).
 
         """
         self.next_time_ns += self.interval_ns
-        if self.stop_time_ns and now_ns >= self.stop_time_ns:
+        if self.stop_time_ns and ts_now >= self.stop_time_ns:
             self.is_expired = True
 
-    cpdef void repeat(self, uint64_t now_ns):
+    cpdef void repeat(self, uint64_t ts_now):
         """
         Continue the timer.
 
         Parameters
         ----------
-        now_ns : uint64_t
+        ts_now : uint64_t
             The current time to continue timing from.
 
         """
-        self._internal = self._start_timer(now_ns)
+        self._internal = self._start_timer(ts_now)
 
     cpdef void cancel(self):
         """
@@ -289,7 +290,7 @@ cdef class LiveTimer:
         """
         self._internal.cancel()
 
-    cdef object _start_timer(self, uint64_t now_ns):
+    cdef object _start_timer(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -306,8 +307,8 @@ cdef class ThreadTimer(LiveTimer):
         The delegate to call at the next time.
     interval_ns : uint64_t
         The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
+    ts_now : uint64_t
+        The current UNIX time (nanoseconds).
     start_time_ns : uint64_t
         The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
@@ -324,7 +325,7 @@ cdef class ThreadTimer(LiveTimer):
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
-        uint64_t now_ns,
+        uint64_t ts_now,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -332,14 +333,14 @@ cdef class ThreadTimer(LiveTimer):
             name=name,
             callback=callback,
             interval_ns=interval_ns,
-            now_ns=now_ns,
+            ts_now=ts_now,
             start_time_ns=start_time_ns,
             stop_time_ns=stop_time_ns,
         )
 
-    cdef object _start_timer(self, uint64_t now_ns):
+    cdef object _start_timer(self, uint64_t ts_now):
         timer = TimerThread(
-            interval=nanos_to_secs(self.next_time_ns - now_ns),
+            interval=nanos_to_secs(self.next_time_ns - ts_now),
             function=self.callback,
             args=[self],
         )
@@ -362,9 +363,9 @@ cdef class LoopTimer(LiveTimer):
     callback : Callable[[TimeEvent], None]
         The delegate to call at the next time.
     interval_ns : uint64_t
-        The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
+        The time interval for the timer (nanoseconds).
+    ts_now : uint64_t
+        The current UNIX epoch (nanoseconds).
     start_time_ns : uint64_t
         The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
@@ -382,7 +383,7 @@ cdef class LoopTimer(LiveTimer):
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
-        uint64_t now_ns,
+        uint64_t ts_now,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -393,14 +394,14 @@ cdef class LoopTimer(LiveTimer):
             name=name,
             callback=callback,
             interval_ns=interval_ns,
-            now_ns=now_ns,
+            ts_now=ts_now,
             start_time_ns=start_time_ns,
             stop_time_ns=stop_time_ns,
         )
 
-    cdef object _start_timer(self, uint64_t now_ns):
+    cdef object _start_timer(self, uint64_t ts_now):
         return self._loop.call_later(
-            nanos_to_secs(self.next_time_ns - now_ns),
+            nanos_to_secs(self.next_time_ns - ts_now),
             self.callback,
             self,
         )

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.172.0"
+version = "1.174.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -51,7 +51,7 @@ cython = "==3.0.0b2"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.4"
 click = "^8.1.3"
-frozendict = "^2.3.7"
+frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
 msgspec = "^0.14.2"
 numpy = "^1.24.3"
@@ -63,10 +63,10 @@ tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.65.0"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
-hiredis = {version = "^2.2.2", optional = true}
-ib_insync = {version = "^0.9.81", optional = true}
+hiredis = {version = "^2.2.3", optional = true}
+ib_insync = {version = "^0.9.85", optional = true}
 redis = {version = "^4.5.4", optional = true}
-docker = {version = "^6.0.1", optional = true}
+docker = {version = "^6.1.0", optional = true}
 betfair_parser = {version = "==0.1.21", optional = true}
 
 [tool.poetry.extras]
@@ -82,19 +82,20 @@ optional = true
 black = "^23.3.0"
 isort = "^5.12.0"
 mypy = "^1.2.0"
-pre-commit = "^3.2.2"
-ruff = "^0.0.262"
+pre-commit = "^3.3.1"
+ruff = "^0.0.265"
 types-pytz = "^2022.3.0"
 types-redis = "^4.5.4"
-types-requests = "^2.28.11"
+types-requests = "^2.29.0"
 types-toml = "^0.10.2"
 
 [tool.poetry.group.test]
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.2.3"
+coverage = "^7.2.5"
 pytest = "^7.3.1"
+pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.0"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
@@ -210,19 +211,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 target-version = "py39"
 
-# [tool.ruff.isort]
-# # py_version = "39"
-# # skip_glob = ["**/core/rust/*"]
-# combine-as-imports = true
-# # max-line-length = 100
-# # ensure_newline_before_comments = true
-# force-single-line = true
-# single-line-exclusions = ["typing"]
-# # include_trailing_comma = true
-# # multi_line_output = 3
-# lines-after-imports = 2
-# # use_parentheses = true
-# # filter_files = true
+[tool.ruff.isort]
+combine-as-imports = true
+force-single-line = true
+single-line-exclusions = ["typing"]
+lines-after-imports = 2
+split-on-trailing-comma = true
 
 [tool.ruff.mccabe]
 max-complexity = 10
@@ -232,7 +226,7 @@ max-complexity = 10
 ##########################################################
 [tool.mypy]
 python_version = "3.9"
-# disallow_incomplete_defs = true
+disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true
 namespace_packages = true

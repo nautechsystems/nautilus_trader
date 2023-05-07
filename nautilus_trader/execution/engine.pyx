@@ -572,7 +572,8 @@ cdef class ExecutionEngine(Component):
             if client is None:
                 self._log.error(
                     f"Cannot execute command: "
-                    f"No execution client configured for {command.instrument_id}, {command}."
+                    f"no execution client configured for {command.instrument_id.venue} or `client_id` {command.client_id}, "
+                    f"{command}."
                 )
                 return  # No client to handle command
 

@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ pub struct TradeId {
 }
 
 impl Display for TradeId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -41,7 +41,7 @@ impl TradeId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`TradeId` value");
 
-        TradeId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -66,11 +66,11 @@ pub extern "C" fn trade_id_clone(trade_id: &TradeId) -> TradeId {
 
 /// Frees the memory for the given `trade_id` by dropping.
 #[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
+pub extern "C" fn trade_id_drop(trade_id: TradeId) {
     drop(trade_id); // Memory freed here
 }
 
-/// Returns [TradeId] as a C string pointer.
+/// Returns [`TradeId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
     string_to_cstr(&trade_id.value)
@@ -94,7 +94,7 @@ pub extern "C" fn trade_id_hash(trade_id: &TradeId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::TradeId;
-    use crate::identifiers::trade_id::trade_id_free;
+    use crate::identifiers::trade_id::trade_id_drop;
 
     #[test]
     fn test_equality() {
@@ -112,8 +112,8 @@ mod tests {
     }
 
     #[test]
-    fn test_trade_id_free() {
+    fn test_trade_id_drop() {
         let id = TradeId::new("123456789");
-        trade_id_free(id); // No panic
+        trade_id_drop(id); // No panic
     }
 }

@@ -244,14 +244,14 @@ cdef class RiskEngine(Component):
 
         self.trading_state = state
 
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef TradingStateChanged event = TradingStateChanged(
             trader_id=self.trader_id,
             state=self.trading_state,
             config=self._config,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         self._msgbus.publish_c(topic="events.risk", msg=event)
@@ -817,7 +817,7 @@ cdef class RiskEngine(Component):
 
     cpdef void _reject_modify_order(self, Order order, str reason):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderModifyRejected denied = OrderModifyRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -827,15 +827,15 @@ cdef class RiskEngine(Component):
             account_id=order.account_id,
             reason=reason,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
     cpdef void _reject_cancel_order(self, Order order, str reason):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderCancelRejected denied = OrderCancelRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -845,8 +845,8 @@ cdef class RiskEngine(Component):
             account_id=order.account_id,
             reason=reason,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         self._msgbus.send(endpoint="ExecEngine.process", msg=denied)

@@ -121,7 +121,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            996_798.21,
+            996_814.33,
             USD,
         )
 
@@ -183,7 +183,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1_023_449.90,
+            1_023_530.50,
             USD,
         )
 
@@ -247,7 +247,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            961_323.91,
+            961_069.95,
             GBP,
         )
 
@@ -275,7 +275,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            1_009_220.90,
+            1_008_966.94,
             GBP,
         )
 
@@ -303,7 +303,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 41761
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            963_946.75,
+            241_080.17,
             GBP,
         )
 
@@ -523,7 +523,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
         assert btc_ending_balance == Money(5.71250000, BTC)
-        assert usdt_ending_balance == Money(10_176_062.78093484, USDT)
+        assert usdt_ending_balance == Money(10_176_033.01433484, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -559,7 +559,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
         assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10_017_571.72928400, USDT)
+        assert usdt_ending_balance == Money(10_017_571.74970600, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -616,7 +616,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert strategy.fast_ema.count == 1771
         assert self.engine.iteration == 100_000
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
-            991_360.15,
+            991_881.44,
             AUD,
         )
 

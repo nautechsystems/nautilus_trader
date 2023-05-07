@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -38,19 +38,22 @@ impl Money {
     pub fn new(amount: f64, currency: Currency) -> Self {
         correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
 
-        Money {
+        Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
         }
     }
 
-    pub fn from_raw(raw: i64, currency: Currency) -> Money {
+    #[must_use]
+    pub fn from_raw(raw: i64, currency: Currency) -> Self {
         Self { raw, currency }
     }
 
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
@@ -105,7 +108,7 @@ impl Ord for Money {
 impl Neg for Money {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        Money {
+        Self {
             raw: -self.raw,
             currency: self.currency,
         }
@@ -114,9 +117,9 @@ impl Neg for Money {
 
 impl Add for Money {
     type Output = Self;
-    fn add(self, rhs: Money) -> Self::Output {
+    fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.currency, rhs.currency);
-        Money {
+        Self {
             raw: self.raw + rhs.raw,
             currency: self.currency,
         }
@@ -125,9 +128,9 @@ impl Add for Money {
 
 impl Sub for Money {
     type Output = Self;
-    fn sub(self, rhs: Money) -> Self::Output {
+    fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.currency, rhs.currency);
-        Money {
+        Self {
             raw: self.raw - rhs.raw,
             currency: self.currency,
         }
@@ -136,9 +139,9 @@ impl Sub for Money {
 
 impl Mul for Money {
     type Output = Self;
-    fn mul(self, rhs: Money) -> Self {
+    fn mul(self, rhs: Self) -> Self {
         assert_eq!(self.currency, rhs.currency);
-        Money {
+        Self {
             raw: self.raw * rhs.raw,
             currency: self.currency,
         }
@@ -187,7 +190,7 @@ impl Mul<f64> for Money {
 }
 
 impl Display for Money {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:.*} {}",
@@ -212,7 +215,7 @@ pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
 }
 
 #[no_mangle]
-pub extern "C" fn money_free(money: Money) {
+pub extern "C" fn money_drop(money: Money) {
     drop(money); // Memory freed here
 }
 

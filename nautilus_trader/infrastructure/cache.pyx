@@ -780,7 +780,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.warning(
+            # Dropped the log level to debug as this is expected for transformed orders
+            self._log.debug(
                 f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 

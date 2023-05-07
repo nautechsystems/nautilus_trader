@@ -151,8 +151,8 @@ cdef class OrderMatchingEngine:
     cdef void _update_limit_order(self, Order order, Quantity qty, Price price)
     cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price)
     cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price)
-    cdef void _update_market_if_touched_order(self, MarketIfTouchedOrder order, Quantity qty, Price trigger_price)
-    cdef void _update_limit_if_touched_order(self, LimitIfTouchedOrder order, Quantity qty, Price price, Price trigger_price)
+    cdef void _update_market_if_touched_order(self, Order order, Quantity qty, Price trigger_price)
+    cdef void _update_limit_if_touched_order(self, Order order, Quantity qty, Price price, Price trigger_price)
     cdef void _update_trailing_stop_order(self, Order order)
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------

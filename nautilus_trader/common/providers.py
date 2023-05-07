@@ -23,7 +23,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class InstrumentProvider:

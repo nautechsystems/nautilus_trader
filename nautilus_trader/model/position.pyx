@@ -397,7 +397,7 @@ cdef class Position:
         Decimal
 
         """
-        return Decimal(f"{self.signed_qty:.{self.size_precision}}")
+        return Decimal(f"{self.signed_qty:.{self.size_precision}f}")
 
     cpdef bint is_opposite_side(self, OrderSide side):
         """

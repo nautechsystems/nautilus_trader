@@ -34,9 +34,9 @@ from nautilus_trader.model.instruments.base cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Option(Instrument):
+cdef class OptionsContract(Instrument):
     """
-    Represents a generic Options Contract instrument.
+    Represents a generic options contract instrument.
 
     Parameters
     ----------
@@ -130,9 +130,9 @@ cdef class Option(Instrument):
         self.kind = kind
 
     @staticmethod
-    cdef Option from_dict_c(dict values):
+    cdef OptionsContract from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return Option(
+        return OptionsContract(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             native_symbol=Symbol(values["native_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
@@ -150,10 +150,10 @@ cdef class Option(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(Option obj):
+    cdef dict to_dict_c(OptionsContract obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "Option",
+            "type": "OptionsContract",
             "id": obj.id.to_str(),
             "native_symbol": obj.native_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
@@ -175,7 +175,7 @@ cdef class Option(Instrument):
         }
 
     @staticmethod
-    def from_dict(dict values) -> Option:
+    def from_dict(dict values) -> OptionsContract:
         """
         Return an instrument from the given initialization values.
 
@@ -186,13 +186,13 @@ cdef class Option(Instrument):
 
         Returns
         -------
-        Option
+        OptionsContract
 
         """
-        return Option.from_dict_c(values)
+        return OptionsContract.from_dict_c(values)
 
     @staticmethod
-    def to_dict(Option obj):
+    def to_dict(OptionsContract obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 
@@ -201,4 +201,4 @@ cdef class Option(Instrument):
         dict[str, object]
 
         """
-        return Option.to_dict_c(obj)
+        return OptionsContract.to_dict_c(obj)

@@ -37,7 +37,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
-from nautilus_trader.core.rust.common cimport logger_free
+from nautilus_trader.core.rust.common cimport logger_drop
 from nautilus_trader.core.rust.common cimport logger_get_instance_id
 from nautilus_trader.core.rust.common cimport logger_get_machine_id_cstr
 from nautilus_trader.core.rust.common cimport logger_get_trader_id_cstr
@@ -139,7 +139,7 @@ cdef class Logger:
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
-            logger_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+            logger_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     @property
     def trader_id(self) -> TraderId:

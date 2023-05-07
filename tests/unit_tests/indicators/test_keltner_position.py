@@ -120,7 +120,7 @@ class TestKeltnerPosition:
             self.kp.update_raw(high, low, close)
 
         # Act, Assert
-        assert self.kp.value == pytest.approx(-1.637585941284833)
+        assert self.kp.value == pytest.approx(-1.637585941284833, rel=1e-9)
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
@@ -136,7 +136,7 @@ class TestKeltnerPosition:
         self.kp.update_raw(1.00020, 1.00010, 1.00010)
 
         # Act, Assert
-        assert self.kp.value == -0.14281747514671334
+        assert self.kp.value == pytest.approx(-0.14281747514671334, rel=1e-9)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

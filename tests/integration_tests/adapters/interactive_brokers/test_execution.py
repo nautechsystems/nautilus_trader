@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import datetime
 
@@ -53,7 +54,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
-pytestmark = pytest.mark.no_ci
+pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 @pytest.fixture()

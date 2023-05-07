@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
 
@@ -22,6 +22,8 @@ use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
 
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+
+use super::fixed::FIXED_SCALAR;
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
@@ -38,32 +40,35 @@ impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
-        Quantity {
+        Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
+    #[must_use]
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        Quantity { raw, precision }
+        Self { raw, precision }
     }
 
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
 }
 
 impl From<Quantity> for f64 {
-    fn from(value: Quantity) -> f64 {
+    fn from(value: Quantity) -> Self {
         value.as_f64()
     }
 }
 
 impl From<&Quantity> for f64 {
-    fn from(value: &Quantity) -> f64 {
+    fn from(value: &Quantity) -> Self {
         value.as_f64()
     }
 }
@@ -75,13 +80,13 @@ impl From<&str> for Quantity {
             Ok(number) => number,
             Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
         };
-        Quantity::new(float_res, precision_from_str(input))
+        Self::new(float_res, precision_from_str(input))
     }
 }
 
 impl From<i64> for Quantity {
     fn from(input: i64) -> Self {
-        Quantity::new(input as f64, 0)
+        Self::new(input as f64, 0)
     }
 }
 
@@ -136,7 +141,7 @@ impl Deref for Quantity {
 impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        Quantity {
+        Self {
             raw: self.raw + rhs.raw,
             precision: self.precision,
         }
@@ -146,7 +151,7 @@ impl Add for Quantity {
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        Quantity {
+        Self {
             raw: self.raw - rhs.raw,
             precision: self.precision,
         }
@@ -156,21 +161,21 @@ impl Sub for Quantity {
 impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
-        Quantity {
-            raw: self.raw * rhs.raw,
+        Self {
+            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as u64),
             precision: self.precision,
         }
     }
 }
 
 impl From<Quantity> for u64 {
-    fn from(value: Quantity) -> u64 {
+    fn from(value: Quantity) -> Self {
         value.raw
     }
 }
 
 impl From<&Quantity> for u64 {
-    fn from(value: &Quantity) -> u64 {
+    fn from(value: &Quantity) -> Self {
         value.raw
     }
 }
@@ -194,13 +199,13 @@ impl<T: Into<u64>> MulAssign<T> for Quantity {
 }
 
 impl Debug for Quantity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
 
 impl Display for Quantity {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
@@ -270,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_qty_minimum() {
-        let qty = Quantity::new(0.000000001, 9);
+        let qty = Quantity::new(0.000_000_001, 9);
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -301,6 +306,54 @@ mod tests {
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_add() {
+        let quantity1 = Quantity::new(1.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        let quantity3 = quantity1 + quantity2;
+        assert_eq!(quantity3.raw, 3_000_000_000);
+    }
+
+    #[test]
+    fn test_sub() {
+        let quantity1 = Quantity::new(3.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        let quantity3 = quantity1 - quantity2;
+        assert_eq!(quantity3.raw, 1_000_000_000);
+    }
+
+    #[test]
+    fn test_add_assign() {
+        let mut quantity1 = Quantity::new(1.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        quantity1 += quantity2;
+        assert_eq!(quantity1.raw, 3_000_000_000);
+    }
+
+    #[test]
+    fn test_sub_assign() {
+        let mut quantity1 = Quantity::new(3.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
+        quantity1 -= quantity2;
+        assert_eq!(quantity1.raw, 1_000_000_000);
+    }
+
+    #[test]
+    fn test_mul() {
+        let quantity1 = Quantity::new(2.0, 1);
+        let quantity2 = Quantity::new(2.0, 1);
+        let quantity3 = quantity1 * quantity2;
+        assert_eq!(quantity3.raw, 4_000_000_000);
+    }
+
+    #[test]
+    fn test_quantity_mul_assign() {
+        let mut q = Quantity::from_raw(100, 0);
+        q *= 2u64;
+
+        assert_eq!(q.raw, 200);
     }
 
     #[test]

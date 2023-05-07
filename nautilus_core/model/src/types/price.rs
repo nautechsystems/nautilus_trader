@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -22,6 +22,8 @@ use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
 
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+
+use super::fixed::FIXED_SCALAR;
 
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
@@ -38,20 +40,23 @@ impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
         correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
 
-        Price {
+        Self {
             raw: f64_to_fixed_i64(value, precision),
             precision,
         }
     }
 
+    #[must_use]
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        Price { raw, precision }
+        Self { raw, precision }
     }
 
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
 
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
@@ -64,18 +69,18 @@ impl From<&str> for Price {
             Ok(number) => number,
             Err(err) => panic!("Cannot parse `input` string '{input}' as f64, {err}"),
         };
-        Price::new(float_res, precision_from_str(input))
+        Self::new(float_res, precision_from_str(input))
     }
 }
 
 impl From<Price> for f64 {
-    fn from(value: Price) -> f64 {
+    fn from(value: Price) -> Self {
         value.as_f64()
     }
 }
 
 impl From<&Price> for f64 {
-    fn from(value: &Price) -> f64 {
+    fn from(value: &Price) -> Self {
         value.as_f64()
     }
 }
@@ -131,7 +136,7 @@ impl Deref for Price {
 impl Neg for Price {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        Price {
+        Self {
             raw: -self.raw,
             precision: self.precision,
         }
@@ -140,8 +145,8 @@ impl Neg for Price {
 
 impl Add for Price {
     type Output = Self;
-    fn add(self, rhs: Price) -> Self::Output {
-        Price {
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
             raw: self.raw + rhs.raw,
             precision: self.precision,
         }
@@ -150,8 +155,8 @@ impl Add for Price {
 
 impl Sub for Price {
     type Output = Self;
-    fn sub(self, rhs: Price) -> Self::Output {
-        Price {
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
             raw: self.raw - rhs.raw,
             precision: self.precision,
         }
@@ -160,9 +165,9 @@ impl Sub for Price {
 
 impl Mul for Price {
     type Output = Self;
-    fn mul(self, rhs: Price) -> Self {
-        Price {
-            raw: self.raw * rhs.raw,
+    fn mul(self, rhs: Self) -> Self {
+        Self {
+            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as i64),
             precision: self.precision,
         }
     }
@@ -208,13 +213,13 @@ impl Mul<f64> for Price {
 }
 
 impl Debug for Price {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
 
 impl Display for Price {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
@@ -258,7 +263,7 @@ mod tests {
     fn test_price_new() {
         let price = Price::new(0.00812, 8);
         assert_eq!(price, price);
-        assert_eq!(price.raw, 8120000);
+        assert_eq!(price.raw, 8_120_000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -266,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_price_minimum() {
-        let price = Price::new(0.000000001, 9);
+        let price = Price::new(0.000_000_001, 9);
         assert_eq!(price.raw, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
@@ -285,7 +290,7 @@ mod tests {
     #[test]
     fn test_price_precision() {
         let price = Price::new(1.001, 2);
-        assert_eq!(price.raw, 1000000000);
+        assert_eq!(price.raw, 1_000_000_000);
         assert_eq!(price.to_string(), "1.00");
     }
 
@@ -293,7 +298,7 @@ mod tests {
     fn test_price_new_from_str() {
         let price = Price::from("0.00812000");
         assert_eq!(price, price);
-        assert_eq!(price.raw, 8120000);
+        assert_eq!(price.raw, 8_120_000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -319,21 +324,45 @@ mod tests {
         let price1 = Price::new(1.000, 3);
         let price2 = Price::new(1.011, 3);
         let price3 = price1 + price2;
-        assert_eq!(price3.raw, 2011000000)
+        assert_eq!(price3.raw, 2_011_000_000)
+    }
+
+    #[test]
+    fn test_sub() {
+        let price1 = Price::new(1.011, 3);
+        let price2 = Price::new(1.000, 3);
+        let price3 = price1 - price2;
+        assert_eq!(price3.raw, 11_000_000);
     }
 
     #[test]
     fn test_add_assign() {
         let mut price = Price::new(1.000, 3);
         price += Price::new(1.011, 3);
-        assert_eq!(price.raw, 2011000000)
+        assert_eq!(price.raw, 2_011_000_000)
     }
 
     #[test]
     fn test_sub_assign() {
         let mut price = Price::new(1.000, 3);
         price -= Price::new(0.011, 3);
-        assert_eq!(price.raw, 989000000)
+        assert_eq!(price.raw, 989_000_000)
+    }
+
+    #[test]
+    fn test_mul() {
+        let price1 = Price::new(1.000, 3);
+        let price2 = Price::new(1.011, 3);
+        let price3 = price1 * price2;
+        assert_eq!(price3.raw, 1_011_000_000);
+    }
+
+    #[test]
+    fn test_mul_assign() {
+        let mut price1 = Price::new(1.000, 3);
+        let price2 = Price::new(1.011, 3);
+        price1 *= price2;
+        assert_eq!(price1.raw, 1_011_000_000_000_000_000);
     }
 
     #[test]
@@ -350,9 +379,9 @@ mod tests {
     fn test_price_display() {
         let input_string = "44.123456";
         let price = Price::from(input_string);
-        assert_eq!(price.raw, 44123456000);
+        assert_eq!(price.raw, 44_123_456_000);
         assert_eq!(price.precision, 6);
-        assert_eq!(price.as_f64(), 44.123456000000004);
+        assert_eq!(price.as_f64(), 44.123_456_000_000_004);
         assert_eq!(price.to_string(), "44.123456");
     }
 }

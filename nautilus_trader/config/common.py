@@ -109,7 +109,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
 
 class CacheConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``Cache`` instance.
+    Configuration for ``Cache`` instances.
 
     Parameters
     ----------
@@ -125,7 +125,7 @@ class CacheConfig(NautilusConfig, frozen=True):
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``CacheDatabase`` instance.
+    Configuration for ``CacheDatabase`` instances.
 
     Parameters
     ----------
@@ -156,7 +156,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
     """
-    Configuration for an ``InstrumentProvider`` instance.
+    Configuration for ``InstrumentProvider`` instances.
 
     Parameters
     ----------
@@ -192,7 +192,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
 
 class DataEngineConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``DataEngine`` instance.
+    Configuration for ``DataEngine`` instances.
 
     Parameters
     ----------
@@ -215,7 +215,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
 class RiskEngineConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``RiskEngine`` instance.
+    Configuration for ``RiskEngine`` instances.
 
     Parameters
     ----------
@@ -241,7 +241,7 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
 
 class ExecEngineConfig(NautilusConfig, frozen=True):
     """
-    Configuration for an ``ExecutionEngine`` instance.
+    Configuration for ``ExecutionEngine`` instances.
 
     Parameters
     ----------
@@ -260,7 +260,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
     """
-    Configuration for an ``OrderEmulator`` instance.
+    Configuration for ``OrderEmulator`` instances.
     """
 
 

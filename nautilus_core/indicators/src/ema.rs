@@ -40,8 +40,9 @@ pub struct ExponentialMovingAverage {
 #[pymethods]
 impl ExponentialMovingAverage {
     #[new]
+    #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        ExponentialMovingAverage {
+        Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             alpha: 2.0 / (period as f64 + 1.0),
@@ -58,7 +59,7 @@ impl ExponentialMovingAverage {
             self.value = value;
         }
 
-        self.value = self.alpha * value + ((1.0 - self.alpha) * self.value);
+        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
         self.count += 1;
 
         // Initialization logic
@@ -107,7 +108,7 @@ mod tests {
     #[test]
     fn test_ema_initialized() {
         let ema = ExponentialMovingAverage::new(20, Some(PriceType::Mid));
-        let display_str = format!("{:?}", ema);
+        let display_str = format!("{ema:?}");
         assert_eq!(display_str, "ExponentialMovingAverage { period: 20, price_type: Mid, alpha: 0.09523809523809523, value: 0.0, count: 0, _has_inputs: false, _is_initialized: false }");
     }
 

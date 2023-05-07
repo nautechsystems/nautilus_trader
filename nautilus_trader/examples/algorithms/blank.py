@@ -18,8 +18,8 @@ from typing import Optional
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config.common import ExecAlgorithmConfig
 from nautilus_trader.execution.algorithm import ExecAlgorithm
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import OrderList
 
 
 class MyExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
@@ -51,15 +51,15 @@ class MyExecAlgorithm(ExecAlgorithm):
 
     def on_start(self) -> None:
         """Actions to be performed when the algorithm component is started."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_stop(self) -> None:
         """Actions to be performed when the algorithm component is stopped."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_reset(self) -> None:
         """Actions to be performed when the algorithm component is reset."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_dispose(self) -> None:
         """
@@ -68,7 +68,7 @@ class MyExecAlgorithm(ExecAlgorithm):
         Cleanup any resources used by the strategy here.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_save(self) -> dict[str, bytes]:
         """
@@ -96,7 +96,7 @@ class MyExecAlgorithm(ExecAlgorithm):
             The strategy state dictionary.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_order(self, order: Order) -> None:
         """

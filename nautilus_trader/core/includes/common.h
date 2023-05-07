@@ -70,6 +70,19 @@ typedef struct TestClockAPI {
     struct TestClock *_0;
 } TestClockAPI;
 
+typedef struct LiveClockAPI {
+    struct LiveClock *_0;
+} LiveClockAPI;
+
+/**
+ * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
+ * This works because Logger fields don't need to be accessed, only functions
+ * are called.
+ */
+typedef struct CLogger {
+    struct Logger_t *_0;
+} CLogger;
+
 /**
  * Represents a time event occurring at the event timestamp.
  */
@@ -106,30 +119,9 @@ typedef struct TimeEventHandler_t {
     PyObject *callback_ptr;
 } TimeEventHandler_t;
 
-/**
- * Provides a vector of time event handlers.
- */
-typedef struct Vec_TimeEventHandler {
-    const struct TimeEventHandler_t *ptr;
-    uintptr_t len;
-} Vec_TimeEventHandler;
-
-typedef struct LiveClockAPI {
-    struct LiveClock *_0;
-} LiveClockAPI;
-
-/**
- * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
- * This works because Logger fields don't need to be accessed, only functions
- * are called.
- */
-typedef struct CLogger {
-    struct Logger_t *_0;
-} CLogger;
-
 struct TestClockAPI test_clock_new(void);
 
-void test_clock_free(struct TestClockAPI clock);
+void test_clock_drop(struct TestClockAPI clock);
 
 /**
  * # Safety
@@ -177,11 +169,9 @@ void test_clock_set_timer_ns(struct TestClockAPI *clock,
  * # Safety
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
-struct Vec_TimeEventHandler test_clock_advance_time(struct TestClockAPI *clock,
-                                                    uint64_t to_time_ns,
-                                                    uint8_t set_time);
+CVec test_clock_advance_time(struct TestClockAPI *clock, uint64_t to_time_ns, uint8_t set_time);
 
-void vec_time_event_handlers_drop(struct Vec_TimeEventHandler v);
+void vec_time_event_handlers_drop(CVec v);
 
 /**
  * # Safety
@@ -199,7 +189,7 @@ void test_clock_cancel_timers(struct TestClockAPI *clock);
 
 struct LiveClockAPI live_clock_new(void);
 
-void live_clock_free(struct LiveClockAPI clock);
+void live_clock_drop(struct LiveClockAPI clock);
 
 double live_clock_timestamp(struct LiveClockAPI *clock);
 
@@ -269,7 +259,7 @@ struct CLogger logger_new(const char *trader_id_ptr,
                           const char *component_levels_ptr,
                           uint8_t is_bypassed);
 
-void logger_free(struct CLogger logger);
+void logger_drop(struct CLogger logger);
 
 const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 
@@ -302,9 +292,9 @@ struct TimeEvent_t time_event_new(const char *name,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
-struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
+struct TimeEvent_t time_event_clone(const struct TimeEvent_t *event);
 
-void time_event_free(struct TimeEvent_t event);
+void time_event_drop(struct TimeEvent_t event);
 
 const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
 
@@ -312,3 +302,5 @@ const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
  * Returns a [`TimeEvent`] as a C string pointer.
  */
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

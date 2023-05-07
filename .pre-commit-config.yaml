@@ -55,15 +55,6 @@ repos:
         args: ["--manifest-path", "nautilus_core/Cargo.toml", "--", "-D", "warnings"]
         files: \.rs$
         pass_filenames: false
-      - id: cargo-check
-        name: cargo check
-        description: Check the package for errors.
-        entry: cargo check
-        language: system
-        types: [rust]
-        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
-        files: \.rs$
-        pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting
@@ -81,7 +72,7 @@ repos:
       - id: isort
         types_or: [python, cython]
         entry: "isort"
-        args: ["--settings-file", "pyproject.toml", "."]
+        args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/psf/black
     rev: 23.3.0
@@ -92,13 +83,20 @@ repos:
         args: ["--config", "pyproject.toml"]
         exclude: "docs/_pygments/monokai.py"
 
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.265
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.2.0
     hooks:
       - id: mypy
         args: [
-          --no-strict-optional,  # Fixing in progress
           --ignore-missing-imports,
+          --allow-incomplete-defs,
+          --no-strict-optional,  # Fixing in progress
           --warn-no-return,
         ]
         additional_dependencies: [
@@ -109,11 +107,6 @@ repos:
           types-requests,
           types-toml,
         ]
-
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.262
-    hooks:
-      - id: ruff
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.6.1

@@ -25,7 +25,7 @@ from nautilus_trader.common.timer cimport LiveTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.rust.common cimport LiveClockAPI
 from nautilus_trader.core.rust.common cimport TestClockAPI
-from nautilus_trader.core.rust.common cimport Vec_TimeEventHandler
+from nautilus_trader.core.rust.core cimport CVec
 
 
 cdef class Clock:
@@ -72,7 +72,7 @@ cdef class TestClock(Clock):
     cdef TestClockAPI _mem
 
     cpdef void set_time(self, uint64_t to_time_ns)
-    cdef Vec_TimeEventHandler advance_time_c(self, uint64_t to_time_ns, bint set_time=*)
+    cdef CVec advance_time_c(self, uint64_t to_time_ns, bint set_time=*)
     cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=*)
 
 
