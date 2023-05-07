@@ -6,12 +6,13 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-- Better handling for backtest account blow-up scenarios (balance negative or margin exceeded)
+- Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
 - Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
 - Various improvements to `Binance` clients error handling and logging
 
 ### Fixes
-- Fix handling of emulated order contingencies (not based on status of spawned algorithm orders)
+- Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
+- Fixed sending execution algorithm commands from strategy
 
 ---
 
