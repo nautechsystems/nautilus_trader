@@ -45,7 +45,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class EMACrossTWAPConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``EMACross`` instances.
+    Configuration for ``EMACrossTWAP`` instances.
 
     Parameters
     ----------

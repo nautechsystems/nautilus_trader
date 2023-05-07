@@ -45,7 +45,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``EMACrossBracketTWAP`` instances.
+    Configuration for ``EMACrossBracketAlgo`` instances.
 
     Parameters
     ----------
