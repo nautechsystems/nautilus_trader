@@ -13,6 +13,9 @@ None
 ### Fixes
 - Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
 - Fixed sending execution algorithm commands from strategy
+- Fixed `OrderEmulator` releasing of already closed orders
+- Fixed `MatchingEngine` processing of reduce only for child contingency orders
+- Fixed `MatchingEngine` position ID assignment for child contingency orders
 
 ---
 
