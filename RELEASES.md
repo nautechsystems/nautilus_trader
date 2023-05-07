@@ -8,6 +8,7 @@ None
 ### Enhancements
 - Better handling for backtest account blow-up scenarios (balance negative or margin exceeded)
 - Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
+- Various improvements to `Binance` clients error handling and logging
 
 ### Fixes
 None
