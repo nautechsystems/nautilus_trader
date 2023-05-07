@@ -15,10 +15,12 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use thiserror::Error;
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
@@ -31,18 +33,30 @@ pub struct InstrumentId {
     pub venue: Venue,
 }
 
-impl From<&str> for InstrumentId {
-    fn from(s: &str) -> Self {
-        let pieces = s.rsplit_once('.').expect("rsplit_once failed");
-        InstrumentId {
-            symbol: Symbol::new(pieces.0),
-            venue: Venue::new(pieces.1),
+#[derive(Debug, Error)]
+#[error("Error parsing `InstrumentId` from '{input}'")]
+pub struct InstrumentIdParseError {
+    input: String,
+}
+
+impl FromStr for InstrumentId {
+    type Err = InstrumentIdParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.rsplit_once('.') {
+            Some((symbol_part, venue_part)) => Ok(Self {
+                symbol: Symbol::new(symbol_part),
+                venue: Venue::new(venue_part),
+            }),
+            None => Err(InstrumentIdParseError {
+                input: s.to_string(),
+            }),
         }
     }
 }
 
 impl Display for InstrumentId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.symbol, self.venue)
     }
 }
@@ -50,7 +64,7 @@ impl Display for InstrumentId {
 impl InstrumentId {
     #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
-        InstrumentId { symbol, venue }
+        Self { symbol, venue }
     }
 }
 
@@ -70,7 +84,7 @@ pub extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> Instrumen
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from(cstr_to_string(ptr).as_str())
+    InstrumentId::from_str(cstr_to_string(ptr).as_str()).unwrap()
 }
 
 #[no_mangle]
@@ -80,7 +94,7 @@ pub extern "C" fn instrument_id_clone(instrument_id: &InstrumentId) -> Instrumen
 
 /// Frees the memory for the given `instrument_id` by dropping.
 #[no_mangle]
-pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
+pub extern "C" fn instrument_id_drop(instrument_id: InstrumentId) {
     drop(instrument_id); // Memory freed here
 }
 
@@ -107,22 +121,58 @@ pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
+    use std::{ffi::CStr, str::FromStr};
 
     use super::InstrumentId;
-    use crate::identifiers::instrument_id::{instrument_id_free, instrument_id_to_cstr};
+    use crate::identifiers::instrument_id::{
+        instrument_id_drop, instrument_id_to_cstr, InstrumentIdParseError,
+    };
+
+    #[test]
+    fn test_instrument_id_parse_success() {
+        let instrument_id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+        assert_eq!(instrument_id.symbol.to_string(), "ETH/USDT");
+        assert_eq!(instrument_id.venue.to_string(), "BINANCE");
+    }
+
+    #[test]
+    fn test_instrument_id_parse_failure_no_dot() {
+        let result = InstrumentId::from_str("ETHUSDT-BINANCE");
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(matches!(error, InstrumentIdParseError { .. }));
+        assert_eq!(
+            error.to_string(),
+            "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE'"
+        );
+    }
+
+    #[ignore] // Cannot implement yet due Betfair instrument IDs
+    #[test]
+    fn test_instrument_id_parse_failure_multiple_dots() {
+        let result = InstrumentId::from_str("ETH.USDT.BINANCE");
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(matches!(error, InstrumentIdParseError { .. }));
+        assert_eq!(
+            error.to_string(),
+            "Error parsing `InstrumentId` from 'ETH.USDT.BINANCE'"
+        );
+    }
 
     #[test]
     fn test_equality() {
-        let id1 = InstrumentId::from("ETH/USDT.BINANCE");
-        let id2 = InstrumentId::from("XBT/USD.BITMEX");
+        let id1 = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+        let id2 = InstrumentId::from_str("XBT/USD.BITMEX").unwrap();
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
 
     #[test]
     fn test_string_reprs() {
-        let id = InstrumentId::from("ETH/USDT.BINANCE");
+        let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
     }
@@ -130,16 +180,16 @@ mod tests {
     #[test]
     fn test_to_cstr() {
         unsafe {
-            let id = InstrumentId::from("ETH/USDT.BINANCE");
+            let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
             let result = instrument_id_to_cstr(&id);
             assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
         }
     }
 
     #[test]
-    fn test_instrument_id_free() {
-        let id = InstrumentId::from("ETH/USDT.BINANCE");
+    fn test_instrument_id_drop() {
+        let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
 
-        instrument_id_free(id); // No panic
+        instrument_id_drop(id); // No panic
     }
 }

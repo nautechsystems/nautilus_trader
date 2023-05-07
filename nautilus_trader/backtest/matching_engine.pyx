@@ -603,7 +603,7 @@ cdef class OrderMatchingEngine:
 
         # Check reduce-only instruction
         cdef Position position
-        if order.is_reduce_only:
+        if order.is_reduce_only and not order.is_closed_c():
             position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
@@ -987,7 +987,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_market_if_touched_order(
         self,
-        MarketIfTouchedOrder order,
+        Order order,
         Quantity qty,
         Price trigger_price,
     ):
@@ -1010,7 +1010,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_limit_if_touched_order(
         self,
-        LimitIfTouchedOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -1632,7 +1632,7 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
-                if child_order.position_id is None:
+                if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
                         venue=self.venue,
@@ -1794,6 +1794,16 @@ cdef class OrderMatchingEngine:
             if trigger_price is None:
                 trigger_price = order.trigger_price
             self._update_limit_if_touched_order(order, qty, price, trigger_price)
+        elif order.order_type == OrderType.TRAILING_STOP_MARKET:
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_market_if_touched_order(order, qty, trigger_price)
+        elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
+            if price is None:
+                price = order.price
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_limit_if_touched_order(order, qty, price, trigger_price)
         else:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
@@ -1869,7 +1879,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _generate_order_rejected(self, Order order, str reason):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderRejected event = OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1878,14 +1888,14 @@ cdef class OrderMatchingEngine:
             account_id=order.account_id or self._account_ids[order.trader_id],
             reason=reason,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
     cdef void _generate_order_accepted(self, Order order):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderAccepted event = OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1894,8 +1904,8 @@ cdef class OrderMatchingEngine:
             venue_order_id=order.venue_order_id or self._generate_venue_order_id(),
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
@@ -1910,7 +1920,7 @@ cdef class OrderMatchingEngine:
         str reason,
     ):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderModifyRejected event = OrderModifyRejected(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -1920,8 +1930,8 @@ cdef class OrderMatchingEngine:
             account_id=account_id,
             reason=reason,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
@@ -1936,7 +1946,7 @@ cdef class OrderMatchingEngine:
         str reason,
     ):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderCancelRejected event = OrderCancelRejected(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -1946,8 +1956,8 @@ cdef class OrderMatchingEngine:
             account_id=account_id,
             reason=reason,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
@@ -1973,7 +1983,7 @@ cdef class OrderMatchingEngine:
                 self._log.warning(f"{order.venue_order_id} does not match existing {repr(existing)}")
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1985,14 +1995,14 @@ cdef class OrderMatchingEngine:
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
     cdef void _generate_order_canceled(self, Order order):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderCanceled event = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -2001,14 +2011,14 @@ cdef class OrderMatchingEngine:
             venue_order_id=order.venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
     cdef void _generate_order_triggered(self, Order order):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderTriggered event = OrderTriggered(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -2017,14 +2027,14 @@ cdef class OrderMatchingEngine:
             venue_order_id=order.venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
     cdef void _generate_order_expired(self, Order order):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderExpired event = OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -2033,8 +2043,8 @@ cdef class OrderMatchingEngine:
             venue_order_id=order.venue_order_id,
             account_id=order.account_id or self._account_ids[order.client_order_id],
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
@@ -2049,7 +2059,7 @@ cdef class OrderMatchingEngine:
         LiquiditySide liquidity_side
     ):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderFilled event = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -2067,7 +2077,7 @@ cdef class OrderMatchingEngine:
             commission=commission,
             liquidity_side=liquidity_side,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)

@@ -47,7 +47,11 @@ class TestBetfairFactory:
         self.venue = BETFAIR_VENUE
 
         # Setup logging
-        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
         self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
 
         self.msgbus = MessageBus(

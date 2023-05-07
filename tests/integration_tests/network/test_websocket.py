@@ -33,6 +33,8 @@ class TestWebsocketClient:
             logger=TestComponentStubs.logger(level="DEBUG"),
             handler=record,
             max_retry_connection=6,
+            log_send=True,
+            log_recv=True,
         )
 
     @staticmethod
@@ -58,7 +60,7 @@ class TestWebsocketClient:
         assert self.messages == expected
 
     @pytest.mark.asyncio
-    async def test_reconnect(self, websocket_server):
+    async def test_reconnect_after_close(self, websocket_server):
         # Arrange
         await self.client.connect(ws_url=self._server_url(websocket_server))
         await self.client.send(b"close")
@@ -71,6 +73,21 @@ class TestWebsocketClient:
 
         # Assert
         assert self.messages == [b"connected"] * 2
+
+    @pytest.mark.asyncio
+    async def test_reconnect_after_disconnect(self, websocket_server):
+        # Arrange
+        await self.client.connect(ws_url=self._server_url(websocket_server))
+        await self.client.disconnect()
+        await asyncio.sleep(0.1)
+        await self.client.reconnect()
+
+        # Act
+        await asyncio.sleep(0.1)
+        await self.client.receive()
+
+        # Assert
+        assert self.messages == [b"connected"]
 
     @pytest.mark.asyncio
     async def test_exponential_backoff(self, websocket_server):

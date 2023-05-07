@@ -30,6 +30,7 @@
 __pycache__
 _build/
 build/
+data_catalog/
 dist/
 env/
 log/
@@ -39,6 +40,7 @@ logs/
 venv*/
 
 .DS_Store
+.null-ls*
 PERF.JSON
 output.json
 *dask-worker-space*

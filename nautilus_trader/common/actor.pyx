@@ -168,7 +168,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_start(self):
         """
@@ -258,7 +258,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_degrade(self):
         """
@@ -271,7 +271,7 @@ cdef class Actor(Component):
         Should be overridden in the actor implementation.
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_fault(self):
         """
@@ -286,7 +286,7 @@ cdef class Actor(Component):
         Should be overridden in the actor implementation.
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_venue_status_update(self, VenueStatusUpdate update):
         """
@@ -302,7 +302,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update):
         """
@@ -319,7 +319,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_instrument_close(self, InstrumentClose update):
         """
@@ -336,7 +336,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_instrument(self, Instrument instrument):
         """
@@ -352,7 +352,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_order_book(self, OrderBook order_book):
         """
@@ -368,7 +368,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_order_book_delta(self, OrderBookData delta):
         """
@@ -384,7 +384,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_ticker(self, Ticker ticker):
         """
@@ -400,7 +400,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         """
@@ -416,7 +416,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_trade_tick(self, TradeTick tick):
         """
@@ -432,7 +432,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_bar(self, Bar bar):
         """
@@ -448,7 +448,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_data(self, Data data):
         """
@@ -464,7 +464,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_historical_data(self, Data data):
         """
@@ -480,7 +480,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
     cpdef void on_event(self, Event event):
         """
@@ -496,7 +496,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        pass  # Optionally override in subclass
+        # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 

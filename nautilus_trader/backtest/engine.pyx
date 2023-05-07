@@ -19,6 +19,7 @@ from typing import Optional, Union
 
 import pandas as pd
 
+from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
 from nautilus_trader.config import BacktestEngineConfig
@@ -57,11 +58,11 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_advance_clock
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
-from nautilus_trader.core.rust.backtest cimport time_event_accumulator_free
+from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
-from nautilus_trader.core.rust.common cimport Vec_TimeEventHandler
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
@@ -145,7 +146,7 @@ cdef class BacktestEngine:
 
     def __del__(self) -> None:
         if self._accumulator._0 != NULL:
-            time_event_accumulator_free(self._accumulator)
+            time_event_accumulator_drop(self._accumulator)
 
     @property
     def trader_id(self) -> TraderId:
@@ -857,9 +858,12 @@ cdef class BacktestEngine:
         if self.kernel.emulator.is_running:
             self.kernel.emulator.stop()
 
-        # Process remaining messages
-        for exchange in self._venues.values():
-            exchange.process(self.kernel.clock.timestamp_ns())
+        try:
+            # Process remaining messages
+            for exchange in self._venues.values():
+                exchange.process(self.kernel.clock.timestamp_ns())
+        except AccountError:
+            pass
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
@@ -968,56 +972,64 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
+        cdef bint force_stop = False
         cdef uint64_t last_ns = 0
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
-        cdef Vec_TimeEventHandler raw_handlers
-        while data is not None:
-            if data.ts_init > end_ns:
-                # End of backtest
-                break
-            if data.ts_init > last_ns:
-                # Advance clocks to the next data time
-                raw_handlers = self._advance_time(data.ts_init, clocks)
-                raw_handlers_count = raw_handlers.len
+        cdef CVec raw_handlers
+        try:
+            while data is not None:
+                if data.ts_init > end_ns:
+                    # End of backtest
+                    break
+                if data.ts_init > last_ns:
+                    # Advance clocks to the next data time
+                    raw_handlers = self._advance_time(data.ts_init, clocks)
+                    raw_handlers_count = raw_handlers.len
 
-            # Process data through venue
-            if isinstance(data, OrderBookData):
-                self._venues[data.instrument_id.venue].process_order_book(data)
-            elif isinstance(data, QuoteTick):
-                self._venues[data.instrument_id.venue].process_quote_tick(data)
-            elif isinstance(data, TradeTick):
-                self._venues[data.instrument_id.venue].process_trade_tick(data)
-            elif isinstance(data, Bar):
-                self._venues[data.bar_type.instrument_id.venue].process_bar(data)
-            elif isinstance(data, VenueStatusUpdate):
-                self._venues[data.venue].process_venue_status(data)
-            elif isinstance(data, InstrumentStatusUpdate):
-                self._venues[data.instrument_id.venue].process_instrument_status(data)
+                # Process data through venue
+                if isinstance(data, OrderBookData):
+                    self._venues[data.instrument_id.venue].process_order_book(data)
+                elif isinstance(data, QuoteTick):
+                    self._venues[data.instrument_id.venue].process_quote_tick(data)
+                elif isinstance(data, TradeTick):
+                    self._venues[data.instrument_id.venue].process_trade_tick(data)
+                elif isinstance(data, Bar):
+                    self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+                elif isinstance(data, VenueStatusUpdate):
+                    self._venues[data.venue].process_venue_status(data)
+                elif isinstance(data, InstrumentStatusUpdate):
+                    self._venues[data.instrument_id.venue].process_instrument_status(data)
 
-            self._data_engine.process(data)
+                self._data_engine.process(data)
 
-            # Process all exchange messages
-            for exchange in self._venues.values():
-                exchange.process(data.ts_init)
+                # Process all exchange messages
+                for exchange in self._venues.values():
+                    exchange.process(data.ts_init)
 
-            last_ns = data.ts_init
-            data = self._next()
-            if data is None or data.ts_init > last_ns:
-                # Finally process the time events
-                self._process_raw_time_event_handlers(
-                    raw_handlers,
-                    clocks,
-                    last_ns,
-                    only_now=True,
-                )
+                last_ns = data.ts_init
+                data = self._next()
+                if data is None or data.ts_init > last_ns:
+                    # Finally process the time events
+                    self._process_raw_time_event_handlers(
+                        raw_handlers,
+                        clocks,
+                        last_ns,
+                        only_now=True,
+                    )
 
-                # Drop processed event handlers
-                vec_time_event_handlers_drop(raw_handlers)
-                raw_handlers_count = 0
+                    # Drop processed event handlers
+                    vec_time_event_handlers_drop(raw_handlers)
+                    raw_handlers_count = 0
 
-            self._iteration += 1
+                self._iteration += 1
+        except AccountError as e:
+            force_stop = True
+            self._log.error(f"Stopping backtest from {e}.")
         # ---------------------------------------------------------------------#
+
+        if force_stop:
+            return
 
         # Process remaining messages
         for exchange in self._venues.values():
@@ -1039,59 +1051,68 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef Vec_TimeEventHandler _advance_time(self, uint64_t now_ns, list clocks):
+    cdef CVec _advance_time(self, uint64_t ts_now, list clocks):
         cdef TestClock clock
         for clock in clocks:
             time_event_accumulator_advance_clock(
                 &self._accumulator,
                 &clock._mem,
-                now_ns,
+                ts_now,
                 False,
             )
 
-        cdef Vec_TimeEventHandler raw_handlers = time_event_accumulator_drain(&self._accumulator)
+        cdef CVec raw_handlers = time_event_accumulator_drain(&self._accumulator)
 
-        # Handle all events prior to the `now_ns`
+        # Handle all events prior to the `ts_now`
         self._process_raw_time_event_handlers(
             raw_handlers,
             clocks,
-            now_ns,
+            ts_now,
             only_now=False,
         )
 
         # Set all clocks to now
         for clock in clocks:
-            clock.set_time(now_ns)
+            clock.set_time(ts_now)
 
-        # Return all remaining events to be handled (at `now_ns`)
+        # Return all remaining events to be handled (at `ts_now`)
         return raw_handlers
 
     cdef void _process_raw_time_event_handlers(
         self,
-        Vec_TimeEventHandler raw_handlers,
+        CVec raw_handler_vec,
         list clocks,
-        uint64_t now_ns,
+        uint64_t ts_now,
         bint only_now,
     ):
+        cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
             uint64_t i
-            uint64_t event_ts_init
+            uint64_t ts_event_init
+            uint64_t ts_last_init = 0
             TimeEventHandler_t raw_handler
             TimeEvent event
             TestClock clock
             object callback
-        for i in range(raw_handlers.len):
-            raw_handler = <TimeEventHandler_t>raw_handlers.ptr[i]
-            event_ts_init = raw_handler.event.ts_init
-            if (only_now and event_ts_init < now_ns) or (not only_now and event_ts_init == now_ns):
+            SimulatedExchange exchange
+        for i in range(raw_handler_vec.len):
+            raw_handler = <TimeEventHandler_t>raw_handlers[i]
+            ts_event_init = raw_handler.event.ts_init
+            if (only_now and ts_event_init < ts_now) or (not only_now and ts_event_init == ts_now):
                 continue
             for clock in clocks:
-                clock.set_time(event_ts_init)
+                clock.set_time(ts_event_init)
             event = TimeEvent.from_mem_c(raw_handler.event)
 
             # Cast raw `PyObject *` to a `PyObject`
             callback = <object>raw_handler.callback_ptr
             callback(event)
+
+            if ts_event_init != ts_last_init:
+                # Process exchange messages
+                ts_last_init = ts_event_init
+                for exchange in self._venues.values():
+                    exchange.process(ts_event_init)
 
     def _log_pre_run(self):
         log_memory(self._log)

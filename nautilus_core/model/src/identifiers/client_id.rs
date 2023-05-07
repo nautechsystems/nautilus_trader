@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ pub struct ClientId {
 }
 
 impl Display for ClientId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -41,7 +41,7 @@ impl ClientId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`ClientId` value");
 
-        ClientId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -66,7 +66,7 @@ pub extern "C" fn client_id_clone(client_id: &ClientId) -> ClientId {
 
 /// Frees the memory for the given `client_id` by dropping.
 #[no_mangle]
-pub extern "C" fn client_id_free(client_id: ClientId) {
+pub extern "C" fn client_id_drop(client_id: ClientId) {
     drop(client_id); // Memory freed here
 }
 
@@ -124,9 +124,9 @@ mod tests {
     }
 
     #[test]
-    fn test_client_id_free_c() {
+    fn test_client_id_drop_c() {
         let id = ClientId::new("BINANCE");
-        client_id_free(id);
+        client_id_drop(id);
     }
 
     #[test]

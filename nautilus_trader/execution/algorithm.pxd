@@ -94,6 +94,7 @@ cdef class ExecAlgorithm(Actor):
         TimeInForce time_in_force=*,
         bint reduce_only=*,
         str tags=*,
+        bint reduce_primary=*,
     )
 
     cpdef LimitOrder spawn_limit(
@@ -108,6 +109,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity display_qty=*,
         TriggerType emulation_trigger=*,
         str tags=*,
+        bint reduce_primary=*,
     )
 
     cpdef MarketToLimitOrder spawn_market_to_limit(
@@ -120,6 +122,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity display_qty=*,
         TriggerType emulation_trigger=*,
         str tags=*,
+        bint reduce_primary=*,
     )
 
     cpdef void submit_order(self, Order order)

@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -57,7 +57,7 @@ impl Default for UUID4 {
 }
 
 impl Display for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -76,7 +76,7 @@ pub extern "C" fn uuid4_clone(uuid4: &UUID4) -> UUID4 {
 }
 
 #[no_mangle]
-pub extern "C" fn uuid4_free(uuid4: UUID4) {
+pub extern "C" fn uuid4_drop(uuid4: UUID4) {
     drop(uuid4); // Memory freed here
 }
 
@@ -183,10 +183,10 @@ mod tests {
     }
 
     #[test]
-    fn test_c_api_uuid4_free() {
+    fn test_c_api_uuid4_drop() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
-        uuid4_free(uuid);
+        uuid4_drop(uuid);
     }
 
     #[test]

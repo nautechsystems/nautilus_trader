@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut};
-use std::ptr::null;
 
 use nautilus_common::clock::{TestClock, TestClockAPI};
-use nautilus_common::timer::{TimeEventHandler, Vec_TimeEventHandler};
+use nautilus_common::timer::TimeEventHandler;
+use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers.
@@ -44,19 +43,17 @@ impl TimeEventAccumulator {
 
     /// Drain the accumulated time event handlers in sorted order (by the events `ts_event`).
     pub fn drain(&mut self) -> Vec<TimeEventHandler> {
-        self.event_handlers.sort_by(|a, b| {
-            a.event
-                .ts_event
-                .partial_cmp(&b.event.ts_event)
-                .unwrap_or(Ordering::Equal)
-        });
+        // stable sort is not necessary since there is no relation between
+        // events of the same clock. Only time based ordering is needed.
+        self.event_handlers
+            .sort_unstable_by_key(|v| v.event.ts_event);
         self.event_handlers.drain(..).collect()
     }
 }
 
 impl Default for TimeEventAccumulator {
     fn default() -> Self {
-        TimeEventAccumulator::new()
+        Self::new()
     }
 }
 
@@ -87,7 +84,7 @@ pub extern "C" fn time_event_accumulator_new() -> TimeEventAccumulatorAPI {
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_accumulator_free(accumulator: TimeEventAccumulatorAPI) {
+pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorAPI) {
     drop(accumulator); // Memory freed here
 }
 
@@ -102,19 +99,8 @@ pub extern "C" fn time_event_accumulator_advance_clock(
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_accumulator_drain(
-    accumulator: &mut TimeEventAccumulatorAPI,
-) -> Vec_TimeEventHandler {
-    let handlers = accumulator.drain();
-    let len = handlers.len();
-    let data = match handlers.is_empty() {
-        true => null() as *const TimeEventHandler,
-        false => &handlers.leak()[0],
-    };
-    Vec_TimeEventHandler {
-        ptr: data as *const TimeEventHandler,
-        len,
-    }
+pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
+    accumulator.drain().into()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -126,9 +112,8 @@ mod tests {
 
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
-    use pyo3::ffi::{self, Py_INCREF};
     use pyo3::types::PyList;
-    use pyo3::{prelude::*, AsPyPointer};
+    use pyo3::{AsPyPointer, Py, Python};
 
     #[test]
     fn test_accumulator_drain_sorted() {
@@ -144,21 +129,21 @@ mod tests {
             let time_event2 = TimeEvent::new(String::from("TEST_EVENT_2"), UUID4::new(), 300, 300);
             let time_event3 = TimeEvent::new(String::from("TEST_EVENT_3"), UUID4::new(), 200, 200);
 
-            let callback_ptr = py_append.as_ptr() as *mut ffi::PyObject;
-            unsafe { Py_INCREF(callback_ptr) };
+            // Note: as_ptr returns a borrowed pointer. It is valid as long
+            // as the object is in scope. In this case `callback_ptr` is valid
+            // as long as `py_append` is in scope.
+            let callback_ptr = py_append.as_ptr() as *mut pyo3::ffi::PyObject;
 
             let handler1 = TimeEventHandler {
                 event: time_event1.clone(),
                 callback_ptr,
             };
 
-            unsafe { Py_INCREF(callback_ptr) };
             let handler2 = TimeEventHandler {
                 event: time_event2.clone(),
                 callback_ptr,
             };
 
-            unsafe { Py_INCREF(callback_ptr) };
             let handler3 = TimeEventHandler {
                 event: time_event3.clone(),
                 callback_ptr,

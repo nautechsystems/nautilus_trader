@@ -16,11 +16,13 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 use nautilus_core::string::string_to_cstr;
 use nautilus_core::time::UnixNanos;
+use thiserror::Error;
 
 use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
@@ -36,7 +38,7 @@ pub struct BarSpecification {
 }
 
 impl Display for BarSpecification {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
     }
 }
@@ -125,6 +127,70 @@ pub struct BarType {
     pub aggregation_source: AggregationSource,
 }
 
+#[derive(Debug, Error)]
+#[error("Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
+pub struct BarTypeParseError {
+    input: String,
+    token: String,
+    position: usize,
+}
+
+impl FromStr for BarType {
+    type Err = BarTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let pieces: Vec<&str> = s.rsplitn(5, '-').collect();
+        let rev_pieces: Vec<&str> = pieces.into_iter().rev().collect();
+        if rev_pieces.len() != 5 {
+            return Err(BarTypeParseError {
+                input: s.to_string(),
+                token: "".to_string(),
+                position: 0,
+            });
+        }
+
+        let instrument_id =
+            InstrumentId::from_str(rev_pieces[0]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[0].to_string(),
+                position: 0,
+            })?;
+
+        let step = rev_pieces[1].parse().map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: rev_pieces[1].to_string(),
+            position: 1,
+        })?;
+        let aggregation =
+            BarAggregation::from_str(rev_pieces[2]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[2].to_string(),
+                position: 2,
+            })?;
+        let price_type = PriceType::from_str(rev_pieces[3]).map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: rev_pieces[3].to_string(),
+            position: 3,
+        })?;
+        let aggregation_source =
+            AggregationSource::from_str(rev_pieces[4]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[4].to_string(),
+                position: 4,
+            })?;
+
+        Ok(BarType {
+            instrument_id,
+            spec: BarSpecification {
+                step,
+                aggregation,
+                price_type,
+            },
+            aggregation_source,
+        })
+    }
+}
+
 impl PartialEq for BarType {
     fn eq(&self, other: &Self) -> bool {
         self.instrument_id == other.instrument_id
@@ -163,7 +229,7 @@ impl PartialOrd for BarType {
 }
 
 impl Display for BarType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}-{}-{}",
@@ -179,7 +245,7 @@ pub extern "C" fn bar_type_new(
     aggregation_source: u8,
 ) -> BarType {
     let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
-        .expect("error converting enum from integer");
+        .expect("Error converting enum from integer");
     BarType {
         instrument_id,
         spec,
@@ -188,7 +254,7 @@ pub extern "C" fn bar_type_new(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_copy(bar_type: &BarType) -> BarType {
+pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
     bar_type.clone()
 }
 
@@ -231,7 +297,7 @@ pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_free(bar_type: BarType) {
+pub extern "C" fn bar_type_drop(bar_type: BarType) {
     drop(bar_type); // Memory freed here
 }
 
@@ -249,7 +315,7 @@ pub struct Bar {
 }
 
 impl Display for Bar {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{},{}",
@@ -313,12 +379,12 @@ pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_copy(bar: &Bar) -> Bar {
+pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
     bar.clone()
 }
 
 #[no_mangle]
-pub extern "C" fn bar_free(bar: Bar) {
+pub extern "C" fn bar_drop(bar: Bar) {
     drop(bar); // Memory freed here
 }
 
@@ -405,6 +471,90 @@ mod tests {
     }
 
     #[test]
+    fn test_bar_type_parse_valid() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+        let bar_type = BarType::from_str(input).unwrap();
+
+        assert_eq!(
+            bar_type.instrument_id,
+            InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+        );
+        assert_eq!(
+            bar_type.spec,
+            BarSpecification {
+                step: 1,
+                aggregation: BarAggregation::Minute,
+                price_type: PriceType::Last,
+            }
+        );
+        assert_eq!(bar_type.aggregation_source, AggregationSource::External);
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_0() {
+        let input = "BTCUSDT-PERP-1-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0")
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_1() {
+        let input = "BTCUSDT-PERP.BINANCE-INVALID-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
+            )
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_2() {
+        let input = "BTCUSDT-PERP.BINANCE-1-INVALID-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
+            )
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_3() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-INVALID-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
+            )
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_4() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-BID-INVALID";
+        let result = BarType::from_str(input);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
+            )
+        );
+    }
+
+    #[test]
     fn test_bar_type_equality() {
         let instrument_id1 = InstrumentId {
             symbol: Symbol::new("AUD/USD"),
@@ -476,6 +626,7 @@ mod tests {
         assert!(bar_type3 > bar_type1);
         assert!(bar_type3 >= bar_type1);
     }
+
     #[test]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {

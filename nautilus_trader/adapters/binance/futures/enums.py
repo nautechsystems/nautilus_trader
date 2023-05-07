@@ -22,7 +22,7 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders import Order
 
 
 """

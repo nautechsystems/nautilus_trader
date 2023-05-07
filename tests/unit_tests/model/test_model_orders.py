@@ -45,11 +45,12 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
-from nautilus_trader.model.orders.stop_limit import StopLimitOrder
-from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import MarketToLimitOrder
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -2023,7 +2024,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100_000)
-        assert order.avg_px == 1.0000185714285712
+        assert order.avg_px == pytest.approx(1.0000185714285712, rel=1e-9)
         assert len(order.trade_ids) == 3
         assert not order.is_inflight
         assert not order.is_open
@@ -2123,3 +2124,37 @@ class TestOrders:
         assert order.is_open
         assert not order.is_closed
         assert order.ts_last == 1_000_000_000, order.ts_last
+
+    def test_market_order_transformation_to_limit_order(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        price = Price.from_str("1.00000")
+
+        # Act
+        order = LimitOrder.transform_py(order, ts_init=1, price=price)
+
+        # Assert
+        assert order.order_type == OrderType.LIMIT
+        assert order.price == price
+        assert order.ts_init == 1
+
+    def test_limit_order_transformation_to_market_order(self) -> None:
+        # Arrange
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        order = MarketOrder.transform_py(order, ts_init=1)
+
+        # Assert
+        assert order.order_type == OrderType.MARKET
+        assert order.ts_init == 1

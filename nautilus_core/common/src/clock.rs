@@ -16,10 +16,10 @@
 use std::collections::HashMap;
 use std::ffi::c_char;
 use std::ops::{Deref, DerefMut};
-use std::ptr::null;
 use std::time::Duration;
 
 use nautilus_core::correctness;
+use nautilus_core::cvec::CVec;
 use nautilus_core::datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs};
 use nautilus_core::string::cstr_to_string;
 use nautilus_core::time::{duration_since_unix_epoch, UnixNanos};
@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
 
-use crate::timer::{TestTimer, TimeEvent, TimeEventHandler, Vec_TimeEventHandler};
+use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 
 const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
 
@@ -266,7 +266,7 @@ impl Clock for TestClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -294,7 +294,7 @@ impl Clock for TestClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -393,13 +393,13 @@ impl Clock for LiveClock {
     fn set_time_alert_ns_py(
         &mut self,
         name: String,
-        alert_time_ns: UnixNanos,
+        mut alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -407,11 +407,12 @@ impl Clock for LiveClock {
             None => None,
         };
 
-        let now_ns = self.timestamp_ns();
+        let ts_now = self.timestamp_ns();
+        alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let timer = TestTimer::new(
             name.clone(),
-            alert_time_ns - now_ns,
-            now_ns,
+            alert_time_ns - ts_now,
+            ts_now,
             Some(alert_time_ns),
         );
         self.timers.insert(name, timer);
@@ -428,7 +429,7 @@ impl Clock for LiveClock {
         correctness::valid_string(&name, "`Timer` name");
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
-            "All Python handlers were `None`"
+            "All Python callbacks were `None`"
         );
 
         match callback_py {
@@ -491,7 +492,7 @@ pub extern "C" fn test_clock_new() -> TestClockAPI {
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_free(clock: TestClockAPI) {
+pub extern "C" fn test_clock_drop(clock: TestClockAPI) {
     drop(clock); // Memory freed here
 }
 
@@ -605,26 +606,20 @@ pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut TestClockAPI,
     to_time_ns: u64,
     set_time: u8,
-) -> Vec_TimeEventHandler {
+) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
-    let handlers: Vec<TimeEventHandler> = clock.match_handlers_py(events);
-    let len = handlers.len();
-    let data = match handlers.is_empty() {
-        true => null() as *const TimeEventHandler,
-        false => &handlers.leak()[0],
-    };
-    Vec_TimeEventHandler {
-        ptr: data as *const TimeEventHandler,
-        len,
-    }
+    clock.match_handlers_py(events).into()
 }
 
 // TODO: This struct implementation potentially leaks memory
 // TODO: Skip clippy check for now since it requires large modification
 #[allow(clippy::drop_non_drop)]
 #[no_mangle]
-pub extern "C" fn vec_time_event_handlers_drop(v: Vec_TimeEventHandler) {
-    drop(v); // Memory freed here
+pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
+    let CVec { ptr, len, cap } = v;
+    let data: Vec<TimeEventHandler> =
+        unsafe { Vec::from_raw_parts(ptr as *mut TimeEventHandler, len, cap) };
+    drop(data); // Memory freed here
 }
 
 /// # Safety
@@ -681,7 +676,7 @@ pub extern "C" fn live_clock_new() -> LiveClockAPI {
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_free(clock: LiveClockAPI) {
+pub extern "C" fn live_clock_drop(clock: LiveClockAPI) {
     drop(clock); // Memory freed here
 }
 

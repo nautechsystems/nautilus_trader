@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 use std::ffi::c_char;
+use std::fmt;
 use std::fs::{create_dir_all, File};
 use std::io::{Stderr, Stdout};
 use std::path::{Path, PathBuf};
@@ -62,6 +63,16 @@ pub struct LogMessage {
     color: LogColor,
     component: String,
     msg: String,
+}
+
+impl fmt::Display for LogMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} [{}] {}: {}",
+            self.timestamp_ns, self.level, self.component, self.msg
+        )
+    }
 }
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
@@ -149,7 +160,7 @@ impl Logger {
             None => false,
             Some(ref unrecognized) => {
                 eprintln!(
-                    "Error: Unrecognized log file format: {}. Using plain text format as default.",
+                    "Unrecognized log file format: {}. Using plain text format as default.",
                     unrecognized
                 );
                 false
@@ -379,7 +390,7 @@ impl Logger {
         color: LogColor,
         component: String,
         msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    ) {
         let log_message = LogMessage {
             timestamp_ns,
             level,
@@ -387,56 +398,28 @@ impl Logger {
             component,
             msg,
         };
-        self.tx.send(log_message)
+        if let Err(SendError(msg)) = self.tx.send(log_message) {
+            eprintln!("Error sending log message: {}", msg);
+        }
     }
 
-    pub fn debug(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn debug(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
     }
 
-    pub fn info(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn info(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Info, color, component, msg)
     }
 
-    pub fn warn(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn warn(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
     }
 
-    pub fn error(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn error(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Error, color, component, msg)
     }
 
-    pub fn critical(
-        &mut self,
-        timestamp_ns: u64,
-        color: LogColor,
-        component: String,
-        msg: String,
-    ) -> Result<(), SendError<LogMessage>> {
+    pub fn critical(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
         self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
     }
 }
@@ -503,7 +486,7 @@ pub unsafe extern "C" fn logger_new(
 }
 
 #[no_mangle]
-pub extern "C" fn logger_free(logger: CLogger) {
+pub extern "C" fn logger_drop(logger: CLogger) {
     drop(logger); // Memory freed here
 }
 
@@ -543,7 +526,7 @@ pub unsafe extern "C" fn logger_log(
 ) {
     let component = cstr_to_string(component_ptr);
     let msg = cstr_to_string(msg_ptr);
-    let _ = logger.send(timestamp_ns, level, color, component, msg);
+    logger.send(timestamp_ns, level, color, component, msg);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -558,6 +541,21 @@ mod tests {
     use nautilus_model::identifiers::trader_id::TraderId;
     use std::{cell::RefCell, fs, path::PathBuf, time::Duration};
     use tempfile::NamedTempFile;
+
+    fn create_logger() -> Logger {
+        Logger::new(
+            TraderId::new("TRADER-001"),
+            String::from("user-01"),
+            UUID4::new(),
+            LogLevel::Info,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+    }
 
     #[test]
     fn log_message_serialization() {
@@ -580,45 +578,60 @@ mod tests {
 
     #[test]
     fn test_new_logger() {
-        let logger = Logger::new(
-            TraderId::new("TRADER-000"),
-            String::from("user-01"),
-            UUID4::new(),
-            LogLevel::Debug,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-        );
-        assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
-        assert_eq!(logger.level_stdout, LogLevel::Debug);
+        let logger = create_logger();
+
+        assert_eq!(logger.trader_id, TraderId::new("TRADER-001"));
+        assert_eq!(logger.level_stdout, LogLevel::Info);
+        assert_eq!(logger.level_file, None);
+        assert!(!logger.is_bypassed);
     }
 
     #[test]
     fn test_logger_debug() {
-        let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
-            String::from("user-01"),
-            UUID4::new(),
-            LogLevel::Info,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-        );
+        let mut logger = create_logger();
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.debug(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test debug message."),
+        );
+    }
+
+    #[test]
+    fn test_logger_info() {
+        let mut logger = create_logger();
+
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test info message."),
+        );
+    }
+
+    #[test]
+    fn test_logger_error() {
+        let mut logger = create_logger();
+
+        logger.error(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test error message."),
+        );
+    }
+
+    #[test]
+    fn test_logger_critical() {
+        let mut logger = create_logger();
+
+        logger.critical(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test critical message."),
+        );
     }
 
     #[ignore]
@@ -646,14 +659,12 @@ mod tests {
             false,
         );
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test."),
+        );
 
         let mut log_contents = String::new();
 
@@ -702,14 +713,12 @@ mod tests {
             false,
         );
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test."),
+        );
 
         thread::sleep(Duration::from_secs(1));
 
@@ -745,14 +754,12 @@ mod tests {
             false,
         );
 
-        logger
-            .info(
-                1650000000000000,
-                LogColor::Normal,
-                String::from("RiskEngine"),
-                String::from("This is a test."),
-            )
-            .expect("Error while logging");
+        logger.info(
+            1650000000000000,
+            LogColor::Normal,
+            String::from("RiskEngine"),
+            String::from("This is a test."),
+        );
 
         let mut log_contents = String::new();
 

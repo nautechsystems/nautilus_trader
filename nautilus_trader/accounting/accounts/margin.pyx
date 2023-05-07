@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.error import AccountMarginExceeded
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
@@ -415,9 +417,7 @@ cdef class MarginAccount(Account):
     cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            # TODO(cs): Temporary pending reimplementation of accounting
-            print("Cannot recalculate balance when no current balance")
-            return
+            raise RuntimeError("cannot recalculate balance when no current balance")
 
         cdef double total_margin = 0.0
 
@@ -428,10 +428,19 @@ cdef class MarginAccount(Account):
             total_margin += margin.initial.as_f64_c()
             total_margin += margin.maintenance.as_f64_c()
 
+        cdef double total_free = current_balance.total.as_f64_c() - total_margin
+
+        if total_free <= 0.0:
+            raise AccountMarginExceeded(
+                balance=current_balance.total.as_decimal(),
+                margin=Money(total_margin, currency).as_decimal(),
+                currency=currency,
+            )
+
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
             Money(total_margin, currency),
-            Money(current_balance.total.as_f64_c() - total_margin, currency),
+            Money(total_free, currency),
         )
 
         self._balances[currency] = new_balance
@@ -630,7 +639,7 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        list[Money] or ``None``
+        list[Money]
 
         """
         Condition.not_none(instrument, "instrument")

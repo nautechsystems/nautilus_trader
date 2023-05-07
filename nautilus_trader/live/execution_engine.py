@@ -56,12 +56,12 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.unpacker import OrderUnpacker
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -364,10 +364,10 @@ class LiveExecutionEngine(ExecutionEngine):
         inflight_len = len(inflight_orders)
         self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight.")
         for order in inflight_orders:
-            now_ns = self._clock.timestamp_ns()
+            ts_now = self._clock.timestamp_ns()
             ts_init_last = order.last_event.ts_event
-            self._log.debug(f"Checking in-flight order: {now_ns=}, {ts_init_last=}, {order=}...")
-            if now_ns > order.last_event.ts_event + self._inflight_check_threshold_ns:
+            self._log.debug(f"Checking in-flight order: {ts_now=}, {ts_init_last=}, {order=}...")
+            if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
                 self._log.debug(f"Querying {order} with exchange...")
                 query = QueryOrder(
                     trader_id=order.trader_id,
@@ -647,7 +647,7 @@ class LiveExecutionEngine(ExecutionEngine):
             )
         return True
 
-    def _reconcile_position_report(self, report) -> bool:
+    def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
         if report.venue_position_id is not None:
             return self._reconcile_position_report_hedging(report)
         else:
@@ -865,7 +865,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {triggered}.")
         self._handle_event(triggered)
 
-    def _generate_order_updated(self, order: Order, report: OrderStatusReport):
+    def _generate_order_updated(self, order: Order, report: OrderStatusReport) -> None:
         updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,

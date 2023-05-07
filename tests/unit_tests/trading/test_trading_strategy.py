@@ -52,8 +52,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.list import OrderList
-from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -80,7 +80,7 @@ class TestStrategy:
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
-            # bypass=True,
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()
@@ -250,14 +250,30 @@ class TestStrategy:
     def test_initialization(self):
         # Arrange
         strategy = Strategy(config=StrategyConfig(order_id_tag="001"))
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act, Assert
-        assert strategy.state == ComponentState.PRE_INITIALIZED
+        assert strategy.state == ComponentState.READY
         assert not strategy.indicators_initialized()
 
     def test_on_save_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         strategy.on_save()
@@ -268,6 +284,14 @@ class TestStrategy:
     def test_on_load_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         strategy.on_load({})
@@ -280,6 +304,14 @@ class TestStrategy:
         config = StrategyConfig()
 
         strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
         strategy.save()
 
         # Assert

@@ -183,7 +183,7 @@ cdef class BettingInstrument(Instrument):
         return BettingInstrument.from_dict_c(values)
 
     @staticmethod
-    def to_dict(BettingInstrument obj):
+    def to_dict(BettingInstrument obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 

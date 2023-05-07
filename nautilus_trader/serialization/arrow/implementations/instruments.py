@@ -12,7 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.model.instruments.base import Instrument
+
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 

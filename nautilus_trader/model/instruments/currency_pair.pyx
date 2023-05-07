@@ -279,7 +279,7 @@ cdef class CurrencyPair(Instrument):
         return CurrencyPair.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CurrencyPair obj):
+    def to_dict(CurrencyPair obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 

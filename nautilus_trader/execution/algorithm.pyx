@@ -195,10 +195,14 @@ cdef class ExecAlgorithm(Actor):
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
         cdef uint8_t size_precision = primary.quantity._mem.precision
         cdef uint64_t new_raw = primary.quantity._mem.raw - spawn_qty._mem.raw
+        if new_raw <= 0:
+            self._log.error("Cannot reduce primary order to non-positive quantity.")
+            return
+
         cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=primary.trader_id,
@@ -211,8 +215,8 @@ cdef class ExecAlgorithm(Actor):
             price=None,
             trigger_price=None,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         primary.apply(updated)
@@ -350,6 +354,7 @@ cdef class ExecAlgorithm(Actor):
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
         str tags = None,
+        bint reduce_primary = True,
     ):
         """
         Spawn a new ``MARKET`` order from the given primary order.
@@ -367,6 +372,8 @@ cdef class ExecAlgorithm(Actor):
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        reduce_primary : bool, default True
+            If the primary order quantity should be reduced by the given `quantity`.
 
         Returns
         -------
@@ -374,8 +381,6 @@ cdef class ExecAlgorithm(Actor):
 
         Raises
         ------
-        ValueError
-            If `primary.status` is not ``INITIALIZED``.
         ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
@@ -386,10 +391,10 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
-        self._reduce_primary_order(primary, spawn_qty=quantity)
+        if reduce_primary:
+            self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return MarketOrder(
             trader_id=primary.trader_id,
@@ -423,6 +428,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
         str tags = None,
+        bint reduce_primary = True,
     ):
         """
         Spawn a new ``LIMIT`` order from the given primary order.
@@ -450,6 +456,8 @@ cdef class ExecAlgorithm(Actor):
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        reduce_primary : bool, default True
+            If the primary order quantity should be reduced by the given `quantity`.
 
         Returns
         -------
@@ -457,8 +465,6 @@ cdef class ExecAlgorithm(Actor):
 
         Raises
         ------
-        ValueError
-            If `primary.status` is not ``INITIALIZED``.
         ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
@@ -471,10 +477,10 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
-        self._reduce_primary_order(primary, spawn_qty=quantity)
+        if reduce_primary:
+            self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return LimitOrder(
             trader_id=primary.trader_id,
@@ -511,6 +517,7 @@ cdef class ExecAlgorithm(Actor):
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
         str tags = None,
+        bint reduce_primary = True,
     ):
         """
         Spawn a new ``MARKET_TO_LIMIT`` order from the given primary order.
@@ -534,6 +541,8 @@ cdef class ExecAlgorithm(Actor):
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
+        reduce_primary : bool, default True
+            If the primary order quantity should be reduced by the given `quantity`.
 
         Returns
         -------
@@ -541,8 +550,6 @@ cdef class ExecAlgorithm(Actor):
 
         Raises
         ------
-        ValueError
-            If `primary.status` is not ``INITIALIZED``.
         ValueError
             If `primary.exec_algorithm_id` is not equal to `self.id`.
         ValueError
@@ -555,10 +562,10 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.not_none(primary, "primary")
         Condition.not_none(quantity, "quantity")
-        Condition.equal(primary.status, OrderStatus.INITIALIZED, "primary.status", "order_status")
         Condition.equal(primary.exec_algorithm_id, self.id, "primary.exec_algorithm_id", "id")
 
-        self._reduce_primary_order(primary, spawn_qty=quantity)
+        if reduce_primary:
+            self._reduce_primary_order(primary, spawn_qty=quantity)
 
         return MarketToLimitOrder(
             trader_id=primary.trader_id,
@@ -663,6 +670,13 @@ cdef class ExecAlgorithm(Actor):
 
         # Handle primary (original) order
         primary_command = self.cache.load_submit_order_command(order.client_order_id)
+        cdef Order cached_order = self.cache.order(order.client_order_id)
+        if cached_order.order_type != order.order_type:
+            self.cache.add_order(order, primary_command.position_id, override=True)
+
+        # Replace commands order with transformed order
+        primary_command.order = order
+
         Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
         if primary_command is None:
             self._log.error(
@@ -763,7 +777,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
@@ -878,7 +892,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
 
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=order.trader_id,
@@ -891,8 +905,8 @@ cdef class ExecAlgorithm(Actor):
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         order.apply(updated)
@@ -926,7 +940,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if not order.is_emulated_c():
+        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
@@ -961,7 +975,7 @@ cdef class ExecAlgorithm(Actor):
 # -- EVENTS ---------------------------------------------------------------------------------------
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -970,12 +984,12 @@ cdef class ExecAlgorithm(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -984,8 +998,8 @@ cdef class ExecAlgorithm(Actor):
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
 # -- EGRESS ---------------------------------------------------------------------------------------

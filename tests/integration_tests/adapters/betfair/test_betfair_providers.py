@@ -42,7 +42,7 @@ class TestBetfairInstrumentProvider:
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = Logger(clock=self.clock)
+        self.logger = Logger(clock=self.clock, bypass=True)
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairInstrumentProvider(
             client=self.client,

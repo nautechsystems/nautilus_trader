@@ -64,7 +64,7 @@ cdef extern from "../includes/core.h":
     # - Assumes `ptr` is a valid C string pointer.
     # # Panics
     # - If `ptr` is null.
-    void cstr_free(const char *ptr);
+    void cstr_drop(const char *ptr);
 
     # Returns the current seconds since the UNIX epoch.
     double unix_timestamp();
@@ -82,7 +82,7 @@ cdef extern from "../includes/core.h":
 
     UUID4_t uuid4_clone(const UUID4_t *uuid4);
 
-    void uuid4_free(UUID4_t uuid4);
+    void uuid4_drop(UUID4_t uuid4);
 
     # Returns a [`UUID4`] from C string pointer.
     #

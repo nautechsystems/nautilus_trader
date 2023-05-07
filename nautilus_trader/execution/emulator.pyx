@@ -398,7 +398,7 @@ cdef class OrderEmulator(Actor):
             trigger_price = order.trigger_price
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -410,8 +410,8 @@ cdef class OrderEmulator(Actor):
             price=price,
             trigger_price=trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
@@ -466,16 +466,18 @@ cdef class OrderEmulator(Actor):
         PositionId position_id,
         ClientId client_id,
     ):
-        cdef SubmitOrder submit = SubmitOrder(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            order=order,
-            position_id=position_id,
-            client_id=client_id,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-        self.cache.add_submit_order_command(submit)
+        cdef SubmitOrder submit = self.cache.load_submit_order_command(order.client_order_id)
+        if submit is None:
+            submit = SubmitOrder(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                order=order,
+                position_id=position_id,
+                client_id=client_id,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+            self.cache.add_submit_order_command(submit)
 
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
             if order.exec_algorithm_id is not None:
@@ -506,7 +508,7 @@ cdef class OrderEmulator(Actor):
         self._commands_submit_order.pop(order.client_order_id, None)
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderCanceled event = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -515,8 +517,8 @@ cdef class OrderEmulator(Actor):
             venue_order_id=order.venue_order_id,  # Probably None
             account_id=order.account_id,  # Probably None
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         self._send_exec_event(event)
 
@@ -591,6 +593,7 @@ cdef class OrderEmulator(Actor):
             SubmitOrderList submit_order_list
             Order contingent_order
             Order spawned_order
+            Order primary_order
             list exec_spawn_orders
             uint64_t raw_filled_qty
             Quantity filled_qty
@@ -601,6 +604,8 @@ cdef class OrderEmulator(Actor):
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order, f"Cannot find child order for {repr(client_order_id)}"
+                if child_order.is_closed_c():
+                    continue
                 if not self.cache.load_submit_order_command(child_order.client_order_id):
                     self._create_new_submit_order(
                         order=child_order,
@@ -609,14 +614,23 @@ cdef class OrderEmulator(Actor):
                     )
                     continue
 
-                # Check if execution algorithm spawned order
+                # Check if execution algorithm spawned order (only update based on primary)
                 if order.exec_spawn_id is None:
+                    return
+
+                primary_order = self.cache.order(order.exec_spawn_id)
+                if primary_order is None:
+                    self._log.error(f"Cannot find primary order {repr(order.exec_spawn_id)}.")
+                    return
+
+                # Check if primary already pending cancel or completed (no need to update)
+                if primary_order.status == OrderStatus.PENDING_CANCEL or primary_order.is_closed_c():
                     return
 
                 raw_filled_qty = 0
                 filled_qty = None
 
-                # Get primary order for execution spawn sequence
+                # Check total size of execution spawn sequence
                 exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
                 for spawned_order in exec_spawn_orders:
                     raw_filled_qty += spawned_order.filled_qty._mem.raw
@@ -650,6 +664,10 @@ cdef class OrderEmulator(Actor):
             if matching_core is not None:
                 matching_core.delete_order(order)
 
+        if order.exec_spawn_id is not None:
+            # Do not handle contingencies based on spawned execution algorithm orders
+            return
+
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
         for client_order_id in order.linked_order_ids:
@@ -670,7 +688,7 @@ cdef class OrderEmulator(Actor):
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -682,8 +700,8 @@ cdef class OrderEmulator(Actor):
             price=None,
             trigger_price=None,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
 
         order.apply(event)
@@ -892,7 +910,7 @@ cdef class OrderEmulator(Actor):
             return  # No updates
 
         # Generate event
-        cdef uint64_t timestamp_ns = self._clock.timestamp_ns()
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -904,8 +922,8 @@ cdef class OrderEmulator(Actor):
             price=new_price,
             trigger_price=new_trigger_price,
             event_id=UUID4(),
-            ts_event=timestamp_ns,
-            ts_init=timestamp_ns,
+            ts_event=ts_now,
+            ts_init=ts_now,
         )
         order.apply(event)
 

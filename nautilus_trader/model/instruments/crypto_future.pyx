@@ -270,7 +270,7 @@ cdef class CryptoFuture(Instrument):
         return CryptoFuture.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CryptoFuture obj):
+    def to_dict(CryptoFuture obj) -> dict[str, object]:
         """
         Return a dictionary representation of this object.
 

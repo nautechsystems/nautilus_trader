@@ -47,7 +47,7 @@ impl Currency {
         correctness::valid_string(name, "`Currency` name");
         correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
 
-        Currency {
+        Self {
             code: Box::new(Arc::new(code.to_string())),
             precision,
             iso4217,
@@ -88,7 +88,7 @@ pub extern "C" fn currency_clone(currency: &Currency) -> Currency {
 }
 
 #[no_mangle]
-pub extern "C" fn currency_free(currency: Currency) {
+pub extern "C" fn currency_drop(currency: Currency) {
     drop(currency); // Memory freed here
 }
 

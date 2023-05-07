@@ -71,7 +71,7 @@ pub fn string_to_cstr(s: &str) -> *const c_char {
 /// # Panics
 /// - If `ptr` is null.
 #[no_mangle]
-pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
+pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let cstring = CString::from_raw(ptr as *mut c_char);
     drop(cstring);
@@ -148,9 +148,9 @@ mod tests {
     }
 
     #[test]
-    fn test_cstr_free() {
+    fn test_cstr_drop() {
         let c_string = CString::new("test string3").expect("CString::new failed");
         let ptr = c_string.into_raw(); // <-- pointer _must_ be obtained this way
-        unsafe { cstr_free(ptr) };
+        unsafe { cstr_drop(ptr) };
     }
 }

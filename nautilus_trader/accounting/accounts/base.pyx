@@ -15,6 +15,8 @@
 
 from typing import Optional
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport account_type_to_str
@@ -405,13 +407,9 @@ cdef class Account:
         for balance in balances:
             if not balance.total._mem.raw > 0:
                 if balance.total._mem.raw < 0:
-                    raise RuntimeError(
-                        f"account blow up (balance was {balance.total}).",
-                    )
+                    raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
                 if balance.total.is_zero() and not allow_zero:
-                    raise RuntimeError(
-                        f"account blow up (balance was {balance.total}).",
-                    )
+                    raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
                 else:
                     # Clear asset balance
                     self._balances.pop(balance.currency, None)

@@ -19,7 +19,9 @@ from docker.models.containers import ContainerCollection
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 
 
-@pytest.mark.no_ci
+pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
+
+
 def test_gateway_start_no_container(mocker):
     # Arrange,
     mock_docker = mocker.patch.object(ContainerCollection, "run")

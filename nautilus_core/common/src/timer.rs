@@ -15,7 +15,7 @@
 
 use std::cmp::Ordering;
 use std::ffi::c_char;
-use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 use nautilus_core::correctness;
@@ -53,8 +53,8 @@ impl TimeEvent {
     }
 }
 
-impl fmt::Display for TimeEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for TimeEvent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "TimeEvent(name={}, event_id={}, ts_event={}, ts_init={})",
@@ -99,14 +99,6 @@ impl Ord for TimeEventHandler {
     }
 }
 
-#[repr(C)]
-#[allow(non_camel_case_types)]
-/// Provides a vector of time event handlers.
-pub struct Vec_TimeEventHandler {
-    pub ptr: *const TimeEventHandler,
-    pub len: usize,
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,12 +115,12 @@ pub unsafe extern "C" fn time_event_new(
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_copy(event: &TimeEvent) -> TimeEvent {
+pub extern "C" fn time_event_clone(event: &TimeEvent) -> TimeEvent {
     event.clone()
 }
 
 #[no_mangle]
-pub extern "C" fn time_event_free(event: TimeEvent) {
+pub extern "C" fn time_event_drop(event: TimeEvent) {
     drop(event); // Memory freed here
 }
 
@@ -153,6 +145,11 @@ pub trait Timer {
     fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent;
     fn iterate_next_time(&mut self, ts_now: UnixNanos);
     fn cancel(&mut self);
+}
+
+#[no_mangle]
+pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
+    v
 }
 
 #[derive(Clone)]

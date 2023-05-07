@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
@@ -33,8 +33,8 @@ class BinanceWebSocketClient(WebSocketClient):
         clock: LiveClock,
         logger: Logger,
         handler: Callable[[bytes], None],
-        base_url: Optional[str] = None,
-    ):
+        base_url: str,
+    ) -> None:
         super().__init__(
             loop=loop,
             logger=logger,
@@ -42,21 +42,21 @@ class BinanceWebSocketClient(WebSocketClient):
             max_retry_connection=6,
         )
 
-        self._base_url = base_url
+        self._base_url: str = base_url
 
-        self._clock = clock
+        self._clock: LiveClock = clock
         self._streams: list[str] = []
 
     @property
-    def base_url(self) -> str:
+    def base_url(self) -> Optional[str]:
         return self._base_url
 
     @property
-    def subscriptions(self):
+    def subscriptions(self) -> list[str]:
         return self._streams.copy()
 
     @property
-    def has_subscriptions(self):
+    def has_subscriptions(self) -> bool:
         if self._streams:
             return True
         else:
@@ -66,7 +66,7 @@ class BinanceWebSocketClient(WebSocketClient):
         self,
         key: Optional[str] = None,
         start: bool = True,
-        **ws_kwargs,
+        **ws_kwargs: dict[str, Any],
     ) -> None:
         if not self._streams:
             raise RuntimeError("no subscriptions for connection.")
@@ -79,11 +79,11 @@ class BinanceWebSocketClient(WebSocketClient):
         self._log.info(f"Connecting to {ws_url}")
         await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
 
-    def _add_stream(self, stream: str):
+    def _add_stream(self, stream: str) -> None:
         if stream not in self._streams:
             self._streams.append(stream)
 
-    def subscribe(self, key: str):
+    def subscribe(self, key: str) -> None:
         """
         Subscribe to the user data stream.
 
@@ -95,7 +95,7 @@ class BinanceWebSocketClient(WebSocketClient):
         """
         self._add_stream(key)
 
-    def subscribe_agg_trades(self, symbol: str):
+    def subscribe_agg_trades(self, symbol: str) -> None:
         """
         Aggregate Trade Streams.
 
@@ -106,7 +106,7 @@ class BinanceWebSocketClient(WebSocketClient):
         """
         self._add_stream(f"{BinanceSymbol(symbol).lower()}@aggTrade")
 
-    def subscribe_trades(self, symbol: str):
+    def subscribe_trades(self, symbol: str) -> None:
         """
         Trade Streams.
 
@@ -117,7 +117,11 @@ class BinanceWebSocketClient(WebSocketClient):
         """
         self._add_stream(f"{BinanceSymbol(symbol).lower()}@trade")
 
-    def subscribe_bars(self, symbol: str, interval: str):
+    def subscribe_bars(
+        self,
+        symbol: str,
+        interval: str,
+    ) -> None:
         """
         Subscribe to bar (kline/candlestick) stream.
 
@@ -145,7 +149,10 @@ class BinanceWebSocketClient(WebSocketClient):
         """
         self._add_stream(f"{BinanceSymbol(symbol).lower()}@kline_{interval}")
 
-    def subscribe_mini_ticker(self, symbol: str = None):
+    def subscribe_mini_ticker(
+        self,
+        symbol: Optional[str] = None,
+    ) -> None:
         """
         Individual symbol or all symbols mini ticker.
 
@@ -161,7 +168,10 @@ class BinanceWebSocketClient(WebSocketClient):
         else:
             self._add_stream(f"{BinanceSymbol(symbol).lower()}@miniTicker")
 
-    def subscribe_ticker(self, symbol: str = None):
+    def subscribe_ticker(
+        self,
+        symbol: Optional[str] = None,
+    ) -> None:
         """
         Individual symbol or all symbols ticker.
 
@@ -177,7 +187,10 @@ class BinanceWebSocketClient(WebSocketClient):
         else:
             self._add_stream(f"{BinanceSymbol(symbol).lower()}@ticker")
 
-    def subscribe_book_ticker(self, symbol: str = None):
+    def subscribe_book_ticker(
+        self,
+        symbol: Optional[str] = None,
+    ) -> None:
         """
         Individual symbol or all book ticker.
 
@@ -192,7 +205,12 @@ class BinanceWebSocketClient(WebSocketClient):
         else:
             self._add_stream(f"{BinanceSymbol(symbol).lower()}@bookTicker")
 
-    def subscribe_partial_book_depth(self, symbol: str, depth: int, speed: int):
+    def subscribe_partial_book_depth(
+        self,
+        symbol: str,
+        depth: int,
+        speed: int,
+    ) -> None:
         """
         Partial Book Depth Streams.
 
@@ -203,7 +221,11 @@ class BinanceWebSocketClient(WebSocketClient):
         """
         self._add_stream(f"{BinanceSymbol(symbol).lower()}@depth{depth}@{speed}ms")
 
-    def subscribe_diff_book_depth(self, symbol: str, speed: int):
+    def subscribe_diff_book_depth(
+        self,
+        symbol: str,
+        speed: int,
+    ) -> None:
         """
         Diff book depth stream.
 
@@ -214,7 +236,11 @@ class BinanceWebSocketClient(WebSocketClient):
         """
         self._add_stream(f"{BinanceSymbol(symbol).lower()}@depth@{speed}ms")
 
-    def subscribe_mark_price(self, symbol: str = None, speed: int = None):
+    def subscribe_mark_price(
+        self,
+        symbol: Optional[str] = None,
+        speed: Optional[int] = None,
+    ) -> None:
         """
         Aggregate Trade Streams.
 

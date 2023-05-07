@@ -15,6 +15,9 @@
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
+from nautilus_trader.accounting.error import AccountMarginExceeded
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
@@ -514,6 +517,8 @@ cdef class AccountsManager:
             Money pnl
             double new_total
             double new_free
+            Money total
+            Money free
         for pnl in pnls:
             currency = pnl.currency
             if commission.currency != currency and commission._mem.raw != 0:
@@ -556,25 +561,25 @@ cdef class AccountsManager:
             else:
                 new_total = balance.total.as_f64_c() + pnl.as_f64_c()
                 new_free = balance.free.as_f64_c() + pnl.as_f64_c()
+                total = Money(new_total, pnl.currency)
+                free = Money(new_free, pnl.currency)
                 if new_total < 0:
-                    self._log.error(
-                        "Cannot complete transaction: "
-                        f"{balance.total.to_str()} total balance is insufficient to deduct a "
-                        f"{pnl.to_str()} realized PnL from."
+                    raise AccountBalanceNegative(
+                        balance=total.as_decimal(),
+                        currency=pnl.currency,
                     )
-                    return
-                if new_free < 0:
-                    self._log.error(
-                        "Cannot complete transaction: "
-                        f"{balance.free.to_str()} free balance is insufficient to deduct a "
-                        f"{pnl.to_str()} realized PnL from."
+                if new_free <= 0:
+                    raise AccountMarginExceeded(
+                        balance=total.as_decimal(),
+                        margin=balance.locked.as_decimal(),
+                        currency=pnl.currency,
                     )
-                    return
+
                 # Calculate new balance
                 new_balance = AccountBalance(
-                    total=Money(new_total, pnl.currency),
+                    total=total,
                     locked=balance.locked,
-                    free=Money(new_free, pnl.currency),
+                    free=free,
                 )
 
             balances.append(new_balance)

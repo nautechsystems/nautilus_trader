@@ -30,9 +30,9 @@ from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orders.base import Order as NautilusOrder
-from nautilus_trader.model.orders.limit import LimitOrder as NautilusLimitOrder
-from nautilus_trader.model.orders.market import MarketOrder as NautilusMarketOrder
+from nautilus_trader.model.orders import LimitOrder as NautilusLimitOrder
+from nautilus_trader.model.orders import MarketOrder as NautilusMarketOrder
+from nautilus_trader.model.orders import Order as NautilusOrder
 
 
 def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:

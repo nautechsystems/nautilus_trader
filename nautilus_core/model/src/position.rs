@@ -80,7 +80,7 @@ impl Position {
         assert!(fill.position_id.is_some());
         assert!(fill.order_side != OrderSide::NoOrderSide);
 
-        Position {
+        Self {
             events: Vec::<OrderFilled>::new(),
             client_order_ids: Vec::<ClientOrderId>::new(),
             venue_order_ids: Vec::<VenueOrderId>::new(),
