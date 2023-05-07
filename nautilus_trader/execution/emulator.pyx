@@ -604,6 +604,8 @@ cdef class OrderEmulator(Actor):
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order, f"Cannot find child order for {repr(client_order_id)}"
+                if child_order.is_closed_c():
+                    continue
                 if not self.cache.load_submit_order_command(child_order.client_order_id):
                     self._create_new_submit_order(
                         order=child_order,
