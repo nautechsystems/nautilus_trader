@@ -1023,9 +1023,9 @@ cdef class BacktestEngine:
                     raw_handlers_count = 0
 
                 self._iteration += 1
-        except AccountError as ex:
+        except AccountError as e:
             force_stop = True
-            self._log.error(f"Stopping backtest from {ex}.")
+            self._log.error(f"Stopping backtest from {e}.")
         # ---------------------------------------------------------------------#
 
         if force_stop:

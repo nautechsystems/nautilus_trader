@@ -101,8 +101,8 @@ async def main(market_id: str):
     node.run()
     # try:
     #     node.start()
-    # except Exception as ex:
-    #     print(ex)
+    # except Exception as e:
+    #     print(e)
     #     print(traceback.format_exc())
     # finally:
     #     node.dispose()
