@@ -794,7 +794,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         venue_order_id=order.venue_order_id,
                     )
         except BinanceError as e:
-            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+            if "Unknown order sent" in e.message:
+                self._log.info(
+                    "No open orders to cancel according to Binance.",
+                    LogColor.GREEN,
+                )
+            else:
+                self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     async def _cancel_order_single(
         self,
