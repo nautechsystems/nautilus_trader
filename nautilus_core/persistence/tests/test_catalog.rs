@@ -17,22 +17,14 @@ use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use nautilus_model::data::Data;
 use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
 
-// Note: "current_thread" hangs up for some reason
+// Note: "current_thread" configuration hangs up for some reason
 #[tokio::test(flavor = "multi_thread")]
 async fn test_quote_ticks() {
-    let mut catalog = PersistenceCatalog::new(5000);
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let length = 9500;
+    let mut catalog = PersistenceCatalog::new(10000);
     catalog
-        .add_file::<QuoteTick>(
-            "quote_tick",
-            "../../tests/test_data/quote_tick_data.parquet",
-        )
-        .await
-        .unwrap();
-    catalog
-        .add_file::<QuoteTick>(
-            "quote_tick_2",
-            "../../tests/test_data/quote_tick_data.parquet",
-        )
+        .add_file::<QuoteTick>("quotes_0005", file_path)
         .await
         .unwrap();
     let query_result: QueryResult = catalog.to_query_result();
@@ -52,12 +44,13 @@ async fn test_quote_ticks() {
         true
     };
 
-    match &ticks[0] {
-        Data::Trade(_) => assert!(false),
-        Data::Quote(q) => assert_eq!("EUR/USD.SIM", q.instrument_id.to_string()),
-        Data::Bar(_) => assert!(false),
+    if let Data::Quote(q) = &ticks[0] {
+        assert_eq!("EUR/USD.SIM", q.instrument_id.to_string())
+    } else {
+        assert!(false)
     }
-    assert_eq!(ticks.len(), 19000);
+
+    assert_eq!(ticks.len(), length);
     assert!(is_ascending_by_init(&ticks));
 }
 
