@@ -508,7 +508,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         if order.is_closed:
-            self._log.warning(f"Cannot submit already closed order {command.order}.")
+            self._log.warning(f"Cannot submit already closed order {order}.")
             return
 
         # Check validity
