@@ -16,9 +16,9 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::data::book::BookOrder;
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
-use crate::orderbook::order::BookOrder;
 use crate::types::price::Price;
 
 #[repr(C)]
@@ -167,9 +167,9 @@ impl Ladder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::data::book::BookOrder;
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::{BookPrice, Ladder};
-    use crate::orderbook::order::BookOrder;
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
 

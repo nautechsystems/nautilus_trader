@@ -297,9 +297,34 @@ typedef struct TradeTick_t {
     uint64_t ts_init;
 } TradeTick_t;
 
+/**
+ * Represents an order in a book.
+ */
+typedef struct BookOrder {
+    struct Price_t price;
+    struct Quantity_t size;
+    enum OrderSide side;
+    uint64_t order_id;
+} BookOrder;
+
+/**
+ * Represents a single quote tick in a financial market.
+ */
+typedef struct OrderBookDelta {
+    struct InstrumentId_t instrument_id;
+    enum BookType book_type;
+    enum BookAction action;
+    struct BookOrder order;
+    uint8_t flags;
+    uint64_t sequence;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderBookDelta;
+
 typedef enum Data_t_Tag {
-    TRADE,
+    DELTA,
     QUOTE,
+    TRADE,
     BAR,
 } Data_t_Tag;
 
@@ -307,10 +332,13 @@ typedef struct Data_t {
     Data_t_Tag tag;
     union {
         struct {
-            struct TradeTick_t trade;
+            struct OrderBookDelta delta;
         };
         struct {
             struct QuoteTick_t quote;
+        };
+        struct {
+            struct TradeTick_t trade;
         };
         struct {
             struct Bar_t bar;

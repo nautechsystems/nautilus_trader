@@ -255,15 +255,35 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    # Represents an order in a book.
+    cdef struct BookOrder:
+        Price_t price;
+        Quantity_t size;
+        OrderSide side;
+        uint64_t order_id;
+
+    # Represents a single quote tick in a financial market.
+    cdef struct OrderBookDelta:
+        InstrumentId_t instrument_id;
+        BookType book_type;
+        BookAction action;
+        BookOrder order;
+        uint8_t flags;
+        uint64_t sequence;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
     cpdef enum Data_t_Tag:
-        TRADE,
+        DELTA,
         QUOTE,
+        TRADE,
         BAR,
 
     cdef struct Data_t:
         Data_t_Tag tag;
-        TradeTick_t trade;
+        OrderBookDelta delta;
         QuoteTick_t quote;
+        TradeTick_t trade;
         Bar_t bar;
 
     cdef struct AccountId_t:

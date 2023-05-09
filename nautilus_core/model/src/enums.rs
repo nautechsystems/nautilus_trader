@@ -21,6 +21,12 @@ use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use pyo3::prelude::*;
 use strum::{Display, EnumString, FromRepr};
 
+pub trait FromU8 {
+    fn from_u8(value: u8) -> Option<Self>
+    where
+        Self: Sized;
+}
+
 #[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
@@ -122,6 +128,18 @@ pub enum BookAction {
     Clear = 4,
 }
 
+impl FromU8 for BookAction {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(BookAction::Add),
+            2 => Some(BookAction::Update),
+            3 => Some(BookAction::Delete),
+            4 => Some(BookAction::Clear),
+            _ => None,
+        }
+    }
+}
+
 #[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
@@ -135,6 +153,17 @@ pub enum BookType {
     L2_MBP = 2,
     /// Market by order.
     L3_MBO = 3,
+}
+
+impl FromU8 for BookType {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(BookType::L1_TBBO),
+            2 => Some(BookType::L2_MBP),
+            3 => Some(BookType::L3_MBO),
+            _ => None,
+        }
+    }
 }
 
 #[pyclass]
@@ -235,6 +264,17 @@ pub enum OrderSide {
     NoOrderSide = 0, // Will be replaced by `Option`
     Buy = 1,
     Sell = 2,
+}
+
+impl FromU8 for OrderSide {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(OrderSide::NoOrderSide),
+            1 => Some(OrderSide::Buy),
+            2 => Some(OrderSide::Sell),
+            _ => None,
+        }
+    }
 }
 
 #[pyclass]
