@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::data::book::BookOrder;
 use crate::enums::{BookType, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::orderbook::ladder::Ladder;
-use crate::orderbook::order::BookOrder;
 
 #[repr(C)]
 pub struct OrderBook {

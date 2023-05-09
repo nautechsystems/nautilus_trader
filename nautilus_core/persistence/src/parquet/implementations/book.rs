@@ -19,7 +19,12 @@ use std::str::FromStr;
 use datafusion::arrow::array::*;
 use datafusion::arrow::datatypes::*;
 use datafusion::arrow::record_batch::RecordBatch;
-use nautilus_model::data::tick::QuoteTick;
+use nautilus_model::data::book::BookOrder;
+use nautilus_model::data::book::OrderBookDelta;
+use nautilus_model::enums::BookAction;
+use nautilus_model::enums::BookType;
+use nautilus_model::enums::FromU8;
+use nautilus_model::enums::OrderSide;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
@@ -27,10 +32,12 @@ use nautilus_model::{
 
 use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
-impl DecodeDataFromRecordBatch for QuoteTick {
+impl DecodeDataFromRecordBatch for OrderBookDelta {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
         let instrument_id =
             InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
+        let book_type =
+            BookType::from_u8(metadata.get("book_type").unwrap().parse::<u8>().unwrap()).unwrap();
         let price_precision = metadata
             .get("price_precision")
             .unwrap()
@@ -44,29 +51,44 @@ impl DecodeDataFromRecordBatch for QuoteTick {
 
         // Extract field value arrays from record batch
         let cols = record_batch.columns();
-        let bid_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_size_values = cols[2].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_values = cols[3].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let action_values = cols[0].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let price_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let size_values = cols[2].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let side_values = cols[3].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let order_id_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let flags_values = cols[5].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let sequence_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = cols[7].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_init_values = cols[8].as_any().downcast_ref::<UInt64Array>().unwrap();
 
         // Construct iterator of values from field value arrays
-        let values = bid_values
+        let values = action_values
             .into_iter()
-            .zip(ask_values.iter())
-            .zip(ask_size_values.iter())
-            .zip(bid_size_values.iter())
+            .zip(price_values.iter())
+            .zip(size_values.iter())
+            .zip(side_values.iter())
+            .zip(order_id_values.iter())
+            .zip(flags_values.iter())
+            .zip(sequence_values.iter())
             .zip(ts_event_values.iter())
             .zip(ts_init_values.iter())
             .map(
-                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| {
-                    QuoteTick {
+                |(
+                    (((((((action, price), size), side), order_id), flags), sequence), ts_event),
+                    ts_init,
+                )| {
+                    OrderBookDelta {
                         instrument_id: instrument_id.clone(),
-                        bid: Price::from_raw(bid.unwrap(), price_precision),
-                        ask: Price::from_raw(ask.unwrap(), price_precision),
-                        bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
-                        ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
+                        book_type,
+                        action: BookAction::from_u8(action.unwrap()).unwrap(),
+                        order: BookOrder {
+                            price: Price::from_raw(price.unwrap(), price_precision),
+                            size: Quantity::from_raw(size.unwrap(), size_precision),
+                            side: OrderSide::from_u8(side.unwrap()).unwrap(),
+                            order_id: order_id.unwrap(),
+                        },
+                        flags: flags.unwrap(),
+                        sequence: sequence.unwrap(),
                         ts_event: ts_event.unwrap(),
                         ts_init: ts_init.unwrap(),
                     }
@@ -79,10 +101,13 @@ impl DecodeDataFromRecordBatch for QuoteTick {
 
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
         let fields = vec![
-            Field::new("bid", DataType::Int64, false),
-            Field::new("ask", DataType::Int64, false),
-            Field::new("bid_size", DataType::UInt64, false),
-            Field::new("ask_size", DataType::UInt64, false),
+            Field::new("action", DataType::UInt8, false),
+            Field::new("price", DataType::Int64, false),
+            Field::new("size", DataType::UInt64, false),
+            Field::new("side", DataType::UInt8, false),
+            Field::new("order_id", DataType::UInt64, false),
+            Field::new("flags", DataType::UInt8, false),
+            Field::new("sequence", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -103,6 +128,7 @@ mod tests {
     fn create_metadata() -> HashMap<String, String> {
         let mut metadata = HashMap::new();
         metadata.insert("instrument_id".to_string(), "AAPL.NASDAQ".to_string());
+        metadata.insert("book_type".to_string(), "2".to_string());
         metadata.insert("price_precision".to_string(), "2".to_string());
         metadata.insert("size_precision".to_string(), "0".to_string());
         metadata
@@ -111,12 +137,15 @@ mod tests {
     #[test]
     fn test_get_schema() {
         let metadata = create_metadata();
-        let schema = QuoteTick::get_schema(metadata.clone());
+        let schema = OrderBookDelta::get_schema(metadata.clone());
         let expected_fields = vec![
-            Field::new("bid", DataType::Int64, false),
-            Field::new("ask", DataType::Int64, false),
-            Field::new("bid_size", DataType::UInt64, false),
-            Field::new("ask_size", DataType::UInt64, false),
+            Field::new("action", DataType::UInt8, false),
+            Field::new("price", DataType::Int64, false),
+            Field::new("size", DataType::UInt64, false),
+            Field::new("side", DataType::UInt8, false),
+            Field::new("order_id", DataType::UInt64, false),
+            Field::new("flags", DataType::UInt8, false),
+            Field::new("sequence", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -128,27 +157,33 @@ mod tests {
     fn test_decode_batch() {
         let metadata = create_metadata();
 
-        let bid = Int64Array::from(vec![10000, 9900]);
-        let ask = Int64Array::from(vec![10100, 10000]);
-        let bid_size = UInt64Array::from(vec![100, 90]);
-        let ask_size = UInt64Array::from(vec![110, 100]);
+        let action = UInt8Array::from(vec![1, 2]);
+        let price = Int64Array::from(vec![10000, 9900]);
+        let size = UInt64Array::from(vec![100, 90]);
+        let side = UInt8Array::from(vec![1, 1]);
+        let order_id = UInt64Array::from(vec![1, 2]);
+        let flags = UInt8Array::from(vec![0, 0]);
+        let sequence = UInt64Array::from(vec![1, 2]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            QuoteTick::get_schema(metadata.clone()),
+            OrderBookDelta::get_schema(metadata.clone()),
             vec![
-                Arc::new(bid),
-                Arc::new(ask),
-                Arc::new(bid_size),
-                Arc::new(ask_size),
+                Arc::new(action),
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(side),
+                Arc::new(order_id),
+                Arc::new(flags),
+                Arc::new(sequence),
                 Arc::new(ts_event),
                 Arc::new(ts_init),
             ],
         )
         .unwrap();
 
-        let decoded_data = QuoteTick::decode_batch(&metadata, record_batch);
+        let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch);
         assert_eq!(decoded_data.len(), 2);
     }
 }

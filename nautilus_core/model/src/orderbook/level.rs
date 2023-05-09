@@ -16,8 +16,8 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 
+use crate::data::book::BookOrder;
 use crate::orderbook::ladder::BookPrice;
-use crate::orderbook::order::BookOrder;
 
 #[repr(C)]
 #[allow(clippy::box_collection)] // C ABI compatibility
@@ -163,10 +163,10 @@ impl Display for Level {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::data::book::BookOrder;
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::BookPrice;
     use crate::orderbook::level::Level;
-    use crate::orderbook::order::BookOrder;
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
 
