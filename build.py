@@ -291,8 +291,8 @@ def _strip_unneeded_symbols() -> None:
 
 def build() -> None:
     """Construct the extensions and distribution."""
-    _build_rust_libs()
-    _copy_rust_dylibs_to_project()
+    # _build_rust_libs()
+    # _copy_rust_dylibs_to_project()
 
     if not PYO3_ONLY:
         # Create C Extensions to feed into cythonize()

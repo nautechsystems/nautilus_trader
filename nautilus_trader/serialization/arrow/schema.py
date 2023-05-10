@@ -697,14 +697,14 @@ NAUTILUS_PARQUET_SCHEMA = {
 
 NAUTILUS_PARQUET_SCHEMA_RUST = {
     QuoteTick: pa.schema(
-        [
-            ("bid", pa.int64()),
-            ("ask", pa.int64()),
-            ("bid_size", pa.uint64()),
-            ("ask_size", pa.uint64()),
-            ("ts_event", pa.uint64()),
-            ("ts_init", pa.uint64()),
-        ],
+        {
+            "bid": pa.int64(),
+            "ask": pa.int64(),
+            "bid_size": pa.uint64(),
+            "ask_size": pa.uint64(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
     ),
 }
 
