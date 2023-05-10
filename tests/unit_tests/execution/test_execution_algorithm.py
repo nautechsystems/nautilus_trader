@@ -69,7 +69,7 @@ class TestExecAlgorithm:
         self.logger = Logger(
             clock=TestClock(),
             level_stdout=LogLevel.INFO,
-            bypass=False,  # TODO!
+            bypass=True,
         )
 
         self.trader_id = TestIdStubs.trader_id()

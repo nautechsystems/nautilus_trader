@@ -65,12 +65,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.orders.stop_limit import StopLimitOrder
-from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -306,7 +306,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             retries += 1
             self._generate_order_status_retries[client_order_id] = retries
             if not client_order_id:
-                self.log.warning("Cannot retry without a client order ID.")
+                self._log.warning("Cannot retry without a client order ID.")
             else:
                 order: Optional[Order] = self._cache.order(client_order_id)
                 if order is None:
@@ -461,7 +461,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
             if trade.symbol is None:
-                self.log.warning(f"No symbol for trade {trade}.")
+                self._log.warning(f"No symbol for trade {trade}.")
                 continue
             report = trade.parse_to_trade_report(
                 account_id=self.account_id,
@@ -507,6 +507,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _submit_order(self, command: SubmitOrder) -> None:
         order: Order = command.order
 
+        if order.is_closed:
+            self._log.warning(f"Cannot submit already closed order {order}.")
+            return
+
         # Check validity
         self._check_order_validity(order)
         self._log.debug(f"Submitting {order}.")
@@ -531,7 +535,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except KeyError:
             raise RuntimeError(f"unsupported order type, was {order.order_type}")
 
-    def _check_order_validity(self, order: Order):
+    def _check_order_validity(self, order: Order) -> None:
         # Implement in child class
         raise NotImplementedError
 
@@ -790,7 +794,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         venue_order_id=order.venue_order_id,
                     )
         except BinanceError as e:
-            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+            if "Unknown order sent" in e.message:
+                self._log.info(
+                    "No open orders to cancel according to Binance.",
+                    LogColor.GREEN,
+                )
+            else:
+                self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     async def _cancel_order_single(
         self,

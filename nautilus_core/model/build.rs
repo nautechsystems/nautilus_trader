@@ -54,7 +54,6 @@ fn main() {
 
     // Recreate the file and dump the processed contents to it
     let mut dst = File::create(cython_path).expect("`File::create` failed");
-    let _ = dst
-        .write(new_data.as_bytes())
+    dst.write_all(new_data.as_bytes())
         .expect("I/O error on `dist.write`");
 }

@@ -1,13 +1,55 @@
-# NautilusTrader 1.172.0 Beta
+# NautilusTrader 1.174.0 Beta
 
 Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
+- Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
+- Various improvements to `Binance` clients error handling and logging
+
+### Fixes
+- Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
+- Fixed sending execution algorithm commands from strategy
+- Fixed `OrderEmulator` releasing of already closed orders
+- Fixed `MatchingEngine` processing of reduce only for child contingency orders
+- Fixed `MatchingEngine` position ID assignment for child contingency orders
+
+---
+
+# NautilusTrader 1.173.0 Beta
+
+Released on 5th May 2023 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed `BacktestEngine` processing of venue(s) message queue based off time event `ts_init`
+- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string), thanks for reporting @rsmb7z
+- Fixed trailing stop type order updates for `reduce_only` instruction, thanks for reporting @Otlk
+- Fixed updating of active execution algorithm orders (events weren't being cached)
+- Fixed condition check for applying pending events (do not apply to orders at `INITIALIZED` status)
+
+---
+
+# NautilusTrader 1.172.0 Beta
+
+Released on 30th April 2023 (UTC).
 
 ### Breaking Changes
 - Removed legacy Rust parquet data catalog backend (based on arrow2)
 - Removed Binance config for `clock_sync_interval_secs` (redundant/unused and should be handled at system level)
 - Removed redundant rate limiting from Rust logger (and associated `rate_limit` config params)
+- Renamed `Future` instrument to `FuturesContract` (avoids ambiguity)
+- Renamed `Option` instrument to `OptionsContract` (avoids ambiguity and naming conflicts in Rust)
 - Reinstate hours and minutes time component for default order and position identifiers (easier debugging, less collisions)
-- Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid).
+- Setting time alerts for in the past or current time will generate an immediate `TimeEvent` (rather than being invalid)
 
 ### Enhancements
 - Added new DataFusion Rust parquet data catalog backend (yet to be integrated into Python)
@@ -19,6 +61,9 @@ Released on TBD (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
+- Define public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
+- Define public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
+- Define public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
 - Now stripping debug symbols after build (reduced binary sizes)
 - Refined build and added additional `debug` Makefile convenience targets
 

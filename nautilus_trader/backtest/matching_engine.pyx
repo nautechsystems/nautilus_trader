@@ -603,7 +603,7 @@ cdef class OrderMatchingEngine:
 
         # Check reduce-only instruction
         cdef Position position
-        if order.is_reduce_only:
+        if order.is_reduce_only and not order.is_closed_c():
             position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
@@ -987,7 +987,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_market_if_touched_order(
         self,
-        MarketIfTouchedOrder order,
+        Order order,
         Quantity qty,
         Price trigger_price,
     ):
@@ -1010,7 +1010,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_limit_if_touched_order(
         self,
-        LimitIfTouchedOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -1632,7 +1632,7 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
-                if child_order.position_id is None:
+                if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
                         venue=self.venue,
@@ -1789,6 +1789,16 @@ cdef class OrderMatchingEngine:
                 trigger_price = order.trigger_price
             self._update_market_if_touched_order(order, qty, trigger_price)
         elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
+            if price is None:
+                price = order.price
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_limit_if_touched_order(order, qty, price, trigger_price)
+        elif order.order_type == OrderType.TRAILING_STOP_MARKET:
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_market_if_touched_order(order, qty, trigger_price)
+        elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if price is None:
                 price = order.price
             if trigger_price is None:

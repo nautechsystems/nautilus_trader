@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use datafusion::arrow::datatypes::*;
 use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
@@ -29,7 +30,8 @@ use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
 impl DecodeDataFromRecordBatch for TradeTick {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        let instrument_id = InstrumentId::from(metadata.get("instrument_id").unwrap().as_str());
+        let instrument_id =
+            InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
         let price_precision = metadata
             .get("price_precision")
             .unwrap()
@@ -90,5 +92,70 @@ impl DecodeDataFromRecordBatch for TradeTick {
         ];
 
         Schema::new_with_metadata(fields, metadata).into()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use datafusion::arrow::{
+        array::{Int64Array, StringArray, UInt64Array, UInt8Array},
+        record_batch::RecordBatch,
+    };
+    use std::{collections::HashMap, sync::Arc};
+
+    fn create_metadata() -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), "AAPL.NASDAQ".to_string());
+        metadata.insert("price_precision".to_string(), "2".to_string());
+        metadata.insert("size_precision".to_string(), "0".to_string());
+        metadata
+    }
+
+    #[test]
+    fn test_get_schema() {
+        let metadata = create_metadata();
+        let schema = TradeTick::get_schema(metadata.clone());
+        let expected_fields = vec![
+            Field::new("price", DataType::Int64, false),
+            Field::new("size", DataType::UInt64, false),
+            Field::new("aggressor_side", DataType::UInt8, false),
+            Field::new("trade_id", DataType::Utf8, false),
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("ts_init", DataType::UInt64, false),
+        ];
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata).into();
+        assert_eq!(schema, expected_schema);
+    }
+
+    #[test]
+    fn test_decode_batch() {
+        let metadata = create_metadata();
+
+        let price = Int64Array::from(vec![10000, 9900]);
+        let size = UInt64Array::from(vec![100, 90]);
+        let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
+        let trade_id = StringArray::from(vec!["trade_1", "trade_2"]);
+        let ts_event = UInt64Array::from(vec![1, 2]);
+        let ts_init = UInt64Array::from(vec![3, 4]);
+
+        let record_batch = RecordBatch::try_new(
+            TradeTick::get_schema(metadata.clone()),
+            vec![
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(aggressor_side),
+                Arc::new(trade_id),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let decoded_data = TradeTick::decode_batch(&metadata, record_batch);
+        assert_eq!(decoded_data.len(), 2);
     }
 }

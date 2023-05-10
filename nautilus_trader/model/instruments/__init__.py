@@ -17,3 +17,24 @@
 Defines tradable asset/contract instruments with specific properties dependent
 on the asset class and asset type.
 """
+
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
+from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.futures_contract import FuturesContract
+from nautilus_trader.model.instruments.options_contract import OptionsContract
+
+
+__all__ = [
+    "Instrument",
+    "BettingInstrument",
+    "CryptoFuture",
+    "CryptoPerpetual",
+    "CurrencyPair",
+    "Equity",
+    "FuturesContract",
+    "OptionsContract",
+]

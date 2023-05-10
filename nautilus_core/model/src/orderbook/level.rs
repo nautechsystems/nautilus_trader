@@ -14,10 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 
+use crate::data::book::BookOrder;
 use crate::orderbook::ladder::BookPrice;
-use crate::orderbook::order::BookOrder;
 
 #[repr(C)]
 #[allow(clippy::box_collection)] // C ABI compatibility
@@ -29,14 +29,15 @@ pub struct Level {
 impl Level {
     #[must_use]
     pub fn new(price: BookPrice) -> Self {
-        Level {
+        Self {
             price,
             orders: Box::<Vec<BookOrder>>::default(),
         }
     }
 
+    #[must_use]
     pub fn from_order(order: BookOrder) -> Self {
-        let mut level = Level {
+        let mut level = Self {
             price: order.to_book_price(),
             orders: Box::<Vec<BookOrder>>::default(),
         };
@@ -44,10 +45,12 @@ impl Level {
         level
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.orders.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.orders.len() == 0
     }
@@ -88,6 +91,7 @@ impl Level {
         self.orders.remove(index);
     }
 
+    #[must_use]
     pub fn volume(&self) -> f64 {
         let mut sum: f64 = 0.0;
         for o in self.orders.iter() {
@@ -96,6 +100,7 @@ impl Level {
         sum
     }
 
+    #[must_use]
     pub fn exposure(&self) -> f64 {
         let mut sum: f64 = 0.0;
         for o in self.orders.iter() {
@@ -142,13 +147,13 @@ impl Ord for Level {
 }
 
 impl Debug for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Level(price={})", self.price.value)
     }
 }
 
 impl Display for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Level(price={})", self.price.value)
     }
 }
@@ -158,10 +163,10 @@ impl Display for Level {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::data::book::BookOrder;
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::BookPrice;
     use crate::orderbook::level::Level;
-    use crate::orderbook::order::BookOrder;
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
 

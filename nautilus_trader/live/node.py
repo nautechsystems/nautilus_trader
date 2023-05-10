@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import signal
 import time
 from datetime import timedelta
 from typing import Optional
@@ -361,7 +362,7 @@ class TradingNode:
 
             self.kernel.log.info("DISPOSED.")
 
-    def _loop_sig_handler(self, sig) -> None:
+    def _loop_sig_handler(self, sig: signal.Signals) -> None:
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 

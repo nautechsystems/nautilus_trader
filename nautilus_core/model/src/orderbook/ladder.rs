@@ -16,9 +16,9 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::data::book::BookOrder;
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
-use crate::orderbook::order::BookOrder;
 use crate::types::price::Price;
 
 #[repr(C)]
@@ -31,7 +31,7 @@ pub struct BookPrice {
 impl BookPrice {
     #[must_use]
     pub fn new(value: Price, side: OrderSide) -> Self {
-        BookPrice { value, side }
+        Self { value, side }
     }
 }
 
@@ -72,17 +72,19 @@ pub struct Ladder {
 impl Ladder {
     #[must_use]
     pub fn new(side: OrderSide) -> Self {
-        Ladder {
+        Self {
             side,
             levels: Box::<BTreeMap<BookPrice, Level>>::default(),
             cache: Box::<HashMap<u64, BookPrice>>::default(),
         }
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.levels.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.levels.len() == 0
     }
@@ -141,14 +143,17 @@ impl Ladder {
         }
     }
 
+    #[must_use]
     pub fn volumes(&self) -> f64 {
         return self.levels.iter().map(|(_, l)| l.volume()).sum();
     }
 
+    #[must_use]
     pub fn exposures(&self) -> f64 {
         return self.levels.iter().map(|(_, l)| l.exposure()).sum();
     }
 
+    #[must_use]
     pub fn top(&self) -> Option<&Level> {
         match self.levels.iter().next() {
             None => Option::None,
@@ -162,9 +167,9 @@ impl Ladder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::data::book::BookOrder;
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::{BookPrice, Ladder};
-    use crate::orderbook::order::BookOrder;
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
 
@@ -302,10 +307,10 @@ mod tests {
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
-        assert_eq!(ladder.exposures(), 222.00000000000003);
+        assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
         assert_eq!(
             ladder.top().unwrap().price.value.as_f64(),
-            11.100000000000001
+            11.100_000_000_000_001
         )
     }
 
@@ -331,10 +336,10 @@ mod tests {
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
-        assert_eq!(ladder.exposures(), 222.00000000000003);
+        assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
         assert_eq!(
             ladder.top().unwrap().price.value.as_f64(),
-            11.100000000000001
+            11.100_000_000_000_001
         )
     }
 

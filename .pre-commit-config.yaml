@@ -84,7 +84,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.263
+    rev: v0.0.265
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -94,8 +94,9 @@ repos:
     hooks:
       - id: mypy
         args: [
-          --no-strict-optional,  # Fixing in progress
           --ignore-missing-imports,
+          --allow-incomplete-defs,
+          --no-strict-optional,  # Fixing in progress
           --warn-no-return,
         ]
         additional_dependencies: [

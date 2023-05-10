@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::data::book::BookOrder;
 use crate::enums::{BookType, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::orderbook::ladder::Ladder;
-use crate::orderbook::order::BookOrder;
 
 #[repr(C)]
 pub struct OrderBook {
@@ -31,7 +31,7 @@ pub struct OrderBook {
 impl OrderBook {
     #[must_use]
     pub fn new(instrument_id: InstrumentId, book_level: BookType) -> Self {
-        OrderBook {
+        Self {
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
             instrument_id,

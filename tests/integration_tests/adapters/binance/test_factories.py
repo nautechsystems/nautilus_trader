@@ -42,7 +42,11 @@ class TestBinanceFactories:
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
-        self.logger = Logger(clock=self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
 
         self.trader_id = TestIdStubs.trader_id()
         self.strategy_id = TestIdStubs.strategy_id()

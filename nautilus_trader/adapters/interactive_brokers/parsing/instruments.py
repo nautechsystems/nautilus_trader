@@ -28,11 +28,11 @@ from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.instruments.future import Future
-from nautilus_trader.model.instruments.option import Option
+from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -97,11 +97,11 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
 
 def parse_future_contract(
     details: ContractDetails,
-) -> Future:
+) -> FuturesContract:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
-    return Future(
+    return FuturesContract(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=sec_type_to_asset_class(details.underSecType),
@@ -122,7 +122,7 @@ def parse_future_contract(
 
 def parse_option_contract(
     details: ContractDetails,
-) -> Option:
+) -> OptionsContract:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
@@ -133,7 +133,7 @@ def parse_option_contract(
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
-    return Option(
+    return OptionsContract(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,

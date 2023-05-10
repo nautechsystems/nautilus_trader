@@ -31,10 +31,10 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.orderbook import OrderBook
+from nautilus_trader.model.orderbook import OrderBookDelta
+from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
 

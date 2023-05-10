@@ -33,9 +33,9 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -45,7 +45,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``EMACrossBracketTWAP`` instances.
+    Configuration for ``EMACrossBracketAlgo`` instances.
 
     Parameters
     ----------

@@ -255,14 +255,36 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    # Represents an order in a book.
+    cdef struct BookOrder:
+        Price_t price;
+        Quantity_t size;
+        OrderSide side;
+        uint64_t order_id;
+
+    # Represents a single quote tick in a financial market.
+    cdef struct OrderBookDelta:
+        InstrumentId_t instrument_id;
+        BookType book_type;
+        BookAction action;
+        BookOrder order;
+        uint8_t flags;
+        uint64_t sequence;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
     cpdef enum Data_t_Tag:
-        TRADE,
+        DELTA,
         QUOTE,
+        TRADE,
+        BAR,
 
     cdef struct Data_t:
         Data_t_Tag tag;
-        TradeTick_t trade;
+        OrderBookDelta delta;
         QuoteTick_t quote;
+        TradeTick_t trade;
+        Bar_t bar;
 
     cdef struct AccountId_t:
         Rc_String *value;
@@ -828,7 +850,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `trade_id` by dropping.
     void trade_id_drop(TradeId_t trade_id);
 
-    # Returns [TradeId] as a C string pointer.
+    # Returns [`TradeId`] as a C string pointer.
     const char *trade_id_to_cstr(const TradeId_t *trade_id);
 
     uint8_t trade_id_eq(const TradeId_t *lhs, const TradeId_t *rhs);

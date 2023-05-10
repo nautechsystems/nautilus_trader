@@ -20,10 +20,17 @@ tokio.workspace = true
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 # FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
-datafusion = { version = "23.0.0", default-features = false, features = [ "regex_expressions", "unicode_expressions", "compression"] }
+datafusion = { version = "23.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions"] }
 futures = "0.3.28"
 pin-project-lite = "0.2.9"
 
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]
 default = []
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "persistence_benchmark"
+harness = false

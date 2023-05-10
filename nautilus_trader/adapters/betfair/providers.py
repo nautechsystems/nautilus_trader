@@ -34,8 +34,8 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import Instrument
 
 
 class BetfairInstrumentProvider(InstrumentProvider):
