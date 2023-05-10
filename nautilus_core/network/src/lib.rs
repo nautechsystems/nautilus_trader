@@ -147,15 +147,17 @@ pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io, result};
+    use std::collections::HashMap;
 
-    use hyper::{Client, Method, StatusCode};
-    use pyo3::{prepare_freethreaded_python, Python};
+    use hyper::{Method, StatusCode};
+    use pyo3::prepare_freethreaded_python;
 
     use crate::HttpClient;
 
     #[tokio::test]
     async fn rust_test() {
+        prepare_freethreaded_python();
+
         let http_client = HttpClient::default();
         let response = http_client
             .send_request(Method::GET, "https://github.com".into(), HashMap::new())
