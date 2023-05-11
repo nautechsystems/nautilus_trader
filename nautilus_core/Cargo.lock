@@ -1869,6 +1869,7 @@ version = "0.5.0"
 dependencies = [
  "nautilus_indicators",
  "nautilus_model",
+ "nautilus_network",
  "nautilus_persistence",
  "pyo3",
 ]

@@ -137,11 +137,11 @@ impl HttpClient {
     }
 }
 
-/// Loaded as nautilus_pyo3.network
+// Uncomment to change for module name for reduced debug builds in testing
 #[pymodule]
-#[pyo3(name = "nautilus_network")]
-pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpClient>()?;
+    m.add_class::<HttpResponse>()?;
     Ok(())
 }
 
@@ -150,14 +150,11 @@ mod tests {
     use std::collections::HashMap;
 
     use hyper::{Method, StatusCode};
-    use pyo3::prepare_freethreaded_python;
 
     use crate::HttpClient;
 
     #[tokio::test]
     async fn rust_test() {
-        prepare_freethreaded_python();
-
         let http_client = HttpClient::default();
         let response = http_client
             .send_request(Method::GET, "https://github.com".into(), HashMap::new())
@@ -165,4 +162,6 @@ mod tests {
             .unwrap();
         assert_eq!(response.status, StatusCode::OK);
     }
+
+    // TODO: add python test using the pyo3 interface
 }
