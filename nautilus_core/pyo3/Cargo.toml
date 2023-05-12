@@ -14,6 +14,7 @@ crate-type = ["cdylib"]
 nautilus_indicators = { path = "../indicators" }
 nautilus_model = { path = "../model" }
 nautilus_persistence = { path = "../persistence" }
+nautilus_network = { path = "../network" }
 pyo3.workspace = true
 
 [features]

@@ -12,3 +12,156 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::collections::HashMap;
+
+use hyper::{Body, Client, Method, Request, Response};
+use hyper_tls::HttpsConnector;
+use pyo3::prelude::*;
+
+/// HttpClient makes HTTP requests to exchanges
+///
+/// The client is backed by a hyper Client which keeps connections alive and
+/// can be cloned cheaply. The client also has a list of header fields to
+/// extract from the response.
+///
+/// The client returns an [HttpResponse]. The client filters only the key value
+/// for the give `header_keys`.
+#[pyclass]
+#[derive(Clone)]
+pub struct HttpClient {
+    client: Client<HttpsConnector<hyper::client::HttpConnector>>,
+    header_keys: Vec<String>,
+}
+
+/// HttpResponse contains relevant data from an HTTP request to an exchange
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct HttpResponse {
+    #[pyo3(get)]
+    pub status: u16,
+    #[pyo3(get)]
+    headers: HashMap<String, String>,
+    #[pyo3(get)]
+    body: Vec<u8>,
+}
+
+impl Default for HttpClient {
+    fn default() -> Self {
+        let https = HttpsConnector::new();
+        let client = Client::builder().build::<_, hyper::Body>(https);
+        Self {
+            client,
+            header_keys: Default::default(),
+        }
+    }
+}
+
+#[pymethods]
+impl HttpClient {
+    #[new]
+    #[pyo3(signature=(header_keys=[].to_vec()))]
+    pub fn new(header_keys: Vec<String>) -> Self {
+        let https = HttpsConnector::new();
+        let client = Client::builder().build::<_, hyper::Body>(https);
+
+        Self {
+            client,
+            header_keys,
+        }
+    }
+
+    pub fn request<'py>(
+        slf: PyRef<'_, Self>,
+        method_str: String,
+        url: String,
+        headers: HashMap<String, String>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let method: Method = if method_str == "get" {
+            Method::GET
+        } else {
+            Method::POST
+        };
+        let client = slf.clone();
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            match client.send_request(method, url, headers).await {
+                Ok(res) => Ok(res),
+                Err(_) => {
+                    // TODO: log error
+                    panic!("could not handle");
+                }
+            }
+        })
+    }
+}
+
+impl HttpClient {
+    pub async fn send_request(
+        &self,
+        method: Method,
+        url: String,
+        headers: HashMap<String, String>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let mut req_builder = Request::builder().method(method).uri(url);
+
+        for (header_name, header_value) in headers.iter() {
+            req_builder = req_builder.header(header_name, header_value);
+        }
+
+        let req = req_builder.body(Body::empty())?;
+        let res = self.client.request(req).await?;
+        self.to_response(res).await
+    }
+
+    pub async fn to_response(
+        &self,
+        res: Response<Body>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let headers: HashMap<String, String> = self
+            .header_keys
+            .iter()
+            .filter_map(|key| res.headers().get(key).map(|val| (key, val)))
+            .filter_map(|(key, val)| val.to_str().map(|v| (key, v)).ok())
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect();
+        let status = res.status().as_u16();
+        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+
+        Ok(HttpResponse {
+            status,
+            headers,
+            body: bytes.to_vec(),
+        })
+    }
+}
+
+// Uncomment to change for module name for reduced debug builds in testing
+#[pymodule]
+pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<HttpClient>()?;
+    m.add_class::<HttpResponse>()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use hyper::{Method, StatusCode};
+
+    use crate::HttpClient;
+
+    #[tokio::test]
+    async fn rust_test() {
+        let http_client = HttpClient::default();
+        let response = http_client
+            .send_request(Method::GET, "https://github.com".into(), HashMap::new())
+            .await
+            .unwrap();
+        assert_eq!(response.status, StatusCode::OK);
+    }
+
+    // TODO: add python test using the pyo3 interface
+}
