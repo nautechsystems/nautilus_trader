@@ -19,7 +19,7 @@ use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
 use pyo3::prelude::*;
 
-/// HttpClient makes HTTP requests to exchanges
+/// HttpClient makes HTTP requests to exchanges.
 ///
 /// The client is backed by a hyper Client which keeps connections alive and
 /// can be cloned cheaply. The client also has a list of header fields to
@@ -34,7 +34,7 @@ pub struct HttpClient {
     header_keys: Vec<String>,
 }
 
-/// HttpResponse contains relevant data from an HTTP request to an exchange
+/// HttpResponse contains relevant data from an HTTP request to an exchange.
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
