@@ -17,6 +17,8 @@ import os
 import shutil
 import tempfile
 
+import pytest
+
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
 from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
@@ -27,7 +29,9 @@ from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
 
 
 # TODO: skip in CI
-# @pytest.mark.skip(reason="update tests for new API")
+
+
+@pytest.mark.skip(reason="update tests for new API")
 class TestCatalogPerformance(PerformanceHarness):
     @staticmethod
     def test_load_quote_ticks_python(benchmark):
