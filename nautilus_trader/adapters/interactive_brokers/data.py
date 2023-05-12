@@ -28,15 +28,14 @@ from ib_insync import RealTimeBarList
 from ib_insync import Ticker
 from ib_insync.ticker import nan
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.data import parse_bar_data
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -55,6 +54,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+# fmt: on
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):

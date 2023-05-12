@@ -16,23 +16,21 @@
 import pytest
 from ib_insync import IB
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
+
+
+# fmt: on
 
 
 @pytest.fixture()

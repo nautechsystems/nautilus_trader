@@ -24,19 +24,12 @@ from ib_insync import Order as IBOrder
 from ib_insync import OrderStatus as IBOrderStatus
 from ib_insync import Trade as IBTrade
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
-    account_values_to_nautilus_account_info,
-)
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
-    ib_order_to_nautilus_order_type,
-)
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
-    nautilus_order_to_ib_order,
-)
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import account_values_to_nautilus_account_info
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import ib_order_to_nautilus_order_type
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import nautilus_order_to_ib_order
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -67,6 +60,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+# fmt: on
 
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
