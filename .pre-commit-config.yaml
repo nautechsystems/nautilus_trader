@@ -66,14 +66,6 @@ repos:
         name: add-trailing-comma
         types: [python]
 
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        types_or: [python, cython]
-        entry: "isort"
-        args: ["--settings-file", "pyproject.toml"]
-
   - repo: https://github.com/psf/black
     rev: 23.3.0
     hooks:
@@ -84,13 +76,22 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.265
+    rev: v0.0.267
     hooks:
       - id: ruff
         args: ["--fix"]
 
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (cython)
+        types_or: [cython]
+        entry: "isort"
+        args: ["--settings-file", "pyproject.toml"]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.2.0
+    rev: v1.3.0
     hooks:
       - id: mypy
         args: [

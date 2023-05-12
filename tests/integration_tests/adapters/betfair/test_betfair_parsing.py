@@ -25,6 +25,7 @@ from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 from betfair_parser.spec.streaming.mcm import MarketChange
 
+# fmt: off
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
@@ -41,15 +42,9 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
-from nautilus_trader.adapters.betfair.parsing.streaming import (
-    market_definition_to_betfair_starting_prices,
-)
-from nautilus_trader.adapters.betfair.parsing.streaming import (
-    market_definition_to_instrument_closes,
-)
-from nautilus_trader.adapters.betfair.parsing.streaming import (
-    market_definition_to_instrument_status_updates,
-)
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_betfair_starting_prices
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_closes
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status_updates
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
@@ -81,6 +76,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+# fmt: on
 
 
 class TestBetfairParsingStreaming:
