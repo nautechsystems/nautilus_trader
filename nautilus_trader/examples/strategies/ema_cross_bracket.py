@@ -158,7 +158,6 @@ class EMACrossBracket(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -263,7 +262,6 @@ class EMACrossBracket(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -275,7 +273,6 @@ class EMACrossBracket(Strategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self) -> None:
         """
@@ -322,7 +319,6 @@ class EMACrossBracket(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -331,4 +327,3 @@ class EMACrossBracket(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

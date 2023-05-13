@@ -126,8 +126,6 @@ class Product(namedtuple("Product", "ib_symbol, description, native_symbol, curr
     Interactive Brokers Web Product
     """
 
-    pass
-
 
 def _parse_products(table):
     for row in table.xpath(".//tr")[1:]:

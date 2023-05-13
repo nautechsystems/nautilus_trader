@@ -61,15 +61,15 @@ class MyStrategy(Strategy):
 
     def on_start(self) -> None:
         """Actions to be performed when the strategy is started."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_stop(self) -> None:
         """Actions to be performed when the strategy is stopped."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_reset(self) -> None:
         """Actions to be performed when the strategy is reset."""
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_dispose(self) -> None:
         """
@@ -78,7 +78,7 @@ class MyStrategy(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_save(self) -> dict[str, bytes]:
         """
@@ -106,7 +106,7 @@ class MyStrategy(Strategy):
             The strategy state dictionary.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
@@ -119,7 +119,7 @@ class MyStrategy(Strategy):
             The instrument received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -131,7 +131,7 @@ class MyStrategy(Strategy):
             The tick received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -143,7 +143,7 @@ class MyStrategy(Strategy):
             The tick received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -155,19 +155,19 @@ class MyStrategy(Strategy):
             The bar received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def buy(self) -> None:
         """
         Users simple buy method (example).
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def sell(self) -> None:
         """
         Users simple sell method (example).
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_data(self, data: Data) -> None:
         """
@@ -179,7 +179,7 @@ class MyStrategy(Strategy):
             The data received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_event(self, event: Event) -> None:
         """
@@ -191,4 +191,4 @@ class MyStrategy(Strategy):
             The event received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
