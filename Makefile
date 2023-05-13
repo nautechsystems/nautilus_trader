@@ -16,7 +16,7 @@ install-debug:
 	BUILD_MODE=debug poetry install --with dev,test --all-extras
 
 install-just-deps:
-	poetry install --with dev,test --all-extras --no-root
+	poetry install --with dev,test --all-extras --no-root --sync
 
 install-just-deps-all:
 	poetry install --with dev,test,docs --all-extras --no-root
