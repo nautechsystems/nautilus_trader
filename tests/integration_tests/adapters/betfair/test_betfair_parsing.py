@@ -168,7 +168,7 @@ class TestBetfairParsingStreaming:
         assert isinstance(result[3], OrderBookDeltas)
 
     @pytest.mark.parametrize(
-        "filename, num_msgs",
+        ("filename", "num_msgs"),
         [
             ("1.166564490.bz2", 2533),
             ("1.166811431.bz2", 17846),
@@ -201,7 +201,7 @@ class TestBetfairParsingStreaming:
         assert updates == expected
 
     @pytest.mark.parametrize(
-        "filename, book_count",
+        ("filename", "book_count"),
         [
             ("1.166564490.bz2", [1854, 2161]),
             ("1.166811431.bz2", [12318, 12181]),
@@ -314,7 +314,7 @@ class TestBetfairParsing:
         }
         assert result == expected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_account_statement(self):
         with patch.object(
             BetfairClient,
@@ -355,7 +355,7 @@ class TestBetfairParsing:
         )
         assert result == expected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_merge_order_book_deltas(self):
         raw = msgspec.json.encode(
             {
@@ -442,7 +442,7 @@ class TestBetfairParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "side,liability",
+        ("side", "liability"),
         [("BUY", "100.0"), ("SELL", "100.0")],
     )
     def test_make_order_market_on_close(self, side, liability):
@@ -458,7 +458,7 @@ class TestBetfairParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "status,size,matched,cancelled,expected",
+        ("status", "size", "matched", "cancelled", "expected"),
         [
             ("EXECUTION_COMPLETE", 10.0, 10.0, 0.0, OrderStatus.FILLED),
             ("EXECUTION_COMPLETE", 10.0, 5.0, 5.0, OrderStatus.CANCELED),

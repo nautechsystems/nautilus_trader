@@ -53,13 +53,16 @@ def test_update_order_id():
 
 def test_signed_volume():
     order = BookOrder(price=10.0, size=1.0, side=OrderSide.BUY)
-    assert order.size == 1 and order.signed_size() == 1.0
+    assert order.size == 1
+    assert order.signed_size() == 1.0
 
     order = BookOrder(price=10.0, size=5.0, side=OrderSide.SELL)
-    assert order.size == 5 and order.signed_size() == -5.0
+    assert order.size == 5
+    assert order.signed_size() == -5.0
 
     order = BookOrder(price=10.0, size=0.0, side=OrderSide.SELL)
-    assert order.size == 0.0 and order.signed_size() == 0.0
+    assert order.size == 0.0
+    assert order.signed_size() == 0.0
 
 
 def test_exposure():

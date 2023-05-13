@@ -1881,7 +1881,7 @@ class TestActor:
         assert self.data_engine.request_count == 1
 
     @pytest.mark.parametrize(
-        "start, stop",
+        ("start", "stop"),
         [
             (UNIX_EPOCH, UNIX_EPOCH),
             (UNIX_EPOCH + timedelta(milliseconds=1), UNIX_EPOCH),

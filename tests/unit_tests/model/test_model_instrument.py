@@ -52,7 +52,7 @@ NFL_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 class TestInstrument:
     @pytest.mark.parametrize(
-        "instrument1, instrument2, expected1, expected2",
+        ("instrument1", "instrument2", "expected1", "expected2"),
         [
             [AUDUSD_SIM, AUDUSD_SIM, True, False],
             [AUDUSD_SIM, USDJPY_SIM, False, True],
@@ -300,7 +300,7 @@ class TestInstrument:
         }
 
     @pytest.mark.parametrize(
-        "value, expected_str",
+        ("value", "expected_str"),
         [
             [0, "0.00000"],
             [1, "1.00000"],
@@ -325,7 +325,7 @@ class TestInstrument:
         assert str(price) == expected_str
 
     @pytest.mark.parametrize(
-        "value, expected_str",
+        ("value", "expected_str"),
         [
             [0, "0.000000"],
             [1, "1.000000"],
@@ -350,7 +350,7 @@ class TestInstrument:
         assert str(qty) == expected_str
 
     @pytest.mark.parametrize(
-        "instrument, expected",
+        ("instrument", "expected"),
         [
             [AUDUSD_SIM, AUD],
             [BTCUSDT_BINANCE, BTC],
@@ -363,7 +363,7 @@ class TestInstrument:
         assert instrument.get_base_currency() == expected
 
     @pytest.mark.parametrize(
-        "instrument, expected",
+        ("instrument", "expected"),
         [
             [AUDUSD_SIM, USD],
             [BTCUSDT_BINANCE, USDT],
@@ -389,7 +389,7 @@ class TestInstrument:
         assert result == Money(114936.00000000, USDT)
 
     @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
+        ("inverse_as_quote", "expected"),
         [
             [False, Money(8.70049419, BTC)],
             [True, Money(100000.00, USD)],
@@ -410,7 +410,7 @@ class TestInstrument:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "instrument, value, n, expected",
+        ("instrument", "value", "n", "expected"),
         [
             (AUDUSD_SIM, 0.720006, 0, "0.72001"),
             (AUDUSD_SIM, 0.900001, 0, "0.90001"),
@@ -422,7 +422,7 @@ class TestInstrument:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "instrument, value, n, expected",
+        ("instrument", "value", "n", "expected"),
         [
             (AUDUSD_SIM, 0.7200006, 0, "0.72000"),
             (AUDUSD_SIM, 0.9000001, 0, "0.90000"),
@@ -452,7 +452,7 @@ class TestBettingInstrument:
         assert notional == Decimal("200.0")
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (101, 0, "110"),
         ],
@@ -463,7 +463,7 @@ class TestBettingInstrument:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (1.999, 0, "1.99"),
         ],

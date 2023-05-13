@@ -369,7 +369,7 @@ class TestCache:
         assert result == Price.from_str("1.00001")
 
     @pytest.mark.parametrize(
-        "price_type, expected",
+        ("price_type", "expected"),
         [
             [PriceType.BID, Price.from_str("1.00001")],
             [PriceType.ASK, Price.from_str("1.00003")],

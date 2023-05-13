@@ -68,7 +68,7 @@ class TestBinanceFactories:
         )
 
     @pytest.mark.parametrize(
-        "account_type, is_testnet, is_us, expected",
+        ("account_type", "is_testnet", "is_us", "expected"),
         [
             [
                 BinanceAccountType.SPOT,
@@ -164,7 +164,7 @@ class TestBinanceFactories:
         assert base_url == expected
 
     @pytest.mark.parametrize(
-        "account_type, is_testnet, is_us, expected",
+        ("account_type", "is_testnet", "is_us", "expected"),
         [
             [
                 BinanceAccountType.SPOT,

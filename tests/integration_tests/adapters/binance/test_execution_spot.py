@@ -137,7 +137,7 @@ class TestBinanceSpotExecutionClient:
         )
 
     @pytest.mark.skip(reason="WIP")
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_connect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
@@ -199,7 +199,7 @@ class TestBinanceSpotExecutionClient:
         # Assert
         assert self.exec_client.is_connected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_unsupported_order_logs_error(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -229,7 +229,7 @@ class TestBinanceSpotExecutionClient:
         # Assert
         assert mock_send_request.call_args is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -267,7 +267,7 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["newClientOrderId"] is not None
         assert request[2]["recvWindow"] == "5000"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -307,7 +307,7 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_stop_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -351,7 +351,7 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_limit_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -395,7 +395,7 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_order(self, mocker):
         # Arrange
         mock_query_order = mocker.patch(

@@ -536,7 +536,7 @@ class TestCashAccount:
             )
 
     @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
+        ("inverse_as_quote", "expected"),
         [
             [False, Money(-0.00218331, BTC)],  # Negative commission = credit
             [True, Money(-25.00, USD)],  # Negative commission = credit

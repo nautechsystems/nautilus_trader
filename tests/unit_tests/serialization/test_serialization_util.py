@@ -24,7 +24,7 @@ from nautilus_trader.serialization.arrow.util import clean_key
 
 
 @pytest.mark.parametrize(
-    "s, expected",
+    ("s", "expected"),
     [
         ("BSPOrderBookDelta", "bsp_order_book_delta"),
         ("OrderBookData", "order_book_data"),
@@ -36,7 +36,7 @@ def test_camel_to_snake_case(s, expected):
 
 
 @pytest.mark.parametrize(
-    "s, expected",
+    ("s", "expected"),
     [
         ("Instrument\\ID:hello", "Instrument-ID-hello"),
     ],
@@ -46,7 +46,7 @@ def test_clean_key(s, expected):
 
 
 @pytest.mark.parametrize(
-    "s, expected",
+    ("s", "expected"),
     [
         (TradeTick, "trade_tick"),
         (OrderBookData, "order_book_data"),

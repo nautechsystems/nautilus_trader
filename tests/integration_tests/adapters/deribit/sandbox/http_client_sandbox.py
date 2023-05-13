@@ -24,7 +24,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_deribit_http_client() -> None:
     loop = asyncio.get_event_loop()
     clock = LiveClock()

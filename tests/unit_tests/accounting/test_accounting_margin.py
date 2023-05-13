@@ -166,7 +166,7 @@ class TestMarginAccount:
         assert result == Money(240.32, USD)
 
     @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
+        ("inverse_as_quote", "expected"),
         [
             [False, Money(0.10005568, BTC)],
             [True, Money(1150.00, USD)],

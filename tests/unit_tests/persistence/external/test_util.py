@@ -102,7 +102,7 @@ def test_dict_kwarg():
 
 
 @pytest.mark.parametrize(
-    "filename, expected",
+    ("filename", "expected"),
     [
         [
             "1577836800000000000-1578182400000000000-0.parquet",
@@ -119,7 +119,7 @@ def test_parse_filename(filename, expected):
 
 
 @pytest.mark.parametrize(
-    "filename, start, end, expected",
+    ("filename", "start", "end", "expected"),
     [
         [
             "1546383600000000000-1577826000000000000-SIM-1-HOUR-BID-EXTERNAL-0.parquet",
@@ -182,7 +182,7 @@ def test_is_filename_in_time_range(filename, start, end, expected):
 
 
 @pytest.mark.parametrize(
-    "filename, expected",
+    ("filename", "expected"),
     [
         [
             "/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet",

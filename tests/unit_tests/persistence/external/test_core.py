@@ -135,7 +135,7 @@ class _TestPersistenceCore:
         assert result.open_file.compression == "bz2"
 
     @pytest.mark.parametrize(
-        "glob, num_files",
+        ("glob", "num_files"),
         [
             # ("**.json", 4),
             # ("**.txt", 3),
@@ -413,7 +413,7 @@ class _TestPersistenceCore:
 class TestPersistenceCoreMemory(_TestPersistenceCore):
     fs_protocol = "memory"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_load_text_betfair(self):
         self._load_data_into_catalog()
         # Arrange

@@ -87,7 +87,7 @@ class TestOrders:
             Order.closing_side(PositionSide.FLAT)
 
     @pytest.mark.parametrize(
-        "side, expected",
+        ("side", "expected"),
         [
             [OrderSide.BUY, OrderSide.SELL],
             [OrderSide.SELL, OrderSide.BUY],
@@ -101,7 +101,7 @@ class TestOrders:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "side, expected",
+        ("side", "expected"),
         [
             [PositionSide.LONG, OrderSide.SELL],
             [PositionSide.SHORT, OrderSide.BUY],
@@ -115,7 +115,7 @@ class TestOrders:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "order_side, position_side, position_qty, expected",
+        ("order_side", "position_side", "position_qty", "expected"),
         [
             [OrderSide.BUY, PositionSide.FLAT, Quantity.from_int(0), False],
             [OrderSide.BUY, PositionSide.SHORT, Quantity.from_str("0.5"), False],

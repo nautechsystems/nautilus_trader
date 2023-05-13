@@ -84,7 +84,7 @@ class TestLiveDataEngine:
     def teardown(self):
         self.engine.dispose()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.engine.start()
@@ -93,7 +93,7 @@ class TestLiveDataEngine:
         assert True  # No exceptions raised
         self.engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_put_data_command(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
@@ -127,7 +127,7 @@ class TestLiveDataEngine:
         assert self.engine.cmd_qsize() == 1
         assert self.engine.command_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_send_request(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
@@ -171,7 +171,7 @@ class TestLiveDataEngine:
         assert self.engine.req_qsize() == 1
         assert self.engine.command_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_receive_response(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
@@ -207,7 +207,7 @@ class TestLiveDataEngine:
         assert self.engine.res_qsize() == 1
         assert self.engine.command_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_data_qsize_at_max_blocks_on_put_data(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
@@ -235,7 +235,7 @@ class TestLiveDataEngine:
         assert self.engine.data_qsize() == 1
         assert self.engine.data_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_start(self):
         # Arrange, Act
         self.engine.start()
@@ -247,7 +247,7 @@ class TestLiveDataEngine:
         # Tear Down
         self.engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
         self.engine.start()
@@ -257,7 +257,7 @@ class TestLiveDataEngine:
         # Assert
         assert self.engine.is_stopped
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_kill_when_not_running_with_messages_on_queue(self):
         # Arrange, Act
         self.engine.kill()
@@ -265,7 +265,7 @@ class TestLiveDataEngine:
         # Assert
         assert self.engine.data_qsize() == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_execute_command_processes_message(self):
         # Arrange
         self.engine.start()
@@ -289,7 +289,7 @@ class TestLiveDataEngine:
         # Tear Down
         self.engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_send_request_processes_message(self):
         # Arrange
         self.engine.start()
@@ -323,7 +323,7 @@ class TestLiveDataEngine:
         # Tear Down
         self.engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_receive_response_processes_message(self):
         # Arrange
         self.engine.start()
@@ -349,7 +349,7 @@ class TestLiveDataEngine:
         # Tear Down
         self.engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_process_data_processes_data(self):
         # Arrange
         self.engine.start()

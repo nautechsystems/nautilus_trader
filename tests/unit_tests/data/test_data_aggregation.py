@@ -1118,7 +1118,7 @@ class TestTimeBarAggregator:
             )
 
     @pytest.mark.parametrize(
-        "bar_spec, expected",
+        ("bar_spec", "expected"),
         [
             [
                 BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
@@ -1232,7 +1232,7 @@ class TestTimeBarAggregator:
         assert 60_000_000_000 == bar.ts_init
 
     @pytest.mark.parametrize(
-        "step,aggregation",
+        ("step", "aggregation"),
         [
             [
                 1,

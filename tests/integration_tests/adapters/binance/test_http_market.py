@@ -43,7 +43,7 @@ class TestBinanceSpotMarketHttpAPI:
 
     # COMMON tests
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_ping_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -57,7 +57,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/ping"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_request_server_time_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -71,7 +71,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/time"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_depth_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -86,7 +86,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/depth"
         assert request["params"] == "symbol=BTCUSDT&limit=10"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_trades_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -101,7 +101,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/trades"
         assert request["params"] == "symbol=BTCUSDT&limit=10"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_historical_trades_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -116,7 +116,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/historicalTrades"
         assert request["params"] == "symbol=BTCUSDT&limit=10&fromId=0"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_agg_trades_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -137,7 +137,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/aggTrades"
         assert request["params"] == "symbol=BTCUSDT&fromId=0&startTime=0&endTime=1&limit=10"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_klines_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -158,7 +158,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/klines"
         assert request["params"] == "symbol=BTCUSDT&interval=1m&startTime=0&endTime=1&limit=1000"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_ticker_24hr_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -173,7 +173,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/ticker/24hr"
         assert request["params"] == "symbol=BTCUSDT"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_ticker_price_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -188,7 +188,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/ticker/price"
         assert request["params"] == "symbol=BTCUSDT"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_book_ticker_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -205,7 +205,7 @@ class TestBinanceSpotMarketHttpAPI:
 
     # SPOT/MARGIN tests
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_spot_exchange_info_with_symbol_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -220,7 +220,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/exchangeInfo"
         assert request["params"] == "symbol=BTCUSDT"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_spot_exchange_info_with_symbols_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()
@@ -235,7 +235,7 @@ class TestBinanceSpotMarketHttpAPI:
         assert request["url"] == "https://api.binance.com/api/v3/exchangeInfo"
         assert request["params"] == "symbols=%5B%22BTCUSDT%22%2C%22ETHUSDT%22%5D"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_query_spot_avg_price_sends_expected_request(self, mocker):
         # Arrange
         await self.client.connect()

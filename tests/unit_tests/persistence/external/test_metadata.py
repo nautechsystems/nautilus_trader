@@ -33,7 +33,7 @@ CASES = [
 
 
 @patch("nautilus_trader.persistence.external.metadata.fsspec.filesystem")
-@pytest.mark.parametrize("glob, kw", [(path, kw) for path, _, kw in CASES])
+@pytest.mark.parametrize(("glob", "kw"), [(path, kw) for path, _, kw in CASES])
 def test_glob_path_to_fs_inferred(mock, glob, kw):
     _glob_path_to_fs(glob)
     mock.assert_called_with(**kw)
@@ -41,7 +41,7 @@ def test_glob_path_to_fs_inferred(mock, glob, kw):
 
 @patch("fsspec.implementations.ftp.FTPFileSystem._connect")
 @patch("fsspec.implementations.ftp.FTPFileSystem.__del__")
-@pytest.mark.parametrize("glob, cls", [(path, cls) for path, cls, _ in CASES])
+@pytest.mark.parametrize(("glob", "cls"), [(path, cls) for path, cls, _ in CASES])
 def test_glob_path_to_fs(_mock1, _mock2, glob, cls):
     fs = _glob_path_to_fs(glob)
     assert isinstance(fs, cls)

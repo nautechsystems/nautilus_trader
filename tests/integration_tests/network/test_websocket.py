@@ -41,13 +41,13 @@ class TestWebsocketClient:
     def _server_url(server) -> str:
         return f"http://{server.host}:{server.port}/ws"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_connect(self, websocket_server):
         await self.client.connect(ws_url=self._server_url(websocket_server))
         assert self.client.is_connected
         await self.client.disconnect()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_client_recv(self, websocket_server):
         num_messages = 3
         await self.client.connect(ws_url=self._server_url(websocket_server))
@@ -59,7 +59,7 @@ class TestWebsocketClient:
         expected = [b"connected"] + [b"Hello-response"] * 3
         assert self.messages == expected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconnect_after_close(self, websocket_server):
         # Arrange
         await self.client.connect(ws_url=self._server_url(websocket_server))
@@ -74,7 +74,7 @@ class TestWebsocketClient:
         # Assert
         assert self.messages == [b"connected"] * 2
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconnect_after_disconnect(self, websocket_server):
         # Arrange
         await self.client.connect(ws_url=self._server_url(websocket_server))
@@ -89,7 +89,7 @@ class TestWebsocketClient:
         # Assert
         assert self.messages == [b"connected"]
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_exponential_backoff(self, websocket_server):
         # Arrange
         await self.client.connect(ws_url=self._server_url(websocket_server))

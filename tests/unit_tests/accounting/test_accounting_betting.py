@@ -190,7 +190,7 @@ class TestBettingAccount:
         assert account.balance_locked(GBP) == Money(0.50000000, GBP)
 
     @pytest.mark.parametrize(
-        "price, quantity, side, locked_balance",
+        ("price", "quantity", "side", "locked_balance"),
         [
             ("1.25", 10, "BUY", "10"),
             ("2.00", 10, "BUY", "10"),

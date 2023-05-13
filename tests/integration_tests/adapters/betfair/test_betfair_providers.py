@@ -49,7 +49,7 @@ class TestBetfairInstrumentProvider:
             logger=TestComponentStubs.logger(),
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_load_markets(self):
         markets = await load_markets(self.client, market_filter={})
         assert len(markets) == 13227
@@ -63,13 +63,13 @@ class TestBetfairInstrumentProvider:
         markets = await load_markets(self.client, market_filter={"market_id": "1.177125728"})
         assert len(markets) == 1
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_load_markets_metadata(self):
         markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
         assert len(market_metadata) == 169
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_make_instruments(self):
         # Arrange
         list_market_catalogue_data = [
@@ -90,18 +90,18 @@ class TestBetfairInstrumentProvider:
         # Assert
         assert len(instruments) == 30412
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_name": "Tennis"})
         assert len(self.provider.list_all()) == 4711
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_list_all(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.list_all()
         assert len(instruments) == 23908
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_search_instruments(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.search_instruments(
@@ -109,7 +109,7 @@ class TestBetfairInstrumentProvider:
         )
         assert len(instruments) == 104
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_get_betting_instrument(self):
         await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
         kw = {

@@ -54,7 +54,7 @@ def mock_ib_contract_calls(mocker, instrument_provider, contract_details: Contra
 
 
 @pytest.mark.parametrize(
-    "filters, expected",
+    ("filters", "expected"),
     [
         (
             {"secType": "STK", "symbol": "AMD", "exchange": "SMART", "currency": "USD"},
@@ -112,7 +112,7 @@ def test_parse_contract(filters, expected, instrument_provider):
         assert getattr(result, f) == getattr(expected, f)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_equity_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("AAPL.AMEX")
@@ -135,7 +135,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     assert 2, equity.price_precision
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("CLZ3.NYMEX")
@@ -157,7 +157,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     assert future.price_precision == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_options_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
@@ -182,7 +182,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
     assert option.price_precision == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_forex_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
@@ -204,7 +204,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -221,13 +221,13 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     assert instrument_provider.contract_id_to_instrument_id == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_none_filters(instrument_provider):
     # Act, Arrange, Assert
     instrument_provider.load_all(None)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_instrument_filter_callable_none(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -243,7 +243,7 @@ async def test_instrument_filter_callable_none(mocker, instrument_provider):
     assert len(instrument_provider.get_all()) == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_instrument_filter_callable_option_filter(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
