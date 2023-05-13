@@ -16,6 +16,7 @@ None
 - Fixed `OrderEmulator` releasing of already closed orders
 - Fixed `MatchingEngine` processing of reduce only for child contingency orders
 - Fixed `MatchingEngine` position ID assignment for child contingency orders
+- Fixed `Actor` handling of historical data from requests (will now call `on_historical_data` regardless of state)
 
 ---
 
