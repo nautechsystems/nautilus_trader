@@ -335,9 +335,10 @@ class VolatilityMarketMaker(Strategy):
             if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:
                     self.create_buy_order(last)
-            elif self.sell_order and event.order_side == OrderSide.SELL:
-                if self.sell_order.is_closed:
-                    self.create_sell_order(last)
+            elif (
+                self.sell_order and event.order_side == OrderSide.SELL and self.sell_order.is_closed
+            ):
+                self.create_sell_order(last)
 
     def on_stop(self) -> None:
         """

@@ -365,18 +365,16 @@ class EMACrossTrailingStop(Strategy):
 
         """
         if isinstance(event, OrderFilled):
-            if self.trailing_stop:
-                if event.client_order_id == self.trailing_stop.client_order_id:
-                    self.trailing_stop = None
+            if self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
+                self.trailing_stop = None
         elif isinstance(event, (PositionOpened, PositionChanged)):
-            if self.entry:
-                if event.opening_order_id == self.entry.client_order_id:
-                    if event.entry == OrderSide.BUY:
-                        self.position_id = event.position_id
-                        self.trailing_stop_sell()
-                    elif event.entry == OrderSide.SELL:
-                        self.position_id = event.position_id
-                        self.trailing_stop_buy()
+            if self.entry and event.opening_order_id == self.entry.client_order_id:
+                if event.entry == OrderSide.BUY:
+                    self.position_id = event.position_id
+                    self.trailing_stop_sell()
+                elif event.entry == OrderSide.SELL:
+                    self.position_id = event.position_id
+                    self.trailing_stop_buy()
         elif isinstance(event, PositionClosed):
             self.position_id = None
 

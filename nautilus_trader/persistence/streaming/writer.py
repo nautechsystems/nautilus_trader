@@ -105,11 +105,7 @@ class StreamingFeatherWriter:
 
     @property
     def closed(self) -> bool:
-        for cls in self._files:
-            if not self._files[cls].closed:
-                return False
-
-        return True
+        return all(self._files[cls].closed for cls in self._files)
 
     def write(self, obj: object) -> None:
         """

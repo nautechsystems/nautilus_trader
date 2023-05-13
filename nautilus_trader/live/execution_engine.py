@@ -961,7 +961,6 @@ class LiveExecutionEngine(ExecutionEngine):
         elif (
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            if report.trigger_price != order.trigger_price or report.price != order.price:
-                return True
+        ) and (report.trigger_price != order.trigger_price or report.price != order.price):
+            return True
         return False

@@ -263,7 +263,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 durationStr=timedelta_to_duration_str(duration),
                 barSizeSetting=bar_size_setting,
                 whatToShow=what_to_show[bar_type.spec.price_type],
-                useRTH=True if contract_details.contract.secType == "STK" else False,
+                useRTH=contract_details.contract.secType == "STK",
                 formatDate=2,
                 keepUpToDate=True,
             )

@@ -651,8 +651,8 @@ class TestPrice:
         price = Price(1.00000, precision=5)
 
         # Assert
-        assert "1.00000" == str(price)
-        assert "Price('1.00000')" == repr(price)
+        assert str(price) == "1.00000"
+        assert repr(price) == "Price('1.00000')"
 
     def test_pickle_dumps_and_loads(self):
         # Arrange

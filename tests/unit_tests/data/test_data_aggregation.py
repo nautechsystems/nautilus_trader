@@ -1229,7 +1229,7 @@ class TestTimeBarAggregator:
         assert Price.from_str("1.000015") == bar.low
         assert Price.from_str("1.000015") == bar.close
         assert Quantity.from_int(3) == bar.volume
-        assert 60_000_000_000 == bar.ts_init
+        assert bar.ts_init == 60_000_000_000
 
     @pytest.mark.parametrize(
         ("step", "aggregation"),

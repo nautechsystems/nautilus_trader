@@ -57,10 +57,7 @@ class BinanceWebSocketClient(WebSocketClient):
 
     @property
     def has_subscriptions(self) -> bool:
-        if self._streams:
-            return True
-        else:
-            return False
+        return bool(self._streams)
 
     async def connect(
         self,

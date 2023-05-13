@@ -268,14 +268,13 @@ class BetfairDataClient(LiveMarketDataClient):
                 )
                 self._handle_data(generic_data)
             elif isinstance(data, Data):
-                if self._strict_handling:
-                    if (
-                        hasattr(data, "instrument_id")
-                        and data.instrument_id not in self._subscribed_instrument_ids
-                    ):
-                        # We receive data for multiple instruments within a subscription, don't emit data if we're not
-                        # subscribed to this particular instrument as this will trigger a bunch of error logs
-                        continue
+                if self._strict_handling and (
+                    hasattr(data, "instrument_id")
+                    and data.instrument_id not in self._subscribed_instrument_ids
+                ):
+                    # We receive data for multiple instruments within a subscription, don't emit data if we're not
+                    # subscribed to this particular instrument as this will trigger a bunch of error logs
+                    continue
                 self._handle_data(data)
             elif isinstance(data, Event):
                 self._log.warning(

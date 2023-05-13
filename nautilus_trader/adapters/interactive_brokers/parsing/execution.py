@@ -87,7 +87,7 @@ def account_values_to_nautilus_account_info(
         sorted(account_values, key=group_key),
         key=group_key,
     ):
-        if not (account == account_id):
+        if account != account_id:
             continue
         if currency in ("", "BASE"):
             # Only report in base currency

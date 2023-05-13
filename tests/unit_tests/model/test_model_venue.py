@@ -40,7 +40,7 @@ class TestVenue:
 
         # Act, Assert
         assert VenueStatusUpdate.from_dict(VenueStatusUpdate.to_dict(update)) == update
-        assert "VenueStatusUpdate(venue=BINANCE, status=OPEN)" == repr(update)
+        assert repr(update) == "VenueStatusUpdate(venue=BINANCE, status=OPEN)"
 
     def test_instrument_status(self):
         # Arrange
@@ -53,7 +53,7 @@ class TestVenue:
 
         # Act, Assert
         assert InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update)) == update
-        assert "InstrumentStatusUpdate(instrument_id=BTCUSDT.BINANCE, status=PAUSE)" == repr(update)
+        assert repr(update) == "InstrumentStatusUpdate(instrument_id=BTCUSDT.BINANCE, status=PAUSE)"
 
     def test_instrument_close(self):
         # Arrange

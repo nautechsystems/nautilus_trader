@@ -130,7 +130,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("AMEX")) == equity.id
     assert equity.asset_class == AssetClass.EQUITY
     assert equity.asset_type == AssetType.SPOT
-    assert 1 == equity.multiplier
+    assert equity.multiplier == 1
     assert Price.from_str("0.01") == equity.price_increment
     assert 2, equity.price_precision
 

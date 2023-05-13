@@ -551,9 +551,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if order.time_in_force == TimeInForce.GTD and time_in_force == BinanceTimeInForce.GTC:
-            if self._warn_gtd_to_gtc:
-                self._log.warning("Converted GTD `time_in_force` to GTC.")
+        if (
+            order.time_in_force == TimeInForce.GTD
+            and time_in_force == BinanceTimeInForce.GTC
+            and self._warn_gtd_to_gtc
+        ):
+            self._log.warning("Converted GTD `time_in_force` to GTC.")
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:

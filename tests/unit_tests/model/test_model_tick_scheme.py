@@ -78,10 +78,7 @@ class TestFixedTickScheme:
     )
     def test_next_ask_price(self, value, expected):
         result = self.tick_scheme.next_ask_price(value)
-        if expected is None:
-            expected = expected
-        else:
-            expected = Price.from_str(expected)
+        expected = expected if expected is None else Price.from_str(expected)
         assert result == expected
 
     @pytest.mark.parametrize(
@@ -96,10 +93,7 @@ class TestFixedTickScheme:
     )
     def test_next_bid_price(self, value, expected):
         result = self.tick_scheme.next_bid_price(value)
-        if expected is None:
-            expected = expected
-        else:
-            expected = Price.from_str(expected)
+        expected = expected if expected is None else Price.from_str(expected)
         assert result == expected
 
 
