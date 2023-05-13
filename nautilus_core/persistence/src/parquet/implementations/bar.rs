@@ -27,17 +27,8 @@ use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
 impl DecodeDataFromRecordBatch for Bar {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        let bar_type = BarType::from_str(metadata.get("bar_type").unwrap().as_str()).unwrap();
-        let price_precision = metadata
-            .get("price_precision")
-            .unwrap()
-            .parse::<u8>()
-            .unwrap();
-        let size_precision = metadata
-            .get("size_precision")
-            .unwrap()
-            .parse::<u8>()
-            .unwrap();
+        // Parse and validate metadata
+        let (bar_type, price_precision, size_precision) = parse_metadata(metadata);
 
         // Extract field value arrays from record batch
         let cols = record_batch.columns();
@@ -90,6 +81,22 @@ impl DecodeDataFromRecordBatch for Bar {
 
         Schema::new_with_metadata(fields, metadata).into()
     }
+}
+
+fn parse_metadata(metadata: &HashMap<String, String>) -> (BarType, u8, u8) {
+    let bar_type = BarType::from_str(metadata.get("bar_type").unwrap().as_str()).unwrap();
+    let price_precision = metadata
+        .get("price_precision")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+    let size_precision = metadata
+        .get("size_precision")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+
+    (bar_type, price_precision, size_precision)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::{Display, Formatter};
-use std::ops::{Deref, DerefMut};
 
 use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
@@ -117,11 +116,12 @@ impl Display for OrderBookDelta {
 }
 
 // Represents a snapshot of an order book.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct OrderBookSnapshot {
     pub instrument_id: InstrumentId,
-    pub bids: Vec<BookOrder>,
-    pub asks: Vec<BookOrder>,
+    pub bids: CVec,
+    pub asks: CVec,
     pub sequence: u64,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -131,8 +131,8 @@ impl OrderBookSnapshot {
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
-        bids: Vec<BookOrder>,
-        asks: Vec<BookOrder>,
+        bids: CVec,
+        asks: CVec,
         sequence: u64,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -163,23 +163,6 @@ impl Display for OrderBookSnapshot {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 
-#[repr(C)]
-pub struct OrderBookSnapshotAPI(Box<OrderBookSnapshot>);
-
-impl Deref for OrderBookSnapshotAPI {
-    type Target = OrderBookSnapshot;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for OrderBookSnapshotAPI {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 #[no_mangle]
 /// Creates a new `OrderBookSnapshot` from the provided data.
 ///
@@ -195,8 +178,8 @@ impl DerefMut for OrderBookSnapshotAPI {
 /// Failure to do so can result in memory corruption or access violations.
 ///
 /// Additionally, the ownership of the provided memory is transferred to the returned
-/// `OrderBookSnapshotAPI` object. It is crucial to ensure proper memory management and
-/// deallocation of the `OrderBookSnapshotAPI` object to prevent memory leaks by calling
+/// `OrderBookSnapshot` object. It is crucial to ensure proper memory management and
+/// deallocation of the `OrderBookSnapshot` object to prevent memory leaks by calling
 /// `orderbook_snapshot_drop(...).
 pub unsafe extern "C" fn orderbook_snapshot_new(
     instrument_id: InstrumentId,
@@ -205,21 +188,12 @@ pub unsafe extern "C" fn orderbook_snapshot_new(
     sequence: u64,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderBookSnapshotAPI {
-    let bids: Vec<BookOrder> = Vec::from_raw_parts(bids.ptr as *mut BookOrder, bids.len, bids.cap);
-    let asks: Vec<BookOrder> = Vec::from_raw_parts(asks.ptr as *mut BookOrder, asks.len, asks.cap);
-    OrderBookSnapshotAPI(Box::new(OrderBookSnapshot::new(
-        instrument_id,
-        bids,
-        asks,
-        sequence,
-        ts_event,
-        ts_init,
-    )))
+) -> OrderBookSnapshot {
+    OrderBookSnapshot::new(instrument_id, bids, asks, sequence, ts_event, ts_init)
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshotAPI) {
+pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshot) {
     drop(snapshot); // Memory freed here
 }
 
@@ -380,8 +354,8 @@ mod tests {
 
         let snapshot = OrderBookSnapshot::new(
             instrument_id.clone(),
-            bids.clone(),
-            asks.clone(),
+            bids.clone().into(),
+            asks.clone().into(),
             sequence,
             ts_event,
             ts_init,

@@ -26,8 +26,12 @@ use pyo3::prelude::*;
 #[pyclass]
 #[derive(Debug, Clone, Copy)]
 pub enum ParquetType {
-    QuoteTick = 0,
-    TradeTick = 1,
+    // Custom = 0,  # First slot reserved for custom data
+    OrderBookSnapshot = 1,
+    OrderBookDelta = 2,
+    QuoteTick = 3,
+    TradeTick = 4,
+    Bar = 5,
 }
 
 #[repr(C)]
