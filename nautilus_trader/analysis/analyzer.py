@@ -484,10 +484,7 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            if isinstance(v, (int, float, Decimal)):
-                v_formatted = f"{v:_}"
-            else:
-                v_formatted = str(v)
+            v_formatted = f"{v:_}" if isinstance(v, (int, float, Decimal)) else str(v)
             output.append(f"{k}: {' ' * padding}{v_formatted}")
 
         return output

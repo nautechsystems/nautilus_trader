@@ -386,15 +386,13 @@ class EMACrossStopEntry(Strategy):
 
         """
         if isinstance(event, OrderFilled):
-            if self.entry:
-                if event.client_order_id == self.entry.client_order_id:
-                    if event.order_side == OrderSide.BUY:
-                        self.trailing_stop_sell()
-                    elif event.order_side == OrderSide.SELL:
-                        self.trailing_stop_buy()
-            if self.trailing_stop:
-                if event.client_order_id == self.trailing_stop.client_order_id:
-                    self.trailing_stop = None
+            if self.entry and event.client_order_id == self.entry.client_order_id:
+                if event.order_side == OrderSide.BUY:
+                    self.trailing_stop_sell()
+                elif event.order_side == OrderSide.SELL:
+                    self.trailing_stop_buy()
+            if self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
+                self.trailing_stop = None
 
     def on_stop(self) -> None:
         """

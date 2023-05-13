@@ -26,11 +26,11 @@ PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
-PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
+PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true") == "true"
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
-COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
+COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true") == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
-PYO3_ONLY = False if os.getenv("PYO3_ONLY", "") == "" else True
+PYO3_ONLY = os.getenv("PYO3_ONLY", "") != ""
 
 if PROFILE_MODE:
     # For subsequent debugging, the C source needs to be in the same tree as

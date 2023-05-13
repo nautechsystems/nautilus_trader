@@ -49,10 +49,7 @@ def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    if path is None:
-        path = Path.cwd() / "data_catalog"
-    else:
-        path = Path(path).resolve()
+    path = Path.cwd() / "data_catalog" if path is None else Path(path).resolve()
 
     path = str(path)
     catalog = ParquetDataCatalog(path=path, fs_protocol=protocol)

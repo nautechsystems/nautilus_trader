@@ -93,7 +93,7 @@ class TestBettingAccount:
 
         # Assert
         assert account == account
-        assert not account != account
+        assert account == account
         assert account.id == AccountId("SIM-000")
         assert str(account) == "BettingAccount(id=SIM-000, type=BETTING, base=GBP)"
         assert repr(account) == "BettingAccount(id=SIM-000, type=BETTING, base=GBP)"

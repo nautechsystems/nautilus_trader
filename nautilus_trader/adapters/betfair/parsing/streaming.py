@@ -326,12 +326,11 @@ def runner_change_all_depth_to_order_book_snapshot(
     ts_init: int,
 ) -> Optional[OrderBookSnapshot]:
     # ATL = Available To Lay = Back orders
-    if rc.atl:
-        asks = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price
-        ]
-    else:
-        asks = []
+    asks = (
+        [(betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price]
+        if rc.atl
+        else []
+    )
     # Asks are available to back (atb)
     if rc.atb:
         bids: list = [
@@ -388,12 +387,11 @@ def runner_change_display_depth_to_order_book_snapshot(
     ts_init: int,
 ) -> Optional[OrderBookSnapshot]:
     # Bids are best display available to lay (bdatl)
-    if rc.bdatl:
-        asks = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price
-        ]
-    else:
-        asks = []
+    asks = (
+        [(betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price]
+        if rc.bdatl
+        else []
+    )
     # Asks are best display available to back (bdatb)
     if rc.bdatb:
         bids: list = [

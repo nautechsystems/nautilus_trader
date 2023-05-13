@@ -287,10 +287,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         start_nanos: Optional[int] = None,
         end_nanos: Optional[int] = None,
     ) -> list[str]:
-        if instrument_id is None:
-            folder = self.path
-        else:
-            folder = self.make_path(cls=cls, instrument_id=instrument_id)
+        folder = (
+            self.path
+            if instrument_id is None
+            else self.make_path(cls=cls, instrument_id=instrument_id)
+        )
 
         if not os.path.exists(folder):
             return []

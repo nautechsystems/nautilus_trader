@@ -69,7 +69,7 @@ class TestCashAccount:
 
         # Assert
         assert account == account
-        assert not account != account
+        assert account == account
         assert account.id == AccountId("SIM-000")
         assert str(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"

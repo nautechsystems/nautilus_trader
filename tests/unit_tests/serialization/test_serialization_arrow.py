@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import contextlib
 import copy
 import os
 from typing import Any
@@ -57,10 +58,9 @@ def _reset():
     os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
     catalog = ParquetDataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
-    try:
+    with contextlib.suppress(FileNotFoundError):
         catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
+
     catalog.fs.mkdir("/.nautilus/catalog")
     assert catalog.fs.exists("/.nautilus/catalog/")
 

@@ -166,12 +166,11 @@ class BacktestNode:
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
-            if config.leverages:
-                leverages = {
-                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
-                }
-            else:
-                leverages = {}
+            leverages = (
+                {InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()}
+                if config.leverages
+                else {}
+            )
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],

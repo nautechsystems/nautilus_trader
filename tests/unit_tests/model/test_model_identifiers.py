@@ -32,7 +32,7 @@ class TestIdentifiers:
         id3 = Symbol("def456")
 
         # Act, Assert
-        assert "abc123" == id1.value
+        assert id1.value == "abc123"
         assert id1 == id1
         assert id1 == id2
         assert id1 != id3
@@ -99,7 +99,7 @@ class TestIdentifiers:
         # Assert
         assert trader_id1 == trader_id1
         assert trader_id1 != trader_id2
-        assert "TESTER-000" == trader_id1.value
+        assert trader_id1.value == "TESTER-000"
         assert trader_id1.get_tag() == "000"
 
     def test_account_identifier(self):
@@ -225,7 +225,7 @@ class TestInstrumentId:
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
         # Act, Assert
-        assert "InstrumentId('AUD/USD.SIM')" == repr(instrument_id)
+        assert repr(instrument_id) == "InstrumentId('AUD/USD.SIM')"
 
     def test_parse_instrument_id_from_str(self):
         # Arrange

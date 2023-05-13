@@ -59,7 +59,7 @@ class TestMarginAccount:
         assert repr(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
         assert isinstance(hash(account), int)
         assert account == account
-        assert not account != account
+        assert account == account
         assert account.default_leverage == Decimal(1)
 
     def test_set_default_leverage(self):

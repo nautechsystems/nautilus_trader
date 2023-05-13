@@ -617,8 +617,8 @@ class TestQuantity:
         quantity = Quantity(2100.1666666, 6)
 
         # Act, Assert
-        assert "2100.166667" == str(quantity)
-        assert "Quantity('2100.166667')" == repr(quantity)
+        assert str(quantity) == "2100.166667"
+        assert repr(quantity) == "Quantity('2100.166667')"
 
     def test_pickle_dumps_and_loads(self):
         # Arrange
