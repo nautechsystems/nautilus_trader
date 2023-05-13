@@ -2217,8 +2217,6 @@ cdef class Actor(Component):
         """
         Handle the given historical data.
 
-        If state is ``RUNNING`` then passes to `on_historical_data`.
-
         Parameters
         ----------
         data : Data
@@ -2231,12 +2229,11 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_historical_data(data)
-            except Exception as e:
-                self._log.exception(f"Error on handling {repr(data)}", e)
-                raise
+        try:
+            self.on_historical_data(data)
+        except Exception as e:
+            self._log.exception(f"Error on handling {repr(data)}", e)
+            raise
 
     cpdef void handle_event(self, Event event):
         """
