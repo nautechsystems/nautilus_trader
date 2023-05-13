@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-const FAILED: &str = "condition check failed:";
+const FAILED: &str = "Condition check failed:";
 
 /// Check string `s` is valid.
 ///
@@ -27,7 +27,7 @@ pub fn valid_string(s: &str, desc: &str) {
     } else if s.as_bytes().iter().all(u8::is_ascii_whitespace) {
         panic!("{FAILED} invalid string for {desc}, was all whitespace");
     } else if !s.is_ascii() {
-        panic!("{FAILED} invalid string for {desc} contained a Non-ASCII char, was '{s}'");
+        panic!("{FAILED} invalid string for {desc} contained a non-ASCII char, was '{s}'");
     }
 }
 
