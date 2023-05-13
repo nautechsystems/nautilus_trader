@@ -16,6 +16,7 @@
 use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut};
 
+use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
 
 use crate::enums::BookAction;
@@ -130,14 +131,16 @@ impl OrderBookSnapshot {
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
+        bids: Vec<BookOrder>,
+        asks: Vec<BookOrder>,
         sequence: u64,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
         Self {
             instrument_id,
-            bids: Vec::new(),
-            asks: Vec::new(),
+            bids,
+            asks,
             sequence,
             ts_event,
             ts_init,
@@ -177,10 +180,43 @@ impl DerefMut for OrderBookSnapshotAPI {
     }
 }
 
-// #[no_mangle]
-// pub extern "C" fn orderbook_snapshot_new() -> OrderBookSnapshotAPI {
-//     OrderBookSnapshotAPI(Box::new(OrderBookSnapshot::new()))
-// }
+#[no_mangle]
+/// Creates a new `OrderBookSnapshot` from the provided data.
+///
+/// # Safety
+///
+/// This function is marked as `unsafe` because it relies on the assumption that the `CVec`
+/// objects were correctly initialized and point to valid memory regions with a valid layout.
+/// Improper use of this function with incorrect or uninitialized `CVec` objects can lead
+/// to undefined behavior, including memory unsafety and crashes.
+///
+/// It is the responsibility of the caller to ensure that the `CVec` objects are valid and
+/// have the correct layout matching the expected `Vec` types (`BookOrder` in this case).
+/// Failure to do so can result in memory corruption or access violations.
+///
+/// Additionally, the ownership of the provided memory is transferred to the returned
+/// `OrderBookSnapshotAPI` object. It is crucial to ensure proper memory management and
+/// deallocation of the `OrderBookSnapshotAPI` object to prevent memory leaks by calling
+/// `orderbook_snapshot_drop(...).
+pub unsafe extern "C" fn orderbook_snapshot_new(
+    instrument_id: InstrumentId,
+    bids: CVec,
+    asks: CVec,
+    sequence: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderBookSnapshotAPI {
+    let bids: Vec<BookOrder> = Vec::from_raw_parts(bids.ptr as *mut BookOrder, bids.len, bids.cap);
+    let asks: Vec<BookOrder> = Vec::from_raw_parts(asks.ptr as *mut BookOrder, asks.len, asks.cap);
+    OrderBookSnapshotAPI(Box::new(OrderBookSnapshot::new(
+        instrument_id,
+        bids,
+        asks,
+        sequence,
+        ts_event,
+        ts_init,
+    )))
+}
 
 #[no_mangle]
 pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshotAPI) {
