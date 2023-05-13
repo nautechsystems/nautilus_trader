@@ -440,10 +440,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             f"{self.path}/data/{name}.parquet",
             filesystem=self.fs,
         )
-        partitions = {}
-        for level in dataset.partitions.levels:
-            partitions[level.name] = level.keys
-        return partitions
+        # TODO(cs): Catalog v1 impl below
+        # partitions = {}
+        # for level in dataset.partitioning:
+        #     partitions[level.name] = level.keys
+        return dataset.partitioning
 
     def list_backtests(self) -> list[str]:
         glob_path = f"{self.path}/backtest/*.feather"
