@@ -50,18 +50,18 @@ where
     }
 }
 
-/// Catalog is a data fusion session and registers data fusion queries.
+/// Provides a data fusion session and registers data fusion queries.
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
 /// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
-pub struct PersistenceCatalog {
+pub struct DataBackendSession {
     session_ctx: SessionContext,
     batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
     chunk_size: usize,
 }
 
-impl PersistenceCatalog {
+impl DataBackendSession {
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
         Self {
@@ -176,22 +176,22 @@ impl Iterator for QueryResult {
 /// Python API
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Store the data fusion session context
+/// Store the DataFustion session context.
 #[pyclass]
-pub struct PythonCatalog(PersistenceCatalog);
+pub struct DataCatalogBackend(DataBackendSession);
 
 // Note: Intended to be used on a single python thread
-unsafe impl Send for PersistenceCatalog {}
+unsafe impl Send for DataBackendSession {}
 
 #[pymethods]
-impl PythonCatalog {
+impl DataCatalogBackend {
     #[new]
     #[pyo3(signature=(chunk_size=5000))]
     #[must_use]
     pub fn new_session(chunk_size: usize) -> Self {
         // Initialize runtime here
         get_runtime();
-        Self(PersistenceCatalog::new(chunk_size))
+        Self(DataBackendSession::new(chunk_size))
     }
 
     pub fn add_file(

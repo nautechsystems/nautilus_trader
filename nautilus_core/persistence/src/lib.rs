@@ -19,13 +19,13 @@ pub mod session;
 
 use parquet::ParquetType;
 use pyo3::prelude::*;
-use session::{PythonCatalog, PythonQueryResult};
+use session::{DataCatalogBackend, PythonQueryResult};
 
 /// Loaded as nautilus_pyo3.persistence
 #[pymodule]
 pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<ParquetType>()?;
-    m.add_class::<PythonCatalog>()?;
+    m.add_class::<DataCatalogBackend>()?;
     m.add_class::<PythonQueryResult>()?;
     Ok(())
 }
