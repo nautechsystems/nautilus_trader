@@ -15,5 +15,5 @@
 
 mod bar;
 mod book;
-mod quote_tick;
-mod trade_tick;
+mod quote;
+mod trade;

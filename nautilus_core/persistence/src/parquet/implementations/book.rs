@@ -36,7 +36,8 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
         let instrument_id =
             InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
-        let book_type =
+        // BookType is unused for now: clarifies data
+        let _book_type =
             BookType::from_u8(metadata.get("book_type").unwrap().parse::<u8>().unwrap()).unwrap();
         let price_precision = metadata
             .get("price_precision")
@@ -79,7 +80,6 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
                 )| {
                     OrderBookDelta {
                         instrument_id: instrument_id.clone(),
-                        book_type,
                         action: BookAction::from_u8(action.unwrap()).unwrap(),
                         order: BookOrder {
                             price: Price::from_raw(price.unwrap(), price_precision),

@@ -262,10 +262,9 @@ cdef extern from "../includes/model.h":
         OrderSide side;
         uint64_t order_id;
 
-    # Represents a single quote tick in a financial market.
+    # Represents a single change/delta in an order book.
     cdef struct OrderBookDelta:
         InstrumentId_t instrument_id;
-        BookType book_type;
         BookAction action;
         BookOrder order;
         uint8_t flags;
