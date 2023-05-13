@@ -470,24 +470,24 @@ class TestDataStubs:
                 data = dict(zip(keys, values))
                 side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
                 if data["price"] == 0:
-                    yield dict(
-                        op="delete",
-                        order=BookOrder(
+                    yield {
+                        "op": "delete",
+                        "order": BookOrder(
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
                             order_id=str(data["order_id"]),
                         ),
-                    )
+                    }
                 else:
-                    yield dict(
-                        op="update",
-                        order=BookOrder(
+                    yield {
+                        "op": "update",
+                        "order": BookOrder(
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
                             order_id=str(data["order_id"]),
                         ),
-                    )
+                    }
 
         return [msg for data in json.loads(open(filename).read()) for msg in parser(data)]

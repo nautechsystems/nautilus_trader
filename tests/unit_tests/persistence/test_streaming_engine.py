@@ -565,11 +565,11 @@ class TestPersistenceBatching:
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].unique().tolist()
 
-        shared_kw = dict(
-            catalog_path=str(self.catalog.path),
-            catalog_fs_protocol=self.catalog.fs.protocol,
-            data_cls=OrderBookData,
-        )
+        shared_kw = {
+            "catalog_path": str(self.catalog.path),
+            "catalog_fs_protocol": self.catalog.fs.protocol,
+            "data_cls": OrderBookData,
+        }
 
         engine = StreamingEngine(
             data_configs=[

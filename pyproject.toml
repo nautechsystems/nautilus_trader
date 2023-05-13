@@ -139,6 +139,7 @@ line_length = 100
 target-version = "py39"
 line-length = 150  # Reduce to 100
 select = [
+    "C4",
     "E",
     "F",
     "W",
@@ -190,6 +191,7 @@ fixable = [
     "A",
     "B",
     "C",
+    "C4",
     "D",
     "E",
     "F",

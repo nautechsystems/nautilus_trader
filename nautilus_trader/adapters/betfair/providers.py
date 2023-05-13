@@ -135,7 +135,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
             instruments = [
                 ins
                 for ins in instruments
-                if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
+                if all(getattr(ins, k) == v for k, v in instrument_filter.items())
             ]
         return instruments
 

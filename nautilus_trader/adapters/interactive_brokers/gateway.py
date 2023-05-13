@@ -119,7 +119,7 @@ class InteractiveBrokersGateway:
             logs = container.logs()
         except NoContainer:
             return False
-        return any([b"Forking :::" in line for line in logs.split(b"\n")])
+        return any(b"Forking :::" in line for line in logs.split(b"\n"))
 
     def start(self, wait: Optional[int] = 90):
         """

@@ -69,7 +69,7 @@ if __name__ == "__main__":
     engine.add_instrument(instruments[1])
 
     # Add data
-    raw = [msg for msg in BetfairDataProvider.market_updates()]
+    raw = list(BetfairDataProvider.market_updates())
     parser = BetfairParser()
     updates = [upd for update in raw for upd in parser.parse(update)]
     engine.add_data(updates, client_id=ClientId("BETFAIR"))

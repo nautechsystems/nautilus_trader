@@ -1699,7 +1699,7 @@ class TestActor:
 
         # Act, Assert
         with pytest.raises(KeyError):
-            actor.publish_signal(name="test", value=dict(a=1), ts_event=0)
+            actor.publish_signal(name="test", value={"a": 1}, ts_event=0)
 
     def test_publish_signal_sends_to_subscriber(self):
         # Arrange

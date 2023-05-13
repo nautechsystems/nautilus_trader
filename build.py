@@ -189,17 +189,17 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
     print(f"nthreads={nthreads}")
 
     distribution = Distribution(
-        dict(
-            name="nautilus_trader",
-            ext_modules=cythonize(
+        {
+            "name": "nautilus_trader",
+            "ext_modules": cythonize(
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
                 nthreads=nthreads,
                 build_dir=BUILD_DIR,
                 gdb_debug=PROFILE_MODE,
             ),
-            zip_safe=False,
-        ),
+            "zip_safe": False,
+        },
     )
     return distribution
 

@@ -91,16 +91,16 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         else:
             filter_expr = self.filter_expr
 
-        return dict(
-            cls=self.data_type,
-            instrument_ids=[self.instrument_id] if self.instrument_id else None,
-            start=self.start_time,
-            end=self.end_time,
-            filter_expr=parse_filters_expr(filter_expr),
-            as_nautilus=True,
-            metadata=self.metadata,
-            use_rust=self.use_rust,
-        )
+        return {
+            "cls": self.data_type,
+            "instrument_ids": [self.instrument_id] if self.instrument_id else None,
+            "start": self.start_time,
+            "end": self.end_time,
+            "filter_expr": parse_filters_expr(filter_expr),
+            "as_nautilus": True,
+            "metadata": self.metadata,
+            "use_rust": self.use_rust,
+        }
 
     @property
     def start_time_nanos(self) -> int:
