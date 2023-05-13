@@ -135,10 +135,8 @@ class BetfairClient(HttpClient):
             return
         url = self.IDENTITY_URL + "certlogin"
         data = {"username": self.username, "password": self.password}
-        headers = {
-            **{k: v for k, v in self.headers.items() if k not in ("content-type",)},
-            **{"Content-Type": "application/x-www-form-urlencoded"},
-        }
+        headers = {k: v for k, v in self.headers.items() if k.lower() != "content-type"}
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
         resp = await self.post(url=url, data=data, headers=headers)
         data = msgspec.json.decode(resp.data)
         if data["loginStatus"] == "SUCCESS":

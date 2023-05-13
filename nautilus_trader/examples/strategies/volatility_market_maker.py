@@ -383,7 +383,6 @@ class VolatilityMarketMaker(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -392,4 +391,3 @@ class VolatilityMarketMaker(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

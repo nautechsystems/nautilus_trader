@@ -150,7 +150,6 @@ class EMACross(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
-        pass
 
     def on_order_book_delta(self, data: OrderBookData) -> None:
         """
@@ -164,7 +163,6 @@ class EMACross(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(data), LogColor.CYAN)
-        pass
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
@@ -178,7 +176,6 @@ class EMACross(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(order_book), LogColor.CYAN)
-        pass
 
     def on_ticker(self, ticker: Ticker) -> None:
         """
@@ -192,7 +189,6 @@ class EMACross(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(ticker), LogColor.CYAN)
-        pass
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -206,7 +202,6 @@ class EMACross(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -220,7 +215,6 @@ class EMACross(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -297,7 +291,6 @@ class EMACross(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -309,7 +302,6 @@ class EMACross(Strategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self) -> None:
         """
@@ -361,7 +353,6 @@ class EMACross(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -370,4 +361,3 @@ class EMACross(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

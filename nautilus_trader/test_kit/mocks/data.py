@@ -42,8 +42,6 @@ class MockReader(Reader):
 class NewsEventData(NewsEvent):
     """Generic data NewsEvent"""
 
-    pass
-
 
 def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):

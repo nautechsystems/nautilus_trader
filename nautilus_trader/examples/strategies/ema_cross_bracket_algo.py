@@ -204,7 +204,6 @@ class EMACrossBracketAlgo(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -323,7 +322,6 @@ class EMACrossBracketAlgo(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -335,7 +333,6 @@ class EMACrossBracketAlgo(Strategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self) -> None:
         """
@@ -382,7 +379,6 @@ class EMACrossBracketAlgo(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -391,4 +387,3 @@ class EMACrossBracketAlgo(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass
