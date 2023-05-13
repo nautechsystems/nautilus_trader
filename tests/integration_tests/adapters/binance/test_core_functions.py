@@ -42,7 +42,7 @@ class TestBinanceCoreFunctions:
         assert result == '["BTCUSDT","ETHUSDT","XRDUSDT"]'
 
     @pytest.mark.parametrize(
-        "account_type, expected",
+        ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, True],
             [BinanceAccountType.MARGIN_CROSS, False],
@@ -56,7 +56,7 @@ class TestBinanceCoreFunctions:
         assert account_type.is_spot == expected
 
     @pytest.mark.parametrize(
-        "account_type, expected",
+        ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, False],
             [BinanceAccountType.MARGIN_CROSS, True],
@@ -70,7 +70,7 @@ class TestBinanceCoreFunctions:
         assert account_type.is_margin == expected
 
     @pytest.mark.parametrize(
-        "account_type, expected",
+        ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, True],
             [BinanceAccountType.MARGIN_CROSS, True],
@@ -84,7 +84,7 @@ class TestBinanceCoreFunctions:
         assert account_type.is_spot_or_margin == expected
 
     @pytest.mark.parametrize(
-        "account_type, expected",
+        ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, False],
             [BinanceAccountType.MARGIN_CROSS, False],

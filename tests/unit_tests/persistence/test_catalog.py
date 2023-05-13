@@ -559,7 +559,8 @@ class _TestPersistenceCatalog:
         assert df is not None
         assert data is not None
         assert len(df) == 22925
-        assert len(data) == 2745 and isinstance(data[0], GenericData)
+        assert len(data) == 2745
+        assert isinstance(data[0], GenericData)
 
     def test_data_catalog_bars(self):
         # Arrange

@@ -459,7 +459,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order2.is_canceled
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
@@ -504,7 +504,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
@@ -549,7 +549,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
@@ -596,7 +596,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
@@ -644,7 +644,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5070)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5060)],
@@ -690,7 +690,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5060)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5070)],
@@ -736,7 +736,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
-        "order_side, expected_trigger_price",
+        ("order_side", "expected_trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5075)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5055)],
@@ -783,7 +783,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price, expected_trigger_price",
+        ("order_side", "trigger_price", "expected_trigger_price"),
         [
             [
                 OrderSide.BUY,
@@ -863,7 +863,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price",
+        ("order_side", "trigger_price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5075)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5055)],
@@ -921,7 +921,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[1], OrderInitialized)
 
     @pytest.mark.parametrize(
-        "order_side, price, expected_trigger_price",
+        ("order_side", "price", "expected_trigger_price"),
         [
             [
                 OrderSide.BUY,
@@ -979,7 +979,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
-        "order_side, price, trigger_price, expected_trigger_price",
+        ("order_side", "price", "trigger_price", "expected_trigger_price"),
         [
             [
                 OrderSide.BUY,
@@ -1052,7 +1052,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
-        "order_side, price",
+        ("order_side", "price"),
         [
             [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5070)],
             [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5060)],
@@ -1114,7 +1114,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[2], OrderInitialized)
 
     @pytest.mark.parametrize(
-        "order_side, trigger_price, price",
+        ("order_side", "trigger_price", "price"),
         [
             [
                 OrderSide.BUY,

@@ -213,7 +213,7 @@ class TestTradingNodeOperation:
             node.build()
             node.build()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, Act, Assert
         with pytest.raises(RuntimeError):
@@ -229,7 +229,7 @@ class TestTradingNodeOperation:
             node = TradingNode(config=config)
             await node.run_async()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_run_and_stop_with_client_factories(self, monkeypatch):
         # Arrange
         monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
@@ -258,7 +258,7 @@ class TestTradingNodeOperation:
         await node.stop_async()
 
     @pytest.mark.skip(reason="WIP: continue adding tests here")
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_run_stop_and_dispose(self, monkeypatch):
         # Arrange
         monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")

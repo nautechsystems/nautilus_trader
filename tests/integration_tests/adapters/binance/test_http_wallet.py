@@ -41,7 +41,7 @@ class TestBinanceUserHttpAPI:
 
         self.api = BinanceSpotWalletHttpAPI(self.client, clock)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trade_fee(self, mocker):
         # Arrange
         async def async_mock():
@@ -70,7 +70,7 @@ class TestBinanceUserHttpAPI:
         assert len(response) == 1
         assert isinstance(response[0], BinanceSpotTradeFee)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trade_fees(self, mocker):
         # Arrange
         async def async_mock():

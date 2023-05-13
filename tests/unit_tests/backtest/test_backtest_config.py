@@ -267,7 +267,7 @@ class TestBacktestConfigParsing:
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(
-        "config_func, keys, kw, expected",
+        ("config_func", "keys", "kw", "expected"),
         [
             (
                 TestConfigStubs.venue_config,

@@ -446,7 +446,7 @@ class TestMessageBus:
 
 
 @pytest.mark.parametrize(
-    "topic, pattern, expected",
+    ("topic", "pattern", "expected"),
     [
         ["*", "*", True],
         ["a", "*", True],

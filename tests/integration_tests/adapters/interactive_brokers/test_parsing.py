@@ -58,7 +58,7 @@ def test_nautilus_order_to_ib_limit_order(instrument):
 
 
 @pytest.mark.parametrize(
-    "contract, instrument_id",
+    ("contract", "instrument_id"),
     [
         (IBTestProviderStubs.aapl_equity_contract_details().contract, "AAPL.AMEX"),
         (IBTestProviderStubs.cl_future_contract_details().contract, "CLZ3.NYMEX"),

@@ -70,7 +70,7 @@ class TestPosition:
             Position.side_from_order_side(0)
 
     @pytest.mark.parametrize(
-        "order_side,expected",
+        ("order_side", "expected"),
         [
             [OrderSide.BUY, PositionSide.LONG],
             [OrderSide.SELL, PositionSide.SHORT],
@@ -1328,7 +1328,7 @@ class TestPosition:
         assert position.commissions() == [Money(0.06048387, BTC)]
 
     @pytest.mark.parametrize(
-        "order_side, quantity, expected_signed_qty, expected_decimal_qty",
+        ("order_side", "quantity", "expected_signed_qty", "expected_decimal_qty"),
         [
             [OrderSide.BUY, 25, 25.0, Decimal("25")],
             [OrderSide.SELL, 25, -25.0, Decimal("-25")],

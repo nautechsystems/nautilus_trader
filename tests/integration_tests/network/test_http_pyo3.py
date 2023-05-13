@@ -24,7 +24,7 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpClient
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_client_get_github() -> None:
     # Arrange
     client = HttpClient()
@@ -52,7 +52,7 @@ async def fixture_test_server(aiohttp_server) -> Awaitable[TestServer]:
 
 
 @pytest.mark.skip(reason="WIP")
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_client_get(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -68,7 +68,7 @@ async def test_client_get(test_server: Coroutine) -> None:
 
 
 @pytest.mark.skip(reason="WIP")
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_client_post(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server

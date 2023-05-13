@@ -87,7 +87,8 @@ class TestOrderBook:
         # Assert
         assert isinstance(book, L1OrderBook)
         assert book.type == BookType.L1_TBBO
-        assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
+        assert isinstance(book.bids, Ladder)
+        assert isinstance(book.asks, Ladder)
         assert book.bids.is_reversed
         assert not book.asks.is_reversed
         assert book.ts_last == 0
@@ -103,7 +104,8 @@ class TestOrderBook:
         # Assert
         assert isinstance(book, L2OrderBook)
         assert book.type == BookType.L2_MBP
-        assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
+        assert isinstance(book.bids, Ladder)
+        assert isinstance(book.asks, Ladder)
         assert book.bids.is_reversed
         assert not book.asks.is_reversed
 
@@ -118,7 +120,8 @@ class TestOrderBook:
         # Assert
         assert isinstance(book, L3OrderBook)
         assert book.type == BookType.L3_MBO
-        assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
+        assert isinstance(book.bids, Ladder)
+        assert isinstance(book.asks, Ladder)
         assert book.bids.is_reversed
         assert not book.asks.is_reversed
 
@@ -424,7 +427,7 @@ class TestOrderBook:
         assert ask_price == 0.0
 
     @pytest.mark.parametrize(
-        "is_buy, quote_volume, expected",
+        ("is_buy", "quote_volume", "expected"),
         [
             (True, 0.8860, 0.8860),
             (False, 0.8300, 0.8300),
@@ -434,7 +437,7 @@ class TestOrderBook:
         assert self.sample_book.get_price_for_quote_volume(is_buy, quote_volume) == expected
 
     @pytest.mark.parametrize(
-        "is_buy, price, expected",
+        ("is_buy", "price", "expected"),
         [
             (True, 1.0, 35.0),
             (True, 0.88600, 5.0),
@@ -451,7 +454,7 @@ class TestOrderBook:
         assert self.sample_book.get_volume_for_price(is_buy, price) == expected
 
     @pytest.mark.parametrize(
-        "is_buy, price, expected",
+        ("is_buy", "price", "expected"),
         [
             (True, 1.0, 31.3),
             (True, 0.88600, 4.43),
@@ -468,7 +471,7 @@ class TestOrderBook:
         assert self.sample_book.get_quote_volume_for_price(is_buy, price) == expected
 
     @pytest.mark.parametrize(
-        "is_buy, volume, expected",
+        ("is_buy", "volume", "expected"),
         [
             (True, 1.0, 0.886),
             (True, 3.0, 0.886),

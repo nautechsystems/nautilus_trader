@@ -884,7 +884,7 @@ class TestLiveClockWithLoopTimer:
         assert result3 >= result2
         assert result2 >= result1
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
@@ -900,7 +900,7 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) >= 1
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_cancel_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
@@ -916,7 +916,7 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_multiple_time_alerts(self):
         # Arrange
         alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
@@ -933,7 +933,7 @@ class TestLiveClockWithLoopTimer:
         assert isinstance(self.handler[0], TimeEvent)
         assert isinstance(self.handler[1], TimeEvent)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_timer_with_immediate_start_time(self):
         # Arrange
         name = "TEST_TIMER"
@@ -952,7 +952,7 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_names == [name]
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -974,7 +974,7 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) > 0
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_timer_with_stop_time(self):
         # Arrange
         name = "TEST_TIMER"
@@ -997,7 +997,7 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) >= 1
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_cancel_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -1014,7 +1014,7 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) <= 4
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -1035,7 +1035,7 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) > 0
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_cancel_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -1058,7 +1058,7 @@ class TestLiveClockWithLoopTimer:
         # Assert
         assert len(self.handler) <= 5
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_set_two_repeating_timers(self):
         # Arrange
         interval = timedelta(milliseconds=100)

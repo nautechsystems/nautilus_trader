@@ -26,7 +26,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 
 
 @pytest.mark.parametrize(
-    "cls, is_nautilus",
+    ("cls", "is_nautilus"),
     [
         (OrderBookData, True),
         (TradeTick, True),

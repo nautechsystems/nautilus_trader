@@ -107,7 +107,7 @@ class TestQueue:
         with pytest.raises(asyncio.QueueEmpty):
             queue.get_nowait()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_await_put(self):
         # Arrange
         queue = Queue()
@@ -120,7 +120,7 @@ class TestQueue:
         assert queue.empty()
         assert item == "A"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_await_get(self):
         # Arrange
         queue = Queue()

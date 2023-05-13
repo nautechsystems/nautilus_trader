@@ -24,7 +24,7 @@ from nautilus_trader.common.logging import Logger
 pytestmark = pytest.mark.skip(reason="template")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def instrument_provider():
     clock = TestClock()
     return TemplateInstrumentProvider(

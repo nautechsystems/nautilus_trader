@@ -206,7 +206,7 @@ class TestCurrency:
         assert result.currency_type == CurrencyType.CRYPTO
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [["AUD", AUD], ["GBP", GBP], ["BTC", BTC], ["ETH", ETH]],
     )
     def test_from_str(self, string, expected):
@@ -217,7 +217,7 @@ class TestCurrency:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [["AUD", True], ["ZZZ", False]],
     )
     def test_is_fiat(self, string, expected):
@@ -228,7 +228,7 @@ class TestCurrency:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [["BTC", True], ["ZZZ", False]],
     )
     def test_is_crypto(self, string, expected):

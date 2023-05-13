@@ -217,7 +217,7 @@ def test_parse_historic_bar():
 
 
 @pytest.mark.parametrize(
-    "spec, expected",
+    ("spec", "expected"),
     [
         (
             "1-SECOND-BID",  # For some reason 1 = secs but 1 = min

@@ -53,7 +53,7 @@ class TestMoney:
         assert 0 == money_zero.as_decimal()
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, Money(0, USD)],
             [1, Money(1, USD)],
@@ -165,7 +165,7 @@ class TestMoney:
             Money.from_str(value)
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             ["1.00 USDT", Money(1.00, USDT)],
             ["1.00 USD", Money(1.00, USD)],

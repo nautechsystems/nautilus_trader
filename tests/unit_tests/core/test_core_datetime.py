@@ -42,7 +42,7 @@ from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 
 class TestDatetimeFunctions:
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1, 1_000_000_000],
@@ -62,7 +62,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1, 1_000],
@@ -80,7 +80,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1, 1_000_000],
@@ -100,7 +100,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1, 1_000],
@@ -120,7 +120,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1, 1e-09],
@@ -136,7 +136,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1_000_000, 1],
@@ -152,7 +152,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, 0],
             [1_000, 1],
@@ -168,7 +168,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, UNIX_EPOCH],
             [1_000, pd.Timestamp("1970-01-01 00:00:00.000001+0000", tz="UTC")],
@@ -184,7 +184,7 @@ class TestDatetimeFunctions:
         assert result.tzinfo == pytz.utc
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [None, None],
             [0, UNIX_EPOCH],
@@ -201,7 +201,7 @@ class TestDatetimeFunctions:
         assert result is None or result.tzinfo == pytz.utc
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [UNIX_EPOCH, 0],
             [UNIX_EPOCH + timedelta(milliseconds=100), 100_000_000],
@@ -219,7 +219,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [None, None],
             [UNIX_EPOCH, 0],
@@ -238,7 +238,7 @@ class TestDatetimeFunctions:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
             [
