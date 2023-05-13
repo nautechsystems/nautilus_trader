@@ -226,3 +226,171 @@ pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshotAPI) {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[test]
+    fn test_book_order_new() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+
+        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+
+        assert_eq!(order.price, price);
+        assert_eq!(order.size, size);
+        assert_eq!(order.side, side);
+        assert_eq!(order.order_id, order_id);
+    }
+
+    #[test]
+    fn test_book_order_to_book_price() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+
+        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let book_price = order.to_book_price();
+
+        assert_eq!(book_price.value, price);
+        assert_eq!(book_price.side, side);
+    }
+
+    #[test]
+    fn test_book_order_display() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+
+        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let display = format!("{}", order);
+
+        let expected = format!("{},{},{},{}", price, size, side, order_id);
+        assert_eq!(display, expected);
+    }
+
+    #[test]
+    fn test_order_book_delta_new() {
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let action = BookAction::Add;
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+        let flags = 0;
+        let sequence = 1;
+        let ts_event = 1;
+        let ts_init = 2;
+
+        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let delta = OrderBookDelta::new(
+            instrument_id.clone(),
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        );
+
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.action, action);
+        assert_eq!(delta.order.price, price);
+        assert_eq!(delta.order.size, size);
+        assert_eq!(delta.order.side, side);
+        assert_eq!(delta.order.order_id, order_id);
+        assert_eq!(delta.flags, flags);
+        assert_eq!(delta.sequence, sequence);
+        assert_eq!(delta.ts_event, ts_event);
+        assert_eq!(delta.ts_init, ts_init);
+    }
+
+    #[test]
+    fn test_order_book_delta_display() {
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let action = BookAction::Add;
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+        let flags = 0;
+        let sequence = 1;
+        let ts_event = 1;
+        let ts_init = 2;
+
+        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+
+        let delta = OrderBookDelta::new(
+            instrument_id.clone(),
+            action,
+            order.clone(),
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        );
+
+        assert_eq!(
+            format!("{}", delta),
+            "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
+        );
+    }
+
+    #[test]
+    fn test_order_book_snapshot_display() {
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let bids = vec![
+            BookOrder::new(
+                Price::from("100.00"),
+                Quantity::from("10"),
+                OrderSide::Buy,
+                123,
+            ),
+            BookOrder::new(
+                Price::from("99.00"),
+                Quantity::from("5"),
+                OrderSide::Buy,
+                124,
+            ),
+        ];
+        let asks = vec![
+            BookOrder::new(
+                Price::from("101.00"),
+                Quantity::from("15"),
+                OrderSide::Sell,
+                234,
+            ),
+            BookOrder::new(
+                Price::from("102.00"),
+                Quantity::from("20"),
+                OrderSide::Sell,
+                235,
+            ),
+        ];
+        let sequence = 123456;
+        let ts_event = 1;
+        let ts_init = 2;
+
+        let snapshot = OrderBookSnapshot::new(
+            instrument_id.clone(),
+            bids.clone(),
+            asks.clone(),
+            sequence,
+            ts_event,
+            ts_init,
+        );
+
+        // TODO(cs): WIP
+        assert_eq!(
+            format!("{}", snapshot),
+            "AAPL.NASDAQ,123456,1,2".to_string()
+        );
+    }
+}
