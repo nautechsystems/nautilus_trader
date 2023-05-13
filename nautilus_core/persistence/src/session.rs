@@ -50,7 +50,7 @@ where
     }
 }
 
-/// Provides a data fusion session and registers data fusion queries.
+/// Provides a DataFusion session and registers DataFusion queries.
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
