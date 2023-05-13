@@ -34,7 +34,7 @@ use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
 impl DecodeDataFromRecordBatch for OrderBookDelta {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        // Parse and validae metadata
+        // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
 
         // Extract field value arrays from record batch
