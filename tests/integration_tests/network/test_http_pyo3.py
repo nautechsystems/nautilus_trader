@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections.abc import Awaitable
 from collections.abc import Coroutine
-from typing import Any
 
 import pytest
 from aiohttp import web
@@ -39,7 +39,7 @@ async def test_client_get_github() -> None:
 
 
 @pytest.fixture(name="test_server")
-async def fixture_test_server(aiohttp_server) -> Coroutine[Any, Any, TestServer]:
+async def fixture_test_server(aiohttp_server) -> Awaitable[TestServer]:
     async def hello(request):
         return web.Response(text="Hello, world")
 
