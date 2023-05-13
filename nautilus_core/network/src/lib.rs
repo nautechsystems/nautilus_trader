@@ -68,6 +68,7 @@ impl HttpResponse {
 impl HttpClient {
     #[new]
     #[pyo3(signature=(header_keys=[].to_vec()))]
+    #[must_use]
     pub fn new(header_keys: Vec<String>) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
@@ -167,7 +168,7 @@ impl HttpClient {
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
         let mut req_builder = Request::builder().method(method).uri(url);
 
-        for (header_name, header_value) in headers.iter() {
+        for (header_name, header_value) in &headers {
             req_builder = req_builder.header(header_name, header_value);
         }
 
@@ -185,7 +186,7 @@ impl HttpClient {
             .iter()
             .filter_map(|key| res.headers().get(key).map(|val| (key, val)))
             .filter_map(|(key, val)| val.to_str().map(|v| (key, v)).ok())
-            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = res.status().as_u16();
         let bytes = hyper::body::to_bytes(res.into_body()).await?;

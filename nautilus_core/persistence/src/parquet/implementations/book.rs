@@ -16,8 +16,8 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use datafusion::arrow::array::*;
-use datafusion::arrow::datatypes::*;
+use datafusion::arrow::array::{Array, Int64Array, UInt64Array, UInt8Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use nautilus_model::data::book::BookOrder;
 use nautilus_model::data::book::OrderBookDelta;
@@ -78,7 +78,7 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
                     (((((((action, price), size), side), order_id), flags), sequence), ts_event),
                     ts_init,
                 )| {
-                    OrderBookDelta {
+                    Self {
                         instrument_id: instrument_id.clone(),
                         action: BookAction::from_u8(action.unwrap()).unwrap(),
                         order: BookOrder {
