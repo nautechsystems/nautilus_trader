@@ -365,7 +365,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         as_nautilus: bool = False,
         **kwargs,
     ):
-        subclasses = [base_cls] + base_cls.__subclasses__()
+        subclasses = [base_cls, *base_cls.__subclasses__()]
 
         dfs = []
         for cls in subclasses:

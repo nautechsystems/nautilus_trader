@@ -32,7 +32,7 @@ from nautilus_trader.persistence.external.util import Singleton
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 
 
-class _CombinedMeta(Singleton, ABCMeta):  # noqa
+class _CombinedMeta(Singleton, ABCMeta):
     pass
 
 

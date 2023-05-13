@@ -448,11 +448,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _request_quote_ticks(
         self,
-        instrument_id: InstrumentId,  # noqa
-        limit: int,  # noqa
-        correlation_id: UUID4,  # noqa
-        start: Optional[pd.Timestamp] = None,  # noqa
-        end: Optional[pd.Timestamp] = None,  # noqa
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
@@ -499,7 +499,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
 
-    async def _request_bars(  # noqa (too complex)
+    async def _request_bars(  # (too complex)
         self,
         bar_type: BarType,
         limit: int,

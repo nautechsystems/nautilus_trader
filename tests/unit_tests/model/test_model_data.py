@@ -43,7 +43,7 @@ class TestDataType:
         assert data_type.metadata == {}
         assert data_type.topic == "Data*"
         assert str(data_type) == "Data"
-        assert repr(data_type) == "DataType(type=Data, metadata={})"  # noqa (P103??)
+        assert repr(data_type) == "DataType(type=Data, metadata={})"  # (P103??)
 
     def test_data_type_instantiation_with_multiple_metadata(self):
         # Arrange, Act

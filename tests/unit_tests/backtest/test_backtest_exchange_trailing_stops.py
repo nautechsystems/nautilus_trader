@@ -471,7 +471,7 @@ class TestSimulatedExchange:
         assert trailing_stop.trigger_price == Price.from_str("13.000")
 
     @pytest.mark.parametrize(
-        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger, expected_price",  # noqa
+        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger, expected_price",
         [
             [
                 OrderSide.BUY,
@@ -548,7 +548,7 @@ class TestSimulatedExchange:
         assert trailing_stop.price == expected_price
 
     @pytest.mark.parametrize(
-        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger, expected_price",  # noqa
+        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger, expected_price",
         [
             [
                 OrderSide.BUY,

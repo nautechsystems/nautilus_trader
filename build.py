@@ -280,7 +280,7 @@ def _strip_unneeded_symbols() -> None:
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
-                strip_cmd,  # noqa
+                strip_cmd,
                 check=True,
                 shell=True,  # noqa
                 capture_output=True,

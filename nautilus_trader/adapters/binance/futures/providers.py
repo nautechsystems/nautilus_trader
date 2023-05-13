@@ -209,7 +209,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             fee=fee,
         )
 
-    def _parse_instrument(  # noqa (C901 too complex)
+    def _parse_instrument(
         self,
         symbol_info: BinanceFuturesSymbolInfo,
         ts_event: int,

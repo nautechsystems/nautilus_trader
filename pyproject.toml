@@ -159,7 +159,7 @@ select = [
     # "PGH",
     # "PLW",
     "NPY",
-    # "RUF",
+    "RUF",
 ]
 
 ignore = [
@@ -186,7 +186,7 @@ ignore = [
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
-fixable = ["A", "B", "C", "D", "E", "F", "I"]
+fixable = ["A", "B", "C", "D", "E", "F", "UP", "S", "W", "I", "NPY", "RUF"]
 unfixable = []
 
 exclude = [

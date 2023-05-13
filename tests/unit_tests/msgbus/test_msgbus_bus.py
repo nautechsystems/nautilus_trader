@@ -433,7 +433,7 @@ class TestMessageBus:
         subscriber = []
         self.msgbus.subscribe(topic="events.system.*", handler=subscriber.append)
 
-        topic = f"events.system.{str(TestIdStubs.trader_id())}"
+        topic = f"events.system.{TestIdStubs.trader_id()!s}"
 
         # Act
         self.msgbus.publish("events.system.DUMMY", "DUMMY EVENT")

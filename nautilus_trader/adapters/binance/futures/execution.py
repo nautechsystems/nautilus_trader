@@ -242,7 +242,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         try:
             self._futures_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
-            self._log.exception(f"Error on handling {repr(raw)}", e)
+            self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
         account_update = self._decoder_futures_account_update_wrapper.decode(raw)

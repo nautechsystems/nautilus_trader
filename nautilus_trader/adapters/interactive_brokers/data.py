@@ -164,7 +164,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                         )
                         self._resubscribe_on_reset()
                     except Exception as e:
-                        self._log.info(f"{repr(e)}")
+                        self._log.info(f"{e!r}")
         except asyncio.CancelledError:
             self._log.debug("`watch_dog` task was canceled.")
 

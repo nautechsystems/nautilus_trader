@@ -96,7 +96,7 @@ class TestCommonEvents:
             # Assert
             assert e.value == TypeError(
                 "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
-            )  # noqa
+            )
 
     def test_trading_state_changed(self):
         # Arrange
@@ -114,7 +114,7 @@ class TestCommonEvents:
         assert TradingStateChanged.from_dict(TradingStateChanged.to_dict(event)) == event
         assert (
             str(event)
-            == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_submit_rate': '100/00:00:01'}}, event_id={uuid})"  # noqa
+            == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_submit_rate': '100/00:00:01'}}, event_id={uuid})"
         )
         assert (
             repr(event)

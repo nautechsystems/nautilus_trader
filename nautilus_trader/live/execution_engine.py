@@ -751,7 +751,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _generate_external_order(self, report: OrderStatusReport) -> Order:
         self._log.info(
-            f"Generating external order {repr(report.client_order_id)}",
+            f"Generating external order {report.client_order_id!r}",
             color=LogColor.BLUE,
         )
 

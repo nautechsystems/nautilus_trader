@@ -160,7 +160,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         if not exec_params:
             self.log.error(
                 f"Cannot execute order: "
-                f"`exec_algorithm_params` not found for primary order {repr(order)}.",
+                f"`exec_algorithm_params` not found for primary order {order!r}.",
             )
             return
 

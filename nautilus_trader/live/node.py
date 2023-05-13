@@ -278,7 +278,7 @@ class TradingNode:
         except RuntimeError as e:
             self.kernel.log.exception("Error on stop", e)
 
-    def dispose(self) -> None:  # noqa C901 'TradingNode.dispose' is too complex (11)
+    def dispose(self) -> None:  # noqa: C901
         """
         Dispose of the trading node.
 

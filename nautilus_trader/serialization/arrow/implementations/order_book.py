@@ -123,7 +123,7 @@ def deserialize(data: list[dict]):
     return sorted(results, key=lambda x: x.ts_event)
 
 
-for cls in [OrderBookData] + OrderBookData.__subclasses__():
+for cls in [OrderBookData, *OrderBookData.__subclasses__()]:
     register_parquet(
         cls=cls,
         serializer=serialize,

@@ -301,7 +301,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
         except BinanceError as e:
             self._log.error(
-                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {client_order_id!r}: {e.message}. Retry {retries}/3",
             )
             retries += 1
             self._generate_order_status_retries[client_order_id] = retries
@@ -822,8 +822,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "
-                f"{repr(client_order_id)}, "
-                f"{repr(venue_order_id)}: "
+                f"{client_order_id!r}, "
+                f"{venue_order_id!r}: "
                 f"{e.message}",
                 e,
             )

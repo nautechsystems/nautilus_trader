@@ -89,7 +89,7 @@ def bar_spec_to_bar_size(bar_spec: BarSpecification) -> tuple:
         return False, f"{step} week"
     else:
         raise ValueError(
-            f"InteractiveBrokers doesn't support subscription for {repr(bar_spec)}",
+            f"InteractiveBrokers doesn't support subscription for {bar_spec!r}",
         )
 
 

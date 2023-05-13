@@ -69,7 +69,7 @@ class TestBinanceFuturesExecutionClient:
 
         self.cache = TestComponentStubs.cache()
 
-        self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+        self.http_client = BinanceHttpClient(
             loop=asyncio.get_event_loop(),
             clock=self.clock,
             logger=self.logger,
