@@ -219,8 +219,6 @@ typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
 
-typedef struct OrderBookSnapshot OrderBookSnapshot;
-
 typedef struct Rc_String Rc_String;
 
 typedef struct BarSpecification_t {
@@ -269,9 +267,14 @@ typedef struct Bar_t {
     uint64_t ts_init;
 } Bar_t;
 
-typedef struct OrderBookSnapshotAPI {
-    struct OrderBookSnapshot *_0;
-} OrderBookSnapshotAPI;
+typedef struct OrderBookSnapshot {
+    struct InstrumentId_t instrument_id;
+    CVec bids;
+    CVec asks;
+    uint64_t sequence;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderBookSnapshot;
 
 /**
  * Represents a single quote tick in a financial market.
@@ -327,6 +330,7 @@ typedef struct OrderBookDelta {
 } OrderBookDelta;
 
 typedef enum Data_t_Tag {
+    SNAPSHOT,
     DELTA,
     QUOTE,
     TRADE,
@@ -336,6 +340,9 @@ typedef enum Data_t_Tag {
 typedef struct Data_t {
     Data_t_Tag tag;
     union {
+        struct {
+            struct OrderBookSnapshot snapshot;
+        };
         struct {
             struct OrderBookDelta delta;
         };
@@ -518,18 +525,18 @@ uint64_t bar_hash(const struct Bar_t *bar);
  * Failure to do so can result in memory corruption or access violations.
  *
  * Additionally, the ownership of the provided memory is transferred to the returned
- * `OrderBookSnapshotAPI` object. It is crucial to ensure proper memory management and
- * deallocation of the `OrderBookSnapshotAPI` object to prevent memory leaks by calling
+ * `OrderBookSnapshot` object. It is crucial to ensure proper memory management and
+ * deallocation of the `OrderBookSnapshot` object to prevent memory leaks by calling
  * `orderbook_snapshot_drop(...).
  */
-struct OrderBookSnapshotAPI orderbook_snapshot_new(struct InstrumentId_t instrument_id,
-                                                   CVec bids,
-                                                   CVec asks,
-                                                   uint64_t sequence,
-                                                   uint64_t ts_event,
-                                                   uint64_t ts_init);
+struct OrderBookSnapshot orderbook_snapshot_new(struct InstrumentId_t instrument_id,
+                                                CVec bids,
+                                                CVec asks,
+                                                uint64_t sequence,
+                                                uint64_t ts_event,
+                                                uint64_t ts_init);
 
-void orderbook_snapshot_drop(struct OrderBookSnapshotAPI snapshot);
+void orderbook_snapshot_drop(struct OrderBookSnapshot snapshot);
 
 void quote_tick_drop(struct QuoteTick_t tick);
 

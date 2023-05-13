@@ -192,9 +192,6 @@ cdef extern from "../includes/model.h":
     cdef struct HashMap_u64__BookPrice:
         pass
 
-    cdef struct OrderBookSnapshot:
-        pass
-
     cdef struct Rc_String:
         pass
 
@@ -236,8 +233,13 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
-    cdef struct OrderBookSnapshotAPI:
-        OrderBookSnapshot *_0;
+    cdef struct OrderBookSnapshot:
+        InstrumentId_t instrument_id;
+        CVec bids;
+        CVec asks;
+        uint64_t sequence;
+        uint64_t ts_event;
+        uint64_t ts_init;
 
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
@@ -280,6 +282,7 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cpdef enum Data_t_Tag:
+        SNAPSHOT,
         DELTA,
         QUOTE,
         TRADE,
@@ -287,6 +290,7 @@ cdef extern from "../includes/model.h":
 
     cdef struct Data_t:
         Data_t_Tag tag;
+        OrderBookSnapshot snapshot;
         OrderBookDelta delta;
         QuoteTick_t quote;
         TradeTick_t trade;
@@ -433,17 +437,17 @@ cdef extern from "../includes/model.h":
     # Failure to do so can result in memory corruption or access violations.
     #
     # Additionally, the ownership of the provided memory is transferred to the returned
-    # `OrderBookSnapshotAPI` object. It is crucial to ensure proper memory management and
-    # deallocation of the `OrderBookSnapshotAPI` object to prevent memory leaks by calling
+    # `OrderBookSnapshot` object. It is crucial to ensure proper memory management and
+    # deallocation of the `OrderBookSnapshot` object to prevent memory leaks by calling
     # `orderbook_snapshot_drop(...).
-    OrderBookSnapshotAPI orderbook_snapshot_new(InstrumentId_t instrument_id,
-                                                CVec bids,
-                                                CVec asks,
-                                                uint64_t sequence,
-                                                uint64_t ts_event,
-                                                uint64_t ts_init);
+    OrderBookSnapshot orderbook_snapshot_new(InstrumentId_t instrument_id,
+                                             CVec bids,
+                                             CVec asks,
+                                             uint64_t sequence,
+                                             uint64_t ts_event,
+                                             uint64_t ts_init);
 
-    void orderbook_snapshot_drop(OrderBookSnapshotAPI snapshot);
+    void orderbook_snapshot_drop(OrderBookSnapshot snapshot);
 
     void quote_tick_drop(QuoteTick_t tick);
 

@@ -34,21 +34,8 @@ use crate::parquet::{Data, DecodeDataFromRecordBatch};
 
 impl DecodeDataFromRecordBatch for OrderBookDelta {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        let instrument_id =
-            InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
-        // BookType is unused for now: clarifies data
-        let _book_type =
-            BookType::from_u8(metadata.get("book_type").unwrap().parse::<u8>().unwrap()).unwrap();
-        let price_precision = metadata
-            .get("price_precision")
-            .unwrap()
-            .parse::<u8>()
-            .unwrap();
-        let size_precision = metadata
-            .get("size_precision")
-            .unwrap()
-            .parse::<u8>()
-            .unwrap();
+        // Parse and validae metadata
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
 
         // Extract field value arrays from record batch
         let cols = record_batch.columns();
@@ -114,6 +101,26 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
 
         Schema::new_with_metadata(fields, metadata).into()
     }
+}
+
+fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
+    let instrument_id =
+        InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
+    // BookType is unused for now: clarifies data
+    let _book_type =
+        BookType::from_u8(metadata.get("book_type").unwrap().parse::<u8>().unwrap()).unwrap();
+    let price_precision = metadata
+        .get("price_precision")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+    let size_precision = metadata
+        .get("size_precision")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+
+    (instrument_id, price_precision, size_precision)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

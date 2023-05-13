@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 mod bar;
-mod book;
+mod book_delta;
+mod book_snapshot;
 mod quote;
 mod trade;

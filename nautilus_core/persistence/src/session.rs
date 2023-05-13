@@ -22,6 +22,8 @@ use datafusion::prelude::*;
 use futures::executor::block_on;
 use futures::{Stream, StreamExt};
 use nautilus_core::cvec::CVec;
+use nautilus_model::data::bar::Bar;
+use nautilus_model::data::book::{OrderBookDelta, OrderBookSnapshot};
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
@@ -202,18 +204,34 @@ impl PythonCatalog {
         let _guard = rt.enter();
 
         match parquet_type {
+            ParquetType::OrderBookSnapshot => {
+                match block_on(slf.0.add_file::<OrderBookSnapshot>(table_name, file_path)) {
+                    Ok(_) => (),
+                    Err(err) => panic!("Failed new_query with error {err}"),
+                }
+            }
+            ParquetType::OrderBookDelta => {
+                match block_on(slf.0.add_file::<OrderBookDelta>(table_name, file_path)) {
+                    Ok(_) => (),
+                    Err(err) => panic!("Failed new_query with error {err}"),
+                }
+            }
             ParquetType::QuoteTick => {
                 match block_on(slf.0.add_file::<QuoteTick>(table_name, file_path)) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {err}"),
+                    Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
             ParquetType::TradeTick => {
                 match block_on(slf.0.add_file::<TradeTick>(table_name, file_path)) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {err}"),
+                    Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
+            ParquetType::Bar => match block_on(slf.0.add_file::<Bar>(table_name, file_path)) {
+                Ok(_) => (),
+                Err(err) => panic!("Failed new_query with error {err}"),
+            },
         }
     }
 
@@ -228,13 +246,31 @@ impl PythonCatalog {
         let _guard = rt.enter();
 
         match parquet_type {
+            ParquetType::OrderBookSnapshot => {
+                match block_on(
+                    slf.0
+                        .add_file_with_query::<OrderBookSnapshot>(table_name, file_path, sql_query),
+                ) {
+                    Ok(_) => (),
+                    Err(err) => panic!("Failed new_query with error {err}"),
+                }
+            }
+            ParquetType::OrderBookDelta => {
+                match block_on(
+                    slf.0
+                        .add_file_with_query::<OrderBookDelta>(table_name, file_path, sql_query),
+                ) {
+                    Ok(_) => (),
+                    Err(err) => panic!("Failed new_query with error {err}"),
+                }
+            }
             ParquetType::QuoteTick => {
                 match block_on(
                     slf.0
                         .add_file_with_query::<QuoteTick>(table_name, file_path, sql_query),
                 ) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {err}"),
+                    Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
             ParquetType::TradeTick => {
@@ -243,7 +279,16 @@ impl PythonCatalog {
                         .add_file_with_query::<TradeTick>(table_name, file_path, sql_query),
                 ) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {err}"),
+                    Err(err) => panic!("Failed new_query with error {err}"),
+                }
+            }
+            ParquetType::Bar => {
+                match block_on(
+                    slf.0
+                        .add_file_with_query::<Bar>(table_name, file_path, sql_query),
+                ) {
+                    Ok(_) => (),
+                    Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
         }
