@@ -17,10 +17,10 @@ fn single_stream_bench(c: &mut Criterion) {
             || {
                 let rt = get_runtime();
                 let mut catalog = DataBackendSession::new(chunk_size);
-                rt.block_on(catalog.add_file::<QuoteTick>("quote_tick", file_path))
+                rt.block_on(catalog.add_file_default_query::<QuoteTick>("quote_tick", file_path))
                     .unwrap();
                 let _guard = rt.enter();
-                catalog.to_query_result()
+                catalog.get_query_result()
             },
             |query_result: QueryResult| {
                 let rt = get_runtime();
@@ -54,21 +54,23 @@ fn multi_stream_bench(c: &mut Criterion) {
                         let file_name = path.file_stem().unwrap().to_str().unwrap();
 
                         if file_name.contains("quotes") {
-                            rt.block_on(
-                                catalog.add_file::<QuoteTick>(file_name, path.to_str().unwrap()),
-                            )
+                            rt.block_on(catalog.add_file_default_query::<QuoteTick>(
+                                file_name,
+                                path.to_str().unwrap(),
+                            ))
                             .unwrap();
                         } else if file_name.contains("trades") {
-                            rt.block_on(
-                                catalog.add_file::<TradeTick>(file_name, path.to_str().unwrap()),
-                            )
+                            rt.block_on(catalog.add_file_default_query::<TradeTick>(
+                                file_name,
+                                path.to_str().unwrap(),
+                            ))
                             .unwrap();
                         }
                     }
                 }
 
                 let _guard = rt.enter();
-                catalog.to_query_result()
+                catalog.get_query_result()
             },
             |query_result: QueryResult| {
                 let rt = get_runtime();
