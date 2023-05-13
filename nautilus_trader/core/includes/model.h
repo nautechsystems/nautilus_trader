@@ -503,6 +503,32 @@ uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
 
+/**
+ * Creates a new `OrderBookSnapshot` from the provided data.
+ *
+ * # Safety
+ *
+ * This function is marked as `unsafe` because it relies on the assumption that the `CVec`
+ * objects were correctly initialized and point to valid memory regions with a valid layout.
+ * Improper use of this function with incorrect or uninitialized `CVec` objects can lead
+ * to undefined behavior, including memory unsafety and crashes.
+ *
+ * It is the responsibility of the caller to ensure that the `CVec` objects are valid and
+ * have the correct layout matching the expected `Vec` types (`BookOrder` in this case).
+ * Failure to do so can result in memory corruption or access violations.
+ *
+ * Additionally, the ownership of the provided memory is transferred to the returned
+ * `OrderBookSnapshotAPI` object. It is crucial to ensure proper memory management and
+ * deallocation of the `OrderBookSnapshotAPI` object to prevent memory leaks by calling
+ * `orderbook_snapshot_drop(...).
+ */
+struct OrderBookSnapshotAPI orderbook_snapshot_new(struct InstrumentId_t instrument_id,
+                                                   CVec bids,
+                                                   CVec asks,
+                                                   uint64_t sequence,
+                                                   uint64_t ts_event,
+                                                   uint64_t ts_init);
+
 void orderbook_snapshot_drop(struct OrderBookSnapshotAPI snapshot);
 
 void quote_tick_drop(struct QuoteTick_t tick);
