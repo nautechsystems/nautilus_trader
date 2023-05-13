@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyBytes};
 
 /// HttpClient makes HTTP requests to exchanges.
 ///
@@ -34,7 +34,7 @@ pub struct HttpClient {
     header_keys: Vec<String>,
 }
 
-/// HttpResponse contains relevant data from an HTTP request to an exchange.
+/// HttpResponse contains relevant data from a HTTP request.
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
@@ -42,7 +42,6 @@ pub struct HttpResponse {
     pub status: u16,
     #[pyo3(get)]
     headers: HashMap<String, String>,
-    #[pyo3(get)]
     body: Vec<u8>,
 }
 
@@ -54,6 +53,14 @@ impl Default for HttpClient {
             client,
             header_keys: Default::default(),
         }
+    }
+}
+
+#[pymethods]
+impl HttpResponse {
+    #[getter]
+    fn get_body(&self, py: Python) -> PyResult<Py<PyBytes>> {
+        Ok(PyBytes::new(py, &self.body).into())
     }
 }
 
@@ -90,7 +97,61 @@ impl HttpClient {
                 Ok(res) => Ok(res),
                 Err(_) => {
                     // TODO: log error
-                    panic!("could not handle");
+                    panic!("Could not handle response");
+                }
+            }
+        })
+    }
+
+    pub fn get<'py>(
+        slf: PyRef<'_, Self>,
+        url: String,
+        headers: HashMap<String, String>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let client = slf.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            match client.send_request(Method::GET, url, headers).await {
+                Ok(res) => Ok(res),
+                Err(_) => {
+                    // TODO: log error
+                    panic!("Could not handle response");
+                }
+            }
+        })
+    }
+
+    pub fn post<'py>(
+        slf: PyRef<'_, Self>,
+        url: String,
+        headers: HashMap<String, String>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let client = slf.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            match client.send_request(Method::POST, url, headers).await {
+                Ok(res) => Ok(res),
+                Err(_) => {
+                    // TODO: log error
+                    panic!("Could not handle response");
+                }
+            }
+        })
+    }
+
+    pub fn delete<'py>(
+        slf: PyRef<'_, Self>,
+        url: String,
+        headers: HashMap<String, String>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let client = slf.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            match client.send_request(Method::DELETE, url, headers).await {
+                Ok(res) => Ok(res),
+                Err(_) => {
+                    // TODO: log error
+                    panic!("Could not handle response");
                 }
             }
         })
@@ -154,7 +215,7 @@ mod tests {
     use crate::HttpClient;
 
     #[tokio::test]
-    async fn rust_test() {
+    async fn test_rust_request() {
         let http_client = HttpClient::default();
         let response = http_client
             .send_request(Method::GET, "https://github.com".into(), HashMap::new())
