@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::{Display, Formatter};
+use std::ops::{Deref, DerefMut};
 
 use nautilus_core::time::UnixNanos;
 
@@ -117,8 +118,73 @@ impl Display for OrderBookDelta {
 // Represents a snapshot of an order book.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OrderBookSnapshot {
+    pub instrument_id: InstrumentId,
     pub bids: Vec<BookOrder>,
     pub asks: Vec<BookOrder>,
+    pub sequence: u64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+impl OrderBookSnapshot {
+    #[must_use]
+    pub fn new(
+        instrument_id: InstrumentId,
+        sequence: u64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            instrument_id,
+            bids: Vec::new(),
+            asks: Vec::new(),
+            sequence,
+            ts_event,
+            ts_init,
+        }
+    }
+}
+
+impl Display for OrderBookSnapshot {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // TODO: Add display for bids and asks
+        write!(
+            f,
+            "{},{},{},{}",
+            self.instrument_id, self.sequence, self.ts_event, self.ts_init
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+
+#[repr(C)]
+pub struct OrderBookSnapshotAPI(Box<OrderBookSnapshot>);
+
+impl Deref for OrderBookSnapshotAPI {
+    type Target = OrderBookSnapshot;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for OrderBookSnapshotAPI {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+// #[no_mangle]
+// pub extern "C" fn orderbook_snapshot_new() -> OrderBookSnapshotAPI {
+//     OrderBookSnapshotAPI(Box::new(OrderBookSnapshot::new()))
+// }
+
+#[no_mangle]
+pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshotAPI) {
+    drop(snapshot); // Memory freed here
 }
 
 ////////////////////////////////////////////////////////////////////////////////

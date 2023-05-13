@@ -191,6 +191,9 @@ cdef extern from "../includes/model.h":
     cdef struct HashMap_u64__BookPrice:
         pass
 
+    cdef struct OrderBookSnapshot:
+        pass
+
     cdef struct Rc_String:
         pass
 
@@ -231,6 +234,9 @@ cdef extern from "../includes/model.h":
         Quantity_t volume;
         uint64_t ts_event;
         uint64_t ts_init;
+
+    cdef struct OrderBookSnapshotAPI:
+        OrderBookSnapshot *_0;
 
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
@@ -411,6 +417,8 @@ cdef extern from "../includes/model.h":
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
     uint64_t bar_hash(const Bar_t *bar);
+
+    void orderbook_snapshot_drop(OrderBookSnapshotAPI snapshot);
 
     void quote_tick_drop(QuoteTick_t tick);
 

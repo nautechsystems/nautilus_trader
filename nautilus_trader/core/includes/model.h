@@ -219,6 +219,8 @@ typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
 
+typedef struct OrderBookSnapshot OrderBookSnapshot;
+
 typedef struct Rc_String Rc_String;
 
 typedef struct BarSpecification_t {
@@ -266,6 +268,10 @@ typedef struct Bar_t {
     uint64_t ts_event;
     uint64_t ts_init;
 } Bar_t;
+
+typedef struct OrderBookSnapshotAPI {
+    struct OrderBookSnapshot *_0;
+} OrderBookSnapshotAPI;
 
 /**
  * Represents a single quote tick in a financial market.
@@ -496,6 +502,8 @@ void bar_drop(struct Bar_t bar);
 uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
+
+void orderbook_snapshot_drop(struct OrderBookSnapshotAPI snapshot);
 
 void quote_tick_drop(struct QuoteTick_t tick);
 
