@@ -308,11 +308,10 @@ typedef struct BookOrder {
 } BookOrder;
 
 /**
- * Represents a single quote tick in a financial market.
+ * Represents a single change/delta in an order book.
  */
 typedef struct OrderBookDelta {
     struct InstrumentId_t instrument_id;
-    enum BookType book_type;
     enum BookAction action;
     struct BookOrder order;
     uint8_t flags;

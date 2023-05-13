@@ -17,8 +17,8 @@ use std::fmt::{Display, Formatter};
 
 use nautilus_core::time::UnixNanos;
 
+use crate::enums::BookAction;
 use crate::enums::OrderSide;
-use crate::enums::{BookAction, BookType};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::orderbook::ladder::BookPrice;
 use crate::types::price::Price;
@@ -61,12 +61,11 @@ impl Display for BookOrder {
     }
 }
 
-/// Represents a single quote tick in a financial market.
+/// Represents a single change/delta in an order book.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OrderBookDelta {
     pub instrument_id: InstrumentId,
-    pub book_type: BookType,
     pub action: BookAction,
     pub order: BookOrder,
     pub flags: u8,
@@ -80,7 +79,6 @@ impl OrderBookDelta {
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
-        book_type: BookType,
         action: BookAction,
         order: BookOrder,
         flags: u8,
@@ -90,7 +88,6 @@ impl OrderBookDelta {
     ) -> Self {
         Self {
             instrument_id,
-            book_type,
             action,
             order,
             flags,
@@ -105,9 +102,8 @@ impl Display for OrderBookDelta {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{}",
             self.instrument_id,
-            self.book_type,
             self.action,
             self.order,
             self.flags,
@@ -116,6 +112,13 @@ impl Display for OrderBookDelta {
             self.ts_init
         )
     }
+}
+
+// Represents a snapshot of an order book.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OrderBookSnapshot {
+    pub bids: Vec<BookOrder>,
+    pub asks: Vec<BookOrder>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
