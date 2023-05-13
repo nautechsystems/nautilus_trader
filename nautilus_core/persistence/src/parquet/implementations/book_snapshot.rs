@@ -69,8 +69,8 @@ impl DecodeDataFromRecordBatch for OrderBookSnapshot {
 
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef {
         let new_fields = vec![
-            Field::new("bids", get_orders_list_data_type(), false),
-            Field::new("asks", get_orders_list_data_type(), false),
+            Field::new("bids", get_order_list_data_type(), false),
+            Field::new("asks", get_order_list_data_type(), false),
             Field::new("sequence", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -172,7 +172,7 @@ fn get_book_order_field() -> Field {
     )
 }
 
-fn get_orders_list_data_type() -> DataType {
+fn get_order_list_data_type() -> DataType {
     DataType::List(Arc::new(get_book_order_field()))
 }
 
