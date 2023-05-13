@@ -169,7 +169,7 @@ class BetfairClient(HttpClient):
         params = parse_params(**locals())
 
         if "marketProjection" in params:
-            assert all([isinstance(m, MarketProjection) for m in params["marketProjection"]])
+            assert all(isinstance(m, MarketProjection) for m in params["marketProjection"])
             params["marketProjection"] = [m.value for m in params["marketProjection"]]
         if "sort" in params:
             assert isinstance(sort, MarketSort)

@@ -571,7 +571,7 @@ async def test_on_account_update(mocker, exec_client):
     }
     assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
     assert expected["margins"][0].to_dict() == kwargs["margins"][0].to_dict()
-    assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins")])
+    assert all(kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins"))
 
 
 @pytest.mark.asyncio

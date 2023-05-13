@@ -154,7 +154,7 @@ def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> 
 
 def scan_files(glob_path, compression="infer", **kw) -> list[OpenFile]:
     open_files = fsspec.open_files(glob_path, compression=compression, **kw)
-    return [of for of in open_files]
+    return list(open_files)
 
 
 def split_and_serialize(objs: list) -> dict[type, dict[Optional[str], list]]:

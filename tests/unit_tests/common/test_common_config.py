@@ -21,9 +21,9 @@ from nautilus_trader.test_kit.mocks.actors import MockActor
 class TestActorFactory:
     def test_create_from_path(self):
         # Arrange
-        config = dict(
-            component_id="MyActor",
-        )
+        config = {
+            "component_id": "MyActor",
+        }
         importable = ImportableActorConfig(
             actor_path="nautilus_trader.test_kit.mocks.actors:MockActor",
             config_path="nautilus_trader.test_kit.mocks.actors:MockActorConfig",

@@ -185,7 +185,7 @@ class TestBacktestEngine:
         engine.run()
         engine.dispose()
 
-        assert all([f.closed for f in engine.kernel.writer._files.values()])
+        assert all(f.closed for f in engine.kernel.writer._files.values())
 
     def test_backtest_engine_multiple_runs(self):
         for _ in range(2):

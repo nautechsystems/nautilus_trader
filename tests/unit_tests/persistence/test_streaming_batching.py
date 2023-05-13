@@ -73,7 +73,7 @@ class TestGenerateBatches(TestBatchingData):
             batch_size=1000,
         )
         batches = list(batch_gen)
-        assert all([len(x) == 1000 for x in batches])
+        assert all(len(x) == 1000 for x in batches)
 
     def test_generate_batches_returns_empty_list_before_start_timestamp(self):
         # Arrange

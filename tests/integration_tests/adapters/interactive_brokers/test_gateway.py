@@ -31,18 +31,18 @@ def test_gateway_start_no_container(mocker):
     gateway.start(wait=None)
 
     # Assert
-    expected = dict(
-        image="ghcr.io/unusualalpha/ib-gateway",
-        name="nautilus-ib-gateway",
-        detach=True,
-        ports={"4001": "4001", "4002": "4002", "5900": "5900"},
-        platform="amd64",
-        environment={
+    expected = {
+        "image": "ghcr.io/unusualalpha/ib-gateway",
+        "name": "nautilus-ib-gateway",
+        "detach": True,
+        "ports": {"4001": "4001", "4002": "4002", "5900": "5900"},
+        "platform": "amd64",
+        "environment": {
             "TWS_USERID": "test",
             "TWS_PASSWORD": "test",
             "TRADING_MODE": "paper",
             "READ_ONLY_API": "yes",
         },
-    )
+    }
     result = mock_docker.call_args.kwargs
     assert result == expected

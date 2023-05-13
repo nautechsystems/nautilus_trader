@@ -112,11 +112,11 @@ class TestBetfairInstrumentProvider:
     @pytest.mark.asyncio
     async def test_get_betting_instrument(self):
         await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
-        kw = dict(
-            market_id="1.180678317",
-            selection_id="11313157",
-            handicap=0.0,
-        )
+        kw = {
+            "market_id": "1.180678317",
+            "selection_id": "11313157",
+            "handicap": 0.0,
+        }
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument.market_id == "1.180678317"
 

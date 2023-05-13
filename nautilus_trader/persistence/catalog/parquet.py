@@ -463,7 +463,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = {}
         glob_path = f"{self.path}/{kind}/{run_id}.feather/*.feather"
 
-        for path in [p for p in self.fs.glob(glob_path)]:
+        for path in list(self.fs.glob(glob_path)):
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather_file(path=path, fs=self.fs)
 
@@ -482,7 +482,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if raise_on_failed_deserialize:
                     raise
                 print(f"Failed to deserialize {cls_name}: {e}")
-        return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+        return sorted(sum(data.values(), []), key=lambda x: x.ts_init)
 
 
 def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):
