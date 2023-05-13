@@ -16,8 +16,8 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use datafusion::arrow::array::*;
-use datafusion::arrow::datatypes::*;
+use datafusion::arrow::array::{Array, Int64Array, UInt64Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use nautilus_model::data::tick::QuoteTick;
 use nautilus_model::{
@@ -61,7 +61,7 @@ impl DecodeDataFromRecordBatch for QuoteTick {
             .zip(ts_init_values.iter())
             .map(
                 |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| {
-                    QuoteTick {
+                    Self {
                         instrument_id: instrument_id.clone(),
                         bid: Price::from_raw(bid.unwrap(), price_precision),
                         ask: Price::from_raw(ask.unwrap(), price_precision),

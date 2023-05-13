@@ -39,5 +39,5 @@ async fn main() {
         }
     }
 
-    println!("Successful requests: {}", success);
+    println!("Successful requests: {success}");
 }

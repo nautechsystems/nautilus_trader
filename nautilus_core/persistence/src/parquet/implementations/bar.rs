@@ -16,8 +16,8 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use datafusion::arrow::array::*;
-use datafusion::arrow::datatypes::*;
+use datafusion::arrow::array::{Array, Int64Array, UInt64Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use nautilus_model::data::bar::Bar;
 use nautilus_model::data::bar::BarType;
@@ -60,7 +60,7 @@ impl DecodeDataFromRecordBatch for Bar {
             .zip(ts_init_values.iter())
             .map(
                 |((((((open, high), low), close), volume), ts_event), ts_init)| {
-                    Bar {
+                    Self {
                         bar_type: bar_type.clone(),
                         open: Price::from_raw(open.unwrap(), price_precision),
                         high: Price::from_raw(high.unwrap(), price_precision),

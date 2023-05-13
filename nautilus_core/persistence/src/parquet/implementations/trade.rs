@@ -16,13 +16,14 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use datafusion::arrow::datatypes::*;
+use datafusion::arrow::array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use nautilus_model::data::tick::TradeTick;
 use nautilus_model::enums::AggressorSide;
-use nautilus_model::identifiers::trade_id::TradeId;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
+    identifiers::trade_id::TradeId,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -43,8 +44,6 @@ impl DecodeDataFromRecordBatch for TradeTick {
             .parse::<u8>()
             .unwrap();
 
-        use datafusion::arrow::array::*;
-
         // Extract field value arrays from record batch
         let cols = record_batch.columns();
         let price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
@@ -64,7 +63,7 @@ impl DecodeDataFromRecordBatch for TradeTick {
             .zip(ts_init_values.into_iter())
             .map(
                 |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| {
-                    TradeTick {
+                    Self {
                         instrument_id: instrument_id.clone(),
                         price: Price::from_raw(price.unwrap(), price_precision),
                         size: Quantity::from_raw(size.unwrap(), size_precision),

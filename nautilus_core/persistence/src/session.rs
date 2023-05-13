@@ -52,7 +52,7 @@ where
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
-/// a Vec of data by types that implement [DecodeDataFromRecordBatch].
+/// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
 pub struct PersistenceCatalog {
     session_ctx: SessionContext,
     batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
@@ -60,6 +60,7 @@ pub struct PersistenceCatalog {
 }
 
 impl PersistenceCatalog {
+    #[must_use]
     pub fn new(chunk_size: usize) -> Self {
         Self {
             session_ctx: SessionContext::default(),
@@ -184,10 +185,11 @@ unsafe impl Send for PersistenceCatalog {}
 impl PythonCatalog {
     #[new]
     #[pyo3(signature=(chunk_size=5000))]
+    #[must_use]
     pub fn new_session(chunk_size: usize) -> Self {
         // Initialize runtime here
         get_runtime();
-        PythonCatalog(PersistenceCatalog::new(chunk_size))
+        Self(PersistenceCatalog::new(chunk_size))
     }
 
     pub fn add_file(
@@ -203,13 +205,13 @@ impl PythonCatalog {
             ParquetType::QuoteTick => {
                 match block_on(slf.0.add_file::<QuoteTick>(table_name, file_path)) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {}", err),
+                    Err(err) => panic!("failed new_query with error {err}"),
                 }
             }
             ParquetType::TradeTick => {
                 match block_on(slf.0.add_file::<TradeTick>(table_name, file_path)) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {}", err),
+                    Err(err) => panic!("failed new_query with error {err}"),
                 }
             }
         }
@@ -232,7 +234,7 @@ impl PythonCatalog {
                         .add_file_with_query::<QuoteTick>(table_name, file_path, sql_query),
                 ) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {}", err),
+                    Err(err) => panic!("failed new_query with error {err}"),
                 }
             }
             ParquetType::TradeTick => {
@@ -241,12 +243,13 @@ impl PythonCatalog {
                         .add_file_with_query::<TradeTick>(table_name, file_path, sql_query),
                 ) {
                     Ok(_) => (),
-                    Err(err) => panic!("failed new_query with error {}", err),
+                    Err(err) => panic!("failed new_query with error {err}"),
                 }
             }
         }
     }
 
+    #[must_use]
     pub fn to_query_result(mut slf: PyRefMut<'_, Self>) -> PythonQueryResult {
         let rt = get_runtime();
         let _guard = rt.enter();
@@ -298,7 +301,8 @@ impl PythonQueryResult {
     /// drop if exists and reset the field.
     fn drop_chunk(&mut self) {
         if let Some(CVec { ptr, len, cap }) = self.chunk.take() {
-            let data: Vec<Data> = unsafe { Vec::from_raw_parts(ptr as *mut Data, len, cap) };
+            let data: Vec<Data> =
+                unsafe { Vec::from_raw_parts(ptr.cast::<nautilus_model::data::Data>(), len, cap) };
             drop(data);
         }
     }
