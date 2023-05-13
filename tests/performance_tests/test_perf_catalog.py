@@ -20,8 +20,8 @@ import tempfile
 import pytest
 
 from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader.core.nautilus_pyo3.persistence import DataCatalogBackend
 from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
-from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
@@ -81,7 +81,7 @@ class TestCatalogPerformance(PerformanceHarness):
     def test_load_single_stream_catalog_v2(benchmark):
         def setup():
             file_path = os.path.join(PACKAGE_ROOT, "bench_data/quotes_0005.parquet")
-            session = PythonCatalog()
+            session = DataCatalogBackend()
             session.add_file("quote_ticks", file_path, ParquetType.QuoteTick)
             return (session.to_query_result(),), {}
 
@@ -99,7 +99,7 @@ class TestCatalogPerformance(PerformanceHarness):
         def setup():
             dir_path = os.path.join(PACKAGE_ROOT, "bench_data/multi_stream_data/")
 
-            session = PythonCatalog()
+            session = DataCatalogBackend()
 
             for dirpath, _, filenames in os.walk(dir_path):
                 for filename in filenames:

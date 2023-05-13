@@ -2,7 +2,7 @@ use std::fs;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
+use nautilus_persistence::session::{DataBackendSession, QueryResult};
 use pyo3_asyncio::tokio::get_runtime;
 
 fn single_stream_bench(c: &mut Criterion) {
@@ -16,7 +16,7 @@ fn single_stream_bench(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let rt = get_runtime();
-                let mut catalog = PersistenceCatalog::new(chunk_size);
+                let mut catalog = DataBackendSession::new(chunk_size);
                 rt.block_on(catalog.add_file::<QuoteTick>("quote_tick", file_path))
                     .unwrap();
                 let _guard = rt.enter();
@@ -44,7 +44,7 @@ fn multi_stream_bench(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let rt = get_runtime();
-                let mut catalog = PersistenceCatalog::new(chunk_size);
+                let mut catalog = DataBackendSession::new(chunk_size);
 
                 for entry in fs::read_dir(dir_path).expect("No such directory") {
                     let entry = entry.expect("Failed to read directory");
