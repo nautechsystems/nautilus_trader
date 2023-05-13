@@ -280,7 +280,6 @@ def json_encoder(x):
 def register_json_encoding(type_: type, encoder: Callable) -> None:
     global CUSTOM_ENCODINGS
     CUSTOM_ENCODINGS[type_] = encoder
-    return None
 
 
 def tokenize_config(obj: dict) -> str:
