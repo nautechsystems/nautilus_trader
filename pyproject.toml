@@ -186,7 +186,26 @@ ignore = [
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
-fixable = ["A", "B", "C", "D", "E", "F", "UP", "S", "W", "I", "NPY", "RUF"]
+fixable = [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "UP",
+    "S",
+    "W",
+    "I",
+    "RSE",
+    "TID",
+    "ARG",
+    "PD",
+    # "PGH",
+    "NPY",
+    "RUF",
+]
+
 unfixable = []
 
 exclude = [
