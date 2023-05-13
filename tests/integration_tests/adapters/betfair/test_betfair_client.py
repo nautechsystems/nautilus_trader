@@ -56,7 +56,7 @@ class TestBetfairClient:
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = Logger(clock=self.clock, bypass=True)
-        self.client = BetfairClient(  # noqa: S106 (no hardcoded password)
+        self.client = BetfairClient(
             username="username",
             password="password",
             app_key="app_key",

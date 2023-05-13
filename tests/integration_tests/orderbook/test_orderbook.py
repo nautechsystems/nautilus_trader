@@ -31,7 +31,7 @@ class TestOrderBook:
             size_precision=0,
         )
         i = 0
-        for i, m in enumerate(TestDataStubs.l1_feed()):  # noqa (B007)
+        for i, m in enumerate(TestDataStubs.l1_feed()):  # (B007)
             # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
             # print("")
             if m["op"] == "update":
@@ -82,7 +82,7 @@ class TestOrderBook:
         # immediately, however we may also delete later.
         skip_deletes = []
         i = 0
-        for i, m in enumerate(TestDataStubs.l3_feed(filename)):  # noqa (B007)
+        for i, m in enumerate(TestDataStubs.l3_feed(filename)):  # (B007)
             if m["op"] == "update":
                 book.update(order=m["order"])
                 try:

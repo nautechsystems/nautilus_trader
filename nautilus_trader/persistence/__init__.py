@@ -13,4 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `persistence` subpackage handles data storage and retrieval, mainly to support backtesting."""  # noqa
+"""The `persistence` subpackage handles data storage and retrieval, mainly to support backtesting."""

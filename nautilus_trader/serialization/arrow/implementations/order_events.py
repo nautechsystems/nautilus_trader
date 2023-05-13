@@ -42,7 +42,7 @@ def serialize_order_initialized(event: OrderInitialized):
         "price": float,
     }
     data = event.to_dict(event)
-    data.update(json.loads(data.pop("options", "{}")))  # noqa: P103
+    data.update(json.loads(data.pop("options", "{}")))
     data = {k: caster[k](v) if (k in caster and v is not None) else v for k, v in data.items()}
     return data
 

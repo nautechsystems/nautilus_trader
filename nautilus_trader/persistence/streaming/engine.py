@@ -81,7 +81,7 @@ class _BufferIterator:
     def __init__(
         self,
         buffers: list[_StreamingBuffer],
-        target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
+        target_batch_size_bytes: int = parse_bytes("100mb"),  # ,
     ):
         self._buffers = buffers
         self._target_batch_size_bytes = target_batch_size_bytes
@@ -151,7 +151,7 @@ class StreamingEngine(_BufferIterator):
     def __init__(
         self,
         data_configs: list[BacktestDataConfig],
-        target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
+        target_batch_size_bytes: int = parse_bytes("100mb"),  # ,
     ):
         # Sort configs (larger time_aggregated bar specifications first)
         # Define the order of objects with the same timestamp.

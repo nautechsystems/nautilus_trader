@@ -56,10 +56,10 @@ class TestBinanceInstrumentProvider:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -111,10 +111,10 @@ class TestBinanceInstrumentProvider:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 

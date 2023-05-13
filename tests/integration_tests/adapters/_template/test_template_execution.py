@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.execution import TemplateLiveExecutionClient  # noqa
+from nautilus_trader.adapters._template.execution import TemplateLiveExecutionClient
 from nautilus_trader.live.execution_client import LiveExecutionClient
 
 

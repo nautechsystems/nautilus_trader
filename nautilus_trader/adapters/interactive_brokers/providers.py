@@ -122,7 +122,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return await self.get_future_chain_details(contract)
         elif build_options_chain:
             return await self.get_option_chain_details(
-                underlying=contract, **(json.loads(option_kwargs or "{}"))  # noqa: P103
+                underlying=contract, **(json.loads(option_kwargs or "{}"))
             )
         else:
             # Regular contract

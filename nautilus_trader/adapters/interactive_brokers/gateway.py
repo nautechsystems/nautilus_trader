@@ -80,7 +80,7 @@ class InteractiveBrokersGateway:
     @classmethod
     def from_container(cls, **kwargs):
         """Connect to an already running container - don't stop/start"""
-        self = cls(username="", password="", **kwargs)  # noqa: S106
+        self = cls(username="", password="", **kwargs)
         assert self.container, "Container does not exist"
         return self
 

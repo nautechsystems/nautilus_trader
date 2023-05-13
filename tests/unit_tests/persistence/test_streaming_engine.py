@@ -345,7 +345,7 @@ class TestBufferIterator(TestBatchingData):
 #
 #             process_files(
 #                 glob_path=parquet_data_path,
-#                 reader=ParquetByteReader(parser=parser),  # noqa: B023
+#                 reader=ParquetByteReader(parser=parser),
 #                 catalog=self.catalog,
 #                 use_rust=True,
 #                 instrument=instrument,

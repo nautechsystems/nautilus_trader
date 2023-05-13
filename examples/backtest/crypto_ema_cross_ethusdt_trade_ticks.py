@@ -82,7 +82,7 @@ if __name__ == "__main__":
     engine.add_exec_algorithm(exec_algorithm)
 
     time.sleep(0.1)
-    input("Press Enter to continue...")  # noqa (always Python 3)
+    input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
     engine.run()

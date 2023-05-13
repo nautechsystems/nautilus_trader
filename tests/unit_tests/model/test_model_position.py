@@ -712,7 +712,7 @@ class TestPosition:
         assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-123456)"
 
     def test_pnl_calculation_from_trading_technologies_example(self) -> None:
-        # https://www.tradingtechnologies.com/xtrader-help/fix-adapter-reference/pl-calculation-algorithm/understanding-pl-calculations/  # noqa
+        # https://www.tradingtechnologies.com/xtrader-help/fix-adapter-reference/pl-calculation-algorithm/understanding-pl-calculations/
 
         # Arrange
         order1 = self.order_factory.market(

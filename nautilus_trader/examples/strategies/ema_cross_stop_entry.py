@@ -230,7 +230,7 @@ class EMACrossStopEntry(Strategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(f"Received {bar!r}")
 
         # Check if indicators ready
         if not self.indicators_initialized():

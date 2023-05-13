@@ -464,7 +464,7 @@ class TestPrice:
         expected_value,
     ):
         # Arrange, Act
-        result = value1 % value2  # noqa (not modulo formatting)
+        result = value1 % value2
 
         # Assert
         assert type(result) == expected_type

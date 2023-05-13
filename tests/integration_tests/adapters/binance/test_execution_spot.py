@@ -69,7 +69,7 @@ class TestBinanceSpotExecutionClient:
 
         self.cache = TestComponentStubs.cache()
 
-        self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+        self.http_client = BinanceHttpClient(
             loop=asyncio.get_event_loop(),
             clock=self.clock,
             logger=self.logger,
@@ -164,18 +164,18 @@ class TestBinanceSpotExecutionClient:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             response = msgspec.json.decode(http_responses.pop())
             return response
 
         # Mock coroutine for patch
         async def mock_ws_connect(
-            self,  # noqa (needed for mock)
-            url: str,  # noqa (needed for mock)
+            self,  # (needed for mock)
+            url: str,  # (needed for mock)
         ) -> bytes:
             return b"connected"
 

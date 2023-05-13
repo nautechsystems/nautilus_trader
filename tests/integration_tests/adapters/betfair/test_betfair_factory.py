@@ -63,13 +63,13 @@ class TestBetfairFactory:
 
     @pytest.mark.asyncio()
     def test_create(self):
-        data_config = BetfairDataClientConfig(  # noqa: S106
+        data_config = BetfairDataClientConfig(
             username="SOME_BETFAIR_USERNAME",
             password="SOME_BETFAIR_PASSWORD",
             app_key="SOME_BETFAIR_APP_KEY",
             cert_dir="SOME_BETFAIR_CERT_DIR",
         )
-        exec_config = BetfairExecClientConfig(  # noqa: S106
+        exec_config = BetfairExecClientConfig(
             username="SOME_BETFAIR_USERNAME",
             password="SOME_BETFAIR_PASSWORD",
             app_key="SOME_BETFAIR_APP_KEY",

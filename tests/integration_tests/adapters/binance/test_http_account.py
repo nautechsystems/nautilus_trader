@@ -30,7 +30,7 @@ class TestBinanceSpotAccountHttpAPI:
         # Fixture Setup
         self.clock = LiveClock()
         logger = Logger(clock=self.clock)
-        self.client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+        self.client = BinanceHttpClient(
             loop=asyncio.get_event_loop(),
             clock=self.clock,
             logger=logger,

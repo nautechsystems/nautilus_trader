@@ -113,7 +113,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> list[BacktestResult]:  # noqa (kwargs for extensibility)
+    def run(self) -> list[BacktestResult]:
         """
         Execute a group of backtest run configs synchronously.
 

@@ -25,7 +25,7 @@ from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
 CASES = [
     ("/home/test/file.csv", LocalFileSystem, {"protocol": "file"}),
     (
-        "ftp://test@0.0.0.0/home/test/file.csv",  # noqa: S104
+        "ftp://test@0.0.0.0/home/test/file.csv",
         FTPFileSystem,
         {"host": "0.0.0.0", "protocol": "ftp", "username": "test"},  # noqa: S104
     ),

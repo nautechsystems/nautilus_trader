@@ -175,7 +175,7 @@ class BetfairDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ):
-        PyCondition.not_none(instrument_id, "instrument_id")  # noqa
+        PyCondition.not_none(instrument_id, "instrument_id")
 
         instrument: BettingInstrument = self._instrument_provider.find(instrument_id)
 
