@@ -15,7 +15,7 @@ nautilus_core = { path = "../core" }
 pyo3.workspace = true
 pyo3-asyncio.workspace = true
 tokio.workspace = true
-hyper = { version = "0.14.26", features = ["client", "http2"] }
+hyper = { version = "0.14.26", features = ["client", "http1"] }
 hyper-tls = "0.5.0"
 
 [features]
