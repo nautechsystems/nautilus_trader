@@ -40,9 +40,9 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
         // Extract field value arrays from record batch
         let cols = record_batch.columns();
         let action_values = cols[0].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let price_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let size_values = cols[2].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let side_values = cols[3].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let side_values = cols[1].as_any().downcast_ref::<UInt8Array>().unwrap();
+        let price_values = cols[2].as_any().downcast_ref::<Int64Array>().unwrap();
+        let size_values = cols[3].as_any().downcast_ref::<UInt64Array>().unwrap();
         let order_id_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let flags_values = cols[5].as_any().downcast_ref::<UInt8Array>().unwrap();
         let sequence_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
@@ -52,9 +52,9 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
         // Construct iterator of values from field value arrays
         let values = action_values
             .into_iter()
+            .zip(side_values.iter())
             .zip(price_values.iter())
             .zip(size_values.iter())
-            .zip(side_values.iter())
             .zip(order_id_values.iter())
             .zip(flags_values.iter())
             .zip(sequence_values.iter())
@@ -62,16 +62,16 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
             .zip(ts_init_values.iter())
             .map(
                 |(
-                    (((((((action, price), size), side), order_id), flags), sequence), ts_event),
+                    (((((((action, side), price), size), order_id), flags), sequence), ts_event),
                     ts_init,
                 )| {
                     Self {
                         instrument_id: instrument_id.clone(),
                         action: BookAction::from_u8(action.unwrap()).unwrap(),
                         order: BookOrder {
+                            side: OrderSide::from_u8(side.unwrap()).unwrap(),
                             price: Price::from_raw(price.unwrap(), price_precision),
                             size: Quantity::from_raw(size.unwrap(), size_precision),
-                            side: OrderSide::from_u8(side.unwrap()).unwrap(),
                             order_id: order_id.unwrap(),
                         },
                         flags: flags.unwrap(),
@@ -89,9 +89,9 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
         let fields = vec![
             Field::new("action", DataType::UInt8, false),
+            Field::new("side", DataType::UInt8, false),
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
-            Field::new("side", DataType::UInt8, false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
@@ -147,9 +147,9 @@ mod tests {
         let schema = OrderBookDelta::get_schema(metadata.clone());
         let expected_fields = vec![
             Field::new("action", DataType::UInt8, false),
+            Field::new("side", DataType::UInt8, false),
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
-            Field::new("side", DataType::UInt8, false),
             Field::new("order_id", DataType::UInt64, false),
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
@@ -165,9 +165,9 @@ mod tests {
         let metadata = create_metadata();
 
         let action = UInt8Array::from(vec![1, 2]);
+        let side = UInt8Array::from(vec![1, 1]);
         let price = Int64Array::from(vec![10000, 9900]);
         let size = UInt64Array::from(vec![100, 90]);
-        let side = UInt8Array::from(vec![1, 1]);
         let order_id = UInt64Array::from(vec![1, 2]);
         let flags = UInt8Array::from(vec![0, 0]);
         let sequence = UInt64Array::from(vec![1, 2]);
@@ -178,9 +178,9 @@ mod tests {
             OrderBookDelta::get_schema(metadata.clone()),
             vec![
                 Arc::new(action),
+                Arc::new(side),
                 Arc::new(price),
                 Arc::new(size),
-                Arc::new(side),
                 Arc::new(order_id),
                 Arc::new(flags),
                 Arc::new(sequence),
