@@ -25,7 +25,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.external.core import process_files
@@ -568,7 +568,7 @@ class TestPersistenceBatching:
         shared_kw = {
             "catalog_path": str(self.catalog.path),
             "catalog_fs_protocol": self.catalog.fs.protocol,
-            "data_cls": OrderBookData,
+            "data_cls": OrderBookDelta,
         }
 
         engine = StreamingEngine(

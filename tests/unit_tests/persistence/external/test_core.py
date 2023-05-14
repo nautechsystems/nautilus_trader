@@ -170,7 +170,7 @@ class _TestPersistenceCore:
             "BetfairTicker": 83,
             "BettingInstrument": 2,
             "InstrumentStatusUpdate": 1,
-            "OrderBookData": 1077,
+            "OrderBookDelta": 1077,
             "TradeTick": 114,
         }
 
@@ -346,8 +346,8 @@ class _TestPersistenceCore:
                 f"{self.catalog.path}/data/betting_instrument.parquet/0.parquet",
                 f"{self.catalog.path}/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
                 f"{self.catalog.path}/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-                f"{self.catalog.path}/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-                f"{self.catalog.path}/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+                f"{self.catalog.path}/data/order_book_delta.parquet/instrument_id={ins1}/20191220.parquet",
+                f"{self.catalog.path}/data/order_book_delta.parquet/instrument_id={ins2}/20191220.parquet",
                 f"{self.catalog.path}/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
                 f"{self.catalog.path}/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
             ]

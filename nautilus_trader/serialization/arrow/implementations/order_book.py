@@ -15,15 +15,14 @@
 
 import itertools
 from itertools import repeat
+from typing import Union
 
 from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookData
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
@@ -32,7 +31,7 @@ def _parse_delta(delta: OrderBookDelta, cls):
     return dict(**OrderBookDelta.to_dict(delta), _type=cls.__name__)
 
 
-def serialize(data: OrderBookData):
+def serialize(data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]):
     if isinstance(data, OrderBookDelta):
         result = [_parse_delta(delta=data, cls=OrderBookDelta)]
     elif isinstance(data, OrderBookDeltas):
@@ -43,7 +42,6 @@ def serialize(data: OrderBookData):
             _parse_delta(
                 OrderBookDelta(
                     instrument_id=data.instrument_id,
-                    book_type=data.book_type,
                     order=None,
                     action=BookAction.CLEAR,
                     ts_event=data.ts_event,
@@ -60,7 +58,6 @@ def serialize(data: OrderBookData):
                 _parse_delta(
                     OrderBookDelta(
                         instrument_id=data.instrument_id,
-                        book_type=data.book_type,
                         ts_event=data.ts_event,
                         ts_init=data.ts_init,
                         order=BookOrder(price=price, size=volume, side=side),
@@ -72,7 +69,7 @@ def serialize(data: OrderBookData):
             ],
         )
     else:  # pragma: no cover (design-time error)
-        raise TypeError(f"invalid `OrderBookData`, was {type(data)}")
+        raise TypeError(f"invalid order book data, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages
     if result:
         result[-1]["_last"] = True
@@ -89,7 +86,6 @@ def _build_order_book_snapshot(values):
     assert len(values) >= 2, f"Not enough values passed! {values}"
     return OrderBookSnapshot(
         instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-        book_type=book_type_from_str(values[1]["book_type"]),
         bids=[(order["price"], order["size"]) for order in values[1:] if order["side"] == "BUY"],
         asks=[(order["price"], order["size"]) for order in values[1:] if order["side"] == "SELL"],
         ts_event=values[1]["ts_event"],
@@ -100,7 +96,6 @@ def _build_order_book_snapshot(values):
 def _build_order_book_deltas(values):
     return OrderBookDeltas(
         instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
-        book_type=book_type_from_str(values[0]["book_type"]),
         deltas=[OrderBookDelta.from_dict(v) for v in values],
         ts_event=values[0]["ts_event"],
         ts_init=values[0]["ts_init"],
@@ -123,11 +118,11 @@ def deserialize(data: list[dict]):
     return sorted(results, key=lambda x: x.ts_event)
 
 
-for cls in [OrderBookData, *OrderBookData.__subclasses__()]:
+for cls in [OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]:
     register_parquet(
         cls=cls,
         serializer=serialize,
         deserializer=deserialize,
-        table=OrderBookData,
+        table=OrderBookDelta,
         chunk=True,
     )

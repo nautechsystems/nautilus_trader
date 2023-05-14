@@ -26,7 +26,6 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
@@ -114,7 +113,6 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
     ) -> OrderBookSnapshot:
         return OrderBookSnapshot(
             instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[float(o.price), float(o.size)] for o in self.bids],
             asks=[[float(o.price), float(o.size)] for o in self.asks],
             ts_event=ts_init,

@@ -308,7 +308,6 @@ class TestDataStubs:
         ask_levels=3,
         bid_size=10,
         ask_size=10,
-        book_type=BookType.L2_MBP,
         time_in_force=TimeInForce.GTC,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
@@ -316,7 +315,6 @@ class TestDataStubs:
 
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            book_type=book_type,
             bids=[(float(bid_price - i), float(bid_size * (1 + i))) for i in range(bid_levels)],
             asks=[(float(ask_price + i), float(ask_size * (1 + i))) for i in range(ask_levels)],
             ts_event=0,
@@ -328,7 +326,6 @@ class TestDataStubs:
     def order_book_delta(instrument_id: Optional[InstrumentId] = None, order=None):
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=order or TestDataStubs.order(),
             ts_event=0,
@@ -339,7 +336,6 @@ class TestDataStubs:
     def order_book_deltas(deltas=None):
         return OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=deltas or [TestDataStubs.order_book_delta()],
             ts_event=0,
             ts_init=0,

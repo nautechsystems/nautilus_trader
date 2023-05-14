@@ -30,7 +30,7 @@ from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
@@ -239,7 +239,7 @@ class TestBacktestConfigParsing:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
             instrument_ids=[self.instrument.id.value],
-            data_types=(TradeTick, QuoteTick, OrderBookData),
+            data_types=(TradeTick, QuoteTick, OrderBookDelta),
             venues=[
                 BacktestVenueConfig(
                     name="BETFAIR",

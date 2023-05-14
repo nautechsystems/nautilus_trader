@@ -270,7 +270,6 @@ class TestOrderBook:
     def test_orderbook_snapshot(self):
         snapshot = OrderBookSnapshot(
             instrument_id=self.empty_l2_book.instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             ts_event=0,
@@ -285,7 +284,6 @@ class TestOrderBook:
     def test_orderbook_operation_update(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.UPDATE,
             order=BookOrder(
                 0.5814,
@@ -304,7 +302,6 @@ class TestOrderBook:
     def test_orderbook_operation_add(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=BookOrder(
                 0.5900,
@@ -323,7 +320,6 @@ class TestOrderBook:
     def test_orderbook_operations(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.UPDATE,
             order=BookOrder(
                 0.5814,
@@ -336,7 +332,6 @@ class TestOrderBook:
         )
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=[delta],
             ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
             ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -347,7 +342,6 @@ class TestOrderBook:
     def test_apply(self):
         snapshot = OrderBookSnapshot(
             instrument_id=self.empty_l2_book.instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[150.0, 0.51]],
             asks=[[160.0, 1.51]],
             ts_event=0,
@@ -358,7 +352,6 @@ class TestOrderBook:
         assert self.empty_l2_book.count == 2
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=BookOrder(
                 155.0,
@@ -382,7 +375,6 @@ class TestOrderBook:
     def test_timestamp_ns(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=BookOrder(
                 0.5900,
@@ -498,13 +490,11 @@ class TestOrderBook:
             {
                 "type": "OrderBookDeltas",
                 "instrument_id": self.instrument_id.value,
-                "book_type": "L2_MBP",
                 "deltas": msgspec.json.encode(
                     [
                         {
                             "type": "OrderBookDelta",
                             "instrument_id": self.instrument_id.value,
-                            "book_type": "L2_MBP",
                             "action": "UPDATE",
                             "price": 0.990099,
                             "size": 2.0,

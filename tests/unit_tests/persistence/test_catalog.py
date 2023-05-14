@@ -424,7 +424,7 @@ class _TestPersistenceCatalog:
             "betfair_ticker",
             "betting_instrument",
             "instrument_status_update",
-            "order_book_data",
+            "order_book_delta",
             "trade_tick",
         ]
         assert data_types == expected

@@ -208,7 +208,7 @@ class BetfairDataClient(LiveMarketDataClient):
         await asyncio.sleep(delay)
         self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
-        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
+        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data.")
 
     async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook

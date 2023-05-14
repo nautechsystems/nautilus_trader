@@ -28,7 +28,7 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.book cimport OrderBookData
+from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -108,6 +108,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
     cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _setup_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, bint only_deltas)  # noqa
     cpdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
@@ -131,7 +132,7 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_data(self, Data data)
     cpdef void _handle_instrument(self, Instrument instrument)
-    cpdef void _handle_order_book_data(self, OrderBookData data)
+    cpdef void _handle_order_book_data(self, Data data)
     cpdef void _handle_ticker(self, Ticker ticker)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)
@@ -152,7 +153,7 @@ cdef class DataEngine(Component):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cpdef void _internal_update_instruments(self, list instruments)
-    cpdef void _maintain_order_book(self, OrderBookData data)
+    cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)

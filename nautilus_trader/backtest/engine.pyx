@@ -67,7 +67,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.book cimport OrderBookData
+from nautilus_trader.model.data.book cimport ORDER_BOOK_DATA
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
@@ -988,7 +988,7 @@ cdef class BacktestEngine:
                     raw_handlers_count = raw_handlers.len
 
                 # Process data through venue
-                if isinstance(data, OrderBookData):
+                if isinstance(data, ORDER_BOOK_DATA):
                     self._venues[data.instrument_id.venue].process_order_book(data)
                 elif isinstance(data, QuoteTick):
                     self._venues[data.instrument_id.venue].process_quote_tick(data)

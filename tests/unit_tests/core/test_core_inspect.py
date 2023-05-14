@@ -20,7 +20,7 @@ from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.core.inspect import get_size_of
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.events.order import OrderAccepted
 
@@ -28,7 +28,7 @@ from nautilus_trader.model.events.order import OrderAccepted
 @pytest.mark.parametrize(
     ("cls", "is_nautilus"),
     [
-        (OrderBookData, True),
+        (OrderBookDelta, True),
         (TradeTick, True),
         (OrderAccepted, True),
         (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type.

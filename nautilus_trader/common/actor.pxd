@@ -30,7 +30,6 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.data.book cimport OrderBookData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -76,7 +75,7 @@ cdef class Actor(Component):
     cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update)
     cpdef void on_instrument_close(self, InstrumentClose update)
     cpdef void on_instrument(self, Instrument instrument)
-    cpdef void on_order_book_delta(self, OrderBookData delta)
+    cpdef void on_order_book_delta(self, Data data)
     cpdef void on_order_book(self, OrderBook order_book)
     cpdef void on_ticker(self, Ticker ticker)
     cpdef void on_quote_tick(self, QuoteTick tick)
@@ -182,7 +181,7 @@ cdef class Actor(Component):
     cpdef void handle_instrument(self, Instrument instrument)
     cpdef void handle_instruments(self, list instruments)
     cpdef void handle_order_book(self, OrderBook order_book)
-    cpdef void handle_order_book_delta(self, OrderBookData data)
+    cpdef void handle_order_book_delta(self, Data data)
     cpdef void handle_ticker(self, Ticker ticker)
     cpdef void handle_quote_tick(self, QuoteTick tick)
     cpdef void handle_quote_ticks(self, list ticks)

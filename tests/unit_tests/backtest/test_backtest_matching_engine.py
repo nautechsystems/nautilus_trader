@@ -110,7 +110,6 @@ class TestOrderMatchingEngine:
             instrument_id=self.instrument.id,
             bid_price=100,
             ask_price=105,
-            book_type=BookType.L3_MBO,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )
         self.matching_engine.process_order_book(snapshot)
