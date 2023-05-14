@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from collections.abc import Awaitable
 from collections.abc import Coroutine
+from typing import Any, Callable
 
 import pytest
 from aiohttp import web
@@ -24,34 +24,23 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpClient
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 
-@pytest.mark.asyncio()
-async def test_client_get_github() -> None:
-    # Arrange
-    client = HttpClient()
-    url = "https://github.com"
-
-    # Act
-    resp: HttpResponse = await client.get(url, headers={})
-
-    # Assert
-    assert resp.status == 200
-    assert len(resp.body) > 0
-
-
 @pytest.fixture(name="test_server")
-async def fixture_test_server(aiohttp_server) -> Awaitable[TestServer]:
+async def fixture_test_server(
+    aiohttp_server: Callable[..., Coroutine[Any, Any, TestServer]],
+) -> TestServer:
     async def hello(request):
         return web.Response(text="Hello, world")
 
     app = web.Application()
     app.router.add_route("GET", "/get", hello)
     app.router.add_route("POST", "/post", hello)
+    app.router.add_route("PATCH", "/patch", hello)
+    app.router.add_route("DELETE", "/delete", hello)
 
     server = await aiohttp_server(app)
     return server
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio()
 async def test_client_get(test_server: Coroutine) -> None:
     # Arrange
@@ -60,14 +49,13 @@ async def test_client_get(test_server: Coroutine) -> None:
     url = f"http://{server.host}:{server.port}/get"
 
     # Act
-    resp: HttpResponse = await client.get(url, headers={})
+    response: HttpResponse = await client.get(url, headers={})
 
     # Assert
-    assert resp.status == 200
-    assert len(resp) > 0
+    assert response.status == 200
+    assert len(response.body) > 0
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio()
 async def test_client_post(test_server: Coroutine) -> None:
     # Arrange
@@ -76,8 +64,38 @@ async def test_client_post(test_server: Coroutine) -> None:
     url = f"http://{server.host}:{server.port}/post"
 
     # Act
-    resp: HttpResponse = await client.post(url, headers={})
+    response: HttpResponse = await client.post(url, headers={})
 
     # Assert
-    assert resp.status == 200
-    assert len(resp) > 0
+    assert response.status == 200
+    assert len(response.body) > 0
+
+
+@pytest.mark.asyncio()
+async def test_client_patch(test_server: Coroutine) -> None:
+    # Arrange
+    server: TestServer = await test_server
+    client = HttpClient()
+    url = f"http://{server.host}:{server.port}/patch"
+
+    # Act
+    response: HttpResponse = await client.patch(url, headers={})
+
+    # Assert
+    assert response.status == 200
+    assert len(response.body) > 0
+
+
+@pytest.mark.asyncio()
+async def test_client_delete(test_server: Coroutine) -> None:
+    # Arrange
+    server: TestServer = await test_server
+    client = HttpClient()
+    url = f"http://{server.host}:{server.port}/delete"
+
+    # Act
+    response: HttpResponse = await client.delete(url, headers={})
+
+    # Assert
+    assert response.status == 200
+    assert len(response.body) > 0

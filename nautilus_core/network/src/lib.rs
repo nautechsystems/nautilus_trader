@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
@@ -86,11 +86,8 @@ impl HttpClient {
         headers: HashMap<String, String>,
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
-        let method: Method = if method_str == "get" {
-            Method::GET
-        } else {
-            Method::POST
-        };
+        let method: Method =
+            Method::from_str(&method_str.to_lowercase()).expect("Invalid HTTP method {method_str}");
         let client = slf.clone();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -131,6 +128,24 @@ impl HttpClient {
         let client = slf.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             match client.send_request(Method::POST, url, headers).await {
+                Ok(res) => Ok(res),
+                Err(_) => {
+                    // TODO: log error
+                    panic!("Could not handle response");
+                }
+            }
+        })
+    }
+
+    pub fn patch<'py>(
+        slf: PyRef<'_, Self>,
+        url: String,
+        headers: HashMap<String, String>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let client = slf.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            match client.send_request(Method::PATCH, url, headers).await {
                 Ok(res) => Ok(res),
                 Err(_) => {
                     // TODO: log error
@@ -207,23 +222,26 @@ pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use hyper::{Method, StatusCode};
-
-    use crate::HttpClient;
-
-    #[tokio::test]
-    async fn test_rust_request() {
-        let http_client = HttpClient::default();
-        let response = http_client
-            .send_request(Method::GET, "https://github.com".into(), HashMap::new())
-            .await
-            .unwrap();
-        assert_eq!(response.status, StatusCode::OK);
-    }
-
-    // TODO: add python test using the pyo3 interface
-}
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+// #[cfg(test)]
+// mod tests {
+//     use std::collections::HashMap;
+//
+//     use hyper::{Method, StatusCode};
+//
+//     use crate::HttpClient;
+//
+//     #[tokio::test]
+//     async fn test_rust_request() {
+//         let http_client = HttpClient::default();
+//         let response = http_client
+//             .send_request(Method::GET, "https://github.com".into(), HashMap::new())
+//             .await
+//             .unwrap();
+//         assert_eq!(response.status, StatusCode::OK);
+//     }
+//
+//     // TODO: add python test using the pyo3 interface
+// }
