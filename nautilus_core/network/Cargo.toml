@@ -18,6 +18,9 @@ tokio.workspace = true
 hyper = { version = "0.14.26", features = ["client", "http1"] }
 hyper-tls = "0.5.0"
 
+[dev-dependencies]
+httptest = "0.15.4" 
+
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module"]
 default = []
