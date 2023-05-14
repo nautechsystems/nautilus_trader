@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 
 use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
@@ -49,6 +51,20 @@ impl BookOrder {
     #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
         BookPrice::new(self.price.clone(), self.side)
+    }
+
+    #[must_use]
+    pub fn exposure(&self) -> f64 {
+        self.price.as_f64() * self.size.as_f64()
+    }
+
+    #[must_use]
+    pub fn signed_size(&self) -> f64 {
+        match self.side {
+            OrderSide::Buy => self.size.as_f64(),
+            OrderSide::Sell => -(self.size.as_f64()),
+            _ => panic!("Invalid `OrderSize` for signed size, was {}", self.side),
+        }
     }
 }
 
@@ -162,6 +178,69 @@ impl Display for OrderBookSnapshot {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[allow(clippy::drop_non_drop)]
+#[no_mangle]
+pub extern "C" fn book_order_drop(order: BookOrder) {
+    drop(order); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn book_order_clone(order: &BookOrder) -> BookOrder {
+    order.clone()
+}
+
+#[no_mangle]
+pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    order.hash(&mut hasher);
+    hasher.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn book_order_new(
+    price: Price,
+    quantity: Quantity,
+    order_side: OrderSide,
+    order_id: u64,
+) -> BookOrder {
+    BookOrder::new(price, quantity, order_side, order_id)
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_delta_drop(delta: OrderBookDelta) {
+    drop(delta); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_delta_clone(delta: &OrderBookDelta) -> OrderBookDelta {
+    delta.clone()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_delta_new(
+    instrument_id: InstrumentId,
+    action: BookAction,
+    order: BookOrder,
+    flags: u8,
+    sequence: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderBookDelta {
+    OrderBookDelta::new(
+        instrument_id,
+        action,
+        order,
+        flags,
+        sequence,
+        ts_event,
+        ts_init,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshot) {
+    drop(snapshot); // Memory freed here
+}
 
 #[no_mangle]
 /// Creates a new `OrderBookSnapshot` from the provided data.
@@ -190,11 +269,6 @@ pub unsafe extern "C" fn orderbook_snapshot_new(
     ts_init: UnixNanos,
 ) -> OrderBookSnapshot {
     OrderBookSnapshot::new(instrument_id, bids, asks, sequence, ts_event, ts_init)
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshot) {
-    drop(snapshot); // Memory freed here
 }
 
 ////////////////////////////////////////////////////////////////////////////////
