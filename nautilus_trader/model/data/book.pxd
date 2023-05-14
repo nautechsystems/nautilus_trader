@@ -55,8 +55,6 @@ cdef class BookOrder:
 cdef class OrderBookDelta(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly TimeInForce time_in_force
-    """The time in force for this update.\n\n:returns: `TimeInForce`"""
     cdef readonly BookAction action
     """The order book delta action {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}.\n\n:returns: `BookAction`"""
     cdef readonly BookOrder order
@@ -74,8 +72,6 @@ cdef class OrderBookDelta(Data):
 cdef class OrderBookDeltas(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly TimeInForce time_in_force
-    """The time in force for this update.\n\n:returns: `TimeInForce`"""
     cdef readonly uint64_t sequence
     """The unique sequence number.\n\n:returns: `uint64`"""
     cdef readonly list deltas
@@ -91,8 +87,6 @@ cdef class OrderBookDeltas(Data):
 cdef class OrderBookSnapshot(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly TimeInForce time_in_force
-    """The time in force for this update.\n\n:returns: `TimeInForce`"""
     cdef readonly uint64_t sequence
     """The unique sequence number.\n\n:returns: `uint64`"""
     cdef readonly list bids
