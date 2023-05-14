@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.orderbook.data cimport BookOrder
+from nautilus_trader.model.data.book cimport BookOrder
 
 
 cdef class Level:

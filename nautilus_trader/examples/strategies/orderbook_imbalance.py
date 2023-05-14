@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -26,7 +27,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.model.orderbook import OrderBookData
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.trading.strategy import Strategy
 
 

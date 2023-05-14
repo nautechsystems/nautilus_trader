@@ -17,6 +17,7 @@ import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -29,7 +30,6 @@ from nautilus_trader.model.orderbook import OrderBookDelta
 from nautilus_trader.model.orderbook import OrderBookDeltas
 from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.model.orderbook.book import BookIntegrityError
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.test_kit.providers import TestInstrumentProvider

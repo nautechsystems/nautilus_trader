@@ -32,6 +32,155 @@ from nautilus_trader.model.enums_c cimport order_side_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 
 
+cdef class BookOrder:
+    """
+    Represents an order in a book.
+
+    Parameters
+    ----------
+    price : double
+        The order price.
+    size : double
+        The order size.
+    side : OrderSide {``BUY``, ``SELL``}
+        The order side.
+    id : str
+        The order ID.
+    """
+
+    def __init__(
+        self,
+        double price,
+        double size,
+        OrderSide side,
+        str order_id = None,
+    ):
+        self.price = price
+        self.size = size
+        self.side = side
+        self.order_id = order_id or str(uuid.uuid4())
+
+    def __eq__(self, BookOrder other) -> bool:
+        return self.order_id == other.order_id
+
+    def __hash__(self) -> int:
+        return hash(frozenset(BookOrder.to_dict_c(self)))
+
+    def __repr__(self) -> str:
+        return f"{BookOrder.__name__}({self.price}, {self.size}, {order_side_to_str(self.side)}, {self.order_id})"
+
+    cpdef void update_price(self, double price):
+        """
+        Update the orders price.
+
+        Parameters
+        ----------
+        price : double
+            The updated price.
+
+        """
+        self.price = price
+
+    cpdef void update_size(self, double size):
+        """
+        Update the orders size.
+
+        Parameters
+        ----------
+        size : double
+            The updated size.
+
+        """
+        self.size = size
+
+    cpdef void update_order_id(self, str value):
+        """
+        Update the orders ID.
+
+        Parameters
+        ----------
+        value : str
+            The updated order ID.
+
+        """
+        self.order_id = value
+
+    cpdef double exposure(self):
+        """
+        Return the total exposure for this order (price * size).
+
+        Returns
+        -------
+        double
+
+        """
+        return self.price * self.size
+
+    cpdef double signed_size(self):
+        """
+        Return the signed size of the order (negative for ``SELL``).
+
+        Returns
+        -------
+        double
+
+        """
+        if self.side == OrderSide.BUY:
+            return self.size * 1.0
+        else:
+            return self.size * -1.0
+
+    @staticmethod
+    cdef BookOrder from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return BookOrder(
+            price=values["price"],
+            size=values["size"],
+            side=order_side_from_str(values["side"]),
+            order_id=values["order_id"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(BookOrder obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "BookOrder",
+            "price": obj.price,
+            "size": obj.size,
+            "side": order_side_to_str(obj.side),
+            "order_id": str(obj.order_id),
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> BookOrder:
+        """
+        Return an order from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        BookOrder
+
+        """
+        return BookOrder.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(BookOrder obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return BookOrder.to_dict_c(obj)
+
+
 cdef class OrderBookData(Data):
     """
     The base class for all `OrderBook` data.
@@ -438,152 +587,3 @@ cdef class OrderBookDelta(OrderBookData):
 
         """
         return OrderBookDelta.to_dict_c(obj)
-
-
-cdef class BookOrder:
-    """
-    Represents an order in a book.
-
-    Parameters
-    ----------
-    price : double
-        The order price.
-    size : double
-        The order size.
-    side : OrderSide {``BUY``, ``SELL``}
-        The order side.
-    id : str
-        The order ID.
-    """
-
-    def __init__(
-        self,
-        double price,
-        double size,
-        OrderSide side,
-        str order_id = None,
-    ):
-        self.price = price
-        self.size = size
-        self.side = side
-        self.order_id = order_id or str(uuid.uuid4())
-
-    def __eq__(self, BookOrder other) -> bool:
-        return self.order_id == other.order_id
-
-    def __hash__(self) -> int:
-        return hash(frozenset(BookOrder.to_dict_c(self)))
-
-    def __repr__(self) -> str:
-        return f"{BookOrder.__name__}({self.price}, {self.size}, {order_side_to_str(self.side)}, {self.order_id})"
-
-    cpdef void update_price(self, double price):
-        """
-        Update the orders price.
-
-        Parameters
-        ----------
-        price : double
-            The updated price.
-
-        """
-        self.price = price
-
-    cpdef void update_size(self, double size):
-        """
-        Update the orders size.
-
-        Parameters
-        ----------
-        size : double
-            The updated size.
-
-        """
-        self.size = size
-
-    cpdef void update_order_id(self, str value):
-        """
-        Update the orders ID.
-
-        Parameters
-        ----------
-        value : str
-            The updated order ID.
-
-        """
-        self.order_id = value
-
-    cpdef double exposure(self):
-        """
-        Return the total exposure for this order (price * size).
-
-        Returns
-        -------
-        double
-
-        """
-        return self.price * self.size
-
-    cpdef double signed_size(self):
-        """
-        Return the signed size of the order (negative for ``SELL``).
-
-        Returns
-        -------
-        double
-
-        """
-        if self.side == OrderSide.BUY:
-            return self.size * 1.0
-        else:
-            return self.size * -1.0
-
-    @staticmethod
-    cdef BookOrder from_dict_c(dict values):
-        Condition.not_none(values, "values")
-        return BookOrder(
-            price=values["price"],
-            size=values["size"],
-            side=order_side_from_str(values["side"]),
-            order_id=values["order_id"],
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(BookOrder obj):
-        Condition.not_none(obj, "obj")
-        return {
-            "type": "BookOrder",
-            "price": obj.price,
-            "size": obj.size,
-            "side": order_side_to_str(obj.side),
-            "order_id": str(obj.order_id),
-        }
-
-    @staticmethod
-    def from_dict(dict values) -> BookOrder:
-        """
-        Return an order from the given dict values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values for initialization.
-
-        Returns
-        -------
-        BookOrder
-
-        """
-        return BookOrder.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(BookOrder obj):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return BookOrder.to_dict_c(obj)
