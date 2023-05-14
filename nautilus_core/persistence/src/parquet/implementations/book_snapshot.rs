@@ -118,11 +118,15 @@ fn decode_book_orders(array: &ArrayRef, price_precision: u8, size_precision: u8)
             .downcast_ref::<StructArray>()
             .expect("Expected StructArray");
 
-        let price_array = order_struct_array.column(0);
-        let size_array = order_struct_array.column(1);
-        let side_array = order_struct_array.column(2);
+        let side_array = order_struct_array.column(0);
+        let price_array = order_struct_array.column(1);
+        let size_array = order_struct_array.column(2);
         let order_id_array = order_struct_array.column(3);
 
+        let side_values = side_array
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .expect("Expected UInt8Array");
         let price_values = price_array
             .as_any()
             .downcast_ref::<Int64Array>()
@@ -131,19 +135,15 @@ fn decode_book_orders(array: &ArrayRef, price_precision: u8, size_precision: u8)
             .as_any()
             .downcast_ref::<UInt64Array>()
             .expect("Expected UInt64Array");
-        let side_values = side_array
-            .as_any()
-            .downcast_ref::<UInt8Array>()
-            .expect("Expected UInt8Array");
         let order_id_values = order_id_array
             .as_any()
             .downcast_ref::<UInt64Array>()
             .expect("Expected UInt64Array");
 
         let order = BookOrder {
+            side: OrderSide::from_u8(side_values.value(i)).expect("Invalid `OrderSide` value"),
             price: Price::from_raw(price_values.value(i), price_precision),
             size: Quantity::from_raw(size_values.value(i), size_precision),
-            side: OrderSide::from_u8(side_values.value(i)).expect("Invalid OrderSide value"),
             order_id: order_id_values.value(i),
         };
 
@@ -155,9 +155,9 @@ fn decode_book_orders(array: &ArrayRef, price_precision: u8, size_precision: u8)
 
 fn get_book_order_schema() -> SchemaRef {
     let fields = vec![
+        Field::new("side", DataType::UInt8, false),
         Field::new("price", DataType::Int64, false),
         Field::new("size", DataType::UInt64, false),
-        Field::new("side", DataType::UInt8, false),
         Field::new("order_id", DataType::UInt64, false),
     ];
 

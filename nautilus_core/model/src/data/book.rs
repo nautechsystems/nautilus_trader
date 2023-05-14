@@ -31,19 +31,19 @@ use crate::types::quantity::Quantity;
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BookOrder {
+    pub side: OrderSide,
     pub price: Price,
     pub size: Quantity,
-    pub side: OrderSide,
     pub order_id: u64,
 }
 
 impl BookOrder {
     #[must_use]
-    pub fn new(price: Price, size: Quantity, side: OrderSide, order_id: u64) -> Self {
+    pub fn new(side: OrderSide, price: Price, size: Quantity, order_id: u64) -> Self {
         Self {
+            side,
             price,
             size,
-            side,
             order_id,
         }
     }
@@ -198,12 +198,12 @@ pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn book_order_new(
+    order_side: OrderSide,
     price: Price,
     quantity: Quantity,
-    order_side: OrderSide,
     order_id: u64,
 ) -> BookOrder {
-    BookOrder::new(price, quantity, order_side, order_id)
+    BookOrder::new(order_side, price, quantity, order_id)
 }
 
 #[no_mangle]
@@ -288,7 +288,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
 
         assert_eq!(order.price, price);
         assert_eq!(order.size, size);
@@ -303,7 +303,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
         let book_price = order.to_book_price();
 
         assert_eq!(book_price.value, price);
@@ -317,7 +317,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
         let display = format!("{}", order);
 
         let expected = format!("{},{},{},{}", price, size, side, order_id);
@@ -337,7 +337,7 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
         let delta = OrderBookDelta::new(
             instrument_id.clone(),
             action,
@@ -373,7 +373,7 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let order = BookOrder::new(price.clone(), size.clone(), side, order_id);
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
 
         let delta = OrderBookDelta::new(
             instrument_id.clone(),
@@ -396,29 +396,29 @@ mod tests {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let bids = vec![
             BookOrder::new(
+                OrderSide::Buy,
                 Price::from("100.00"),
                 Quantity::from("10"),
-                OrderSide::Buy,
                 123,
             ),
             BookOrder::new(
+                OrderSide::Buy,
                 Price::from("99.00"),
                 Quantity::from("5"),
-                OrderSide::Buy,
                 124,
             ),
         ];
         let asks = vec![
             BookOrder::new(
+                OrderSide::Sell,
                 Price::from("101.00"),
                 Quantity::from("15"),
-                OrderSide::Sell,
                 234,
             ),
             BookOrder::new(
+                OrderSide::Sell,
                 Price::from("102.00"),
                 Quantity::from("20"),
-                OrderSide::Sell,
                 235,
             ),
         ];

@@ -235,9 +235,9 @@ cdef extern from "../includes/model.h":
 
     # Represents an order in a book.
     cdef struct BookOrder:
+        OrderSide side;
         Price_t price;
         Quantity_t size;
-        OrderSide side;
         uint64_t order_id;
 
     # Represents a single change/delta in an order book.
@@ -429,9 +429,9 @@ cdef extern from "../includes/model.h":
 
     uint64_t book_order_hash(const BookOrder *order);
 
-    BookOrder book_order_new(Price_t price,
+    BookOrder book_order_new(OrderSide order_side,
+                             Price_t price,
                              Quantity_t quantity,
-                             OrderSide order_side,
                              uint64_t order_id);
 
     void orderbook_delta_drop(OrderBookDelta delta);

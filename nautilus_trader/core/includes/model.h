@@ -271,9 +271,9 @@ typedef struct Bar_t {
  * Represents an order in a book.
  */
 typedef struct BookOrder {
+    enum OrderSide side;
     struct Price_t price;
     struct Quantity_t size;
-    enum OrderSide side;
     uint64_t order_id;
 } BookOrder;
 
@@ -516,9 +516,9 @@ struct BookOrder book_order_clone(const struct BookOrder *order);
 
 uint64_t book_order_hash(const struct BookOrder *order);
 
-struct BookOrder book_order_new(struct Price_t price,
+struct BookOrder book_order_new(enum OrderSide order_side,
+                                struct Price_t price,
                                 struct Quantity_t quantity,
-                                enum OrderSide order_side,
                                 uint64_t order_id);
 
 void orderbook_delta_drop(struct OrderBookDelta delta);
