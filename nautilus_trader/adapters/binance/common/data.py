@@ -46,6 +46,9 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -54,9 +57,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 

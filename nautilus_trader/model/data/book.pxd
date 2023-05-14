@@ -23,6 +23,29 @@ from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
+cdef class BookOrder:
+    cdef readonly double price
+    """The orders price.\n\n:returns: `double`"""
+    cdef readonly double size
+    """The orders size.\n\n:returns: `double`"""
+    cdef readonly OrderSide side
+    """The orders side.\n\n:returns: `OrderSide`"""
+    cdef readonly str order_id
+    """The orders ID.\n\n:returns: `str`"""
+
+    cpdef void update_price(self, double price)
+    cpdef void update_size(self, double size)
+    cpdef void update_order_id(self, str value)
+    cpdef double exposure(self)
+    cpdef double signed_size(self)
+
+    @staticmethod
+    cdef BookOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(BookOrder obj)
+
+
 cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
@@ -69,26 +92,3 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDelta obj)
-
-
-cdef class BookOrder:
-    cdef readonly double price
-    """The orders price.\n\n:returns: `double`"""
-    cdef readonly double size
-    """The orders size.\n\n:returns: `double`"""
-    cdef readonly OrderSide side
-    """The orders side.\n\n:returns: `OrderSide`"""
-    cdef readonly str order_id
-    """The orders ID.\n\n:returns: `str`"""
-
-    cpdef void update_price(self, double price)
-    cpdef void update_size(self, double size)
-    cpdef void update_order_id(self, str value)
-    cpdef double exposure(self)
-    cpdef double signed_size(self)
-
-    @staticmethod
-    cdef BookOrder from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(BookOrder obj)

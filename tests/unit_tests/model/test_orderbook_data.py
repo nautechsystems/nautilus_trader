@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -31,7 +31,7 @@ class TestOrderBookSnapshot:
         # Arrange, Act, Assert
         assert (
             OrderBookSnapshot.fully_qualified_name()
-            == "nautilus_trader.model.orderbook.data:OrderBookSnapshot"
+            == "nautilus_trader.model.data.book:OrderBookSnapshot"
         )
 
     def test_hash_str_and_repr(self):
@@ -107,7 +107,7 @@ class TestOrderBookDelta:
         # Arrange, Act, Assert
         assert (
             OrderBookDelta.fully_qualified_name()
-            == "nautilus_trader.model.orderbook.data:OrderBookDelta"
+            == "nautilus_trader.model.data.book:OrderBookDelta"
         )
 
     def test_hash_str_and_repr(self):
@@ -205,7 +205,7 @@ class TestOrderBookDeltas:
         # Arrange, Act, Assert
         assert (
             OrderBookDeltas.fully_qualified_name()
-            == "nautilus_trader.model.orderbook.data:OrderBookDeltas"
+            == "nautilus_trader.model.data.book:OrderBookDeltas"
         )
 
     def test_hash_str_and_repr(self):

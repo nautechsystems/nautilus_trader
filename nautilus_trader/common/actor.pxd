@@ -30,6 +30,7 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
+from nautilus_trader.model.data.book cimport OrderBookData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -42,7 +43,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 

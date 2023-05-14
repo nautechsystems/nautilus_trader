@@ -10,10 +10,10 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas

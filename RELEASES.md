@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Moved order book data from `model.orderbook.data` into the `model.data.book` namespace
 
 ### Enhancements
 - Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)

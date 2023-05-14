@@ -20,6 +20,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.book import OrderBookData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -51,7 +52,6 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 

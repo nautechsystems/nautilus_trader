@@ -45,6 +45,7 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import OrderBookData
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
@@ -52,7 +53,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler

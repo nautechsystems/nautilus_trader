@@ -34,6 +34,9 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -50,9 +53,6 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import L2OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
-from nautilus_trader.model.orderbook import OrderBookDeltas
-from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import write_objects

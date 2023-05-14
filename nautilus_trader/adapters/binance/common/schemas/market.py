@@ -28,6 +28,10 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
@@ -39,10 +43,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 ################################################################################

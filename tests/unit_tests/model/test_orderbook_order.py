@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.orderbook.data import BookOrder
 
 
 def test_init():

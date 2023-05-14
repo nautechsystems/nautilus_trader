@@ -25,9 +25,9 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.book import OrderBookData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.funcs import parse_bytes

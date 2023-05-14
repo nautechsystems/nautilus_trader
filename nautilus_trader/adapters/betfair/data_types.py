@@ -21,15 +21,15 @@ import pyarrow as pa
 # fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.serialization.arrow.implementations.order_book import deserialize as deserialize_orderbook
 from nautilus_trader.serialization.arrow.implementations.order_book import serialize as serialize_orderbook
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
