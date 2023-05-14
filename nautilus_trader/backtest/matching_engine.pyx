@@ -332,14 +332,15 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(data)}...")
 
-        if data.time_in_force == TimeInForce.GTC:
-            self._book.apply(data)
-        elif data.time_in_force == TimeInForce.AT_THE_OPEN:
-            self._opening_auction_book.apply(data)
-        elif data.time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._closing_auction_book.apply(data)
-        else:
-            raise RuntimeError(data.time_in_force)
+        # TODO(cs): WIP to introduce flags
+        # if data.flags == TimeInForce.GTC:
+        #     self._book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_OPEN:
+        #     self._opening_auction_book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_CLOSE:
+        #     self._closing_auction_book.apply(data)
+        # else:
+        #     raise RuntimeError(data.time_in_force)
 
         self.iterate(data.ts_init)
 

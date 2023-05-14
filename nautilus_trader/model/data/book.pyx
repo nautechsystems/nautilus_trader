@@ -202,8 +202,6 @@ cdef class OrderBookDelta(Data):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     sequence : uint64, default 0
         The unique sequence number for the update. If default 0 then will increment the `sequence`.
-    time_in_force : TimeInForce, default ``GTC``
-        The order time in force for this update.
     """
 
     def __init__(
@@ -214,7 +212,6 @@ cdef class OrderBookDelta(Data):
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t sequence=0,
-        TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -222,7 +219,6 @@ cdef class OrderBookDelta(Data):
         self.action = action
         self.order = order
         self.sequence = sequence
-        self.time_in_force = time_in_force
 
     def __eq__(self, OrderBookDelta other) -> bool:
         return OrderBookDelta.to_dict_c(self) == OrderBookDelta.to_dict_c(other)
@@ -320,8 +316,6 @@ cdef class OrderBookDeltas(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    time_in_force : TimeInForce, default ``GTC``
-        The order time in force for this update.
     """
 
     def __init__(
@@ -331,12 +325,10 @@ cdef class OrderBookDeltas(Data):
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t sequence=0,
-        TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
-        self.time_in_force = time_in_force
         self.deltas = deltas
         self.sequence = sequence
 
@@ -427,8 +419,6 @@ cdef class OrderBookSnapshot(Data):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     sequence : uint64, default 0
         The unique sequence number for the update. If default 0 then will increment the `sequence`.
-    time_in_force : TimeInForce, default ``GTC``
-        The order time in force for this update.
     """
 
     def __init__(
@@ -439,7 +429,6 @@ cdef class OrderBookSnapshot(Data):
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t sequence=0,
-        TimeInForce time_in_force = TimeInForce.GTC,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -447,7 +436,6 @@ cdef class OrderBookSnapshot(Data):
         self.bids = bids
         self.asks = asks
         self.sequence = sequence
-        self.time_in_force = time_in_force
 
     def __eq__(self, OrderBookSnapshot other) -> bool:
         return OrderBookSnapshot.to_dict_c(self) == OrderBookSnapshot.to_dict_c(other)
