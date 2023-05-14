@@ -233,6 +233,23 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    # Represents an order in a book.
+    cdef struct BookOrder:
+        Price_t price;
+        Quantity_t size;
+        OrderSide side;
+        uint64_t order_id;
+
+    # Represents a single change/delta in an order book.
+    cdef struct OrderBookDelta:
+        InstrumentId_t instrument_id;
+        BookAction action;
+        BookOrder order;
+        uint8_t flags;
+        uint64_t sequence;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
     cdef struct OrderBookSnapshot:
         InstrumentId_t instrument_id;
         CVec bids;
@@ -261,23 +278,6 @@ cdef extern from "../includes/model.h":
         Quantity_t size;
         AggressorSide aggressor_side;
         TradeId_t trade_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-
-    # Represents an order in a book.
-    cdef struct BookOrder:
-        Price_t price;
-        Quantity_t size;
-        OrderSide side;
-        uint64_t order_id;
-
-    # Represents a single change/delta in an order book.
-    cdef struct OrderBookDelta:
-        InstrumentId_t instrument_id;
-        BookAction action;
-        BookOrder order;
-        uint8_t flags;
-        uint64_t sequence;
         uint64_t ts_event;
         uint64_t ts_init;
 
@@ -423,6 +423,31 @@ cdef extern from "../includes/model.h":
 
     uint64_t bar_hash(const Bar_t *bar);
 
+    void book_order_drop(BookOrder order);
+
+    BookOrder book_order_clone(const BookOrder *order);
+
+    uint64_t book_order_hash(const BookOrder *order);
+
+    BookOrder book_order_new(Price_t price,
+                             Quantity_t quantity,
+                             OrderSide order_side,
+                             uint64_t order_id);
+
+    void orderbook_delta_drop(OrderBookDelta delta);
+
+    OrderBookDelta orderbook_delta_clone(const OrderBookDelta *delta);
+
+    OrderBookDelta orderbook_delta_new(InstrumentId_t instrument_id,
+                                       BookAction action,
+                                       BookOrder order,
+                                       uint8_t flags,
+                                       uint64_t sequence,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
+
+    void orderbook_snapshot_drop(OrderBookSnapshot snapshot);
+
     # Creates a new `OrderBookSnapshot` from the provided data.
     #
     # # Safety
@@ -446,8 +471,6 @@ cdef extern from "../includes/model.h":
                                              uint64_t sequence,
                                              uint64_t ts_event,
                                              uint64_t ts_init);
-
-    void orderbook_snapshot_drop(OrderBookSnapshot snapshot);
 
     void quote_tick_drop(QuoteTick_t tick);
 

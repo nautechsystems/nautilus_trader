@@ -267,6 +267,29 @@ typedef struct Bar_t {
     uint64_t ts_init;
 } Bar_t;
 
+/**
+ * Represents an order in a book.
+ */
+typedef struct BookOrder {
+    struct Price_t price;
+    struct Quantity_t size;
+    enum OrderSide side;
+    uint64_t order_id;
+} BookOrder;
+
+/**
+ * Represents a single change/delta in an order book.
+ */
+typedef struct OrderBookDelta {
+    struct InstrumentId_t instrument_id;
+    enum BookAction action;
+    struct BookOrder order;
+    uint8_t flags;
+    uint64_t sequence;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderBookDelta;
+
 typedef struct OrderBookSnapshot {
     struct InstrumentId_t instrument_id;
     CVec bids;
@@ -305,29 +328,6 @@ typedef struct TradeTick_t {
     uint64_t ts_event;
     uint64_t ts_init;
 } TradeTick_t;
-
-/**
- * Represents an order in a book.
- */
-typedef struct BookOrder {
-    struct Price_t price;
-    struct Quantity_t size;
-    enum OrderSide side;
-    uint64_t order_id;
-} BookOrder;
-
-/**
- * Represents a single change/delta in an order book.
- */
-typedef struct OrderBookDelta {
-    struct InstrumentId_t instrument_id;
-    enum BookAction action;
-    struct BookOrder order;
-    uint8_t flags;
-    uint64_t sequence;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderBookDelta;
 
 typedef enum Data_t_Tag {
     SNAPSHOT,
@@ -510,6 +510,31 @@ uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
 
+void book_order_drop(struct BookOrder order);
+
+struct BookOrder book_order_clone(const struct BookOrder *order);
+
+uint64_t book_order_hash(const struct BookOrder *order);
+
+struct BookOrder book_order_new(struct Price_t price,
+                                struct Quantity_t quantity,
+                                enum OrderSide order_side,
+                                uint64_t order_id);
+
+void orderbook_delta_drop(struct OrderBookDelta delta);
+
+struct OrderBookDelta orderbook_delta_clone(const struct OrderBookDelta *delta);
+
+struct OrderBookDelta orderbook_delta_new(struct InstrumentId_t instrument_id,
+                                          enum BookAction action,
+                                          struct BookOrder order,
+                                          uint8_t flags,
+                                          uint64_t sequence,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+void orderbook_snapshot_drop(struct OrderBookSnapshot snapshot);
+
 /**
  * Creates a new `OrderBookSnapshot` from the provided data.
  *
@@ -535,8 +560,6 @@ struct OrderBookSnapshot orderbook_snapshot_new(struct InstrumentId_t instrument
                                                 uint64_t sequence,
                                                 uint64_t ts_event,
                                                 uint64_t ts_init);
-
-void orderbook_snapshot_drop(struct OrderBookSnapshot snapshot);
 
 void quote_tick_drop(struct QuoteTick_t tick);
 
