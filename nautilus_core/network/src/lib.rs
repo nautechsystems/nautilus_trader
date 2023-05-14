@@ -225,23 +225,3 @@ pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-// #[cfg(test)]
-// mod tests {
-//     use std::collections::HashMap;
-//
-//     use hyper::{Method, StatusCode};
-//
-//     use crate::HttpClient;
-//
-//     #[tokio::test]
-//     async fn test_rust_request() {
-//         let http_client = HttpClient::default();
-//         let response = http_client
-//             .send_request(Method::GET, "https://github.com".into(), HashMap::new())
-//             .await
-//             .unwrap();
-//         assert_eq!(response.status, StatusCode::OK);
-//     }
-//
-//     // TODO: add python test using the pyo3 interface
-// }
