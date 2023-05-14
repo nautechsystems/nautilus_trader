@@ -332,6 +332,8 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(data)}...")
 
+        self._book.apply(data)
+
         # TODO(cs): WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
         #     self._book.apply(data)
