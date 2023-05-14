@@ -139,6 +139,8 @@ impl FromStr for BarType {
     type Err = BarTypeParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO: Requires handling some trait related thing
+        #[allow(clippy::needless_collect)]
         let pieces: Vec<&str> = s.rsplitn(5, '-').collect();
         let rev_pieces: Vec<&str> = pieces.into_iter().rev().collect();
         if rev_pieces.len() != 5 {
