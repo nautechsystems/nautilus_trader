@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
+from typing import Optional, Union
 
 import msgspec
 import pandas as pd
@@ -46,7 +46,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
@@ -151,7 +151,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
-        self._book_buffer: dict[InstrumentId, list[OrderBookData]] = {}
+        self._book_buffer: dict[
+            InstrumentId,
+            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]],
+        ] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -612,7 +615,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[
+            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
+        ] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:

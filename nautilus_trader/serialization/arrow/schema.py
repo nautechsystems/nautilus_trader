@@ -20,7 +20,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -56,7 +56,7 @@ from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 NAUTILUS_PARQUET_SCHEMA = {
-    OrderBookData: pa.schema(
+    OrderBookDelta: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "ts_event": pa.uint64(),
@@ -66,7 +66,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "price": pa.float64(),
             "size": pa.float64(),
             "order_id": pa.string(),
-            "book_type": pa.string(),
             # Track grouped OrderBookDeltas
             "_type": pa.dictionary(pa.int8(), pa.string()),
             "_last": pa.bool_(),

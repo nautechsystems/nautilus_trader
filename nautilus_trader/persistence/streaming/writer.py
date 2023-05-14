@@ -10,7 +10,6 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import OrderBookData
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
@@ -69,9 +68,9 @@ class StreamingFeatherWriter:
         self._schemas = list_schemas()
         self._schemas.update(
             {
-                OrderBookDelta: self._schemas[OrderBookData],
-                OrderBookDeltas: self._schemas[OrderBookData],
-                OrderBookSnapshot: self._schemas[OrderBookData],
+                OrderBookDelta: self._schemas[OrderBookDelta],
+                OrderBookDeltas: self._schemas[OrderBookDelta],
+                OrderBookSnapshot: self._schemas[OrderBookDelta],
             },
         )
         self.logger = logger

@@ -25,7 +25,6 @@ from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
@@ -202,7 +201,6 @@ class TestMarketDataClient:
         # Arrange
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event=0,
@@ -219,7 +217,6 @@ class TestMarketDataClient:
         # Arrange
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             deltas=[],
             ts_event=0,
             ts_init=0,

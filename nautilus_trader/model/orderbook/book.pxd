@@ -16,8 +16,8 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.data.book cimport BookOrder
-from nautilus_trader.model.data.book cimport OrderBookData
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.book cimport OrderBookSnapshot
@@ -55,7 +55,7 @@ cdef class OrderBook:
     cpdef void apply_delta(self, OrderBookDelta delta)
     cpdef void apply_deltas(self, OrderBookDeltas deltas)
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot)
-    cpdef void apply(self, OrderBookData data)
+    cpdef void apply(self, Data data)
     cpdef void clear_bids(self)
     cpdef void clear_asks(self)
     cpdef void clear(self)

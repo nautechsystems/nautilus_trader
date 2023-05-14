@@ -16,11 +16,17 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport InstrumentId
+
+
+cdef tuple ORDER_BOOK_DATA
 
 
 cdef class BookOrder:
@@ -46,31 +52,32 @@ cdef class BookOrder:
     cdef dict to_dict_c(BookOrder obj)
 
 
-cdef class OrderBookData(Data):
+cdef class OrderBookDelta(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly BookType book_type
-    """The order book type (L1_TBBO, L2_MBP, L3_MBO).\n\n:returns: `BookType`"""
+    cdef readonly TimeInForce time_in_force
+    """The time in force for this update.\n\n:returns: `TimeInForce`"""
+    cdef readonly BookAction action
+    """The order book delta action {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}.\n\n:returns: `BookAction`"""
+    cdef readonly BookOrder order
+    """The order to apply.\n\n:returns: `Order`"""
+    cdef readonly uint64_t sequence
+    """The unique sequence number.\n\n:returns: `uint64`"""
+
+    @staticmethod
+    cdef OrderBookDelta from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderBookDelta obj)
+
+
+cdef class OrderBookDeltas(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly TimeInForce time_in_force
     """The time in force for this update.\n\n:returns: `TimeInForce`"""
     cdef readonly uint64_t sequence
     """The unique sequence number.\n\n:returns: `uint64`"""
-
-
-cdef class OrderBookSnapshot(OrderBookData):
-    cdef readonly list bids
-    """The snapshot bids.\n\n:returns: `list`"""
-    cdef readonly list asks
-    """The snapshot asks.\n\n:returns: `list`"""
-
-    @staticmethod
-    cdef OrderBookSnapshot from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookSnapshot obj)
-
-
-cdef class OrderBookDeltas(OrderBookData):
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
 
@@ -81,14 +88,20 @@ cdef class OrderBookDeltas(OrderBookData):
     cdef dict to_dict_c(OrderBookDeltas obj)
 
 
-cdef class OrderBookDelta(OrderBookData):
-    cdef readonly BookAction action
-    """The order book delta action {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}.\n\n:returns: `BookAction`"""
-    cdef readonly BookOrder order
-    """The order to apply.\n\n:returns: `Order`"""
+cdef class OrderBookSnapshot(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly TimeInForce time_in_force
+    """The time in force for this update.\n\n:returns: `TimeInForce`"""
+    cdef readonly uint64_t sequence
+    """The unique sequence number.\n\n:returns: `uint64`"""
+    cdef readonly list bids
+    """The snapshot bids.\n\n:returns: `list`"""
+    cdef readonly list asks
+    """The snapshot asks.\n\n:returns: `list`"""
 
     @staticmethod
-    cdef OrderBookDelta from_dict_c(dict values)
+    cdef OrderBookSnapshot from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(OrderBookDelta obj)
+    cdef dict to_dict_c(OrderBookSnapshot obj)

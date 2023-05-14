@@ -328,7 +328,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     #     for depth in ticker.domTicks:
     #         update = OrderBookDelta(
     #             instrument_id=instrument_id,
-    #             book_type=BookType.L2_MBP,
     #             action=MKT_DEPTH_OPERATIONS[depth.operation],
     #             order=Order(
     #                 price=Price.from_str(str(depth.price)),
@@ -373,7 +372,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ts_init = self._clock.timestamp_ns()
         ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
         snapshot = OrderBookSnapshot(
-            book_type=BookType.L1_TBBO,
             instrument_id=instrument_id,
             bids=[(ticker.bid, ticker.bidSize)],
             asks=[(ticker.ask, ticker.askSize)],
@@ -389,7 +387,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not (ticker.domBids or ticker.domAsks):
             return
         snapshot = OrderBookSnapshot(
-            book_type=book_type,
             instrument_id=instrument_id,
             bids=[(level.price, level.size) for level in ticker.domBids],
             asks=[(level.price, level.size) for level in ticker.domAsks],

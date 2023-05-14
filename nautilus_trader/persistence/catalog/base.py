@@ -21,7 +21,7 @@ from typing import Optional
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -165,7 +165,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs,
     ):
         return self.query(
-            cls=OrderBookData,
+            cls=OrderBookDelta,
             instrument_ids=instrument_ids,
             **kwargs,
         )

@@ -37,7 +37,6 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
@@ -143,7 +142,6 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     ) -> OrderBookSnapshot:
         return OrderBookSnapshot(
             instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[float(o[0]), float(o[1])] for o in self.bids or []],
             asks=[[float(o[0]), float(o[1])] for o in self.asks or []],
             ts_event=ts_init,
@@ -338,7 +336,6 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
 
         return OrderBookDelta(
             instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
             action=BookAction.UPDATE if size > 0.0 else BookAction.DELETE,
             order=order,
             ts_event=ts_event,
@@ -387,7 +384,6 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
 
         return OrderBookDeltas(
             instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
             deltas=bid_deltas + ask_deltas,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -401,7 +397,6 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
     ) -> OrderBookSnapshot:
         return OrderBookSnapshot(
             instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[float(o.price), float(o.size)] for o in self.b],
             asks=[[float(o.price), float(o.size)] for o in self.a],
             ts_event=millis_to_nanos(self.T),

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
+from typing import Optional, Union
 
 import msgspec
 
@@ -33,7 +33,8 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import OrderBookData
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
@@ -168,7 +169,9 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[
+            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
+        ] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

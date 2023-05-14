@@ -29,7 +29,6 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import PositionId
@@ -138,7 +137,6 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.CLEAR,
             order=None,
             ts_event=0,
@@ -151,7 +149,6 @@ class TestParquetSerializer:
         # Assert
         expected = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=[delta],
             ts_event=0,
             ts_init=0,
@@ -164,11 +161,9 @@ class TestParquetSerializer:
             "instrument_id": "AUD/USD.SIM",
             "ts_event": 0,
             "ts_init": 0,
-            "book_type": "L2_MBP",
         }
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=[
                 OrderBookDelta.from_dict(
                     {
@@ -207,7 +202,6 @@ class TestParquetSerializer:
             "instrument_id": "AUD/USD.SIM",
             "ts_event": 0,
             "ts_init": 0,
-            "book_type": "L2_MBP",
         }
         deltas = [
             {
@@ -241,7 +235,6 @@ class TestParquetSerializer:
         ]
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
             ts_event=0,
             ts_init=0,
