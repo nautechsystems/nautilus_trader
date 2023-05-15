@@ -19,11 +19,9 @@ use std::fmt::{Debug, Display, Formatter};
 use crate::data::book::BookOrder;
 use crate::orderbook::ladder::BookPrice;
 
-#[repr(C)]
-#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Level {
     pub price: BookPrice,
-    pub orders: Box<Vec<BookOrder>>,
+    pub orders: Vec<BookOrder>,
 }
 
 impl Level {
@@ -31,7 +29,7 @@ impl Level {
     pub fn new(price: BookPrice) -> Self {
         Self {
             price,
-            orders: Box::<Vec<BookOrder>>::default(),
+            orders: Vec::new(),
         }
     }
 
@@ -39,7 +37,7 @@ impl Level {
     pub fn from_order(order: BookOrder) -> Self {
         let mut level = Self {
             price: order.to_book_price(),
-            orders: Box::<Vec<BookOrder>>::default(),
+            orders: Vec::new(),
         };
         level.add(order);
         level

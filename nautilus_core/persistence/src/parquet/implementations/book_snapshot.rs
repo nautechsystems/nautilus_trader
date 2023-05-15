@@ -141,7 +141,7 @@ fn decode_book_orders(array: &ArrayRef, price_precision: u8, size_precision: u8)
             .expect("Expected UInt64Array");
 
         let order = BookOrder {
-            side: OrderSide::from_u8(side_values.value(i)).expect("Invalid `OrderSide` value"),
+            side: OrderSide::from_u8(side_values.value(i)).expect("Invalid `OrderSide`"),
             price: Price::from_raw(price_values.value(i), price_precision),
             size: Quantity::from_raw(size_values.value(i), size_precision),
             order_id: order_id_values.value(i),

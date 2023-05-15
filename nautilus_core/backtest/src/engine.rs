@@ -15,7 +15,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::clock::{TestClock, TestClockAPI};
+use nautilus_common::clock::{TestClock, TestClock_API};
 use nautilus_common::timer::TimeEventHandler;
 use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
@@ -91,7 +91,7 @@ pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorA
 #[no_mangle]
 pub extern "C" fn time_event_accumulator_advance_clock(
     accumulator: &mut TimeEventAccumulatorAPI,
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     to_time_ns: UnixNanos,
     set_time: u8,
 ) {

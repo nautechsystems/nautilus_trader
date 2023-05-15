@@ -20,7 +20,8 @@ header = '"../includes/backtest.h"'
 ]
 
 "nautilus_trader.core.rust.common" = [
-    "TestClockAPI",
+    "TestClock_API",
+    "LiveClock_API",
 ]
 
 "nautilus_trader.core.rust.core" = [

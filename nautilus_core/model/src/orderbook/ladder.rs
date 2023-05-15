@@ -21,7 +21,6 @@ use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
 use crate::types::price::Price;
 
-#[repr(C)]
 #[derive(Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
@@ -40,7 +39,7 @@ impl PartialOrd for BookPrice {
         match self.side {
             OrderSide::Buy => Some(other.value.cmp(&self.value)),
             OrderSide::Sell => Some(self.value.cmp(&other.value)),
-            _ => panic!("Invalid `OrderSide` was {}", self.side),
+            _ => panic!("Invalid `OrderSide` {}", self.side),
         }
     }
 }
@@ -56,17 +55,15 @@ impl Ord for BookPrice {
         match self.side {
             OrderSide::Buy => other.value.cmp(&self.value),
             OrderSide::Sell => self.value.cmp(&other.value),
-            _ => panic!("Invalid `OrderSide` was {}", self.side),
+            _ => panic!("Invalid `OrderSide` {}", self.side),
         }
     }
 }
 
-#[repr(C)]
-#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Ladder {
     pub side: OrderSide,
-    pub levels: Box<BTreeMap<BookPrice, Level>>,
-    pub cache: Box<HashMap<u64, BookPrice>>,
+    pub levels: BTreeMap<BookPrice, Level>,
+    pub cache: HashMap<u64, BookPrice>,
 }
 
 impl Ladder {
@@ -74,8 +71,8 @@ impl Ladder {
     pub fn new(side: OrderSide) -> Self {
         Self {
             side,
-            levels: Box::<BTreeMap<BookPrice, Level>>::default(),
-            cache: Box::<HashMap<u64, BookPrice>>::default(),
+            levels: BTreeMap::new(),
+            cache: HashMap::new(),
         }
     }
 
@@ -145,12 +142,12 @@ impl Ladder {
 
     #[must_use]
     pub fn volumes(&self) -> f64 {
-        return self.levels.iter().map(|(_, l)| l.volume()).sum();
+        return self.levels.values().map(|l| l.volume()).sum();
     }
 
     #[must_use]
     pub fn exposures(&self) -> f64 {
-        return self.levels.iter().map(|(_, l)| l.exposure()).sum();
+        return self.levels.values().map(|l| l.exposure()).sum();
     }
 
     #[must_use]

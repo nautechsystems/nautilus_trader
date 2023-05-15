@@ -215,9 +215,7 @@ typedef enum TriggerType {
 
 typedef struct Arc_String Arc_String;
 
-typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
-
-typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
+typedef struct OrderBook OrderBook;
 
 typedef struct Rc_String Rc_String;
 
@@ -398,20 +396,9 @@ typedef struct VenueOrderId_t {
     struct Rc_String *value;
 } VenueOrderId_t;
 
-typedef struct Ladder {
-    enum OrderSide side;
-    struct BTreeMap_BookPrice__Level *levels;
-    struct HashMap_u64__BookPrice *cache;
-} Ladder;
-
-typedef struct OrderBook {
-    struct Ladder bids;
-    struct Ladder asks;
-    struct InstrumentId_t instrument_id;
-    enum BookType book_level;
-    enum OrderSide last_side;
-    uint64_t ts_last;
-} OrderBook;
+typedef struct OrderBook_API {
+    struct OrderBook *_0;
+} OrderBook_API;
 
 typedef struct Currency_t {
     struct Arc_String *code;
@@ -1191,7 +1178,7 @@ uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOr
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 
-struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookType book_level);
+struct OrderBook_API order_book_new(struct InstrumentId_t instrument_id, enum BookType book_type);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.

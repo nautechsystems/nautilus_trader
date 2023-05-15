@@ -468,11 +468,11 @@ impl Clock for LiveClock {
 ////////////////////////////////////////////////////////////////////////////////
 // C API - TestClock
 ////////////////////////////////////////////////////////////////////////////////
-
+#[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct TestClockAPI(Box<TestClock>);
+pub struct TestClock_API(Box<TestClock>);
 
-impl Deref for TestClockAPI {
+impl Deref for TestClock_API {
     type Target = TestClock;
 
     fn deref(&self) -> &Self::Target {
@@ -480,19 +480,19 @@ impl Deref for TestClockAPI {
     }
 }
 
-impl DerefMut for TestClockAPI {
+impl DerefMut for TestClock_API {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_new() -> TestClockAPI {
-    TestClockAPI(Box::new(TestClock::new()))
+pub extern "C" fn test_clock_new() -> TestClock_API {
+    TestClock_API(Box::new(TestClock::new()))
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_drop(clock: TestClockAPI) {
+pub extern "C" fn test_clock_drop(clock: TestClock_API) {
     drop(clock); // Memory freed here
 }
 
@@ -500,7 +500,7 @@ pub extern "C" fn test_clock_drop(clock: TestClockAPI) {
 /// - Assumes `callback_ptr` is a valid PyCallable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_register_default_handler(
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     callback_ptr: *mut ffi::PyObject,
 ) {
     assert!(!callback_ptr.is_null());
@@ -511,32 +511,32 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_set_time(clock: &mut TestClockAPI, to_time_ns: u64) {
+pub extern "C" fn test_clock_set_time(clock: &mut TestClock_API, to_time_ns: u64) {
     clock.set_time(to_time_ns);
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp(clock: &mut TestClockAPI) -> f64 {
+pub extern "C" fn test_clock_timestamp(clock: &mut TestClock_API) -> f64 {
     clock.timestamp()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_ms(clock: &mut TestClockAPI) -> u64 {
+pub extern "C" fn test_clock_timestamp_ms(clock: &mut TestClock_API) -> u64 {
     clock.timestamp_ms()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_us(clock: &mut TestClockAPI) -> u64 {
+pub extern "C" fn test_clock_timestamp_us(clock: &mut TestClock_API) -> u64 {
     clock.timestamp_us()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_ns(clock: &mut TestClockAPI) -> u64 {
+pub extern "C" fn test_clock_timestamp_ns(clock: &mut TestClock_API) -> u64 {
     clock.timestamp_ns()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timer_names(clock: &TestClockAPI) -> *mut ffi::PyObject {
+pub extern "C" fn test_clock_timer_names(clock: &TestClock_API) -> *mut ffi::PyObject {
     Python::with_gil(|py| -> Py<PyList> {
         let names: Vec<Py<PyString>> = clock
             .timers
@@ -549,7 +549,7 @@ pub extern "C" fn test_clock_timer_names(clock: &TestClockAPI) -> *mut ffi::PyOb
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timer_count(clock: &mut TestClockAPI) -> usize {
+pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
     clock.timer_count()
 }
 
@@ -558,7 +558,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClockAPI) -> usize {
 /// - Assumes `callback_ptr` is a valid PyCallable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     name_ptr: *const c_char,
     alert_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
@@ -578,7 +578,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
 /// - Assumes `callback_ptr` is a valid PyCallable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     name_ptr: *const c_char,
     interval_ns: u64,
     start_time_ns: UnixNanos,
@@ -603,7 +603,7 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
 /// - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_advance_time(
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     to_time_ns: u64,
     set_time: u8,
 ) -> CVec {
@@ -626,7 +626,7 @@ pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_next_time_ns(
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) -> UnixNanos {
     let name = cstr_to_string(name_ptr);
@@ -637,7 +637,7 @@ pub unsafe extern "C" fn test_clock_next_time_ns(
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_cancel_timer(
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) {
     let name = cstr_to_string(name_ptr);
@@ -645,18 +645,18 @@ pub unsafe extern "C" fn test_clock_cancel_timer(
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClockAPI) {
+pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
     clock.cancel_timers();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API - LiveClock
 ////////////////////////////////////////////////////////////////////////////////
-
+#[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct LiveClockAPI(Box<LiveClock>);
+pub struct LiveClock_API(Box<LiveClock>);
 
-impl Deref for LiveClockAPI {
+impl Deref for LiveClock_API {
     type Target = LiveClock;
 
     fn deref(&self) -> &Self::Target {
@@ -664,39 +664,39 @@ impl Deref for LiveClockAPI {
     }
 }
 
-impl DerefMut for LiveClockAPI {
+impl DerefMut for LiveClock_API {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_new() -> LiveClockAPI {
-    LiveClockAPI(Box::new(LiveClock::new()))
+pub extern "C" fn live_clock_new() -> LiveClock_API {
+    LiveClock_API(Box::new(LiveClock::new()))
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_drop(clock: LiveClockAPI) {
+pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
     drop(clock); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_timestamp(clock: &mut LiveClockAPI) -> f64 {
+pub extern "C" fn live_clock_timestamp(clock: &mut LiveClock_API) -> f64 {
     clock.timestamp()
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClockAPI) -> u64 {
+pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClock_API) -> u64 {
     clock.timestamp_ms()
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClockAPI) -> u64 {
+pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
     clock.timestamp_us()
 }
 
 #[no_mangle]
-pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClockAPI) -> u64 {
+pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
     clock.timestamp_ns()
 }
 
