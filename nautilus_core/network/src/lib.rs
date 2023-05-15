@@ -225,3 +225,81 @@ pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use httptest::{matchers::*, responders::*, Expectation, Server};
+
+    #[tokio::test]
+    async fn test_get() {
+        let server = Server::run();
+        server.expect(
+            Expectation::matching(request::method_path("GET", "/get"))
+                .respond_with(status_code(200).body("hello-world!")),
+        );
+        let url = format!("http://{}", server.addr());
+
+        let client = HttpClient::default();
+        let response = client
+            .send_request(Method::GET, format!("{}/get", url), HashMap::new())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
+    }
+
+    #[tokio::test]
+    async fn test_post() {
+        let server = Server::run();
+        server.expect(
+            Expectation::matching(request::method_path("POST", "/post"))
+                .respond_with(status_code(200)),
+        );
+        let url = format!("http://{}", server.addr());
+
+        let client = HttpClient::default();
+        let response = client
+            .send_request(Method::POST, format!("{}/post", url), HashMap::new())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+    }
+
+    #[tokio::test]
+    async fn test_patch() {
+        let server = Server::run();
+        server.expect(
+            Expectation::matching(request::method_path("PATCH", "/patch"))
+                .respond_with(status_code(200)),
+        );
+        let url = format!("http://{}", server.addr());
+
+        let client = HttpClient::default();
+        let response = client
+            .send_request(Method::PATCH, format!("{}/patch", url), HashMap::new())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let server = Server::run();
+        server.expect(
+            Expectation::matching(request::method_path("DELETE", "/delete"))
+                .respond_with(status_code(200)),
+        );
+        let url = format!("http://{}", server.addr());
+
+        let client = HttpClient::default();
+        let response = client
+            .send_request(Method::DELETE, format!("{}/delete", url), HashMap::new())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status, 200);
+    }
+}
