@@ -19,7 +19,7 @@ struct TimeEventAccumulatorAPI time_event_accumulator_new(void);
 void time_event_accumulator_drop(struct TimeEventAccumulatorAPI accumulator);
 
 void time_event_accumulator_advance_clock(struct TimeEventAccumulatorAPI *accumulator,
-                                          TestClockAPI *clock,
+                                          TestClock_API *clock,
                                           uint64_t to_time_ns,
                                           uint8_t set_time);
 

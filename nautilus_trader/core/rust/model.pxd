@@ -186,10 +186,7 @@ cdef extern from "../includes/model.h":
     cdef struct Arc_String:
         pass
 
-    cdef struct BTreeMap_BookPrice__Level:
-        pass
-
-    cdef struct HashMap_u64__BookPrice:
+    cdef struct OrderBook:
         pass
 
     cdef struct Rc_String:
@@ -326,18 +323,8 @@ cdef extern from "../includes/model.h":
     cdef struct VenueOrderId_t:
         Rc_String *value;
 
-    cdef struct Ladder:
-        OrderSide side;
-        BTreeMap_BookPrice__Level *levels;
-        HashMap_u64__BookPrice *cache;
-
-    cdef struct OrderBook:
-        Ladder bids;
-        Ladder asks;
-        InstrumentId_t instrument_id;
-        BookType book_level;
-        OrderSide last_side;
-        uint64_t ts_last;
+    cdef struct OrderBook_API:
+        OrderBook *_0;
 
     cdef struct Currency_t:
         Arc_String *code;
@@ -965,7 +952,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t venue_order_id_hash(const VenueOrderId_t *venue_order_id);
 
-    OrderBook order_book_new(InstrumentId_t instrument_id, BookType book_level);
+    OrderBook_API order_book_new(InstrumentId_t instrument_id, BookType book_type);
 
     # Returns a [`Currency`] from pointers and primitives.
     #
