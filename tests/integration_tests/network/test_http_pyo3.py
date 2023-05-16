@@ -72,6 +72,22 @@ async def test_client_post(test_server: Coroutine) -> None:
 
 
 @pytest.mark.asyncio()
+async def test_client_post_with_body(test_server: Coroutine) -> None:
+    # Arrange
+    server: TestServer = await test_server
+    client = HttpClient()
+    url = f"http://{server.host}:{server.port}/post"
+    body = {"key1": "value1", "key2": "value2"}
+
+    # Act
+    response: HttpResponse = await client.post(url, headers={}, body=body)
+
+    # Assert
+    assert response.status == 200
+    assert len(response.body) > 0
+
+
+@pytest.mark.asyncio()
 async def test_client_patch(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
