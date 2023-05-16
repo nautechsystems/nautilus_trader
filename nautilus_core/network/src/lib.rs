@@ -17,7 +17,12 @@ use std::{collections::HashMap, str::FromStr};
 
 use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
-use pyo3::{exceptions::PyTypeError, prelude::*, types::PyBytes, types::PyDict};
+use pyo3::{
+    exceptions::{PyException, PyTypeError},
+    prelude::*,
+    types::PyBytes,
+    types::PyDict,
+};
 
 /// HttpClient makes HTTP requests to exchanges.
 ///
@@ -94,10 +99,9 @@ impl HttpClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             match client.send_request(method, url, headers, body).await {
                 Ok(res) => Ok(res),
-                Err(_) => {
-                    // TODO: log error
-                    panic!("Could not handle response");
-                }
+                Err(e) => Err(PyErr::new::<PyException, _>(format!(
+                    "Error handling repsonse: {e}"
+                ))),
             }
         })
     }
@@ -114,10 +118,9 @@ impl HttpClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             match client.send_request(Method::GET, url, headers, body).await {
                 Ok(res) => Ok(res),
-                Err(_) => {
-                    // TODO: log error
-                    panic!("Could not handle response");
-                }
+                Err(e) => Err(PyErr::new::<PyException, _>(format!(
+                    "Error handling repsonse: {e}"
+                ))),
             }
         })
     }
@@ -134,10 +137,9 @@ impl HttpClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             match client.send_request(Method::POST, url, headers, body).await {
                 Ok(res) => Ok(res),
-                Err(_) => {
-                    // TODO: log error
-                    panic!("Could not handle response");
-                }
+                Err(e) => Err(PyErr::new::<PyException, _>(format!(
+                    "Error handling repsonse: {e}"
+                ))),
             }
         })
     }
@@ -154,10 +156,9 @@ impl HttpClient {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             match client.send_request(Method::PATCH, url, headers, body).await {
                 Ok(res) => Ok(res),
-                Err(_) => {
-                    // TODO: log error
-                    panic!("Could not handle response");
-                }
+                Err(e) => Err(PyErr::new::<PyException, _>(format!(
+                    "Error handling repsonse: {e}"
+                ))),
             }
         })
     }
@@ -177,10 +178,9 @@ impl HttpClient {
                 .await
             {
                 Ok(res) => Ok(res),
-                Err(_) => {
-                    // TODO: log error
-                    panic!("Could not handle response");
-                }
+                Err(e) => Err(PyErr::new::<PyException, _>(format!(
+                    "Error handling repsonse: {e}"
+                ))),
             }
         })
     }
