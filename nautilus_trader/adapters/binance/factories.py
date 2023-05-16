@@ -92,7 +92,6 @@ def get_cached_binance_http_client(
     client_key: str = "|".join((key, secret))
     if client_key not in BINANCE_HTTP_CLIENTS:
         client = BinanceHttpClient(
-            loop=loop,
             clock=clock,
             logger=logger,
             key=key,
