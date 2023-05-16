@@ -1830,6 +1830,7 @@ dependencies = [
  "nautilus_core",
  "pyo3",
  "pyo3-asyncio",
+ "serde_json",
  "tokio",
 ]
 
