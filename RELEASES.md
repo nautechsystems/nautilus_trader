@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
 - Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
 - Various improvements to `Binance` clients error handling and logging
+- Improve Binance HTTP error messages
 
 ### Fixes
 - Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
