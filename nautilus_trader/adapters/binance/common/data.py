@@ -183,8 +183,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _connect(self) -> None:
         # Connect HTTP client
         self._log.info("Connecting client...")
-        if not self._http_client.connected:
-            await self._http_client.connect()
+        # if not self._http_client.connected:
+        #     await self._http_client.connect()
 
         self._log.info("Initialising instruments...")
         await self._instrument_provider.initialize()
@@ -240,8 +240,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             await self._ws_client.disconnect()
 
         # Disconnect HTTP client
-        if self._http_client.connected:
-            await self._http_client.disconnect()
+        # if self._http_client.connected:
+        #     await self._http_client.disconnect()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 

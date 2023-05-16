@@ -196,8 +196,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _connect(self) -> None:
         # Connect HTTP client
-        if not self._http_client.connected:
-            await self._http_client.connect()
+        # if not self._http_client.connected:
+        #     await self._http_client.connect()
         try:
             # Initialize instrument provider
             await self._instrument_provider.initialize()
@@ -255,8 +255,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             await self._ws_client.disconnect()
 
         # Disconnect HTTP client
-        if self._http_client.connected:
-            await self._http_client.disconnect()
+        # if self._http_client.connected:
+        #     await self._http_client.disconnect()
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 

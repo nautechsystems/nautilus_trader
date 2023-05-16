@@ -13,23 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import hashlib
 import hmac
+import urllib.parse
 from typing import Any, Optional
 
 import aiohttp
-import msgspec
 
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http import HttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 
-class BinanceHttpClient(HttpClient):
+class BinanceHttpClient:
     """
     Provides a `Binance` asynchronous HTTP client.
     """
@@ -38,7 +38,6 @@ class BinanceHttpClient(HttpClient):
 
     def __init__(
         self,
-        loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
         key: str,
@@ -47,10 +46,6 @@ class BinanceHttpClient(HttpClient):
         timeout: Optional[int] = None,
         show_limit_usage: bool = False,
     ):
-        super().__init__(
-            loop=loop,
-            logger=logger,
-        )
         self._clock = clock
         self._key = key
         self._secret = secret
@@ -62,6 +57,7 @@ class BinanceHttpClient(HttpClient):
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
         }
+        self._client = HttpClient()
 
         if timeout is not None:
             self._headers["timeout"] = timeout
@@ -84,8 +80,20 @@ class BinanceHttpClient(HttpClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload: Optional[dict[str, str]] = None) -> Any:
-        return await self.send_request("GET", url_path, payload=payload)
+    def _prepare_params(self, params: dict[str, Any]) -> str:
+        # Encode a dict into a URL query string
+        return urllib.parse.urlencode(params)
+
+    def _get_sign(self, data: str) -> str:
+        m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
+        return m.hexdigest()
+
+    async def query(self, url_path: str, payload: Optional[dict[str, str]] = None) -> Any:
+        return await self.send_request(
+            "GET",
+            url_path,
+            payload=payload,
+        )
 
     async def limit_request(
         self,
@@ -96,7 +104,11 @@ class BinanceHttpClient(HttpClient):
         """
         Limit request is for those endpoints requiring an API key in the header.
         """
-        return await self.send_request(http_method, url_path, payload=payload)
+        return await self.send_request(
+            http_method,
+            url_path,
+            payload=payload,
+        )
 
     async def sign_request(
         self,
@@ -109,7 +121,11 @@ class BinanceHttpClient(HttpClient):
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         payload["signature"] = signature
-        return await self.send_request(http_method, url_path, payload)
+        return await self.send_request(
+            http_method,
+            url_path,
+            payload=payload,
+        )
 
     async def limited_encoded_sign_request(
         self,
@@ -132,47 +148,72 @@ class BinanceHttpClient(HttpClient):
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         url_path = url_path + "?" + query_string + "&signature=" + signature
-        return await self.send_request(http_method, url_path)
+        return await self.send_request(
+            http_method,
+            url_path,
+            payload=payload,
+        )
 
     async def send_request(
         self,
         http_method: str,
         url_path: str,
         payload: Optional[dict[str, str]] = None,
-    ) -> Any:
+    ) -> bytes:
         # TODO(cs): Uncomment for development
-        # print(f"{http_method} {url_path} {payload}")
-        if payload is None:
-            payload = {}
-        try:
-            resp: aiohttp.ClientResponse = await self.request(
-                method=http_method,
-                url=self._base_url + url_path,
-                headers=self._headers,
-                params=payload,
+        url = self._base_url + url_path
+        print(f"{http_method} {url} {payload}")
+        print(f"{self._headers}")
+
+        response: HttpResponse = await self._client.request(
+            http_method,
+            url=url,
+            headers=self._headers,
+            body=payload,
+        )
+
+        if 400 <= response.status < 500:
+            raise BinanceClientError(
+                status=response.status,
+                message=response.body,
+                headers=response.headers,
             )
-        except aiohttp.ServerDisconnectedError:
-            self._log.error("Server was disconnected.")
-            return b""
-        except aiohttp.ClientResponseError as e:
-            await self._handle_exception(e)
-            return
+        elif response.status >= 500:
+            raise BinanceServerError(
+                status=response.status,
+                message=response.body,
+                headers=response.headers,
+            )
 
-        if self._show_limit_usage:
-            limit_usage = {}
-            for key in resp.headers:
-                key = key.lower()
-                if key.startswith(("x-mbx-used-weight", "x-mbx-order-count", "x-sapi-used")):
-                    limit_usage[key] = resp.headers[key]
+        return response.body
 
-        try:
-            return resp.data
-        except msgspec.MsgspecError:
-            self._log.error(f"Could not decode data to JSON: {resp.data}.")
-
-    def _get_sign(self, data) -> str:
-        m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
-        return m.hexdigest()
+        # if payload is None:
+        #     payload = {}
+        # try:
+        #     resp: aiohttp.ClientResponse = await self.request(
+        #         method=http_method,
+        #         url=self._base_url + url_path,
+        #         headers=self._headers,
+        #         params=payload,
+        #     )
+        # except aiohttp.ServerDisconnectedError:
+        #     self._log.error("Server was disconnected.")
+        #     return b""
+        # except aiohttp.ClientResponseError as e:
+        #     await self._handle_exception(e)
+        #     return
+        #
+        # if self._show_limit_usage:
+        #     limit_usage = {}
+        #     for key in resp.headers:
+        #         key = key.lower()
+        #         if key.startswith(("x-mbx-used-weight", "x-mbx-order-count", "x-sapi-used")):
+        #             limit_usage[key] = resp.headers[key]
+        #
+        # try:
+        #     return resp.data
+        # except msgspec.MsgspecError:
+        #     self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
     async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
         has_json = hasattr(error, "json")
