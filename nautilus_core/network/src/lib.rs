@@ -194,6 +194,10 @@ impl HttpClient {
         headers: HashMap<String, String>,
         body: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+        // Temporary debugging
+        println!("method: {:?}", method);
+        println!("url: {:?}", url);
+
         let mut req_builder = Request::builder().method(method).uri(url);
 
         for (header_name, header_value) in &headers {
@@ -208,6 +212,9 @@ impl HttpClient {
         } else {
             req_builder.body(Body::empty())?
         };
+
+        // Temporary debugging
+        println!("headers: {:?}", req.headers());
 
         let res = self.client.request(req).await?;
         self.to_response(res).await
