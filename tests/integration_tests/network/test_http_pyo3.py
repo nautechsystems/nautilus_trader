@@ -16,6 +16,7 @@
 from collections.abc import Coroutine
 from typing import Any, Callable
 
+import msgspec
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -78,9 +79,10 @@ async def test_client_post_with_body(test_server: Coroutine) -> None:
     client = HttpClient()
     url = f"http://{server.host}:{server.port}/post"
     body = {"key1": "value1", "key2": "value2"}
+    body_bytes = msgspec.json.encode(body)
 
     # Act
-    response: HttpResponse = await client.post(url, headers={}, body=body)
+    response: HttpResponse = await client.post(url, headers={}, body=body_bytes)
 
     # Assert
     assert response.status == 200
