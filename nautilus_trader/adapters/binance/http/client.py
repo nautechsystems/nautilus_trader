@@ -18,7 +18,7 @@ import hmac
 import urllib.parse
 from typing import Any, Optional
 
-import aiohttp
+import msgspec
 
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
@@ -53,11 +53,10 @@ class BinanceHttpClient:
         self._show_limit_usage = show_limit_usage
         self._proxies = None
         self._headers: dict[str, Any] = {
-            "Content-Type": "application/json;charset=utf-8",
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
         }
-        self._client = HttpClient()
+        self._client = HttpClient(debug=True)
 
         if timeout is not None:
             self._headers["timeout"] = timeout
@@ -160,16 +159,11 @@ class BinanceHttpClient:
         url_path: str,
         payload: Optional[dict[str, str]] = None,
     ) -> bytes:
-        # TODO(cs): Uncomment for development
-        url = self._base_url + url_path
-        print(f"{http_method} {url} {payload}")
-        print(f"{self._headers}")
-
         response: HttpResponse = await self._client.request(
             http_method,
-            url=url,
+            url=self._base_url + url_path,
             headers=self._headers,
-            body=payload,
+            body=msgspec.json.encode(payload) if payload else None,
         )
 
         if 400 <= response.status < 500:
@@ -187,48 +181,20 @@ class BinanceHttpClient:
 
         return response.body
 
-        # if payload is None:
-        #     payload = {}
-        # try:
-        #     resp: aiohttp.ClientResponse = await self.request(
-        #         method=http_method,
-        #         url=self._base_url + url_path,
-        #         headers=self._headers,
-        #         params=payload,
-        #     )
-        # except aiohttp.ServerDisconnectedError:
-        #     self._log.error("Server was disconnected.")
-        #     return b""
-        # except aiohttp.ClientResponseError as e:
-        #     await self._handle_exception(e)
-        #     return
-        #
-        # if self._show_limit_usage:
-        #     limit_usage = {}
-        #     for key in resp.headers:
-        #         key = key.lower()
-        #         if key.startswith(("x-mbx-used-weight", "x-mbx-order-count", "x-sapi-used")):
-        #             limit_usage[key] = resp.headers[key]
-        #
-        # try:
-        #     return resp.data
-        # except msgspec.MsgspecError:
-        #     self._log.error(f"Could not decode data to JSON: {resp.data}.")
-
-    async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
-        has_json = hasattr(error, "json")
-        message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"
-        if error.status < 400:
-            return
-        elif 400 <= error.status < 500:
-            raise BinanceClientError(
-                status=error.status,
-                message=message,
-                headers=error.headers,
-            )
-        else:
-            raise BinanceServerError(
-                status=error.status,
-                message=message,
-                headers=error.headers,
-            )
+    # async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
+    #     has_json = hasattr(error, "json")
+    #     message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"
+    #     if error.status < 400:
+    #         return
+    #     elif 400 <= error.status < 500:
+    #         raise BinanceClientError(
+    #             status=error.status,
+    #             message=message,
+    #             headers=error.headers,
+    #         )
+    #     else:
+    #         raise BinanceServerError(
+    #             status=error.status,
+    #             message=message,
+    #             headers=error.headers,
+    #         )

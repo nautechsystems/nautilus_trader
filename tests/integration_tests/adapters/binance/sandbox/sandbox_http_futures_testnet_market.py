@@ -41,16 +41,14 @@ async def test_binance_futures_testnet_market_http_client():
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
     )
-    await client.connect()
 
     provider = BinanceFuturesInstrumentProvider(
         client=client,
         logger=Logger(clock=clock),
+        clock=clock,
         account_type=BinanceAccountType.FUTURES_USDT,
     )
 
     await provider.load_all_async()
 
     print(provider.count)
-
-    await client.disconnect()
