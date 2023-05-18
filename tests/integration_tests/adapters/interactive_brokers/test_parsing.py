@@ -34,7 +34,6 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ven
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_crypto
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_fut
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_opt
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_stk
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -56,6 +55,7 @@ pytestmark = pytest.mark.no_ci
         (IBContract(secType="CONTFUT", exchange="SNFE", symbol="SPI"), "SPI.SNFE"),
         (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH23.CME"),
         (IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3"), "M6EH23.CME"),
+        (IBContract(secType="FUT", exchange="CBOT", localSymbol="MYM  JUN 23"), "MYMM23.CBOT"),
         (IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3"), "MCLV23.NYMEX"),
         (IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3"), "APH23.SNFE"),
         (IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080"), "EX2G23P4080.NYBOT"),
@@ -88,6 +88,7 @@ def test_ib_contract_to_instrument_id(contract, instrument_id):
         ("SPI.SNFE", IBContract(secType="CONTFUT", exchange="SNFE", symbol="SPI")),
         ("ESH23.CME", IBContract(secType="FUT", exchange="CME", localSymbol="ESH3", includeExpired=True)),
         ("M6EH23.CME", IBContract(secType="FUT", exchange="CME", localSymbol="M6EH3", includeExpired=True)),
+        ("MYMM23.CBOT", IBContract(secType="FUT", exchange="CBOT", localSymbol="MYM  JUN 23", includeExpired=True)),
         ("MCLV23.NYMEX", IBContract(secType="FUT", exchange="NYMEX", localSymbol="MCLV3", includeExpired=True)),
         ("APH23.SNFE", IBContract(secType="FUT", exchange="SNFE", localSymbol="APH3", includeExpired=True)),
         ("EX2G23P4080.NYBOT", IBContract(secType="FOP", exchange="NYBOT", localSymbol="EX2G3 P4080")),
@@ -113,14 +114,12 @@ def test_verified_venues_registered():
     expected_venues_cash = {"IDEALPRO"}
     expected_venues_crypto = {"PAXOS"}
     expected_venues_opt = {"SMART"}
-    expected_venues_stk = {"ARCA", "NASDAQ", "NYSE", "AMEX", "ASX"}
     expected_venues_fut = {"CBOT", "CME", "COMEX", "KCBT", "MGE", "NYMEX", "NYBOT", "SNFE"}
 
     # Assert
     assert len(set(expected_venues_cash) - set(venues_cash)) == 0
     assert len(set(expected_venues_crypto) - set(venues_crypto)) == 0
     assert len(set(expected_venues_opt) - set(venues_opt)) == 0
-    assert len(set(expected_venues_stk) - set(venues_stk)) == 0
     assert len(set(expected_venues_fut) - set(venues_fut)) == 0
 
 

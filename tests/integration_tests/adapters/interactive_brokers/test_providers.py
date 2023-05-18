@@ -20,6 +20,7 @@ import msgspec.structs
 import pytest
 from ibapi.contract import ContractDetails
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
@@ -30,6 +31,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
+
+# fmt: on
 
 pytestmark = pytest.mark.no_ci
 
@@ -53,7 +56,9 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"))
+    await instrument_provider.load_async(
+        IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
+    )
     equity = instrument_provider.find(instrument_id)
 
     # Assert
@@ -76,7 +81,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
+    await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
     future = instrument_provider.find(instrument_id)
 
     # Assert
@@ -98,7 +103,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(
+    await instrument_provider.load_async(
         IBContract(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX"),
     )
     option = instrument_provider.find(instrument_id)
@@ -125,7 +130,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(instrument_id)
+    await instrument_provider.load_async(instrument_id)
     fx = instrument_provider.find(instrument_id)
 
     # Assert
@@ -146,7 +151,7 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
+    await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
 
     # Assert
     expected = {174230596: InstrumentId.from_str("CLZ23.NYMEX")}
@@ -190,7 +195,9 @@ async def test_instrument_filter_callable_none(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"))
+    await instrument_provider.load_async(
+        IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
+    )
 
     # Assert
     assert len(instrument_provider.get_all()) == 1
@@ -211,7 +218,7 @@ async def test_instrument_filter_callable_option_filter(mocker, instrument_provi
         instrument_provider.config,
         filter_callable=new_cb,
     )
-    await instrument_provider.load(instrument_id=None)
+    await instrument_provider.load_async(instrument_id=None)
     option_instruments = instrument_provider.get_all()
 
     # Assert

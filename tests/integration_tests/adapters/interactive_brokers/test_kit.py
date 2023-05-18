@@ -34,9 +34,9 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContractDetail
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.instruments.option import Option
+from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import OptionsContract
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -686,4 +686,4 @@ class IBTestExecStubs:
 
 
 def filter_out_options(instrument) -> bool:
-    return not isinstance(instrument, Option)
+    return not isinstance(instrument, OptionsContract)
