@@ -97,7 +97,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 (InstrumentId.from_str(i) if isinstance(i, str) else i)
                 for i in self._load_ids_on_start
             ]:
-                self.load(instrument_id)
+                await self.load_async(instrument_id)
         # Load IBContracts
         if self._load_contracts_on_start:
             for contract in [
