@@ -16,6 +16,7 @@
 from collections.abc import Coroutine
 from typing import Any, Callable
 
+import msgspec
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -78,9 +79,10 @@ async def test_client_post_with_body(test_server: Coroutine) -> None:
     client = HttpClient()
     url = f"http://{server.host}:{server.port}/post"
     body = {"key1": "value1", "key2": "value2"}
+    body_bytes = msgspec.json.encode(body)
 
     # Act
-    response: HttpResponse = await client.post(url, headers={}, body=body)
+    response: HttpResponse = await client.post(url, headers={}, body=body_bytes)
 
     # Assert
     assert response.status == 200
@@ -111,28 +113,6 @@ async def test_client_delete(test_server: Coroutine) -> None:
 
     # Act
     response: HttpResponse = await client.delete(url, headers={})
-
-    # Assert
-    assert response.status == 200
-    assert len(response.body) > 0
-
-
-@pytest.mark.asyncio()
-async def test_client_get_binance() -> None:
-    import os
-
-    # Arrange
-    client = HttpClient()
-    url = "https://testnet.binancefuture.com/fapi/v1/exchangeInfo"
-    key = os.getenv("SUPER_SECRET_API_KEY")
-    headers = {
-        "user-agent": "nautilus-trader/1.174.0",
-        "x-mbx-apikey": key,
-        "content-type": "application/json",
-    }
-
-    # Act
-    response: HttpResponse = await client.get(url, headers)
 
     # Assert
     assert response.status == 200

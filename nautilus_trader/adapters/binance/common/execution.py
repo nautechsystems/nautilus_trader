@@ -195,9 +195,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     async def _connect(self) -> None:
-        # Connect HTTP client
-        # if not self._http_client.connected:
-        #     await self._http_client.connect()
         try:
             # Initialize instrument provider
             await self._instrument_provider.initialize()
@@ -253,10 +250,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Disconnect WebSocket clients
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
-
-        # Disconnect HTTP client
-        # if self._http_client.connected:
-        #     await self._http_client.disconnect()
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 

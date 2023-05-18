@@ -181,11 +181,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
     async def _connect(self) -> None:
-        # Connect HTTP client
-        self._log.info("Connecting client...")
-        # if not self._http_client.connected:
-        #     await self._http_client.connect()
-
         self._log.info("Initialising instruments...")
         await self._instrument_provider.initialize()
 
@@ -238,10 +233,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Disconnect WebSocket client
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
-
-        # Disconnect HTTP client
-        # if self._http_client.connected:
-        #     await self._http_client.disconnect()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -593,7 +584,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
-
         wrapper = self._decoder_data_msg_wrapper.decode(raw)
         try:
             handled = False
