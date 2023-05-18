@@ -72,10 +72,6 @@ class BinanceHttpClient:
         return self._key
 
     @property
-    def api_secret(self) -> str:
-        return self._secret
-
-    @property
     def headers(self):
         return self._headers
 
@@ -86,13 +82,6 @@ class BinanceHttpClient:
     def _get_sign(self, data: str) -> str:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
-
-    async def query(self, url_path: str, payload: Optional[dict[str, str]] = None) -> Any:
-        return await self.send_request(
-            "GET",
-            url_path,
-            payload=payload,
-        )
 
     async def limit_request(
         self,
@@ -159,6 +148,11 @@ class BinanceHttpClient:
         url_path: str,
         payload: Optional[dict[str, str]] = None,
     ) -> bytes:
+        print("############################################")
+        print(http_method)
+        print(url_path)
+        print(payload)
+        print("############################################")
         response: HttpResponse = await self._client.request(
             http_method,
             url=self._base_url + url_path,
@@ -180,21 +174,3 @@ class BinanceHttpClient:
             )
 
         return response.body
-
-    # async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
-    #     has_json = hasattr(error, "json")
-    #     message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"
-    #     if error.status < 400:
-    #         return
-    #     elif 400 <= error.status < 500:
-    #         raise BinanceClientError(
-    #             status=error.status,
-    #             message=message,
-    #             headers=error.headers,
-    #         )
-    #     else:
-    #         raise BinanceServerError(
-    #             status=error.status,
-    #             message=message,
-    #             headers=error.headers,
-    #         )
