@@ -55,7 +55,7 @@ class TestLinearRegression:
         assert self.linear_regression.intercept == pytest.approx(1.0000300000000002, rel=1e-9)
         assert self.linear_regression.degree == 0.0
         assert self.linear_regression.cfo == pytest.approx(2.220379437867177e-14, rel=1e-9)
-        assert self.linear_regression.R2 == -math.inf
+        assert -math.inf == self.linear_regression.R2
 
     def test_value_with_one_input(self):
         self.linear_regression.update_raw(1.00000)

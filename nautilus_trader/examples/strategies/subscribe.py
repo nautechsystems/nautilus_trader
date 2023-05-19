@@ -16,6 +16,7 @@
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -27,7 +28,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -102,7 +102,7 @@ class SubscribeStrategy(Strategy):
             )
             self.subscribe_bars(bar_type)
 
-    def on_order_book_delta(self, data: OrderBookData) -> None:
+    def on_order_book_delta(self, data: Data) -> None:
         if not self.book:
             self.log.error("No book being maintained.")
             return

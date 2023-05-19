@@ -80,12 +80,12 @@ def _deserialize(values):
         if total is None:
             continue
         balances.append(
-            dict(
-                total=total,
-                locked=v["balance_locked"],
-                free=v["balance_free"],
-                currency=v["balance_currency"],
-            ),
+            {
+                "total": total,
+                "locked": v["balance_locked"],
+                "free": v["balance_free"],
+                "currency": v["balance_currency"],
+            },
         )
 
     margins = []
@@ -94,12 +94,12 @@ def _deserialize(values):
         if pd.isnull(initial):
             continue
         margins.append(
-            dict(
-                initial=initial,
-                maintenance=v["margin_maintenance"],
-                currency=v["margin_currency"],
-                instrument_id=v["margin_instrument_id"],
-            ),
+            {
+                "initial": initial,
+                "maintenance": v["margin_maintenance"],
+                "currency": v["margin_currency"],
+                "instrument_id": v["margin_instrument_id"],
+            },
         )
 
     state = {

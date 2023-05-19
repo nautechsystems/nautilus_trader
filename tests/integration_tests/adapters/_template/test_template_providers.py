@@ -15,8 +15,8 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.core import TEMPLATE_VENUE  # noqa
-from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider  # noqa
+from nautilus_trader.adapters._template.core import TEMPLATE_VENUE
+from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 
@@ -24,7 +24,7 @@ from nautilus_trader.common.logging import Logger
 pytestmark = pytest.mark.skip(reason="template")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def instrument_provider():
     clock = TestClock()
     return TemplateInstrumentProvider(

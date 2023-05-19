@@ -193,7 +193,7 @@ class TestModelEvents:
         assert OrderDenied.from_dict(OrderDenied.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderDenied(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_SUBMIT_RATE)"  # noqa
+            == "OrderDenied(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_SUBMIT_RATE)"
         )
         assert (
             repr(event)
@@ -218,7 +218,7 @@ class TestModelEvents:
         assert OrderSubmitted.from_dict(OrderSubmitted.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderSubmitted(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, ts_event=0)"  # noqa
+            == "OrderSubmitted(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, account_id=SIM-000, ts_event=0)"
         )
         assert (
             repr(event)

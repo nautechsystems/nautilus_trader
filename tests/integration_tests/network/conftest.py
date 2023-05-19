@@ -69,7 +69,7 @@ async def closing_socket_server():
 
 
 @pytest_asyncio.fixture()
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def websocket_server(event_loop):
     async def handler(request):
         ws = web.WebSocketResponse()

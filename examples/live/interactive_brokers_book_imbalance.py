@@ -18,14 +18,11 @@ from decimal import Decimal
 
 import msgspec
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -35,6 +32,8 @@ from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImb
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
 
+
+# fmt: on
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***

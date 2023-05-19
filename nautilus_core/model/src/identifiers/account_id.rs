@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ pub struct AccountId {
 }
 
 impl Display for AccountId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -42,7 +42,7 @@ impl AccountId {
         correctness::valid_string(s, "`AccountId` value");
         correctness::string_contains(s, "-", "`TraderId` value");
 
-        AccountId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -50,7 +50,7 @@ impl AccountId {
 
 impl Default for AccountId {
     fn default() -> Self {
-        AccountId {
+        Self {
             value: Box::new(Rc::new(String::from("SIM-001"))),
         }
     }

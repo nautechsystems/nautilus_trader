@@ -70,7 +70,7 @@ class TestPosition:
             Position.side_from_order_side(0)
 
     @pytest.mark.parametrize(
-        "order_side,expected",
+        ("order_side", "expected"),
         [
             [OrderSide.BUY, PositionSide.LONG],
             [OrderSide.SELL, PositionSide.SHORT],
@@ -276,7 +276,7 @@ class TestPosition:
         assert position.symbol == AUDUSD_SIM.id.symbol
         assert position.venue == AUDUSD_SIM.id.venue
         assert not position.is_opposite_side(fill.order_side)
-        assert not position != position  # Equality operator test
+        assert position == position  # Equality operator test
         assert position.opening_order_id == ClientOrderId("O-19700101-0000-000-001-1")
         assert position.closing_order_id is None
         assert position.quantity == Quantity.from_int(100_000)
@@ -712,7 +712,7 @@ class TestPosition:
         assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-123456)"
 
     def test_pnl_calculation_from_trading_technologies_example(self) -> None:
-        # https://www.tradingtechnologies.com/xtrader-help/fix-adapter-reference/pl-calculation-algorithm/understanding-pl-calculations/  # noqa
+        # https://www.tradingtechnologies.com/xtrader-help/fix-adapter-reference/pl-calculation-algorithm/understanding-pl-calculations/
 
         # Arrange
         order1 = self.order_factory.market(
@@ -1328,7 +1328,7 @@ class TestPosition:
         assert position.commissions() == [Money(0.06048387, BTC)]
 
     @pytest.mark.parametrize(
-        "order_side, quantity, expected_signed_qty, expected_decimal_qty",
+        ("order_side", "quantity", "expected_signed_qty", "expected_decimal_qty"),
         [
             [OrderSide.BUY, 25, 25.0, Decimal("25")],
             [OrderSide.SELL, 25, -25.0, Decimal("-25")],

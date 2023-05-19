@@ -16,6 +16,11 @@ header = '"../includes/model.h"'
     "int64_t",
 ]
 
+"nautilus_trader.core.rust.core" = [
+    "CVec",
+    "UUID4_t",
+]
+
 [enum]
 rename_variants = "ScreamingSnakeCase"
 

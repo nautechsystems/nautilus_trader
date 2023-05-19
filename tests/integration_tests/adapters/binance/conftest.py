@@ -41,7 +41,7 @@ def live_logger(live_clock):
 
 @pytest.fixture(scope="session")
 def binance_http_client(loop, live_clock, live_logger):
-    client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+    client = BinanceHttpClient(
         loop=asyncio.get_event_loop(),
         clock=live_clock,
         logger=live_logger,

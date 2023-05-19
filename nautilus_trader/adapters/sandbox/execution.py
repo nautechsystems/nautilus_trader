@@ -35,6 +35,9 @@ from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
@@ -47,7 +50,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -197,7 +199,7 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     def on_data(self, data: Data):
         # Taken from main backtest loop of BacktestEngine
-        if isinstance(data, OrderBookData):
+        if isinstance(data, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot)):
             self.exchange.process_order_book(data)
         elif isinstance(data, QuoteTick):
             self.exchange.process_quote_tick(data)

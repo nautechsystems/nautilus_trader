@@ -19,15 +19,19 @@ use std::collections::HashMap;
 
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
-use nautilus_model::data::tick::Data;
+use nautilus_model::data::Data;
 use pyo3::prelude::*;
 
 #[repr(C)]
 #[pyclass]
 #[derive(Debug, Clone, Copy)]
 pub enum ParquetType {
-    QuoteTick = 0,
-    TradeTick = 1,
+    // Custom = 0,  # First slot reserved for custom data
+    OrderBookSnapshot = 1,
+    OrderBookDelta = 2,
+    QuoteTick = 3,
+    TradeTick = 4,
+    Bar = 5,
 }
 
 #[repr(C)]

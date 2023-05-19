@@ -1,3 +1,28 @@
+# NautilusTrader 1.174.0 Beta
+
+Released on 19th May 2023 (UTC).
+
+### Breaking Changes
+- Parquet schemas are now shifting towards catalog v2 (we recommend you don't upgrade if using legacy catalog)
+- Moved order book data from `model.orderbook.data` into the `model.data.book` namespace
+
+### Enhancements
+- Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
+- Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
+- Various improvements to `Binance` clients error handling and logging
+- Improve Binance HTTP error messages
+
+### Fixes
+- Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
+- Fixed sending execution algorithm commands from strategy
+- Fixed `OrderEmulator` releasing of already closed orders
+- Fixed `MatchingEngine` processing of reduce only for child contingency orders
+- Fixed `MatchingEngine` position ID assignment for child contingency orders
+- Fixed `Actor` handling of historical data from requests (will now call `on_historical_data` regardless of state), thanks for reporting @miller-moore
+- Fixed pyarrow schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
+
+---
+
 # NautilusTrader 1.173.0 Beta
 
 Released on 5th May 2023 (UTC).

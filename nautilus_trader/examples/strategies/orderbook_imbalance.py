@@ -14,9 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -25,8 +29,6 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -114,7 +116,10 @@ class OrderBookImbalance(Strategy):
             self.subscribe_ticker(self.instrument.id)
         self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
 
-    def on_order_book_delta(self, data: OrderBookData) -> None:
+    def on_order_book_delta(
+        self,
+        data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
+    ) -> None:
         """Actions to be performed when a delta is received."""
         if not self._book:
             self.log.error("No book being maintained.")

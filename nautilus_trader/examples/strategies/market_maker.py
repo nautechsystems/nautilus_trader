@@ -14,9 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 
 from nautilus_trader.core.message import Event
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
@@ -27,7 +30,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -76,7 +78,10 @@ class MarketMaker(Strategy):
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)
 
-    def on_order_book_delta(self, delta: OrderBookData) -> None:
+    def on_order_book_delta(
+        self,
+        delta: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
+    ) -> None:
         if not self._book:
             self.log.error("No book being maintained.")
             return

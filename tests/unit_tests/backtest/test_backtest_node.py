@@ -53,14 +53,14 @@ class TestBacktestNode:
             ImportableStrategyConfig(
                 strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
                 config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-                config=dict(
-                    instrument_id="AUD/USD.SIM",
-                    bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
-                    fast_ema_period=10,
-                    slow_ema_period=20,
-                    trade_size=Decimal(1_000_000),
-                    order_id_tag="001",
-                ),
+                config={
+                    "instrument_id": "AUD/USD.SIM",
+                    "bar_type": "AUD/USD.SIM-100-TICK-MID-INTERNAL",
+                    "fast_ema_period": 10,
+                    "slow_ema_period": 20,
+                    "trade_size": Decimal(1_000_000),
+                    "order_id_tag": "001",
+                },
             ),
         ]
         self.backtest_configs = [

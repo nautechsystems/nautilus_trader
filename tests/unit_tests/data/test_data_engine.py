@@ -34,6 +34,9 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -50,9 +53,6 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import L2OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
-from nautilus_trader.model.orderbook import OrderBookDeltas
-from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import write_objects
@@ -753,7 +753,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBookData,
+                OrderBookDelta,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
@@ -850,7 +850,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBookData,
+                OrderBookDelta,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
@@ -868,7 +868,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBookData,
+                OrderBookDelta,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "interval_ms": 1000,
@@ -1000,7 +1000,6 @@ class TestDataEngine:
 
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event=1_000_000,
@@ -1030,7 +1029,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBookData,
+                OrderBookDelta,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": BookType.L3_MBO,
@@ -1045,7 +1044,6 @@ class TestDataEngine:
 
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L3_MBO,
             deltas=[],
             ts_event=0,
             ts_init=0,
@@ -1115,7 +1113,6 @@ class TestDataEngine:
 
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event=1_000_000,
@@ -1146,7 +1143,7 @@ class TestDataEngine:
             client_id=ClientId(BETFAIR.value),
             venue=BETFAIR,
             data_type=DataType(
-                OrderBookData,
+                OrderBookDelta,
                 metadata={
                     "instrument_id": BETFAIR_INSTRUMENT.id,
                     "book_type": 2,
@@ -1162,7 +1159,6 @@ class TestDataEngine:
 
         deltas = OrderBookDeltas(
             instrument_id=BETFAIR_INSTRUMENT.id,
-            book_type=BookType.L2_MBP,
             deltas=[TestDataStubs.order_book_delta(instrument_id=BETFAIR_INSTRUMENT.id)],
             ts_event=1_000_000,
             ts_init=1_000_000,

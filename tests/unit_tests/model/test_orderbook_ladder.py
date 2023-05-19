@@ -15,10 +15,10 @@
 
 import pytest
 
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 

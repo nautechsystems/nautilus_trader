@@ -134,7 +134,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.strategy.submit_order(order)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -157,7 +157,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.benchmark.pedantic(execute_command, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~0.2μs / 218ns minimum of 10,000 runs @ 1 iteration each run.
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_order(self):
         self.exec_engine.start()
         await asyncio.sleep(1)
@@ -174,7 +174,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~25.3μs / 25326ns minimum of 10,000 runs @ 1 iteration each run.
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_order_end_to_end(self):
         self.exec_engine.start()
         await asyncio.sleep(1)

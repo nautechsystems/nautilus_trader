@@ -59,7 +59,7 @@ class TestMarginAccount:
         assert repr(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
         assert isinstance(hash(account), int)
         assert account == account
-        assert not account != account
+        assert account == account
         assert account.default_leverage == Decimal(1)
 
     def test_set_default_leverage(self):
@@ -166,7 +166,7 @@ class TestMarginAccount:
         assert result == Money(240.32, USD)
 
     @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
+        ("inverse_as_quote", "expected"),
         [
             [False, Money(0.10005568, BTC)],
             [True, Money(1150.00, USD)],

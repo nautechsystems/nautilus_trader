@@ -27,6 +27,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
@@ -34,6 +35,7 @@ from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
+from nautilus_trader.model.data.book cimport BookOrder
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
@@ -71,7 +73,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
@@ -316,13 +317,13 @@ cdef class OrderMatchingEngine:
 
 # -- DATA PROCESSING ------------------------------------------------------------------------------
 
-    cpdef void process_order_book(self, OrderBookData data):
+    cpdef void process_order_book(self, Data data):
         """
         Process the exchanges market for the given order book data.
 
         Parameters
         ----------
-        data : OrderBookData
+        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
             The order book data to process.
 
         """
@@ -331,14 +332,17 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(data)}...")
 
-        if data.time_in_force == TimeInForce.GTC:
-            self._book.apply(data)
-        elif data.time_in_force == TimeInForce.AT_THE_OPEN:
-            self._opening_auction_book.apply(data)
-        elif data.time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._closing_auction_book.apply(data)
-        else:
-            raise RuntimeError(data.time_in_force)
+        self._book.apply(data)
+
+        # TODO(cs): WIP to introduce flags
+        # if data.flags == TimeInForce.GTC:
+        #     self._book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_OPEN:
+        #     self._opening_auction_book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_CLOSE:
+        #     self._closing_auction_book.apply(data)
+        # else:
+        #     raise RuntimeError(data.time_in_force)
 
         self.iterate(data.ts_init)
 
@@ -603,7 +607,7 @@ cdef class OrderMatchingEngine:
 
         # Check reduce-only instruction
         cdef Position position
-        if order.is_reduce_only:
+        if order.is_reduce_only and not order.is_closed_c():
             position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
@@ -1632,7 +1636,7 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
-                if child_order.position_id is None:
+                if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
                         venue=self.venue,

@@ -25,9 +25,9 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.funcs import parse_bytes
@@ -62,7 +62,7 @@ class TestBatchingData:
 
 class TestBuffer(TestBatchingData):
     @pytest.mark.parametrize(
-        "trim_timestamp,expected",
+        ("trim_timestamp", "expected"),
         [
             [1546383600588999936, 1546383600588999936],  # 4, 4
             [1546383600588999936 + 1, 1546383600588999936],  # 4, 4
@@ -91,7 +91,7 @@ class TestBuffer(TestBatchingData):
         assert removed[-1].ts_init == expected
 
     @pytest.mark.parametrize(
-        "trim_timestamp,expected",
+        ("trim_timestamp", "expected"),
         [
             [1546383600588999936, 1546383600691000064],  # 4, 5
             [1546383600588999936 + 1, 1546383600691000064],  # 4, 5
@@ -345,7 +345,7 @@ class TestBufferIterator(TestBatchingData):
 #
 #             process_files(
 #                 glob_path=parquet_data_path,
-#                 reader=ParquetByteReader(parser=parser),  # noqa: B023
+#                 reader=ParquetByteReader(parser=parser),
 #                 catalog=self.catalog,
 #                 use_rust=True,
 #                 instrument=instrument,
@@ -565,11 +565,11 @@ class TestPersistenceBatching:
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].unique().tolist()
 
-        shared_kw = dict(
-            catalog_path=str(self.catalog.path),
-            catalog_fs_protocol=self.catalog.fs.protocol,
-            data_cls=OrderBookData,
-        )
+        shared_kw = {
+            "catalog_path": str(self.catalog.path),
+            "catalog_fs_protocol": self.catalog.fs.protocol,
+            "data_cls": OrderBookDelta,
+        }
 
         engine = StreamingEngine(
             data_configs=[

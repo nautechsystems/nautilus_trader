@@ -67,6 +67,10 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
+from nautilus_trader.model.data.book cimport ORDER_BOOK_DATA
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentClose
@@ -79,8 +83,6 @@ from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport OrderBookData
-from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -609,7 +611,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
             )
-        elif command.data_type.type == OrderBookData:
+        elif command.data_type.type == OrderBookDelta:
             self._handle_subscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -665,7 +667,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
             )
-        elif command.data_type.type == OrderBookData:
+        elif command.data_type.type == OrderBookDelta:
             self._handle_unsubscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -718,43 +720,11 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
-        # Create order book
-        if not self._cache.has_order_book(instrument_id):
-            instrument = self._cache.instrument(instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot subscribe to {instrument_id} <OrderBook> data: "
-                    f"no instrument found in the cache.",
-                )
-                return
-            order_book = OrderBook.create(
-                instrument=instrument,
-                book_type=metadata["book_type"],
-            )
-
-            self._cache.add_order_book(order_book)
-            self._log.debug(f"Created {type(order_book).__name__}.")
-
-        # Always re-subscribe to override previous settings
-        client.subscribe_order_book_deltas(
-            instrument_id=instrument_id,
-            book_type=metadata["book_type"],
-            depth=metadata["depth"],
-            kwargs=metadata.get("kwargs"),
-        )
-
-        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
-
-        if self._msgbus.is_subscribed(
-            topic=topic,
-            handler=self._maintain_order_book,
-        ):
-            return  # Already subscribed
-
-        self._msgbus.subscribe(
-            topic=topic,
-            handler=self._maintain_order_book,
-            priority=10,
+        self._setup_order_book(
+            client,
+            instrument_id,
+            metadata,
+            only_deltas=True,
         )
 
     cpdef void _handle_subscribe_order_book_snapshots(
@@ -783,6 +753,24 @@ cdef class DataEngine(Component):
             )
             self._log.debug(f"Set timer {timer_name}.")
 
+        self._setup_order_book(
+            client,
+            instrument_id,
+            metadata,
+            only_deltas=False,
+        )
+
+    cpdef void _setup_order_book(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+        dict metadata,
+        bint only_deltas,
+    ):
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(metadata, "metadata")
+
         # Create order book
         if not self._cache.has_order_book(instrument_id):
             instrument = self._cache.instrument(instrument_id)
@@ -809,7 +797,9 @@ cdef class DataEngine(Component):
                     depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
-        except NotImplementedError:
+        except NotImplementedError as ex:
+            if only_deltas:
+                raise
             if instrument_id not in client.subscribed_order_book_snapshots():
                 client.subscribe_order_book_snapshots(
                     instrument_id=instrument_id,
@@ -818,21 +808,18 @@ cdef class DataEngine(Component):
                     kwargs=metadata.get("kwargs"),
                 )
 
+        # Setup subscriptions
         cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
 
-        if self._msgbus.is_subscribed(
+        if not self._msgbus.is_subscribed(
             topic=topic,
-            handler=self._maintain_order_book,
+            handler=self._update_order_book,
         ):
-            return  # Already subscribed
-
-        self._msgbus.subscribe(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
-            handler=self._maintain_order_book,
-            priority=10,
-        )
+            self._msgbus.subscribe(
+                topic=topic,
+                handler=self._update_order_book,
+                priority=10,
+            )
 
     cpdef void _handle_subscribe_ticker(
         self,
@@ -1233,7 +1220,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_data(self, Data data):
         self.data_count += 1
 
-        if isinstance(data, OrderBookData):
+        if isinstance(data, ORDER_BOOK_DATA):
             self._handle_order_book_data(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)
@@ -1265,7 +1252,7 @@ cdef class DataEngine(Component):
             msg=instrument,
         )
 
-    cpdef void _handle_order_book_data(self, OrderBookData data):
+    cpdef void _handle_order_book_data(self, Data data):
         self._msgbus.publish_c(
             topic=f"data.book.deltas"
                   f".{data.instrument_id.venue}"
@@ -1409,11 +1396,11 @@ cdef class DataEngine(Component):
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void _maintain_order_book(self, OrderBookData data):
+    cpdef void _update_order_book(self, Data data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
             self._log.error(
-                f"Cannot maintain order book: "
+                "Cannot update order book: "
                 f"no book found for {data.instrument_id}.",
             )
             return

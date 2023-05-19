@@ -107,7 +107,7 @@ class TestCondition:
         PyCondition.callable_or_none(value, "param")
 
     @pytest.mark.parametrize(
-        "id1, id2",
+        ("id1", "id2"),
         [["O-123456", "O-123"], ["O-123456", "P-123456"]],
     )
     def test_equal_when_args_not_equal_raises_value_error(self, id1, id2):
@@ -134,7 +134,7 @@ class TestCondition:
             PyCondition.list_type(["a", "b", 3], str, "param")
 
     @pytest.mark.parametrize(
-        "value, list_type",
+        ("value", "list_type"),
         [[["a", "b", "c"], str], [[], None]],
     )
     def test_list_type_when_contains_correct_types_or_none_does_nothing(self, value, list_type):
@@ -273,7 +273,7 @@ class TestCondition:
         PyCondition.positive_int(1, "param")
 
     @pytest.mark.parametrize(
-        "value, start, end",
+        ("value", "start", "end"),
         [[-1e-22, 0.0, 1.0], [1.0000001, 0.0, 1.0]],
     )
     def test_in_range_when_arg_out_of_range_raises_value_error(self, value, start, end):
@@ -282,7 +282,7 @@ class TestCondition:
             PyCondition.in_range(value, start, end, "param")
 
     @pytest.mark.parametrize(
-        "value, start, end",
+        ("value", "start", "end"),
         [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]],
     )
     def test_in_range_when_args_in_range_does_nothing(self, value, start, end):
@@ -290,7 +290,7 @@ class TestCondition:
         PyCondition.in_range(value, start, end, "param")
 
     @pytest.mark.parametrize(
-        "value, start, end",
+        ("value", "start", "end"),
         [[-1, 0, 1], [2, 0, 1]],
     )
     def test_in_range_int_when_arg_out_of_range_raises_value_error(self, value, start, end):
@@ -299,7 +299,7 @@ class TestCondition:
             PyCondition.in_range_int(value, start, end, "param")
 
     @pytest.mark.parametrize(
-        "value, start, end",
+        ("value", "start", "end"),
         [[0, 0, 1], [1, 0, 1]],
     )
     def test_in_range_int_when_args_in_range_does_nothing(self, value, start, end):

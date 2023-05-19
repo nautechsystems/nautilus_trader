@@ -17,7 +17,7 @@ import enum
 from collections import namedtuple
 
 import requests
-from lxml.html import fromstring  # noqa: S410
+from lxml.html import fromstring
 
 
 class ProductClass(enum.Enum):
@@ -125,8 +125,6 @@ class Product(namedtuple("Product", "ib_symbol, description, native_symbol, curr
     """
     Interactive Brokers Web Product
     """
-
-    pass
 
 
 def _parse_products(table):

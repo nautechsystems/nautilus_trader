@@ -68,7 +68,7 @@ class TestBinanceFactories:
         )
 
     @pytest.mark.parametrize(
-        "account_type, is_testnet, is_us, expected",
+        ("account_type", "is_testnet", "is_us", "expected"),
         [
             [
                 BinanceAccountType.SPOT,
@@ -164,7 +164,7 @@ class TestBinanceFactories:
         assert base_url == expected
 
     @pytest.mark.parametrize(
-        "account_type, is_testnet, is_us, expected",
+        ("account_type", "is_testnet", "is_us", "expected"),
         [
             [
                 BinanceAccountType.SPOT,
@@ -264,7 +264,7 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -282,7 +282,7 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.FUTURES_USDT,
@@ -300,7 +300,7 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -318,7 +318,7 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",
                 api_secret="SOME_BINANCE_API_SECRET",
                 account_type=BinanceAccountType.FUTURES_USDT,

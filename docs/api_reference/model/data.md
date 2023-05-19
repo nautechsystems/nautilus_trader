@@ -13,6 +13,14 @@
 ```
 
 ```{eval-rst}
+.. automodule:: nautilus_trader.model.data.book
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
 .. automodule:: nautilus_trader.model.data.bet
    :show-inheritance:
    :inherited-members:

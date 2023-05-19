@@ -32,44 +32,44 @@ _DECIMAL2 = Quantity(1.00001, precision=5)
 class DecimalTesting:
     @staticmethod
     def float_comparisons():
-        1.0 == 2.0  # noqa
+        1.0 == 2.0
 
     @staticmethod
     def float_arithmetic():
-        1.0 * 2.0  # noqa
+        1.0 * 2.0
 
     @staticmethod
     def decimal_arithmetic():
-        _DECIMAL1 + _DECIMAL1  # noqa
-        _DECIMAL1 - _DECIMAL1  # noqa
-        _DECIMAL1 * _DECIMAL1  # noqa
-        _DECIMAL1 / _DECIMAL1  # noqa
+        _DECIMAL1 + _DECIMAL1
+        _DECIMAL1 - _DECIMAL1
+        _DECIMAL1 * _DECIMAL1
+        _DECIMAL1 / _DECIMAL1
 
     @staticmethod
     def decimal_arithmetic_with_floats():
-        _DECIMAL1 + 1.0  # noqa
-        _DECIMAL1 - 1.0  # noqa
-        _DECIMAL1 * 1.0  # noqa
-        _DECIMAL1 / 1.0  # noqa
+        _DECIMAL1 + 1.0
+        _DECIMAL1 - 1.0
+        _DECIMAL1 * 1.0
+        _DECIMAL1 / 1.0
 
     @staticmethod
     def builtin_decimal_arithmetic():
-        _BUILTIN_DECIMAL1 + _BUILTIN_DECIMAL1  # noqa
-        _BUILTIN_DECIMAL1 - _BUILTIN_DECIMAL1  # noqa
-        _BUILTIN_DECIMAL1 * _BUILTIN_DECIMAL1  # noqa
-        _BUILTIN_DECIMAL1 / _BUILTIN_DECIMAL1  # noqa
+        _BUILTIN_DECIMAL1 + _BUILTIN_DECIMAL1
+        _BUILTIN_DECIMAL1 - _BUILTIN_DECIMAL1
+        _BUILTIN_DECIMAL1 * _BUILTIN_DECIMAL1
+        _BUILTIN_DECIMAL1 / _BUILTIN_DECIMAL1
 
     @staticmethod
     def decimal_comparisons():
-        _DECIMAL1 > _DECIMAL2  # noqa
-        _DECIMAL1 >= _DECIMAL2  # noqa
-        _DECIMAL1 == _DECIMAL2  # noqa
+        _DECIMAL1 > _DECIMAL2
+        _DECIMAL1 >= _DECIMAL2
+        _DECIMAL1 == _DECIMAL2
 
     @staticmethod
     def builtin_decimal_comparisons():
-        _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2  # noqa
-        _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2  # noqa
-        _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2  # noqa
+        _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2
+        _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2
+        _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2
 
 
 class TestDecimalPerformance(PerformanceHarness):

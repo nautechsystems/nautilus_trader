@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, Union
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -25,6 +25,9 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -34,7 +37,6 @@ from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -45,7 +47,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class EMACrossTWAPConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``EMACross`` instances.
+    Configuration for ``EMACrossTWAP`` instances.
 
     Parameters
     ----------
@@ -167,21 +169,22 @@ class EMACrossTWAP(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
-        pass
 
-    def on_order_book_delta(self, data: OrderBookData) -> None:
+    def on_order_book_delta(
+        self,
+        data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
+    ) -> None:
         """
         Actions to be performed when the strategy is running and receives order data.
 
         Parameters
         ----------
-        data : OrderBookData
+        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
             The order book data received.
 
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(data), LogColor.CYAN)
-        pass
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
@@ -195,7 +198,6 @@ class EMACrossTWAP(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(order_book), LogColor.CYAN)
-        pass
 
     def on_ticker(self, ticker: Ticker) -> None:
         """
@@ -209,7 +211,6 @@ class EMACrossTWAP(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(ticker), LogColor.CYAN)
-        pass
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -223,7 +224,6 @@ class EMACrossTWAP(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -237,7 +237,6 @@ class EMACrossTWAP(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -318,7 +317,6 @@ class EMACrossTWAP(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -330,7 +328,6 @@ class EMACrossTWAP(Strategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self) -> None:
         """
@@ -377,7 +374,6 @@ class EMACrossTWAP(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -386,4 +382,3 @@ class EMACrossTWAP(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

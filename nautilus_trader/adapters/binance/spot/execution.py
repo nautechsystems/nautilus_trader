@@ -208,7 +208,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         try:
             self._spot_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
-            self._log.exception(f"Error on handling {repr(raw)}", e)
+            self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
         account_msg = self._decoder_spot_account_update_wrapper.decode(raw)

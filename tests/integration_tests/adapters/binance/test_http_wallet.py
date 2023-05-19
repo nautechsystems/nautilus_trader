@@ -31,7 +31,7 @@ class TestBinanceUserHttpAPI:
         # Fixture Setup
         clock = LiveClock()
         logger = Logger(clock=clock)
-        self.client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+        self.client = BinanceHttpClient(
             loop=asyncio.get_event_loop(),
             clock=clock,
             logger=logger,
@@ -41,7 +41,7 @@ class TestBinanceUserHttpAPI:
 
         self.api = BinanceSpotWalletHttpAPI(self.client, clock)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trade_fee(self, mocker):
         # Arrange
         async def async_mock():
@@ -70,7 +70,7 @@ class TestBinanceUserHttpAPI:
         assert len(response) == 1
         assert isinstance(response[0], BinanceSpotTradeFee)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trade_fees(self, mocker):
         # Arrange
         async def async_mock():

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
+from typing import Optional, Union
 
 import msgspec
 import pandas as pd
@@ -46,6 +46,9 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -54,9 +57,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -151,7 +151,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
-        self._book_buffer: dict[InstrumentId, list[OrderBookData]] = {}
+        self._book_buffer: dict[
+            InstrumentId,
+            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]],
+        ] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -448,11 +451,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _request_quote_ticks(
         self,
-        instrument_id: InstrumentId,  # noqa
-        limit: int,  # noqa
-        correlation_id: UUID4,  # noqa
-        start: Optional[pd.Timestamp] = None,  # noqa
-        end: Optional[pd.Timestamp] = None,  # noqa
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
@@ -499,7 +502,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
 
-    async def _request_bars(  # noqa (too complex)
+    async def _request_bars(  # (too complex)
         self,
         bar_type: BarType,
         limit: int,
@@ -612,7 +615,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[
+            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
+        ] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:

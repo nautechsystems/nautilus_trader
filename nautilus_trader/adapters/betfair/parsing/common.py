@@ -22,7 +22,7 @@ from nautilus_trader.model.identifiers import Symbol
 
 
 def hash_market_trade(timestamp: int, price: float, volume: float):
-    return f"{str(timestamp)[:-6]}{price}{str(volume)}"
+    return f"{str(timestamp)[:-6]}{price}{volume!s}"
 
 
 def make_symbol(

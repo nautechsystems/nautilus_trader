@@ -60,10 +60,10 @@ class TestConfigStubs:
         return ImportableStrategyConfig(
             strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
             config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-            config=dict(
-                instrument_id=instrument_id or AAPL_US,
-                max_trade_size=50,
-            ),
+            config={
+                "instrument_id": instrument_id or AAPL_US,
+                "max_trade_size": 50,
+            },
         )
 
     @staticmethod
@@ -85,10 +85,10 @@ class TestConfigStubs:
             ImportableStrategyConfig(
                 strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
                 config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-                config=dict(
-                    instrument_id=AAPL_US.id.value,
-                    max_trade_size=50,
-                ),
+                config={
+                    "instrument_id": AAPL_US.id.value,
+                    "max_trade_size": 50,
+                },
             ),
         ]
 

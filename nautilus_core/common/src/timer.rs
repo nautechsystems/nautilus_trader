@@ -15,7 +15,7 @@
 
 use std::cmp::Ordering;
 use std::ffi::c_char;
-use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 use nautilus_core::correctness;
@@ -53,8 +53,8 @@ impl TimeEvent {
     }
 }
 
-impl fmt::Display for TimeEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for TimeEvent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "TimeEvent(name={}, event_id={}, ts_event={}, ts_init={})",

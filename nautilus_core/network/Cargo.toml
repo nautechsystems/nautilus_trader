@@ -15,7 +15,11 @@ nautilus_core = { path = "../core" }
 pyo3.workspace = true
 pyo3-asyncio.workspace = true
 tokio.workspace = true
-hyper = "0.14.26"
+hyper = { version = "0.14.26", features = ["client", "http1", "server"] }
+hyper-tls = "0.5.0"
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [features]
 extension-module = ["pyo3/extension-module", "nautilus_core/extension-module"]

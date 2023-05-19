@@ -19,24 +19,24 @@ import unittest.mock
 import msgspec
 import pytest
 
+# fmt: off
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
+
+
+# fmt: on
 
 
 RAW_CONFIG = msgspec.json.encode(
@@ -213,7 +213,7 @@ class TestTradingNodeOperation:
             node.build()
             node.build()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, Act, Assert
         with pytest.raises(RuntimeError):
@@ -229,7 +229,7 @@ class TestTradingNodeOperation:
             node = TradingNode(config=config)
             await node.run_async()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_run_and_stop_with_client_factories(self, monkeypatch):
         # Arrange
         monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")
@@ -258,7 +258,7 @@ class TestTradingNodeOperation:
         await node.stop_async()
 
     @pytest.mark.skip(reason="WIP: continue adding tests here")
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_run_stop_and_dispose(self, monkeypatch):
         # Arrange
         monkeypatch.setenv("BINANCE_API_KEY", "SOME_API_KEY")

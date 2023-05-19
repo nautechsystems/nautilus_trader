@@ -94,7 +94,7 @@ from nautilus_trader.model.enums import trigger_type_to_str
 
 class TestAccountType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [AccountType.CASH, "CASH"],
             [AccountType.MARGIN, "MARGIN"],
@@ -109,7 +109,7 @@ class TestAccountType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["CASH", AccountType.CASH],
             ["MARGIN", AccountType.MARGIN],
@@ -129,7 +129,7 @@ class TestAccountType:
 
 class TestAggregationSource:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [AggregationSource.EXTERNAL, "EXTERNAL"],
             [AggregationSource.INTERNAL, "INTERNAL"],
@@ -143,7 +143,7 @@ class TestAggregationSource:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["EXTERNAL", AggregationSource.EXTERNAL],
             ["INTERNAL", AggregationSource.INTERNAL],
@@ -159,7 +159,7 @@ class TestAggregationSource:
 
 class TestAggressorSide:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [AggressorSide.NO_AGGRESSOR, "NO_AGGRESSOR"],
             [AggressorSide.BUYER, "BUYER"],
@@ -174,7 +174,7 @@ class TestAggressorSide:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_AGGRESSOR", AggressorSide.NO_AGGRESSOR],
             ["BUYER", AggressorSide.BUYER],
@@ -191,7 +191,7 @@ class TestAggressorSide:
 
 class TestAssetClass:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [AssetClass.FX, "FX"],
             [AssetClass.EQUITY, "EQUITY"],
@@ -212,7 +212,7 @@ class TestAssetClass:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["FX", AssetClass.FX],
             ["EQUITY", AssetClass.EQUITY],
@@ -235,7 +235,7 @@ class TestAssetClass:
 
 class TestAssetType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [AssetType.SPOT, "SPOT"],
             [AssetType.SWAP, "SWAP"],
@@ -254,7 +254,7 @@ class TestAssetType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["SPOT", AssetType.SPOT],
             ["SWAP", AssetType.SWAP],
@@ -275,7 +275,7 @@ class TestAssetType:
 
 class TestBarAggregation:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [BarAggregation.TICK, "TICK"],
             [BarAggregation.TICK_IMBALANCE, "TICK_IMBALANCE"],
@@ -303,7 +303,7 @@ class TestBarAggregation:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["TICK", BarAggregation.TICK],
             ["TICK_IMBALANCE", BarAggregation.TICK_IMBALANCE],
@@ -333,7 +333,7 @@ class TestBarAggregation:
 
 class TestBookAction:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [BookAction.ADD, "ADD"],
             [BookAction.UPDATE, "UPDATE"],
@@ -349,7 +349,7 @@ class TestBookAction:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["ADD", BookAction.ADD],
             ["UPDATE", BookAction.UPDATE],
@@ -370,7 +370,7 @@ class TestBookAction:
 
 class TestBookType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [BookType.L1_TBBO, "L1_TBBO"],
             [BookType.L2_MBP, "L2_MBP"],
@@ -385,7 +385,7 @@ class TestBookType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["", None],
             ["L1_TBBO", BookType.L1_TBBO],
@@ -406,7 +406,7 @@ class TestBookType:
 
 class TestContingencyType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [ContingencyType.NO_CONTINGENCY, "NO_CONTINGENCY"],
             [ContingencyType.OCO, "OCO"],
@@ -422,7 +422,7 @@ class TestContingencyType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_CONTINGENCY", ContingencyType.NO_CONTINGENCY],
             ["OCO", ContingencyType.OCO],
@@ -440,7 +440,7 @@ class TestContingencyType:
 
 class TestCurrencyType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [CurrencyType.CRYPTO, "CRYPTO"],
             [CurrencyType.FIAT, "FIAT"],
@@ -454,7 +454,7 @@ class TestCurrencyType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["CRYPTO", CurrencyType.CRYPTO],
             ["FIAT", CurrencyType.FIAT],
@@ -470,7 +470,7 @@ class TestCurrencyType:
 
 class TestDepthType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [DepthType.VOLUME, "VOLUME"],
             [DepthType.EXPOSURE, "EXPOSURE"],
@@ -484,7 +484,7 @@ class TestDepthType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["VOLUME", DepthType.VOLUME],
             ["EXPOSURE", DepthType.EXPOSURE],
@@ -500,7 +500,7 @@ class TestDepthType:
 
 class TestOptionKind:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [OptionKind.CALL, "CALL"],
             [OptionKind.PUT, "PUT"],
@@ -514,7 +514,7 @@ class TestOptionKind:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["CALL", OptionKind.CALL],
             ["PUT", OptionKind.PUT],
@@ -530,7 +530,7 @@ class TestOptionKind:
 
 class TestInstrumentCloseType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
             [InstrumentCloseType.CONTRACT_EXPIRED, "CONTRACT_EXPIRED"],
@@ -544,7 +544,7 @@ class TestInstrumentCloseType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
             ["CONTRACT_EXPIRED", InstrumentCloseType.CONTRACT_EXPIRED],
@@ -560,7 +560,7 @@ class TestInstrumentCloseType:
 
 class TestLiquiditySide:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [LiquiditySide.NO_LIQUIDITY_SIDE, "NO_LIQUIDITY_SIDE"],
             [LiquiditySide.MAKER, "MAKER"],
@@ -575,7 +575,7 @@ class TestLiquiditySide:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_LIQUIDITY_SIDE", LiquiditySide.NO_LIQUIDITY_SIDE],
             ["MAKER", LiquiditySide.MAKER],
@@ -592,7 +592,7 @@ class TestLiquiditySide:
 
 class TestMarketStatus:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [MarketStatus.CLOSED, "CLOSED"],
             [MarketStatus.PRE_OPEN, "PRE_OPEN"],
@@ -609,7 +609,7 @@ class TestMarketStatus:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["CLOSED", MarketStatus.CLOSED],
             ["PRE_OPEN", MarketStatus.PRE_OPEN],
@@ -628,7 +628,7 @@ class TestMarketStatus:
 
 class TestOmsType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [OmsType.UNSPECIFIED, "UNSPECIFIED"],
             [OmsType.NETTING, "NETTING"],
@@ -643,7 +643,7 @@ class TestOmsType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["UNSPECIFIED", OmsType.UNSPECIFIED],
             ["NETTING", OmsType.NETTING],
@@ -660,7 +660,7 @@ class TestOmsType:
 
 class TestOrderSide:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [OrderSide.NO_ORDER_SIDE, "NO_ORDER_SIDE"],
             [OrderSide.BUY, "BUY"],
@@ -675,7 +675,7 @@ class TestOrderSide:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_ORDER_SIDE", OrderSide.NO_ORDER_SIDE],
             ["BUY", OrderSide.BUY],
@@ -692,7 +692,7 @@ class TestOrderSide:
 
 class TestOrderStatus:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [OrderStatus.INITIALIZED, "INITIALIZED"],
             [OrderStatus.DENIED, "DENIED"],
@@ -716,7 +716,7 @@ class TestOrderStatus:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["INITIALIZED", OrderStatus.INITIALIZED],
             ["DENIED", OrderStatus.DENIED],
@@ -742,7 +742,7 @@ class TestOrderStatus:
 
 class TestOrderType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [OrderType.MARKET, "MARKET"],
             [OrderType.LIMIT, "LIMIT"],
@@ -763,7 +763,7 @@ class TestOrderType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["MARKET", OrderType.MARKET],
             ["LIMIT", OrderType.LIMIT],
@@ -786,7 +786,7 @@ class TestOrderType:
 
 class TestPositionSide:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [PositionSide.NO_POSITION_SIDE, "NO_POSITION_SIDE"],
             [PositionSide.FLAT, "FLAT"],
@@ -802,7 +802,7 @@ class TestPositionSide:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_POSITION_SIDE", PositionSide.NO_POSITION_SIDE],
             ["FLAT", PositionSide.FLAT],
@@ -820,7 +820,7 @@ class TestPositionSide:
 
 class TestPriceType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [PriceType.BID, "BID"],
             [PriceType.ASK, "ASK"],
@@ -836,7 +836,7 @@ class TestPriceType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["ASK", PriceType.ASK],
             ["MID", PriceType.MID],
@@ -853,7 +853,7 @@ class TestPriceType:
 
 class TestTimeInForce:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [TimeInForce.GTC, "GTC"],
             [TimeInForce.IOC, "IOC"],
@@ -872,7 +872,7 @@ class TestTimeInForce:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["GTC", TimeInForce.GTC],
             ["IOC", TimeInForce.IOC],
@@ -893,7 +893,7 @@ class TestTimeInForce:
 
 class TestTradingState:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [TradingState.ACTIVE, "ACTIVE"],
             [TradingState.HALTED, "HALTED"],
@@ -908,7 +908,7 @@ class TestTradingState:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["ACTIVE", TradingState.ACTIVE],
             ["HALTED", TradingState.HALTED],
@@ -925,7 +925,7 @@ class TestTradingState:
 
 class TestTrailingOffsetType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [TrailingOffsetType.NO_TRAILING_OFFSET, "NO_TRAILING_OFFSET"],
             [TrailingOffsetType.PRICE, "PRICE"],
@@ -942,7 +942,7 @@ class TestTrailingOffsetType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_TRAILING_OFFSET", TrailingOffsetType.NO_TRAILING_OFFSET],
             ["PRICE", TrailingOffsetType.PRICE],
@@ -961,7 +961,7 @@ class TestTrailingOffsetType:
 
 class TestTriggerType:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [TriggerType.NO_TRIGGER, "NO_TRIGGER"],
             [TriggerType.DEFAULT, "DEFAULT"],
@@ -983,7 +983,7 @@ class TestTriggerType:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["NO_TRIGGER", TriggerType.NO_TRIGGER],
             ["DEFAULT", TriggerType.DEFAULT],

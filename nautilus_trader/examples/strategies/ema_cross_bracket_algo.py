@@ -33,9 +33,9 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -45,7 +45,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``EMACrossBracketTWAP`` instances.
+    Configuration for ``EMACrossBracketAlgo`` instances.
 
     Parameters
     ----------
@@ -204,7 +204,6 @@ class EMACrossBracketAlgo(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -323,7 +322,6 @@ class EMACrossBracketAlgo(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -335,7 +333,6 @@ class EMACrossBracketAlgo(Strategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self) -> None:
         """
@@ -382,7 +379,6 @@ class EMACrossBracketAlgo(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -391,4 +387,3 @@ class EMACrossBracketAlgo(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

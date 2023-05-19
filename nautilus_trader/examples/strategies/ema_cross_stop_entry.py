@@ -182,7 +182,6 @@ class EMACrossStopEntry(Strategy):
             The instrument received.
 
         """
-        pass
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
@@ -206,7 +205,6 @@ class EMACrossStopEntry(Strategy):
             The tick received.
 
         """
-        pass
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -218,7 +216,6 @@ class EMACrossStopEntry(Strategy):
             The tick received.
 
         """
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -230,7 +227,7 @@ class EMACrossStopEntry(Strategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(f"Received {bar!r}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -377,7 +374,6 @@ class EMACrossStopEntry(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -390,15 +386,13 @@ class EMACrossStopEntry(Strategy):
 
         """
         if isinstance(event, OrderFilled):
-            if self.entry:
-                if event.client_order_id == self.entry.client_order_id:
-                    if event.order_side == OrderSide.BUY:
-                        self.trailing_stop_sell()
-                    elif event.order_side == OrderSide.SELL:
-                        self.trailing_stop_buy()
-            if self.trailing_stop:
-                if event.client_order_id == self.trailing_stop.client_order_id:
-                    self.trailing_stop = None
+            if self.entry and event.client_order_id == self.entry.client_order_id:
+                if event.order_side == OrderSide.BUY:
+                    self.trailing_stop_sell()
+                elif event.order_side == OrderSide.SELL:
+                    self.trailing_stop_buy()
+            if self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
+                self.trailing_stop = None
 
     def on_stop(self) -> None:
         """
@@ -447,7 +441,6 @@ class EMACrossStopEntry(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -456,4 +449,3 @@ class EMACrossStopEntry(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

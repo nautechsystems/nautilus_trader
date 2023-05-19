@@ -19,6 +19,7 @@ from typing import Optional, Union
 
 import pandas as pd
 
+from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
 from nautilus_trader.config import BacktestEngineConfig
@@ -66,6 +67,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.data.book cimport ORDER_BOOK_DATA
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
@@ -82,7 +84,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
@@ -857,9 +858,12 @@ cdef class BacktestEngine:
         if self.kernel.emulator.is_running:
             self.kernel.emulator.stop()
 
-        # Process remaining messages
-        for exchange in self._venues.values():
-            exchange.process(self.kernel.clock.timestamp_ns())
+        try:
+            # Process remaining messages
+            for exchange in self._venues.values():
+                exchange.process(self.kernel.clock.timestamp_ns())
+        except AccountError:
+            pass
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
@@ -968,56 +972,64 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
+        cdef bint force_stop = False
         cdef uint64_t last_ns = 0
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
-        while data is not None:
-            if data.ts_init > end_ns:
-                # End of backtest
-                break
-            if data.ts_init > last_ns:
-                # Advance clocks to the next data time
-                raw_handlers = self._advance_time(data.ts_init, clocks)
-                raw_handlers_count = raw_handlers.len
+        try:
+            while data is not None:
+                if data.ts_init > end_ns:
+                    # End of backtest
+                    break
+                if data.ts_init > last_ns:
+                    # Advance clocks to the next data time
+                    raw_handlers = self._advance_time(data.ts_init, clocks)
+                    raw_handlers_count = raw_handlers.len
 
-            # Process data through venue
-            if isinstance(data, OrderBookData):
-                self._venues[data.instrument_id.venue].process_order_book(data)
-            elif isinstance(data, QuoteTick):
-                self._venues[data.instrument_id.venue].process_quote_tick(data)
-            elif isinstance(data, TradeTick):
-                self._venues[data.instrument_id.venue].process_trade_tick(data)
-            elif isinstance(data, Bar):
-                self._venues[data.bar_type.instrument_id.venue].process_bar(data)
-            elif isinstance(data, VenueStatusUpdate):
-                self._venues[data.venue].process_venue_status(data)
-            elif isinstance(data, InstrumentStatusUpdate):
-                self._venues[data.instrument_id.venue].process_instrument_status(data)
+                # Process data through venue
+                if isinstance(data, ORDER_BOOK_DATA):
+                    self._venues[data.instrument_id.venue].process_order_book(data)
+                elif isinstance(data, QuoteTick):
+                    self._venues[data.instrument_id.venue].process_quote_tick(data)
+                elif isinstance(data, TradeTick):
+                    self._venues[data.instrument_id.venue].process_trade_tick(data)
+                elif isinstance(data, Bar):
+                    self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+                elif isinstance(data, VenueStatusUpdate):
+                    self._venues[data.venue].process_venue_status(data)
+                elif isinstance(data, InstrumentStatusUpdate):
+                    self._venues[data.instrument_id.venue].process_instrument_status(data)
 
-            self._data_engine.process(data)
+                self._data_engine.process(data)
 
-            # Process all exchange messages
-            for exchange in self._venues.values():
-                exchange.process(data.ts_init)
+                # Process all exchange messages
+                for exchange in self._venues.values():
+                    exchange.process(data.ts_init)
 
-            last_ns = data.ts_init
-            data = self._next()
-            if data is None or data.ts_init > last_ns:
-                # Finally process the time events
-                self._process_raw_time_event_handlers(
-                    raw_handlers,
-                    clocks,
-                    last_ns,
-                    only_now=True,
-                )
+                last_ns = data.ts_init
+                data = self._next()
+                if data is None or data.ts_init > last_ns:
+                    # Finally process the time events
+                    self._process_raw_time_event_handlers(
+                        raw_handlers,
+                        clocks,
+                        last_ns,
+                        only_now=True,
+                    )
 
-                # Drop processed event handlers
-                vec_time_event_handlers_drop(raw_handlers)
-                raw_handlers_count = 0
+                    # Drop processed event handlers
+                    vec_time_event_handlers_drop(raw_handlers)
+                    raw_handlers_count = 0
 
-            self._iteration += 1
+                self._iteration += 1
+        except AccountError as e:
+            force_stop = True
+            self._log.error(f"Stopping backtest from {e}.")
         # ---------------------------------------------------------------------#
+
+        if force_stop:
+            return
 
         # Process remaining messages
         for exchange in self._venues.values():

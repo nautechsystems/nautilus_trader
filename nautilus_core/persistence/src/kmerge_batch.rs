@@ -40,7 +40,7 @@ where
         // for a batch that is non-empty.
         let next_batch = stream.next().await;
         if let Some(mut batch) = next_batch {
-            batch.next().map(|next_item| PeekElementBatchStream {
+            batch.next().map(|next_item| Self {
                 item: next_item,
                 batch,
                 stream,
@@ -119,6 +119,9 @@ where
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::*;

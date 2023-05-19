@@ -30,7 +30,7 @@ class TestBinanceUserHttpAPI:
         # Fixture Setup
         clock = LiveClock()
         logger = Logger(clock=clock)
-        self.client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+        self.client = BinanceHttpClient(
             loop=asyncio.get_event_loop(),
             clock=clock,
             logger=logger,
@@ -44,7 +44,7 @@ class TestBinanceUserHttpAPI:
             BinanceAccountType.MARGIN_ISOLATED,
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_create_listen_key_spot(self, mocker):
         # Arrange
         await self.client.connect()
@@ -58,7 +58,7 @@ class TestBinanceUserHttpAPI:
         assert request["method"] == "POST"
         assert request["url"] == "https://api.binance.com/api/v3/userDataStream"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_keepalive_listen_key_spot(self, mocker):
         # Arrange
         await self.client.connect()
@@ -78,7 +78,7 @@ class TestBinanceUserHttpAPI:
             == "listenKey=JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_delete_listen_key_spot(self, mocker):
         # Arrange
         await self.client.connect()
@@ -98,7 +98,7 @@ class TestBinanceUserHttpAPI:
             == "listenKey=JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_create_listen_key_isolated_margin(self, mocker):
         # Arrange
         await self.client.connect()
@@ -113,7 +113,7 @@ class TestBinanceUserHttpAPI:
         assert request["url"] == "https://api.binance.com/sapi/v1/userDataStream/isolated"
         assert request["params"] == "symbol=ETHUSDT"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_keepalive_listen_key_isolated_margin(self, mocker):
         # Arrange
         await self.client.connect()
@@ -134,7 +134,7 @@ class TestBinanceUserHttpAPI:
             == "listenKey=JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy&symbol=ETHUSDT"
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_delete_listen_key_isolated_margin(self, mocker):
         # Arrange
         await self.client.connect()

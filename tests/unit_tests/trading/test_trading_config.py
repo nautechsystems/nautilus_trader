@@ -23,13 +23,13 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 class TestStrategyFactory:
     def test_create_from_path(self):
         # Arrange
-        config = dict(
-            instrument_id="AUD/USD.SIM",
-            bar_type="AUD/USD.SIM-15-MINUTE-BID-EXTERNAL",
-            trade_size=1_000_000,
-            fast_ema_period=10,
-            slow_ema_period=20,
-        )
+        config = {
+            "instrument_id": "AUD/USD.SIM",
+            "bar_type": "AUD/USD.SIM-15-MINUTE-BID-EXTERNAL",
+            "trade_size": 1_000_000,
+            "fast_ema_period": 10,
+            "slow_ema_period": 20,
+        }
         importable = ImportableStrategyConfig(
             strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
             config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
@@ -44,7 +44,7 @@ class TestStrategyFactory:
         assert (
             repr(config)
             == "{'instrument_id': 'AUD/USD.SIM', 'bar_type': 'AUD/USD.SIM-15-MINUTE-BID-EXTERNAL',"
-            " 'trade_size': 1000000, 'fast_ema_period': 10, 'slow_ema_period': 20}"  # noqa
+            " 'trade_size': 1000000, 'fast_ema_period': 10, 'slow_ema_period': 20}"
         )
 
     def test_create_from_raw(self):

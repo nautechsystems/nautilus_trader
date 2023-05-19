@@ -17,23 +17,23 @@
 Defines real-time and simulated order book components and data.
 """
 
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 __all__ = [
+    "BookOrder",
+    "OrderBookDelta",
+    "OrderBookDeltas",
+    "OrderBookSnapshot",
     "L1OrderBook",
     "L2OrderBook",
     "L3OrderBook",
     "OrderBook",
-    "OrderBookData",
-    "OrderBookDelta",
-    "OrderBookDeltas",
-    "OrderBookSnapshot",
 ]

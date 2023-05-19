@@ -69,7 +69,7 @@ class TestCashAccount:
 
         # Assert
         assert account == account
-        assert not account != account
+        assert account == account
         assert account.id == AccountId("SIM-000")
         assert str(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
@@ -536,7 +536,7 @@ class TestCashAccount:
             )
 
     @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
+        ("inverse_as_quote", "expected"),
         [
             [False, Money(-0.00218331, BTC)],  # Negative commission = credit
             [True, Money(-25.00, USD)],  # Negative commission = credit

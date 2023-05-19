@@ -43,5 +43,5 @@ class BinanceFuturesUserDataHttpAPI(BinanceUserDataHttpAPI):
 
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover (design-time error)  # noqa
+                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover (design-time error)
             )

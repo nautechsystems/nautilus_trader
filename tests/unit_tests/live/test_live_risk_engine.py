@@ -127,7 +127,7 @@ class TestLiveRiskEngine:
         # Wire up components
         self.exec_engine.register_client(self.exec_client)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.risk_engine.start()
@@ -136,7 +136,7 @@ class TestLiveRiskEngine:
         assert True  # No exceptions raised
         self.risk_engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
@@ -186,7 +186,7 @@ class TestLiveRiskEngine:
         assert self.risk_engine.cmd_qsize() == 1
         assert self.risk_engine.command_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
@@ -238,7 +238,7 @@ class TestLiveRiskEngine:
         assert self.risk_engine.cmd_qsize() == 1
         assert self.risk_engine.event_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_start(self):
         # Arrange, Act
         self.risk_engine.start()
@@ -250,7 +250,7 @@ class TestLiveRiskEngine:
         # Tear Down
         self.risk_engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
         self.risk_engine.start()
@@ -260,7 +260,7 @@ class TestLiveRiskEngine:
         # Assert
         assert self.risk_engine.is_stopped
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_kill_when_not_running_with_messages_on_queue(self):
         # Arrange, Act
         self.risk_engine.kill()
@@ -269,7 +269,7 @@ class TestLiveRiskEngine:
         assert self.risk_engine.cmd_qsize() == 0
         assert self.risk_engine.evt_qsize() == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_execute_command_places_command_on_queue(self):
         # Arrange
         self.risk_engine.start()
@@ -312,7 +312,7 @@ class TestLiveRiskEngine:
         await self.risk_engine.get_cmd_queue_task()
         await self.risk_engine.get_evt_queue_task()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_handle_position_opening_with_position_id_none(self):
         # Arrange
         self.risk_engine.start()

@@ -26,7 +26,6 @@ from betfair_parser.spec.streaming.mcm import RunnerStatus
 
 from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
-from nautilus_trader.adapters.betfair.constants import BETFAIR_BOOK_TYPE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -43,12 +42,15 @@ from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatus
@@ -58,10 +60,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 PARSE_TYPES = Union[
@@ -326,12 +324,11 @@ def runner_change_all_depth_to_order_book_snapshot(
     ts_init: int,
 ) -> Optional[OrderBookSnapshot]:
     # ATL = Available To Lay = Back orders
-    if rc.atl:
-        asks = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price
-        ]
-    else:
-        asks = []
+    asks = (
+        [(betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price]
+        if rc.atl
+        else []
+    )
     # Asks are available to back (atb)
     if rc.atb:
         bids: list = [
@@ -341,7 +338,6 @@ def runner_change_all_depth_to_order_book_snapshot(
         bids = []
 
     return OrderBookSnapshot(
-        book_type=BookType.L2_MBP,
         instrument_id=instrument_id,
         bids=bids,
         asks=asks,
@@ -372,7 +368,6 @@ def runner_change_best_depth_to_order_book_snapshot(
     else:
         bids = []
     return OrderBookSnapshot(
-        book_type=BookType.L2_MBP,
         instrument_id=instrument_id,
         bids=bids,
         asks=asks,
@@ -388,12 +383,11 @@ def runner_change_display_depth_to_order_book_snapshot(
     ts_init: int,
 ) -> Optional[OrderBookSnapshot]:
     # Bids are best display available to lay (bdatl)
-    if rc.bdatl:
-        asks = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price
-        ]
-    else:
-        asks = []
+    asks = (
+        [(betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price]
+        if rc.bdatl
+        else []
+    )
     # Asks are best display available to back (bdatb)
     if rc.bdatb:
         bids: list = [
@@ -402,7 +396,6 @@ def runner_change_display_depth_to_order_book_snapshot(
     else:
         bids = []
     return OrderBookSnapshot(
-        book_type=BookType.L2_MBP,
         instrument_id=instrument_id,
         bids=bids,
         asks=asks,
@@ -450,7 +443,6 @@ def runner_change_all_depth_to_order_book_deltas(
             [
                 OrderBookDelta(
                     instrument_id,
-                    BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
                     BookOrder(back.price, back.volume, OrderSide.SELL),
                     ts_event,
@@ -466,7 +458,6 @@ def runner_change_all_depth_to_order_book_deltas(
             [
                 OrderBookDelta(
                     instrument_id,
-                    BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
                     BookOrder(lay.price, lay.volume, OrderSide.BUY),
                     ts_event,
@@ -478,7 +469,6 @@ def runner_change_all_depth_to_order_book_deltas(
     if not deltas:
         return None
     return OrderBookDeltas(
-        book_type=BookType.L2_MBP,
         instrument_id=instrument_id,
         deltas=deltas,
         ts_event=ts_event,
@@ -500,7 +490,6 @@ def runner_change_best_depth_to_deltas(
             [
                 OrderBookDelta(
                     instrument_id,
-                    BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
                     BookOrder(back.price, back.volume, OrderSide.SELL),
                     ts_event,
@@ -516,7 +505,6 @@ def runner_change_best_depth_to_deltas(
             [
                 OrderBookDelta(
                     instrument_id,
-                    BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
                     BookOrder(lay.price, lay.volume, OrderSide.BUY),
                     ts_event,
@@ -528,7 +516,6 @@ def runner_change_best_depth_to_deltas(
     if not deltas:
         return None
     return OrderBookDeltas(
-        book_type=BookType.L2_MBP,
         instrument_id=instrument_id,
         deltas=deltas,
         ts_event=ts_event,
@@ -550,7 +537,6 @@ def runner_change_display_depth_to_deltas(
             [
                 OrderBookDelta(
                     instrument_id,
-                    BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
                     BookOrder(back.price, back.volume, OrderSide.SELL),
                     ts_event,
@@ -566,7 +552,6 @@ def runner_change_display_depth_to_deltas(
             [
                 OrderBookDelta(
                     instrument_id,
-                    BETFAIR_BOOK_TYPE,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
                     BookOrder(lay.price, lay.volume, OrderSide.BUY),
                     ts_event,
@@ -578,7 +563,6 @@ def runner_change_display_depth_to_deltas(
     if not deltas:
         return None
     return OrderBookDeltas(
-        book_type=BookType.L2_MBP,
         instrument_id=instrument_id,
         deltas=deltas,
         ts_event=ts_event,
@@ -651,7 +635,6 @@ def _create_bsp_order_book_delta(
 ) -> BSPOrderBookDelta:
     return BSPOrderBookDelta(
         instrument_id=bsp_instrument_id,
-        book_type=BookType.L2_MBP,
         action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
         order=BookOrder(
             price=betfair_float_to_price(price),
@@ -698,7 +681,6 @@ def runner_change_to_bsp_order_book_deltas(
 
     return BSPOrderBookDeltas(
         instrument_id=bsp_instrument_id,
-        book_type=BookType.L2_MBP,
         deltas=deltas,
         ts_event=ts_event,
         ts_init=ts_init,
@@ -708,7 +690,6 @@ def runner_change_to_bsp_order_book_deltas(
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
-    book_type = one({deltas.book_type for deltas in all_deltas})
     ts_event = one({deltas.ts_event for deltas in all_deltas})
     ts_init = one({deltas.ts_init for deltas in all_deltas})
 
@@ -718,7 +699,6 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
         cls(
             instrument_id=instrument_id,
             deltas=deltas,
-            book_type=book_type,
             ts_event=ts_event,
             ts_init=ts_init,
         )

@@ -490,4 +490,4 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
     else:
         raise RuntimeError(
             f"invalid `BinanceAccountType`, was {account_type}",
-        )  # pragma: no cover (design-time error)  # noqa
+        )  # pragma: no cover (design-time error)

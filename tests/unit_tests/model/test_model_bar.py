@@ -99,7 +99,7 @@ class TestBarSpecification:
             _ = spec.timedelta
 
     @pytest.mark.parametrize(
-        "step, aggregation, expected",
+        ("step", "aggregation", "expected"),
         [
             [
                 500,
@@ -159,7 +159,7 @@ class TestBarSpecification:
             BarSpecification.from_str(value)
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [
                 "300-MILLISECOND-LAST",
@@ -195,7 +195,7 @@ class TestBarSpecification:
         assert spec == expected
 
     @pytest.mark.parametrize(
-        "bar_spec, is_time_aggregated, is_threshold_aggregated, is_information_aggregated",
+        ("bar_spec", "is_time_aggregated", "is_threshold_aggregated", "is_information_aggregated"),
         [
             [
                 BarSpecification(1, BarAggregation.SECOND, PriceType.BID),
@@ -318,7 +318,7 @@ class TestBarType:
             BarType.from_str(value)
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [
                 "AUD/USD.IDEALPRO-1-MINUTE-BID-EXTERNAL",

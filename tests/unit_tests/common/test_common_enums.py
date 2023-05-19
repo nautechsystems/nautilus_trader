@@ -25,7 +25,7 @@ from nautilus_trader.common.enums import component_trigger_to_str
 
 class TestComponentState:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [ComponentState.PRE_INITIALIZED, "PRE_INITIALIZED"],
             [ComponentState.READY, "READY"],
@@ -51,7 +51,7 @@ class TestComponentState:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["PRE_INITIALIZED", ComponentState.PRE_INITIALIZED],
             ["READY", ComponentState.READY],
@@ -79,7 +79,7 @@ class TestComponentState:
 
 class TestComponentTrigger:
     @pytest.mark.parametrize(
-        "enum, expected",
+        ("enum", "expected"),
         [
             [ComponentTrigger.INITIALIZE, "INITIALIZE"],
             [ComponentTrigger.START, "START"],
@@ -105,7 +105,7 @@ class TestComponentTrigger:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [
             ["INITIALIZE", ComponentTrigger.INITIALIZE],
             ["START", ComponentTrigger.START],

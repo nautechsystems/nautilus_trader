@@ -52,7 +52,7 @@ class TestBet:
         assert repr(bet) == "Bet(1,2.0,10)"
 
     @pytest.mark.parametrize(
-        "price, size, side, expected",
+        ("price", "size", "side", "expected"),
         [
             ("1.50", 10, "BUY", 5),
             ("2", 10, "BUY", 10),
@@ -72,7 +72,7 @@ class TestBet:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "price, size, side, expected",
+        ("price", "size", "side", "expected"),
         [
             ("1.50", 10, "BUY", -10),
             ("2", 10, "BUY", -10),
@@ -92,7 +92,7 @@ class TestBet:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "price, size, side, expected",
+        ("price", "size", "side", "expected"),
         [
             ("1.50", 10, "BUY", 15),
             ("2", 10, "BUY", 20),

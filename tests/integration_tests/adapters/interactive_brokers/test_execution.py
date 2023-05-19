@@ -24,12 +24,9 @@ from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
-    account_values_to_nautilus_account_info,
-)
+# fmt: off
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import account_values_to_nautilus_account_info
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -53,6 +50,8 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
+
+# fmt: on
 
 pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
@@ -99,7 +98,7 @@ def order_setup(
     return order
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_connect(mocker, exec_client):
     # Arrange
     mocker.patch("ib_insync.ib.IB.connectAsync")
@@ -114,7 +113,7 @@ async def test_connect(mocker, exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_disconnect(mocker, exec_client):
     # Arrange
     mocker.patch("ib_insync.ib.IB.connectAsync")
@@ -133,7 +132,7 @@ async def test_disconnect(mocker, exec_client):
     assert not exec_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_factory(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
     # Arrange
     mocker.patch(
@@ -307,7 +306,7 @@ def test_cancel_order(mocker, exec_client, cache):
     assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_submitted_event(
     mocker,
     exec_client,
@@ -345,7 +344,7 @@ async def test_on_submitted_event(
     assert kwargs == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_exec_details(
     mocker,
     exec_client,
@@ -406,7 +405,7 @@ async def test_on_exec_details(
     assert kwargs == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_order_modify(
     mocker,
     exec_client,
@@ -449,7 +448,7 @@ async def test_on_order_modify(
     assert kwargs == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_order_cancel_pending(
     exec_client,
     cache,
@@ -493,7 +492,7 @@ async def test_on_order_cancel_pending(
     assert order.status == OrderStatus.PENDING_CANCEL
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_order_cancel_cancelled(
     mocker,
     exec_client,
@@ -532,7 +531,7 @@ async def test_on_order_cancel_cancelled(
     assert kwargs == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_account_update(mocker, exec_client):
     # Arrange
     mock_generate_account_state = mocker.patch(
@@ -572,10 +571,10 @@ async def test_on_account_update(mocker, exec_client):
     }
     assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
     assert expected["margins"][0].to_dict() == kwargs["margins"][0].to_dict()
-    assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins")])
+    assert all(kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins"))
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_account_values_to_nautilus_account_info():
     # Arrange
     account_values = IBTestDataStubs.account_values(fn="account_values_fa.json")

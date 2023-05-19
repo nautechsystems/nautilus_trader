@@ -199,7 +199,7 @@ class LiveExecutionClient(ExecutionClient):
     ) -> None:
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
             )
         else:
             if actions:
@@ -208,7 +208,7 @@ class LiveExecutionClient(ExecutionClient):
                 except Exception as e:
                     self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
-                        f"{repr(e)}",
+                        f"{e!r}",
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)

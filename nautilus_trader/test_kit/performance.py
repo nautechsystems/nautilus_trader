@@ -72,7 +72,7 @@ class PerformanceBench:
             result_milli = minimum * 1_000  # 1,000ms in 1 second
             result_micro = minimum * 1_000_000  # 1,000,000μs in 1 second
             result_nano = minimum * 1_000_000_000  # 1,000,000,000ns in 1 second
-            print(f"\nPerformance test: {str(inspect.getmembers(target)[4][1])} ")
+            print(f"\nPerformance test: {inspect.getmembers(target)[4][1]!s} ")
             print(
                 f"# ~{result_milli:.1f}ms "
                 f"/ ~{result_micro:.1f}μs "

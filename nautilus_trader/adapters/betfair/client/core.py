@@ -115,7 +115,7 @@ class BetfairClient(HttpClient):
             self._log.error(str(e))
             raise e
         except ClientResponseError as e:
-            self._log.error(f"Err on {method} status={e.status}, message={str(e)}")
+            self._log.error(f"Err on {method} status={e.status}, message={e!s}")
             raise e
 
     async def connect(self):
@@ -135,10 +135,8 @@ class BetfairClient(HttpClient):
             return
         url = self.IDENTITY_URL + "certlogin"
         data = {"username": self.username, "password": self.password}
-        headers = {
-            **{k: v for k, v in self.headers.items() if k not in ("content-type",)},
-            **{"Content-Type": "application/x-www-form-urlencoded"},
-        }
+        headers = {k: v for k, v in self.headers.items() if k.lower() != "content-type"}
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
         resp = await self.post(url=url, data=data, headers=headers)
         data = msgspec.json.decode(resp.data)
         if data["loginStatus"] == "SUCCESS":
@@ -169,7 +167,7 @@ class BetfairClient(HttpClient):
         params = parse_params(**locals())
 
         if "marketProjection" in params:
-            assert all([isinstance(m, MarketProjection) for m in params["marketProjection"]])
+            assert all(isinstance(m, MarketProjection) for m in params["marketProjection"])
             params["marketProjection"] = [m.value for m in params["marketProjection"]]
         if "sort" in params:
             assert isinstance(sort, MarketSort)

@@ -63,7 +63,7 @@ class BacktestNode:
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
         PyCondition.true(
-            all([isinstance(config, BacktestRunConfig) for config in configs]),
+            all(isinstance(config, BacktestRunConfig) for config in configs),
             "configs",
         )
 
@@ -113,7 +113,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> list[BacktestResult]:  # noqa (kwargs for extensibility)
+    def run(self) -> list[BacktestResult]:
         """
         Execute a group of backtest run configs synchronously.
 
@@ -166,12 +166,11 @@ class BacktestNode:
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
-            if config.leverages:
-                leverages = {
-                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
-                }
-            else:
-                leverages = {}
+            leverages = (
+                {InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()}
+                if config.leverages
+                else {}
+            )
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],
