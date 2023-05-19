@@ -265,17 +265,89 @@ pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use httptest::{matchers::*, responders::*, Expectation, Server};
-    use hyper::StatusCode;
+    use std::convert::Infallible;
+    use std::net::{SocketAddr, TcpListener};
+
+    use hyper::service::{make_service_fn, service_fn};
+    use hyper::{Body, Method, Request, Response, Server, StatusCode};
+    use tokio::sync::oneshot;
+
+    async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+        match (req.method(), req.uri().path()) {
+            (&Method::GET, "/get") => {
+                let response = Response::new(Body::from("hello-world!"));
+                Ok(response)
+            }
+            (&Method::POST, "/post") => {
+                let response = Response::builder()
+                    .status(StatusCode::OK)
+                    .body(Body::empty())
+                    .unwrap();
+                Ok(response)
+            }
+            (&Method::PATCH, "/patch") => {
+                let response = Response::builder()
+                    .status(StatusCode::OK)
+                    .body(Body::empty())
+                    .unwrap();
+                Ok(response)
+            }
+            (&Method::DELETE, "/delete") => {
+                let response = Response::builder()
+                    .status(StatusCode::OK)
+                    .body(Body::empty())
+                    .unwrap();
+                Ok(response)
+            }
+            _ => {
+                let response = Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap();
+                Ok(response)
+            }
+        }
+    }
+
+    fn get_unique_port() -> u16 {
+        // Create a temporary TcpListener to get an available port
+        let listener =
+            TcpListener::bind("127.0.0.1:0").expect("Failed to bind temporary TcpListener");
+        let port = listener.local_addr().unwrap().port();
+
+        // Close the listener to free up the port
+        drop(listener);
+
+        port
+    }
+
+    fn start_test_server() -> (SocketAddr, oneshot::Sender<()>) {
+        let addr: SocketAddr = ([127, 0, 0, 1], get_unique_port()).into();
+        let make_svc = make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle)) });
+
+        let (tx, rx) = oneshot::channel::<()>();
+
+        let server = Server::bind(&addr).serve(make_svc);
+
+        let graceful = server.with_graceful_shutdown(async {
+            if let Err(e) = rx.await {
+                eprintln!("shutdown signal error: {}", e);
+            }
+        });
+
+        tokio::spawn(async {
+            if let Err(e) = graceful.await {
+                eprintln!("server error: {}", e);
+            }
+        });
+
+        (addr, tx)
+    }
 
     #[tokio::test]
     async fn test_get() {
-        let server = Server::run();
-        server.expect(
-            Expectation::matching(request::method_path("GET", "/get"))
-                .respond_with(status_code(StatusCode::OK.into()).body("hello-world!")),
-        );
-        let url = format!("http://{}", server.addr());
+        let (addr, _shutdown_tx) = start_test_server();
+        let url = format!("http://{}:{}", addr.ip(), addr.port());
 
         let client = HttpClient::default();
         let response = client
@@ -289,12 +361,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_post() {
-        let server = Server::run();
-        server.expect(
-            Expectation::matching(request::method_path("POST", "/post"))
-                .respond_with(status_code(StatusCode::OK.into())),
-        );
-        let url = format!("http://{}", server.addr());
+        let (addr, _shutdown_tx) = start_test_server();
+        let url = format!("http://{}:{}", addr.ip(), addr.port());
 
         let client = HttpClient::default();
         let response = client
@@ -307,12 +375,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_post_with_body() {
-        let server = Server::run();
-        server.expect(
-            Expectation::matching(request::method_path("POST", "/post"))
-                .respond_with(status_code(StatusCode::OK.into())),
-        );
-        let url = format!("http://{}", server.addr());
+        let (addr, _shutdown_tx) = start_test_server();
+        let url = format!("http://{}:{}", addr.ip(), addr.port());
 
         let client = HttpClient::default();
 
@@ -344,12 +408,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_patch() {
-        let server = Server::run();
-        server.expect(
-            Expectation::matching(request::method_path("PATCH", "/patch"))
-                .respond_with(status_code(StatusCode::OK.into())),
-        );
-        let url = format!("http://{}", server.addr());
+        let (addr, _shutdown_tx) = start_test_server();
+        let url = format!("http://{}:{}", addr.ip(), addr.port());
 
         let client = HttpClient::default();
         let response = client
@@ -367,12 +427,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete() {
-        let server = Server::run();
-        server.expect(
-            Expectation::matching(request::method_path("DELETE", "/delete"))
-                .respond_with(status_code(StatusCode::OK.into())),
-        );
-        let url = format!("http://{}", server.addr());
+        let (addr, _shutdown_tx) = start_test_server();
+        let url = format!("http://{}:{}", addr.ip(), addr.port());
 
         let client = HttpClient::default();
         let response = client
