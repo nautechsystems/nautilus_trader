@@ -79,7 +79,7 @@ optional = true
 black = "^23.3.0"
 mypy = "^1.3.0"
 pre-commit = "^3.3.2"
-ruff = "^0.0.267"
+ruff = "^0.0.269"
 types-pytz = "^2022.3.0"
 types-redis = "^4.5.5"
 types-requests = "^2.29.0"
@@ -96,7 +96,7 @@ pytest-asyncio = "^0.21.0"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
-pytest-xdist = { version = "^3.3.0", extras = ["psutil"] }
+pytest-xdist = { version = "^3.3.1", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
 optional = true
