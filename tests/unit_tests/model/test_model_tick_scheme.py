@@ -34,7 +34,7 @@ class TestFixedTickScheme:
         assert self.tick_scheme.price_precision
 
     @pytest.mark.parametrize(
-        "value,precision,expected",
+        ("value", "precision", "expected"),
         [
             (0.727775, 4, "0.7277"),
             (0.72777, 4, "0.7277"),
@@ -47,7 +47,7 @@ class TestFixedTickScheme:
         assert round_down(value, base=base) == Price.from_str(expected).as_double()
 
     @pytest.mark.parametrize(
-        "value,precision,expected",
+        ("value", "precision", "expected"),
         [
             (0.72775, 4, "0.7278"),
             (0.7277, 4, "0.7278"),
@@ -66,7 +66,7 @@ class TestFixedTickScheme:
         assert self.tick_scheme.increment == Price.from_str("0.001")
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             (0.727, "0.728"),
             (0.99999, "1.0000"),
@@ -78,14 +78,11 @@ class TestFixedTickScheme:
     )
     def test_next_ask_price(self, value, expected):
         result = self.tick_scheme.next_ask_price(value)
-        if expected is None:
-            expected = expected
-        else:
-            expected = Price.from_str(expected)
+        expected = expected if expected is None else Price.from_str(expected)
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             (0.7271, "0.727"),
             (0.001, "0.001"),
@@ -96,10 +93,7 @@ class TestFixedTickScheme:
     )
     def test_next_bid_price(self, value, expected):
         result = self.tick_scheme.next_bid_price(value)
-        if expected is None:
-            expected = expected
-        else:
-            expected = Price.from_str(expected)
+        expected = expected if expected is None else Price.from_str(expected)
         assert result == expected
 
 
@@ -123,7 +117,7 @@ class TestBettingTickScheme:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             (1.01, 0),
             (1.10, 9),
@@ -136,7 +130,7 @@ class TestBettingTickScheme:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (1.499, 0, "1.50"),
             (2.000, 0, "2.0"),
@@ -151,7 +145,7 @@ class TestBettingTickScheme:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (1.499, 0, "1.49"),
             (2.000, 0, "2.0"),
@@ -175,7 +169,7 @@ class TestTopix100TickScheme:
         assert self.tick_scheme.max_price == Price.from_int(130_000_000)
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (1000, 0, "1000"),
             (1000.25, 0, "1000.50"),
@@ -190,7 +184,7 @@ class TestTopix100TickScheme:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             # (1000, 0, "1000"),  # TODO: Fails with 999.9
             (1000.75, 0, "1000.50"),
@@ -216,7 +210,7 @@ class TestBitmexSpotTickScheme:
         )
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (10.1, 0, "10.5"),
         ],
@@ -227,7 +221,7 @@ class TestBitmexSpotTickScheme:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, n, expected",
+        ("value", "n", "expected"),
         [
             (10.1, 0, "10.0"),
         ],

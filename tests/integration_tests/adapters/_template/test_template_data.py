@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient  # noqa
+from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
 
 

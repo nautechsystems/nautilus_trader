@@ -46,7 +46,7 @@ def _make_quote_tick(instrument):
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_connect(exec_client):
     exec_client.connect()
     await asyncio.sleep(0)
@@ -54,7 +54,7 @@ async def test_connect(exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Arrange
     exec_client.connect()
@@ -72,7 +72,7 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
     assert accepted.venue_order_id == VenueOrderId("SANDBOX-1-001")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_modify_order_success(exec_client, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -99,8 +99,8 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
 
 
 @pytest.mark.skip(reason="WIP and lets not use capfd for tests")
-@pytest.mark.no_ci  # Relies on capfd, which is unreliable on CI
-@pytest.mark.asyncio
+@pytest.mark.no_ci()  # Relies on capfd, which is unreliable on CI
+@pytest.mark.asyncio()
 async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument, events, capfd):
     # Arrange
     exec_client.connect()
@@ -126,7 +126,7 @@ async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument,
     assert "ClientOrderId('NOT-AN-ID') not found" in err
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_cancel_order_success(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -148,8 +148,8 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
 
 
 @pytest.mark.skip(reason="WIP and lets not use capfd for tests")
-@pytest.mark.no_ci  # Relies on capfd, which is unreliable on CI
-@pytest.mark.asyncio
+@pytest.mark.no_ci()  # Relies on capfd, which is unreliable on CI
+@pytest.mark.asyncio()
 async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events, capfd):
     # Arrange
     exec_client.connect()

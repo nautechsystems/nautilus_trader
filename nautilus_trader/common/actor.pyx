@@ -56,6 +56,8 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -68,8 +70,6 @@ from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orderbook.data cimport OrderBookData
-from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -370,14 +370,14 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_order_book_delta(self, OrderBookData delta):
+    cpdef void on_order_book_delta(self, Data data):
         """
-        Actions to be performed when running and receives an order book delta.
+        Actions to be performed when running and receives order book data.
 
         Parameters
         ----------
         delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book delta received.
+            The order book data received.
 
         Warnings
         --------
@@ -783,8 +783,8 @@ cdef class Actor(Component):
         ClientId client_id = None,
     ):
         """
-        Subscribe to the order book deltas stream, being a snapshot then deltas
-        `OrderBookData` for the given instrument ID.
+        Subscribe to the order book data stream, being a snapshot then deltas
+        for the given instrument ID.
 
         Parameters
         ----------
@@ -814,7 +814,7 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookData, metadata={
+            data_type=DataType(OrderBookDelta, metadata={
                 "instrument_id": instrument_id,
                 "book_type": book_type,
                 "depth": depth,
@@ -1250,7 +1250,7 @@ cdef class Actor(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookData, metadata={"instrument_id": instrument_id}),
+            data_type=DataType(OrderBookDelta, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1866,7 +1866,7 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_instrument(instruments[i])
 
-    cpdef void handle_order_book_delta(self, OrderBookData delta):
+    cpdef void handle_order_book_delta(self, Data data):
         """
         Handle the given order book data.
 
@@ -1882,13 +1882,13 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(delta, "data")
+        Condition.not_none(data, "data")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_order_book_delta(delta)
+                self.on_order_book_delta(data)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(delta)}", e)
+                self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
     cpdef void handle_order_book(self, OrderBook order_book):
@@ -2217,8 +2217,6 @@ cdef class Actor(Component):
         """
         Handle the given historical data.
 
-        If state is ``RUNNING`` then passes to `on_historical_data`.
-
         Parameters
         ----------
         data : Data
@@ -2231,12 +2229,11 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_historical_data(data)
-            except Exception as e:
-                self._log.exception(f"Error on handling {repr(data)}", e)
-                raise
+        try:
+            self.on_historical_data(data)
+        except Exception as e:
+            self._log.exception(f"Error on handling {repr(data)}", e)
+            raise
 
     cpdef void handle_event(self, Event event):
         """

@@ -17,16 +17,15 @@ import pytest
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
 
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
-    nautilus_order_to_ib_order,
-)
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-    ib_contract_to_instrument_id,
-)
+# fmt: off
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import nautilus_order_to_ib_order
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
+
+# fmt: on
 
 pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
@@ -59,7 +58,7 @@ def test_nautilus_order_to_ib_limit_order(instrument):
 
 
 @pytest.mark.parametrize(
-    "contract, instrument_id",
+    ("contract", "instrument_id"),
     [
         (IBTestProviderStubs.aapl_equity_contract_details().contract, "AAPL.AMEX"),
         (IBTestProviderStubs.cl_future_contract_details().contract, "CLZ3.NYMEX"),

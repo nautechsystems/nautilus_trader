@@ -13,28 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::tick::{Data, QuoteTick, TradeTick};
-use nautilus_persistence::session::{PersistenceCatalog, QueryResult};
+use nautilus_model::data::tick::{QuoteTick, TradeTick};
+use nautilus_model::data::Data;
+use nautilus_persistence::session::{DataBackendSession, QueryResult};
 
-// Note: "current_thread" hangs up for some reason
+// Note: "current_thread" configuration hangs up for some reason
 #[tokio::test(flavor = "multi_thread")]
 async fn test_quote_ticks() {
-    let mut catalog = PersistenceCatalog::new(5000);
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let length = 9500;
+    let mut catalog = DataBackendSession::new(10000);
     catalog
-        .add_file::<QuoteTick>(
-            "quote_tick",
-            "../../tests/test_data/quote_tick_data.parquet",
-        )
+        .add_file_default_query::<QuoteTick>("quotes_0005", file_path)
         .await
         .unwrap();
-    catalog
-        .add_file::<QuoteTick>(
-            "quote_tick_2",
-            "../../tests/test_data/quote_tick_data.parquet",
-        )
-        .await
-        .unwrap();
-    let query_result: QueryResult = catalog.to_query_result();
+    let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.flatten().collect();
 
     // NOTE: is_sorted_by_key is unstable otherwise use
@@ -51,33 +44,35 @@ async fn test_quote_ticks() {
         true
     };
 
-    match &ticks[0] {
-        Data::Trade(_) => assert!(false),
-        Data::Quote(q) => assert_eq!("EUR/USD.SIM", q.instrument_id.to_string()),
+    if let Data::Quote(q) = &ticks[0] {
+        assert_eq!("EUR/USD.SIM", q.instrument_id.to_string())
+    } else {
+        assert!(false)
     }
-    assert_eq!(ticks.len(), 19000);
+
+    assert_eq!(ticks.len(), length);
     assert!(is_ascending_by_init(&ticks));
 }
 
 // Note: "current_thread" hangs up for some reason
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_ticks() {
-    let mut catalog = PersistenceCatalog::new(5000);
+    let mut catalog = DataBackendSession::new(5000);
     catalog
-        .add_file::<QuoteTick>(
+        .add_file_default_query::<QuoteTick>(
             "quote_tick",
             "../../tests/test_data/quote_tick_data.parquet",
         )
         .await
         .unwrap();
     catalog
-        .add_file::<TradeTick>(
+        .add_file_default_query::<TradeTick>(
             "quote_tick_2",
             "../../tests/test_data/trade_tick_data.parquet",
         )
         .await
         .unwrap();
-    let query_result: QueryResult = catalog.to_query_result();
+    let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.flatten().collect();
 
     // NOTE: is_sorted_by_key is unstable otherwise use

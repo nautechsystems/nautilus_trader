@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_binance_futures_testnet_instrument_provider():
     loop = asyncio.get_event_loop()
     clock = LiveClock()

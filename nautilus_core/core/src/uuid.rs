@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -57,7 +57,7 @@ impl Default for UUID4 {
 }
 
 impl Display for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }

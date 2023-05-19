@@ -30,12 +30,12 @@ from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -239,7 +239,7 @@ class TestBacktestConfigParsing:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
             instrument_ids=[self.instrument.id.value],
-            data_types=(TradeTick, QuoteTick, OrderBookData),
+            data_types=(TradeTick, QuoteTick, OrderBookDelta),
             venues=[
                 BacktestVenueConfig(
                     name="BETFAIR",
@@ -253,7 +253,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1742, 1754)  # unix, windows
+        assert result in (1738, 1750)  # unix, windows
 
     def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
@@ -267,7 +267,7 @@ class TestBacktestConfigParsing:
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(
-        "config_func, keys, kw, expected",
+        ("config_func", "keys", "kw", "expected"),
         [
             (
                 TestConfigStubs.venue_config,

@@ -160,13 +160,9 @@ class BinanceHttpClient(HttpClient):
 
         if self._show_limit_usage:
             limit_usage = {}
-            for key in resp.headers.keys():
+            for key in resp.headers:
                 key = key.lower()
-                if (
-                    key.startswith("x-mbx-used-weight")
-                    or key.startswith("x-mbx-order-count")
-                    or key.startswith("x-sapi-used")
-                ):
+                if key.startswith(("x-mbx-used-weight", "x-mbx-order-count", "x-sapi-used")):
                     limit_usage[key] = resp.headers[key]
 
         try:

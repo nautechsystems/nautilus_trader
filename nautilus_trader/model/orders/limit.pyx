@@ -347,7 +347,7 @@ cdef class LimitOrder(Order):
         )
 
     @staticmethod
-    cdef LimitOrder transform(Order order, uint64_t ts_init):
+    cdef LimitOrder transform(Order order, uint64_t ts_init, Price price = None):
         """
         Transform the given order to a `limit` order.
 
@@ -360,13 +360,21 @@ cdef class LimitOrder(Order):
             The order to transform from.
         ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
+        price : Price, optional
+            The price to assign to the order (will override any existing price on `order`).
 
         Returns
         -------
         LimitOrder
 
+        Raises
+        ------
+        ValueError
+            If `price` is ``None`` and `order` does not have a `price` attribute.
+
         """
         Condition.not_none(order, "order")
+        Condition.true(price or hasattr(order, "price"), "`order` has no price")
 
         cdef LimitOrder transformed = LimitOrder(
             trader_id=order.trader_id,
@@ -375,14 +383,14 @@ cdef class LimitOrder(Order):
             client_order_id=order.client_order_id,
             order_side=order.side,
             quantity=order.quantity,
-            price=order.price,
+            price=price or order.price,
             time_in_force=order.time_in_force,
-            expire_time_ns=order.expire_time_ns,
+            expire_time_ns=order.expire_time_ns if hasattr(order, "expire_time_ns") else 0,
             init_id=UUID4(),
             ts_init=ts_init,
-            post_only=order.is_post_only,
+            post_only=order.is_post_only if hasattr(order, "is_post_only") else False,
             reduce_only=order.is_reduce_only,
-            display_qty=order.display_qty,
+            display_qty=order.display_qty if hasattr(order, "display_qty") else None,
             contingency_type=order.contingency_type,
             order_list_id=order.order_list_id,
             linked_order_ids=order.linked_order_ids,
@@ -402,5 +410,5 @@ cdef class LimitOrder(Order):
         return transformed
 
     @staticmethod
-    def transform_py(Order order, uint64_t ts_init) -> LimitOrder:
-        return LimitOrder.transform(order, ts_init)
+    def transform_py(Order order, uint64_t ts_init, Price price = None) -> LimitOrder:
+        return LimitOrder.transform(order, ts_init, price)

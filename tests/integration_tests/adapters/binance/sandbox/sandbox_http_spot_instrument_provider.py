@@ -25,7 +25,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_binance_spot_instrument_provider():
     clock = LiveClock()
 

@@ -175,7 +175,7 @@ class BetfairDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ):
-        PyCondition.not_none(instrument_id, "instrument_id")  # noqa
+        PyCondition.not_none(instrument_id, "instrument_id")
 
         instrument: BettingInstrument = self._instrument_provider.find(instrument_id)
 
@@ -208,7 +208,7 @@ class BetfairDataClient(LiveMarketDataClient):
         await asyncio.sleep(delay)
         self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
-        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
+        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data.")
 
     async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
@@ -268,14 +268,13 @@ class BetfairDataClient(LiveMarketDataClient):
                 )
                 self._handle_data(generic_data)
             elif isinstance(data, Data):
-                if self._strict_handling:
-                    if (
-                        hasattr(data, "instrument_id")
-                        and data.instrument_id not in self._subscribed_instrument_ids
-                    ):
-                        # We receive data for multiple instruments within a subscription, don't emit data if we're not
-                        # subscribed to this particular instrument as this will trigger a bunch of error logs
-                        continue
+                if self._strict_handling and (
+                    hasattr(data, "instrument_id")
+                    and data.instrument_id not in self._subscribed_instrument_ids
+                ):
+                    # We receive data for multiple instruments within a subscription, don't emit data if we're not
+                    # subscribed to this particular instrument as this will trigger a bunch of error logs
+                    continue
                 self._handle_data(data)
             elif isinstance(data, Event):
                 self._log.warning(

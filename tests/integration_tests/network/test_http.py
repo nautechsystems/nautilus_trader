@@ -48,7 +48,7 @@ async def fixture_client() -> HttpClient:
     return client
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_client_get(client: HttpClient, server: Coroutine) -> None:
     test_server: TestServer = await server
     url = f"http://{test_server.host}:{test_server.port}/get"
@@ -60,7 +60,7 @@ async def test_client_get(client: HttpClient, server: Coroutine) -> None:
     assert client.avg_latency() > 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_client_post(client: HttpClient, server: Coroutine) -> None:
     test_server = await server
     url = f"http://{test_server.host}:{test_server.port}/post"

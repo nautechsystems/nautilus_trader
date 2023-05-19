@@ -15,29 +15,28 @@
 
 import copy
 from enum import Enum
+from typing import Optional
 
 import pyarrow as pa
 
+# fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
-from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.serialization.arrow.implementations.order_book import (
-    deserialize as deserialize_orderbook,
-)
-from nautilus_trader.serialization.arrow.implementations.order_book import (
-    serialize as serialize_orderbook,
-)
+from nautilus_trader.serialization.arrow.implementations.order_book import deserialize as deserialize_orderbook
+from nautilus_trader.serialization.arrow.implementations.order_book import serialize as serialize_orderbook
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
+
+
+# fmt: on
 
 
 class SubscriptionStatus(Enum):
@@ -79,7 +78,6 @@ class BSPOrderBookDelta(OrderBookDelta):
         )
         return BSPOrderBookDelta(
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
-            book_type=book_type_from_str(values["book_type"]),
             action=action,
             order=order,
             ts_event=values["ts_event"],
@@ -103,10 +101,10 @@ class BetfairTicker(Ticker):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        last_traded_price: float = None,
-        traded_volume: float = None,
-        starting_price_near: float = None,
-        starting_price_far: float = None,
+        last_traded_price: Optional[float] = None,
+        traded_volume: Optional[float] = None,
+        starting_price_near: Optional[float] = None,
+        starting_price_far: Optional[float] = None,
     ):
         super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
         self.last_traded_price = last_traded_price
@@ -218,7 +216,7 @@ register_serializable_object(
 register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
 
 # Register serialization/parquet BSPOrderBookDeltas
-BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookData])
+BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDelta])
 BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
 
 register_serializable_object(

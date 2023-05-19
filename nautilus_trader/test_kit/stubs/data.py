@@ -22,6 +22,10 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -36,7 +40,6 @@ from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -45,10 +48,6 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookDelta
-from nautilus_trader.model.orderbook import OrderBookDeltas
-from nautilus_trader.model.orderbook import OrderBookSnapshot
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -308,27 +307,22 @@ class TestDataStubs:
         ask_levels=3,
         bid_size=10,
         ask_size=10,
-        book_type=BookType.L2_MBP,
-        time_in_force=TimeInForce.GTC,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
 
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            book_type=book_type,
             bids=[(float(bid_price - i), float(bid_size * (1 + i))) for i in range(bid_levels)],
             asks=[(float(ask_price + i), float(ask_size * (1 + i))) for i in range(ask_levels)],
             ts_event=0,
             ts_init=0,
-            time_in_force=time_in_force,
         )
 
     @staticmethod
     def order_book_delta(instrument_id: Optional[InstrumentId] = None, order=None):
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=order or TestDataStubs.order(),
             ts_event=0,
@@ -339,7 +333,6 @@ class TestDataStubs:
     def order_book_deltas(deltas=None):
         return OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=deltas or [TestDataStubs.order_book_delta()],
             ts_event=0,
             ts_init=0,
@@ -470,24 +463,24 @@ class TestDataStubs:
                 data = dict(zip(keys, values))
                 side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
                 if data["price"] == 0:
-                    yield dict(
-                        op="delete",
-                        order=BookOrder(
+                    yield {
+                        "op": "delete",
+                        "order": BookOrder(
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
                             order_id=str(data["order_id"]),
                         ),
-                    )
+                    }
                 else:
-                    yield dict(
-                        op="update",
-                        order=BookOrder(
+                    yield {
+                        "op": "update",
+                        "order": BookOrder(
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
                             order_id=str(data["order_id"]),
                         ),
-                    )
+                    }
 
         return [msg for data in json.loads(open(filename).read()) for msg in parser(data)]

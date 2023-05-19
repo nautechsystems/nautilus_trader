@@ -1000,7 +1000,7 @@ class TestSimulatedExchange:
         assert order.filled_qty == 10_000
 
     @pytest.mark.parametrize(
-        "side, price, trigger_price",
+        ("side", "price", "trigger_price"),
         [
             [OrderSide.BUY, Price.from_str("90.000"), Price.from_str("90.000")],
             [OrderSide.SELL, Price.from_str("90.010"), Price.from_str("90.010")],
@@ -1044,7 +1044,7 @@ class TestSimulatedExchange:
         assert order.filled_qty == 10_000
 
     @pytest.mark.parametrize(
-        "side, price",
+        ("side", "price"),
         [
             [OrderSide.BUY, Price.from_str("90.010")],
             [OrderSide.SELL, Price.from_str("90.000")],
@@ -1092,7 +1092,7 @@ class TestSimulatedExchange:
         assert order.filled_qty == 15_000
 
     @pytest.mark.parametrize(
-        "side, trigger_price",
+        ("side", "trigger_price"),
         [
             [OrderSide.BUY, Price.from_str("90.005")],
             [OrderSide.SELL, Price.from_str("90.002")],
@@ -1124,7 +1124,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 0
 
     @pytest.mark.parametrize(
-        "side, price, trigger_price",
+        ("side", "price", "trigger_price"),
         [
             [OrderSide.BUY, Price.from_str("90.005"), Price.from_str("90.005")],
             [OrderSide.SELL, Price.from_str("90.002"), Price.from_str("90.002")],
@@ -1157,7 +1157,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 0
 
     @pytest.mark.parametrize(
-        "side, trigger_price",
+        ("side", "trigger_price"),
         [
             [OrderSide.BUY, Price.from_str("90.010")],
             [OrderSide.SELL, Price.from_str("90.000")],
@@ -1190,7 +1190,7 @@ class TestSimulatedExchange:
         assert order in self.exchange.get_open_orders()
 
     @pytest.mark.parametrize(
-        "side, price, trigger_price",
+        ("side", "price", "trigger_price"),
         [
             [OrderSide.BUY, Price.from_str("90.010"), Price.from_str("90.002")],
             [OrderSide.SELL, Price.from_str("90.000"), Price.from_str("90.005")],
@@ -1223,7 +1223,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 0
 
     @pytest.mark.parametrize(
-        "side, price, trigger_price",
+        ("side", "price", "trigger_price"),
         [
             [OrderSide.BUY, Price.from_str("90.000"), Price.from_str("90.010")],
             [OrderSide.SELL, Price.from_str("89.980"), Price.from_str("89.990")],

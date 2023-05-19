@@ -50,10 +50,10 @@ class TestMoney:
         money_zero = Money(None, currency=USD)
 
         # Assert
-        assert 0 == money_zero.as_decimal()
+        assert money_zero.as_decimal() == 0
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, Money(0, USD)],
             [1, Money(1, USD)],
@@ -95,8 +95,8 @@ class TestMoney:
         money = Money(1, USD)
 
         # Assert
-        assert 1.0 == money.as_double()
-        assert "1.00" == str(money)
+        assert money.as_double() == 1.0
+        assert str(money) == "1.00"
 
     def test_initialized_with_many_decimals_rounds_to_currency_precision(self) -> None:
         # Arrange, Act
@@ -141,10 +141,10 @@ class TestMoney:
         money2 = Money(1_000_000, USD)
 
         # Act, Assert
-        assert "0.00" == str(money0)
-        assert "1.00" == str(money1)
-        assert "1000000.00" == str(money2)
-        assert "1_000_000.00 USD" == money2.to_str()
+        assert str(money0) == "0.00"
+        assert str(money1) == "1.00"
+        assert str(money2) == "1000000.00"
+        assert money2.to_str() == "1_000_000.00 USD"
 
     def test_repr(self) -> None:
         # Arrange
@@ -165,7 +165,7 @@ class TestMoney:
             Money.from_str(value)
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             ["1.00 USDT", Money(1.00, USDT)],
             ["1.00 USD", Money(1.00, USD)],

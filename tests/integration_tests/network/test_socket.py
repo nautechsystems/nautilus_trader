@@ -21,7 +21,7 @@ from nautilus_trader.network.socket import SocketClient
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_socket_base_connect(socket_server, event_loop):
     messages = []
 
@@ -45,7 +45,7 @@ async def test_socket_base_connect(socket_server, event_loop):
     await asyncio.sleep(1)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_socket_base_reconnect_on_incomplete_read(closing_socket_server, event_loop):
     messages = []
 

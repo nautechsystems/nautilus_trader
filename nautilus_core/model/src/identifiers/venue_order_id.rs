@@ -15,7 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -31,7 +31,7 @@ pub struct VenueOrderId {
 }
 
 impl Display for VenueOrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -41,7 +41,7 @@ impl VenueOrderId {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`VenueOrderId` value");
 
-        VenueOrderId {
+        Self {
             value: Box::new(Rc::new(s.to_string())),
         }
     }
@@ -49,7 +49,7 @@ impl VenueOrderId {
 
 impl Default for VenueOrderId {
     fn default() -> Self {
-        VenueOrderId {
+        Self {
             value: Box::new(Rc::new(String::from("001"))),
         }
     }

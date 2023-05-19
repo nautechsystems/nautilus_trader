@@ -42,5 +42,16 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
         "nautilus_trader.core.nautilus_pyo3.model",
         m.getattr("model")?,
     )?;
+
+    // Network
+    let submodule = pyo3::wrap_pymodule!(nautilus_network::nautilus_network);
+    m.add_wrapped(submodule)?;
+    let sys = PyModule::import(py, "sys")?;
+    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    sys_modules.set_item(
+        "nautilus_trader.core.nautilus_pyo3.network",
+        m.getattr("nautilus_network")?,
+    )?;
+
     Ok(())
 }

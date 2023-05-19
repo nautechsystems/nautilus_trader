@@ -25,6 +25,7 @@ from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 from betfair_parser.spec.streaming.mcm import MarketChange
 
+# fmt: off
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
@@ -41,19 +42,15 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
-from nautilus_trader.adapters.betfair.parsing.streaming import (
-    market_definition_to_betfair_starting_prices,
-)
-from nautilus_trader.adapters.betfair.parsing.streaming import (
-    market_definition_to_instrument_closes,
-)
-from nautilus_trader.adapters.betfair.parsing.streaming import (
-    market_definition_to_instrument_status_updates,
-)
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_betfair_starting_prices
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_closes
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status_updates
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
@@ -72,8 +69,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook import L2OrderBook
-from nautilus_trader.model.orderbook import OrderBookDeltas
-from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
@@ -81,6 +76,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+# fmt: on
 
 
 class TestBetfairParsingStreaming:
@@ -170,7 +168,7 @@ class TestBetfairParsingStreaming:
         assert isinstance(result[3], OrderBookDeltas)
 
     @pytest.mark.parametrize(
-        "filename, num_msgs",
+        ("filename", "num_msgs"),
         [
             ("1.166564490.bz2", 2533),
             ("1.166811431.bz2", 17846),
@@ -203,7 +201,7 @@ class TestBetfairParsingStreaming:
         assert updates == expected
 
     @pytest.mark.parametrize(
-        "filename, book_count",
+        ("filename", "book_count"),
         [
             ("1.166564490.bz2", [1854, 2161]),
             ("1.166811431.bz2", [12318, 12181]),
@@ -316,7 +314,7 @@ class TestBetfairParsing:
         }
         assert result == expected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_account_statement(self):
         with patch.object(
             BetfairClient,
@@ -357,7 +355,7 @@ class TestBetfairParsing:
         )
         assert result == expected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_merge_order_book_deltas(self):
         raw = msgspec.json.encode(
             {
@@ -444,7 +442,7 @@ class TestBetfairParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "side,liability",
+        ("side", "liability"),
         [("BUY", "100.0"), ("SELL", "100.0")],
     )
     def test_make_order_market_on_close(self, side, liability):
@@ -460,7 +458,7 @@ class TestBetfairParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "status,size,matched,cancelled,expected",
+        ("status", "size", "matched", "cancelled", "expected"),
         [
             ("EXECUTION_COMPLETE", 10.0, 10.0, 0.0, OrderStatus.FILLED),
             ("EXECUTION_COMPLETE", 10.0, 5.0, 5.0, OrderStatus.CANCELED),

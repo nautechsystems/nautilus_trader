@@ -265,7 +265,7 @@ class TestL2OrderBookExchange:
         assert order.status == OrderStatus.ACCEPTED
 
     # TODO - Need to discuss how we are going to support passive quotes trading now
-    @pytest.mark.skip
+    @pytest.mark.skip()
     def test_passive_partial_fill(self):
         # Arrange: Prepare market
         self.cache.add_instrument(USDJPY_SIM)
@@ -304,7 +304,7 @@ class TestL2OrderBookExchange:
         assert order.avg_px == Decimal("15.0")
 
     # TODO - Need to discuss how we are going to support passive quotes trading now
-    @pytest.mark.skip
+    @pytest.mark.skip()
     def test_passive_fill_on_trade_tick(self):
         # Arrange: Prepare market
         # Market is 10 @ 15

@@ -28,15 +28,14 @@ from ib_insync import RealTimeBarList
 from ib_insync import Ticker
 from ib_insync.ticker import nan
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.data import parse_bar_data
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -44,6 +43,7 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -53,8 +53,10 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+# fmt: on
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
@@ -162,7 +164,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                         )
                         self._resubscribe_on_reset()
                     except Exception as e:
-                        self._log.info(f"{repr(e)}")
+                        self._log.info(f"{e!r}")
         except asyncio.CancelledError:
             self._log.debug("`watch_dog` task was canceled.")
 
@@ -261,7 +263,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 durationStr=timedelta_to_duration_str(duration),
                 barSizeSetting=bar_size_setting,
                 whatToShow=what_to_show[bar_type.spec.price_type],
-                useRTH=True if contract_details.contract.secType == "STK" else False,
+                useRTH=contract_details.contract.secType == "STK",
                 formatDate=2,
                 keepUpToDate=True,
             )
@@ -326,7 +328,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     #     for depth in ticker.domTicks:
     #         update = OrderBookDelta(
     #             instrument_id=instrument_id,
-    #             book_type=BookType.L2_MBP,
     #             action=MKT_DEPTH_OPERATIONS[depth.operation],
     #             order=Order(
     #                 price=Price.from_str(str(depth.price)),
@@ -371,7 +372,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ts_init = self._clock.timestamp_ns()
         ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
         snapshot = OrderBookSnapshot(
-            book_type=BookType.L1_TBBO,
             instrument_id=instrument_id,
             bids=[(ticker.bid, ticker.bidSize)],
             asks=[(ticker.ask, ticker.askSize)],
@@ -387,7 +387,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not (ticker.domBids or ticker.domAsks):
             return
         snapshot = OrderBookSnapshot(
-            book_type=book_type,
             instrument_id=instrument_id,
             bids=[(level.price, level.size) for level in ticker.domBids],
             asks=[(level.price, level.size) for level in ticker.domAsks],

@@ -91,16 +91,16 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         else:
             filter_expr = self.filter_expr
 
-        return dict(
-            cls=self.data_type,
-            instrument_ids=[self.instrument_id] if self.instrument_id else None,
-            start=self.start_time,
-            end=self.end_time,
-            filter_expr=parse_filters_expr(filter_expr),
-            as_nautilus=True,
-            metadata=self.metadata,
-            use_rust=self.use_rust,
-        )
+        return {
+            "cls": self.data_type,
+            "instrument_ids": [self.instrument_id] if self.instrument_id else None,
+            "start": self.start_time,
+            "end": self.end_time,
+            "filter_expr": parse_filters_expr(filter_expr),
+            "as_nautilus": True,
+            "metadata": self.metadata,
+            "use_rust": self.use_rust,
+        }
 
     @property
     def start_time_nanos(self) -> int:
@@ -256,7 +256,7 @@ def parse_filters_expr(s: Optional[str]):
         for name in code.co_names:
             if name not in allowed_names:
                 raise NameError(f"Use of {name} not allowed")
-        return eval(code, {}, allowed_names)  # noqa: S307
+        return eval(code, {}, allowed_names)
 
     return safer_eval(s)  # Only allow use of the field object
 
@@ -280,7 +280,6 @@ def json_encoder(x):
 def register_json_encoding(type_: type, encoder: Callable) -> None:
     global CUSTOM_ENCODINGS
     CUSTOM_ENCODINGS[type_] = encoder
-    return None
 
 
 def tokenize_config(obj: dict) -> str:

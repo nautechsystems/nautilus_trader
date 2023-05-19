@@ -751,7 +751,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _generate_external_order(self, report: OrderStatusReport) -> Order:
         self._log.info(
-            f"Generating external order {repr(report.client_order_id)}",
+            f"Generating external order {report.client_order_id!r}",
             color=LogColor.BLUE,
         )
 
@@ -961,7 +961,6 @@ class LiveExecutionEngine(ExecutionEngine):
         elif (
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            if report.trigger_price != order.trigger_price or report.price != order.price:
-                return True
+        ) and (report.trigger_price != order.trigger_price or report.price != order.price):
+            return True
         return False

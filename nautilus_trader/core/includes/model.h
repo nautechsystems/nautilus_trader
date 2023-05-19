@@ -215,9 +215,7 @@ typedef enum TriggerType {
 
 typedef struct Arc_String Arc_String;
 
-typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
-
-typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
+typedef struct OrderBook OrderBook;
 
 typedef struct Rc_String Rc_String;
 
@@ -268,6 +266,38 @@ typedef struct Bar_t {
 } Bar_t;
 
 /**
+ * Represents an order in a book.
+ */
+typedef struct BookOrder {
+    enum OrderSide side;
+    struct Price_t price;
+    struct Quantity_t size;
+    uint64_t order_id;
+} BookOrder;
+
+/**
+ * Represents a single change/delta in an order book.
+ */
+typedef struct OrderBookDelta {
+    struct InstrumentId_t instrument_id;
+    enum BookAction action;
+    struct BookOrder order;
+    uint8_t flags;
+    uint64_t sequence;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderBookDelta;
+
+typedef struct OrderBookSnapshot {
+    struct InstrumentId_t instrument_id;
+    CVec bids;
+    CVec asks;
+    uint64_t sequence;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderBookSnapshot;
+
+/**
  * Represents a single quote tick in a financial market.
  */
 typedef struct QuoteTick_t {
@@ -298,18 +328,30 @@ typedef struct TradeTick_t {
 } TradeTick_t;
 
 typedef enum Data_t_Tag {
-    TRADE,
+    SNAPSHOT,
+    DELTA,
     QUOTE,
+    TRADE,
+    BAR,
 } Data_t_Tag;
 
 typedef struct Data_t {
     Data_t_Tag tag;
     union {
         struct {
-            struct TradeTick_t trade;
+            struct OrderBookSnapshot snapshot;
+        };
+        struct {
+            struct OrderBookDelta delta;
         };
         struct {
             struct QuoteTick_t quote;
+        };
+        struct {
+            struct TradeTick_t trade;
+        };
+        struct {
+            struct Bar_t bar;
         };
     };
 } Data_t;
@@ -354,20 +396,9 @@ typedef struct VenueOrderId_t {
     struct Rc_String *value;
 } VenueOrderId_t;
 
-typedef struct Ladder {
-    enum OrderSide side;
-    struct BTreeMap_BookPrice__Level *levels;
-    struct HashMap_u64__BookPrice *cache;
-} Ladder;
-
-typedef struct OrderBook {
-    struct Ladder bids;
-    struct Ladder asks;
-    struct InstrumentId_t instrument_id;
-    enum BookType book_level;
-    enum OrderSide last_side;
-    uint64_t ts_last;
-} OrderBook;
+typedef struct OrderBook_API {
+    struct OrderBook *_0;
+} OrderBook_API;
 
 typedef struct Currency_t {
     struct Arc_String *code;
@@ -465,6 +496,57 @@ void bar_drop(struct Bar_t bar);
 uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
+
+void book_order_drop(struct BookOrder order);
+
+struct BookOrder book_order_clone(const struct BookOrder *order);
+
+uint64_t book_order_hash(const struct BookOrder *order);
+
+struct BookOrder book_order_new(enum OrderSide order_side,
+                                struct Price_t price,
+                                struct Quantity_t quantity,
+                                uint64_t order_id);
+
+void orderbook_delta_drop(struct OrderBookDelta delta);
+
+struct OrderBookDelta orderbook_delta_clone(const struct OrderBookDelta *delta);
+
+struct OrderBookDelta orderbook_delta_new(struct InstrumentId_t instrument_id,
+                                          enum BookAction action,
+                                          struct BookOrder order,
+                                          uint8_t flags,
+                                          uint64_t sequence,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+void orderbook_snapshot_drop(struct OrderBookSnapshot snapshot);
+
+/**
+ * Creates a new `OrderBookSnapshot` from the provided data.
+ *
+ * # Safety
+ *
+ * This function is marked as `unsafe` because it relies on the assumption that the `CVec`
+ * objects were correctly initialized and point to valid memory regions with a valid layout.
+ * Improper use of this function with incorrect or uninitialized `CVec` objects can lead
+ * to undefined behavior, including memory unsafety and crashes.
+ *
+ * It is the responsibility of the caller to ensure that the `CVec` objects are valid and
+ * have the correct layout matching the expected `Vec` types (`BookOrder` in this case).
+ * Failure to do so can result in memory corruption or access violations.
+ *
+ * Additionally, the ownership of the provided memory is transferred to the returned
+ * `OrderBookSnapshot` object. It is crucial to ensure proper memory management and
+ * deallocation of the `OrderBookSnapshot` object to prevent memory leaks by calling
+ * `orderbook_snapshot_drop(...).
+ */
+struct OrderBookSnapshot orderbook_snapshot_new(struct InstrumentId_t instrument_id,
+                                                CVec bids,
+                                                CVec asks,
+                                                uint64_t sequence,
+                                                uint64_t ts_event,
+                                                uint64_t ts_init);
 
 void quote_tick_drop(struct QuoteTick_t tick);
 
@@ -1023,7 +1105,7 @@ struct TradeId_t trade_id_clone(const struct TradeId_t *trade_id);
 void trade_id_drop(struct TradeId_t trade_id);
 
 /**
- * Returns [TradeId] as a C string pointer.
+ * Returns [`TradeId`] as a C string pointer.
  */
 const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
 
@@ -1096,7 +1178,7 @@ uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOr
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 
-struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookType book_level);
+struct OrderBook_API order_book_new(struct InstrumentId_t instrument_id, enum BookType book_type);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.

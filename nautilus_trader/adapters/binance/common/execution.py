@@ -301,12 +301,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
         except BinanceError as e:
             self._log.error(
-                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {client_order_id!r}: {e.message}. Retry {retries}/3",
             )
             retries += 1
             self._generate_order_status_retries[client_order_id] = retries
             if not client_order_id:
-                self.log.warning("Cannot retry without a client order ID.")
+                self._log.warning("Cannot retry without a client order ID.")
             else:
                 order: Optional[Order] = self._cache.order(client_order_id)
                 if order is None:
@@ -461,7 +461,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
             if trade.symbol is None:
-                self.log.warning(f"No symbol for trade {trade}.")
+                self._log.warning(f"No symbol for trade {trade}.")
                 continue
             report = trade.parse_to_trade_report(
                 account_id=self.account_id,
@@ -508,7 +508,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         if order.is_closed:
-            self.log.warning(f"Cannot submit already closed order {command.order}.")
+            self._log.warning(f"Cannot submit already closed order {order}.")
             return
 
         # Check validity
@@ -551,9 +551,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if order.time_in_force == TimeInForce.GTD and time_in_force == BinanceTimeInForce.GTC:
-            if self._warn_gtd_to_gtc:
-                self._log.warning("Converted GTD `time_in_force` to GTC.")
+        if (
+            order.time_in_force == TimeInForce.GTD
+            and time_in_force == BinanceTimeInForce.GTC
+            and self._warn_gtd_to_gtc
+        ):
+            self._log.warning("Converted GTD `time_in_force` to GTC.")
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
@@ -794,7 +797,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         venue_order_id=order.venue_order_id,
                     )
         except BinanceError as e:
-            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+            if "Unknown order sent" in e.message:
+                self._log.info(
+                    "No open orders to cancel according to Binance.",
+                    LogColor.GREEN,
+                )
+            else:
+                self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     async def _cancel_order_single(
         self,
@@ -816,8 +825,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "
-                f"{repr(client_order_id)}, "
-                f"{repr(venue_order_id)}: "
+                f"{client_order_id!r}, "
+                f"{venue_order_id!r}: "
                 f"{e.message}",
                 e,
             )

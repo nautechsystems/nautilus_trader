@@ -161,7 +161,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         self.strategy.start()
 
     @pytest.mark.parametrize(
-        "emulation_trigger, " "order_side, " "sl_trigger_price, " "tp_price",
+        ("emulation_trigger", "order_side", "sl_trigger_price", "tp_price"),
         [
             [
                 TriggerType.NO_TRIGGER,
@@ -227,12 +227,14 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         assert tp_order.status == OrderStatus.ACCEPTED
 
     @pytest.mark.parametrize(
-        "emulation_trigger, "
-        "order_side, "
-        "entry_trigger_price, "
-        "sl_trigger_price, "
-        "tp_trigger_price, "
-        "next_tick_price",
+        (
+            "emulation_trigger",
+            "order_side",
+            "entry_trigger_price",
+            "sl_trigger_price",
+            "tp_trigger_price",
+            "next_tick_price",
+        ),
         [
             [
                 TriggerType.NO_TRIGGER,
@@ -325,13 +327,15 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         assert tp_order.status == OrderStatus.ACCEPTED
 
     @pytest.mark.parametrize(
-        "emulation_trigger, "
-        "order_side, "
-        "entry_trigger_price, "
-        "entry_price, "
-        "sl_trigger_price, "
-        "tp_price, "
-        "next_tick_price",
+        (
+            "emulation_trigger",
+            "order_side",
+            "entry_trigger_price",
+            "entry_price",
+            "sl_trigger_price",
+            "tp_price",
+            "next_tick_price",
+        ),
         [
             [
                 TriggerType.NO_TRIGGER,
@@ -441,13 +445,15 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         )
 
     @pytest.mark.parametrize(
-        "emulation_trigger, "
-        "order_side, "
-        "entry_trigger_price, "
-        "entry_price, "
-        "sl_trigger_price, "
-        "tp_price, "
-        "next_tick_price",
+        (
+            "emulation_trigger",
+            "order_side",
+            "entry_trigger_price",
+            "entry_price",
+            "sl_trigger_price",
+            "tp_price",
+            "next_tick_price",
+        ),
         [
             [
                 TriggerType.NO_TRIGGER,
@@ -546,13 +552,15 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         assert tp_order.status == OrderStatus.ACCEPTED
 
     @pytest.mark.parametrize(
-        "emulation_trigger, "
-        "order_side, "
-        "entry_trigger_price, "
-        "entry_price, "
-        "sl_trigger_price, "
-        "tp_price, "
-        "next_tick_price",
+        (
+            "emulation_trigger",
+            "order_side",
+            "entry_trigger_price",
+            "entry_price",
+            "sl_trigger_price",
+            "tp_price",
+            "next_tick_price",
+        ),
         [
             [
                 TriggerType.NO_TRIGGER,
@@ -651,13 +659,15 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         assert tp_order.status == OrderStatus.ACCEPTED
 
     @pytest.mark.parametrize(
-        "emulation_trigger, "
-        "order_side, "
-        "entry_trigger_price, "
-        "entry_price, "
-        "sl_trigger_price, "
-        "tp_price, "
-        "next_tick_price",
+        (
+            "emulation_trigger",
+            "order_side",
+            "entry_trigger_price",
+            "entry_price",
+            "sl_trigger_price",
+            "tp_price",
+            "next_tick_price",
+        ),
         [
             [
                 TriggerType.NO_TRIGGER,
@@ -756,12 +766,14 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         assert tp_order.status == OrderStatus.ACCEPTED
 
     @pytest.mark.parametrize(
-        "emulation_trigger, "
-        "order_side, "
-        "entry_trigger_price, "
-        "entry_price, "
-        "sl_trigger_price, "
-        "tp_price",
+        (
+            "emulation_trigger",
+            "order_side",
+            "entry_trigger_price",
+            "entry_price",
+            "sl_trigger_price",
+            "tp_price",
+        ),
         [
             [
                 TriggerType.NO_TRIGGER,

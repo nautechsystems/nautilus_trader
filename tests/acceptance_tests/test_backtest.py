@@ -45,6 +45,9 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
@@ -52,7 +55,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
@@ -732,7 +734,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
-                d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+                d
+                for d in data
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot))
+                and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
             self.engine.add_data(trade_ticks)
@@ -787,7 +792,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
-                d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+                d
+                for d in data
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot))
+                and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
             self.engine.add_data(trade_ticks)

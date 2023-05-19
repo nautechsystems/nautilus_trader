@@ -199,7 +199,7 @@ class TestLiveExecutionEngine:
         self.strategy.stop()
         self.exec_engine.dispose()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.exec_engine.start()
@@ -208,7 +208,7 @@ class TestLiveExecutionEngine:
         assert True  # No exceptions raised
         self.exec_engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
@@ -272,7 +272,7 @@ class TestLiveExecutionEngine:
         assert self.exec_engine.cmd_qsize() == 1
         assert self.exec_engine.command_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
@@ -338,7 +338,7 @@ class TestLiveExecutionEngine:
         assert self.exec_engine.cmd_qsize() == 1
         assert self.exec_engine.command_count == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_start(self):
         # Arrange, Act
         self.exec_engine.start()
@@ -350,7 +350,7 @@ class TestLiveExecutionEngine:
         # Tear Down
         self.exec_engine.stop()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
         self.exec_engine.start()
@@ -360,7 +360,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.is_stopped
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_kill_when_not_running_with_messages_on_queue(self):
         # Arrange, Act
         self.exec_engine.kill()
@@ -369,7 +369,7 @@ class TestLiveExecutionEngine:
         assert self.exec_engine.cmd_qsize() == 0
         assert self.exec_engine.evt_qsize() == 0
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_execute_command_places_command_on_queue(self):
         # Arrange
         self.exec_engine.start()
@@ -510,7 +510,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.report_count == 1
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_check_inflight_order_status(self):
         # Arrange
         order = self.strategy.order_factory.limit(

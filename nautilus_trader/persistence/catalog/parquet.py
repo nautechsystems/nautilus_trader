@@ -287,10 +287,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         start_nanos: Optional[int] = None,
         end_nanos: Optional[int] = None,
     ) -> list[str]:
-        if instrument_id is None:
-            folder = self.path
-        else:
-            folder = self.make_path(cls=cls, instrument_id=instrument_id)
+        folder = (
+            self.path
+            if instrument_id is None
+            else self.make_path(cls=cls, instrument_id=instrument_id)
+        )
 
         if not os.path.exists(folder):
             return []
@@ -365,7 +366,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         as_nautilus: bool = False,
         **kwargs,
     ):
-        subclasses = [base_cls] + base_cls.__subclasses__()
+        subclasses = [base_cls, *base_cls.__subclasses__()]
 
         dfs = []
         for cls in subclasses:
@@ -439,10 +440,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             f"{self.path}/data/{name}.parquet",
             filesystem=self.fs,
         )
-        partitions = {}
-        for level in dataset.partitions.levels:
-            partitions[level.name] = level.keys
-        return partitions
+        # TODO(cs): Catalog v1 impl below
+        # partitions = {}
+        # for level in dataset.partitioning:
+        #     partitions[level.name] = level.keys
+        return dataset.partitioning
 
     def list_backtests(self) -> list[str]:
         glob_path = f"{self.path}/backtest/*.feather"
@@ -463,7 +465,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = {}
         glob_path = f"{self.path}/{kind}/{run_id}.feather/*.feather"
 
-        for path in [p for p in self.fs.glob(glob_path)]:
+        for path in list(self.fs.glob(glob_path)):
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather_file(path=path, fs=self.fs)
 
@@ -482,7 +484,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 if raise_on_failed_deserialize:
                     raise
                 print(f"Failed to deserialize {cls_name}: {e}")
-        return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+        return sorted(sum(data.values(), []), key=lambda x: x.ts_init)
 
 
 def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):

@@ -29,6 +29,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
@@ -52,7 +53,7 @@ class TestExecStubs:
         )
 
     @staticmethod
-    def betting_account(account_id=None) -> BettingAccount:
+    def betting_account(account_id: Optional[AccountId] = None) -> BettingAccount:
         return AccountFactory.create(
             TestEventStubs.betting_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
@@ -151,7 +152,7 @@ class TestExecStubs:
         return order
 
     @staticmethod
-    def make_filled_order(instrument, **kwargs) -> Order:
+    def make_filled_order(instrument: Instrument, **kwargs) -> Order:
         order = TestExecStubs.make_accepted_order(instrument_id=instrument.id, **kwargs)
         fill = TestEventStubs.order_filled(order=order, instrument=instrument)
         order.apply(fill)

@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ops::{Deref, DerefMut};
+
+use crate::data::book::BookOrder;
 use crate::enums::{BookType, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::orderbook::ladder::Ladder;
-use crate::orderbook::order::BookOrder;
 
-#[repr(C)]
 pub struct OrderBook {
     bids: Ladder,
     asks: Ladder,
@@ -31,7 +32,7 @@ pub struct OrderBook {
 impl OrderBook {
     #[must_use]
     pub fn new(instrument_id: InstrumentId, book_level: BookType) -> Self {
-        OrderBook {
+        Self {
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
             instrument_id,
@@ -47,7 +48,7 @@ impl OrderBook {
         match order.side {
             OrderSide::Buy => self.bids.add(order),
             OrderSide::Sell => self.asks.add(order),
-            _ => panic!("`OrderSide` was None"),
+            _ => panic!("Invalid `OrderSide` {}", order.side),
         }
     }
 
@@ -60,7 +61,7 @@ impl OrderBook {
             match order.side {
                 OrderSide::Buy => self.bids.update(order),
                 OrderSide::Sell => self.asks.update(order),
-                _ => panic!("`OrderSide` was None"),
+                _ => panic!("Invalid `OrderSide` {}", order.side),
             }
         }
     }
@@ -71,7 +72,7 @@ impl OrderBook {
         match order.side {
             OrderSide::Buy => self.bids.delete(order),
             OrderSide::Sell => self.asks.delete(order),
-            _ => panic!("`OrderSide` was None"),
+            _ => panic!("Invalid `OrderSide` {}", order.side),
         }
     }
 }
@@ -79,7 +80,28 @@ impl OrderBook {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct OrderBook_API(Box<OrderBook>);
+
+impl Deref for OrderBook_API {
+    type Target = OrderBook;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for OrderBook_API {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[no_mangle]
-pub extern "C" fn order_book_new(instrument_id: InstrumentId, book_level: BookType) -> OrderBook {
-    OrderBook::new(instrument_id, book_level)
+pub extern "C" fn order_book_new(
+    instrument_id: InstrumentId,
+    book_type: BookType,
+) -> OrderBook_API {
+    OrderBook_API(Box::new(OrderBook::new(instrument_id, book_type)))
 }

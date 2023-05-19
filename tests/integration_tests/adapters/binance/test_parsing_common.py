@@ -36,7 +36,7 @@ class TestBinanceCommonParsing:
         self._spot_enum_parser = BinanceSpotEnumParser()
 
     @pytest.mark.parametrize(
-        "order_type, expected",
+        ("order_type", "expected"),
         [
             [BinanceOrderType.LIMIT, OrderType.LIMIT],
             [BinanceOrderType.MARKET, OrderType.MARKET],
@@ -56,7 +56,7 @@ class TestBinanceCommonParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "resolution, expected_type",
+        ("resolution", "expected_type"),
         [
             [
                 "1m",

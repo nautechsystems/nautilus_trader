@@ -28,6 +28,7 @@ from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -111,8 +112,11 @@ class TestSimulatedExchange:
             venue=Venue("SIM"),
             oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
+            base_currency=None,
+            starting_balances=[
+                Money(1_000_000, USD),
+                Money(100_000_000, JPY),
+            ],
             default_leverage=Decimal(50),
             leverages={AUDUSD_SIM.id: Decimal(10)},
             instruments=[USDJPY_SIM],
@@ -221,7 +225,13 @@ class TestSimulatedExchange:
             self.exchange.process(0)
 
     @pytest.mark.parametrize(
-        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger",
+        (
+            "order_side",
+            "trailing_offset_type",
+            "trailing_offset",
+            "trigger_type",
+            "expected_trigger",
+        ),
         [
             [
                 OrderSide.BUY,
@@ -277,7 +287,13 @@ class TestSimulatedExchange:
         assert trailing_stop.trigger_price == expected_trigger
 
     @pytest.mark.parametrize(
-        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger",
+        (
+            "order_side",
+            "trailing_offset_type",
+            "trailing_offset",
+            "trigger_type",
+            "expected_trigger",
+        ),
         [
             [
                 OrderSide.BUY,
@@ -467,7 +483,14 @@ class TestSimulatedExchange:
         assert trailing_stop.trigger_price == Price.from_str("13.000")
 
     @pytest.mark.parametrize(
-        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger, expected_price",  # noqa
+        (
+            "order_side",
+            "trailing_offset_type",
+            "trailing_offset",
+            "trigger_type",
+            "expected_trigger",
+            "expected_price",
+        ),
         [
             [
                 OrderSide.BUY,
@@ -544,7 +567,14 @@ class TestSimulatedExchange:
         assert trailing_stop.price == expected_price
 
     @pytest.mark.parametrize(
-        "order_side, trailing_offset_type, trailing_offset, trigger_type, expected_trigger, expected_price",  # noqa
+        (
+            "order_side",
+            "trailing_offset_type",
+            "trailing_offset",
+            "trigger_type",
+            "expected_trigger",
+            "expected_price",
+        ),
         [
             [
                 OrderSide.BUY,

@@ -2157,7 +2157,7 @@ class TestRiskEngineWithCashAccount:
             "cancel_all_orders",
         ]
 
-    def test_cancel_all_orders_for_both_open_and_emulated_orders_then_sends_to_emulator_and_cancels_order(  # noqa
+    def test_cancel_all_orders_for_both_open_and_emulated_orders_then_sends_to_emulator_and_cancels_order(
         self,
     ):
         # Arrange

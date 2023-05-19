@@ -51,9 +51,9 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TESTS_PACKAGE_ROOT
@@ -247,10 +247,10 @@ class BetfairTestStubs:
                 ImportableStrategyConfig(
                     strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
                     config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-                    config=dict(
-                        instrument_id=instrument_id,
-                        max_trade_size=50,
-                    ),
+                    config={
+                        "instrument_id": instrument_id,
+                        "max_trade_size": 50,
+                    },
                 ),
             ]
             if add_strategy
@@ -267,7 +267,7 @@ class BetfairTestStubs:
                     instrument_id=instrument_id,
                 ),
                 BacktestDataConfig(  # typing: ignore
-                    data_cls=OrderBookData.fully_qualified_name(),
+                    data_cls=OrderBookDelta.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,

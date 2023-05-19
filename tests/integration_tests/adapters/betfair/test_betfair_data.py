@@ -35,6 +35,10 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
@@ -47,10 +51,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook import L2OrderBook
-from nautilus_trader.model.orderbook import OrderBookDelta
-from nautilus_trader.model.orderbook import OrderBookDeltas
-from nautilus_trader.model.orderbook import OrderBookSnapshot
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -88,7 +88,7 @@ def instrument_list(mock_load_markets_metadata):
     assert INSTRUMENTS
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 @patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
 @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
 @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
@@ -102,7 +102,7 @@ async def test_connect(_1, _2, _3, data_client, instrument):
     assert data_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(instrument.id)
@@ -133,7 +133,7 @@ def test_stream_latency(mock_degrade, data_client):
     assert mock_degrade.call_count == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_market_sub_image_market_def(data_client, mock_data_engine_process):
     # Arrange
     update = BetfairStreaming.mcm_SUB_IMAGE()
@@ -391,7 +391,8 @@ def test_instrument_closing_events(data_client):
         isinstance(messages[0], InstrumentStatusUpdate)
         and messages[0].status == MarketStatus.CLOSED
     )
-    assert isinstance(messages[2], InstrumentClose) and messages[2].close_price == 1.0000
+    assert isinstance(messages[2], InstrumentClose)
+    assert messages[2].close_price == 1.0000
     assert (
         isinstance(messages[2], InstrumentClose)
         and messages[2].close_type == InstrumentCloseType.CONTRACT_EXPIRED
@@ -400,7 +401,8 @@ def test_instrument_closing_events(data_client):
         isinstance(messages[1], InstrumentStatusUpdate)
         and messages[1].status == MarketStatus.CLOSED
     )
-    assert isinstance(messages[3], InstrumentClose) and messages[3].close_price == 0.0
+    assert isinstance(messages[3], InstrumentClose)
+    assert messages[3].close_price == 0.0
     assert (
         isinstance(messages[3], InstrumentClose)
         and messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED

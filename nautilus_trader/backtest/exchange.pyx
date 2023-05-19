@@ -618,13 +618,13 @@ cdef class SimulatedExchange:
         cdef (uint64_t, uint64_t) key = (ts, self._inflight_counter[ts])
         return key, command
 
-    cpdef void process_order_book(self, OrderBookData data):
+    cpdef void process_order_book(self, Data data):
         """
         Process the exchanges market for the given order book data.
 
         Parameters
         ----------
-        data : OrderBookData
+        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
             The order book data to process.
 
         """

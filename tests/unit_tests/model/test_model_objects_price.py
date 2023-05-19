@@ -76,7 +76,7 @@ class TestPrice:
         assert str(result) == "1.23"
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [Price(2.15, precision=2), 0, Decimal("2")],
             [Price(2.15, precision=2), 1, Decimal("2.2")],
@@ -91,7 +91,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [Price(-0, precision=0), Decimal("0")],
             [Price(0, precision=0), Decimal("0")],
@@ -108,7 +108,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [
                 Price(-1, precision=0),
@@ -125,7 +125,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [Price(1, precision=0), Decimal("-1")],
             [Price(0, precision=0), Decimal("0")],
@@ -139,7 +139,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, Price(0, precision=0)],
             [1, Price(1, precision=0)],
@@ -160,7 +160,7 @@ class TestPrice:
         assert decimal_object == expected
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [0.0, 0, Price(0, precision=0)],
             [1.0, 0, Price(1, precision=0)],
@@ -184,7 +184,7 @@ class TestPrice:
         assert decimal_object.precision == precision
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [0, -0, True],
             [-0, 0, True],
@@ -208,7 +208,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [0, -0, True],
             [-0, 0, True],
@@ -230,7 +230,7 @@ class TestPrice:
         assert result2 == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [Price(0, precision=0), Decimal(0), True],
             [Price(0, precision=0), Decimal(-0), True],
@@ -245,7 +245,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected1, expected2, expected3, expected4",
+        ("value1", "value2", "expected1", "expected2", "expected3", "expected4"),
         [
             [0, 0, False, True, True, False],
             [1, 0, True, True, False, False],
@@ -268,7 +268,7 @@ class TestPrice:
         assert (Price(value1, precision=0) < Price(value2, precision=0)) == expected4
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Price(0, precision=0), Price(0, precision=0), Decimal, 0],
             [
@@ -309,7 +309,7 @@ class TestPrice:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Price(0, precision=0), Price(0, precision=0), Decimal, 0],
             [
@@ -350,7 +350,7 @@ class TestPrice:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Price(0, 0), 0, Decimal, 0],
             [Price(1, 0), 1, Decimal, 1],
@@ -377,7 +377,7 @@ class TestPrice:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [1, Price(1, 0), Decimal, 1],
             [1.1, Price(1.1, 1), float, 1],
@@ -415,7 +415,7 @@ class TestPrice:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [1, Price(1, 0), Decimal, 1],
             [Price(0, 0), 1, Decimal, 0],
@@ -444,7 +444,7 @@ class TestPrice:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [1, Price(1, 0), Decimal, 1],
             [Price(100, 0), 10, Decimal, 0],
@@ -464,14 +464,14 @@ class TestPrice:
         expected_value,
     ):
         # Arrange, Act
-        result = value1 % value2  # noqa (not modulo formatting)
+        result = value1 % value2
 
         # Assert
         assert type(result) == expected_type
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [Price(1, 0), Price(2, 0), Price(2, 0)],
             [Price(1, 0), 2, 2],
@@ -491,7 +491,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [Price(1, 0), Price(2, 0), Price(1, 0)],
             [Price(1, 0), 2, Price(1, 0)],
@@ -511,7 +511,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [["1", 1], ["1.1", 1]],
     )
     def test_int(self, value, expected):
@@ -531,7 +531,7 @@ class TestPrice:
         assert hash(decimal1) == hash(decimal2)
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [0, 0, "0"],
             [-0, 0, "0"],
@@ -561,7 +561,7 @@ class TestPrice:
         assert result == "Price('1.1')"
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [0, 0, Price(0, 0)],
             [-0, 0, Price(0, 0)],
@@ -584,7 +584,7 @@ class TestPrice:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [[0, 0], [-0, 0], [-1, -1], [1, 1], [1.1, 1.1], [-1.1, -1.1]],
     )
     def test_as_double_with_various_values_returns_expected_value(self, value, expected):
@@ -630,7 +630,7 @@ class TestPrice:
         assert price.precision == 0
 
     @pytest.mark.parametrize(
-        "value, string, precision",
+        ("value", "string", "precision"),
         [
             ["100.11", "100.11", 2],
             ["1E7", "10000000", 0],
@@ -651,8 +651,8 @@ class TestPrice:
         price = Price(1.00000, precision=5)
 
         # Assert
-        assert "1.00000" == str(price)
-        assert "Price('1.00000')" == repr(price)
+        assert str(price) == "1.00000"
+        assert repr(price) == "Price('1.00000')"
 
     def test_pickle_dumps_and_loads(self):
         # Arrange

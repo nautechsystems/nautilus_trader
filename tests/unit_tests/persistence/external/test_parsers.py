@@ -122,7 +122,7 @@ class TestPersistenceParsers:
             for k, v in replacements.items():
                 line = line.replace(k, v)
 
-            yield eval(line)  # noqa: S307
+            yield eval(line)
 
         reader = TextReader(line_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-instrument.txt")[0]

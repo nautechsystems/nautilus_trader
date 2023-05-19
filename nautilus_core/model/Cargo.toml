@@ -14,7 +14,6 @@ crate-type = ["rlib", "staticlib"]
 nautilus_core = { path = "../core" }
 pyo3.workspace = true
 rust_decimal.workspace = true
-rust-fsm.workspace = true
 strum.workspace = true
 thiserror.workspace = true
 derive_builder = "0.12.0"

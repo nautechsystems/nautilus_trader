@@ -143,7 +143,7 @@ class TestLiveExecutionReconciliation:
     def teardown(self):
         self.client.dispose()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_rejected_order(self):
         # Arrange
         report = OrderStatusReport(
@@ -176,7 +176,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.REJECTED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_accepted_order(self):
         # Arrange
         report = OrderStatusReport(
@@ -209,7 +209,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders_open()) == 1
         assert self.cache.orders()[0].status == OrderStatus.ACCEPTED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_canceled_order(self):
         # Arrange
         report = OrderStatusReport(
@@ -242,7 +242,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.CANCELED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_expired_order(self):
         # Arrange
         report = OrderStatusReport(
@@ -278,7 +278,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.EXPIRED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_triggered_order(self):
         # Arrange
         report = OrderStatusReport(
@@ -315,7 +315,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders_open()) == 1
         assert self.cache.orders()[0].status == OrderStatus.TRIGGERED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_filled_order_and_no_trades(self):
         # Arrange
         report = OrderStatusReport(
@@ -349,7 +349,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.FILLED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_filled_order_and_trade(self):
         # Arrange
         venue_order_id = VenueOrderId("1")
@@ -402,7 +402,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.FILLED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_partially_filled_order_and_trade(self):
         # Arrange
         venue_order_id = VenueOrderId("1")
@@ -455,7 +455,7 @@ class TestLiveExecutionReconciliation:
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.PARTIALLY_FILLED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_reconcile_state_no_cached_with_partially_filled_order_and_no_trade(self):
         # Arrange
         venue_order_id = VenueOrderId("1")

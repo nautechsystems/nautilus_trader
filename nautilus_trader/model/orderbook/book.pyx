@@ -24,6 +24,8 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.data.book cimport BookOrder
+from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport BookType
@@ -31,8 +33,6 @@ from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orderbook.data cimport BookOrder
-from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.simulated cimport SimulatedL1OrderBook
@@ -206,7 +206,6 @@ cdef class OrderBook:
 
         """
         Condition.not_none(delta, "delta")
-        Condition.equal(delta.book_type, self.type, "delta.book_type", "self.type")
 
         self._apply_delta(delta)
 
@@ -219,14 +218,8 @@ cdef class OrderBook:
         deltas : OrderBookDeltas
             The deltas to apply.
 
-        Raises
-        ------
-        ValueError
-            If `snapshot.book_type` is not equal to `self.type`.
-
         """
         Condition.not_none(deltas, "deltas")
-        Condition.equal(deltas.book_type, self.type, "deltas.book_type", "self.type")
 
         cdef OrderBookDelta delta
         for delta in deltas.deltas:
@@ -241,14 +234,8 @@ cdef class OrderBook:
         snapshot : OrderBookSnapshot
             The snapshot to apply.
 
-        Raises
-        ------
-        ValueError
-            If `snapshot.book_type` is not equal to `self.type`.
-
         """
         Condition.not_none(snapshot, "snapshot")
-        Condition.equal(snapshot.book_type, self.type, "snapshot.book_type", "self.type")
 
         self.clear()
         # Use `update` instead of `add` (when book has been cleared they're
@@ -271,29 +258,24 @@ cdef class OrderBook:
 
         self.ts_last = snapshot.ts_init
 
-    cpdef void apply(self, OrderBookData data):
+    cpdef void apply(self, Data data):
         """
-        Apply the data to the order book.
+        Apply the given data to the order book.
 
         Parameters
         ----------
-        data : OrderBookData
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
             The data to apply.
 
-        Raises
-        ------
-        ValueError
-            If `data.level` is not equal to `self.type`.
-
         """
-        Condition(data.book_type, self.type, "data.book_type", "self.type")
-
         if isinstance(data, OrderBookSnapshot):
             self.apply_snapshot(snapshot=data)
         elif isinstance(data, OrderBookDeltas):
             self.apply_deltas(deltas=data)
         elif isinstance(data, OrderBookDelta):
             self._apply_delta(delta=data)
+        else:  # pragma: no-cover (design time error)
+            raise RuntimeError(f"invalid order book data type, was {type(data)}")  # pragma: no-cover (design time error)
 
     cpdef void check_integrity(self):
         """

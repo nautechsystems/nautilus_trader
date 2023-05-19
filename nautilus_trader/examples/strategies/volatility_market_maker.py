@@ -23,6 +23,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -33,7 +34,6 @@ from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookDelta
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -335,9 +335,10 @@ class VolatilityMarketMaker(Strategy):
             if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:
                     self.create_buy_order(last)
-            elif self.sell_order and event.order_side == OrderSide.SELL:
-                if self.sell_order.is_closed:
-                    self.create_sell_order(last)
+            elif (
+                self.sell_order and event.order_side == OrderSide.SELL and self.sell_order.is_closed
+            ):
+                self.create_sell_order(last)
 
     def on_stop(self) -> None:
         """
@@ -383,7 +384,6 @@ class VolatilityMarketMaker(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -392,4 +392,3 @@ class VolatilityMarketMaker(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

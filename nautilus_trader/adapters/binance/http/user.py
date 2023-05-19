@@ -161,7 +161,7 @@ class BinanceUserDataHttpAPI:
             listen_key_url = self.base_endpoint + "listenKey"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)  # noqa
+                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)
             )
 
         self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)

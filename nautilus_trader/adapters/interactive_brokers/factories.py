@@ -20,15 +20,14 @@ from typing import Literal, Optional
 
 import ib_insync
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
-from nautilus_trader.adapters.interactive_brokers.providers import (
-    InteractiveBrokersInstrumentProvider,
-)
+from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -38,6 +37,8 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
+
+# fmt: on
 
 GATEWAY = None
 IB_INSYNC_CLIENTS: dict[tuple, ib_insync.IB] = {}

@@ -10,10 +10,9 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -69,9 +68,9 @@ class StreamingFeatherWriter:
         self._schemas = list_schemas()
         self._schemas.update(
             {
-                OrderBookDelta: self._schemas[OrderBookData],
-                OrderBookDeltas: self._schemas[OrderBookData],
-                OrderBookSnapshot: self._schemas[OrderBookData],
+                OrderBookDelta: self._schemas[OrderBookDelta],
+                OrderBookDeltas: self._schemas[OrderBookDelta],
+                OrderBookSnapshot: self._schemas[OrderBookDelta],
             },
         )
         self.logger = logger
@@ -105,11 +104,7 @@ class StreamingFeatherWriter:
 
     @property
     def closed(self) -> bool:
-        for cls in self._files:
-            if not self._files[cls].closed:
-                return False
-
-        return True
+        return all(self._files[cls].closed for cls in self._files)
 
     def write(self, obj: object) -> None:
         """

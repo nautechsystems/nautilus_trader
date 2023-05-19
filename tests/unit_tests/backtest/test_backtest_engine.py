@@ -37,12 +37,15 @@ from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -52,10 +55,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -185,7 +184,7 @@ class TestBacktestEngine:
         engine.run()
         engine.dispose()
 
-        assert all([f.closed for f in engine.kernel.writer._files.values()])
+        assert all(f.closed for f in engine.kernel.writer._files.values())
 
     def test_backtest_engine_multiple_runs(self):
         for _ in range(2):
@@ -346,7 +345,6 @@ class TestBacktestEngineData:
 
         snapshot1 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             ts_event=0,
@@ -355,7 +353,6 @@ class TestBacktestEngineData:
 
         snapshot2 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
             ts_event=1_000_000_000,
@@ -378,7 +375,6 @@ class TestBacktestEngineData:
         deltas = [
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=BookOrder(
                     price=Price.from_str("13.0"),
@@ -390,7 +386,6 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=BookOrder(
                     price=Price.from_str("12.0"),
@@ -402,7 +397,6 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=BookOrder(
                     price=Price.from_str("11.0"),
@@ -414,7 +408,6 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=BookOrder(
                     price=Price.from_str("10.0"),
@@ -426,7 +419,6 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=BookOrder(
                     price=Price.from_str("9.0"),
@@ -438,7 +430,6 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=BookOrder(
                     price=Price.from_str("0.0"),
@@ -452,7 +443,6 @@ class TestBacktestEngineData:
 
         operations1 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             deltas=deltas,
             ts_event=0,
             ts_init=0,
@@ -460,7 +450,6 @@ class TestBacktestEngineData:
 
         operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
             deltas=deltas,
             ts_event=1000,
             ts_init=1000,

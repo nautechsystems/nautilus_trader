@@ -38,7 +38,6 @@ class TestBetfairPersistence:
             {
                 "type": "BSPOrderBookDelta",
                 "instrument_id": self.instrument.id.value,
-                "book_type": "L2_MBP",
                 "action": "UPDATE",
                 "price": 0.990099,
                 "size": 60.07,

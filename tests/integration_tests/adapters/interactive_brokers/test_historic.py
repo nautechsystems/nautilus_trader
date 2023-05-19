@@ -144,7 +144,7 @@ def test_parse_historic_trade_ticks():
     ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
 
     # Assert
-    assert all([isinstance(t, TradeTick) for t in ticks])
+    assert all(isinstance(t, TradeTick) for t in ticks)
 
     expected = TradeTick.from_dict(
         {
@@ -170,7 +170,7 @@ def test_parse_historic_quote_ticks():
     ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
 
     # Assert
-    assert all([isinstance(t, QuoteTick) for t in ticks])
+    assert all(isinstance(t, QuoteTick) for t in ticks)
     expected = QuoteTick.from_dict(
         {
             "type": "QuoteTick",
@@ -199,7 +199,7 @@ def test_parse_historic_bar():
     )
 
     # Assert
-    assert all([isinstance(t, Bar) for t in ticks])
+    assert all(isinstance(t, Bar) for t in ticks)
     expected = Bar.from_dict(
         {
             "type": "Bar",
@@ -217,7 +217,7 @@ def test_parse_historic_bar():
 
 
 @pytest.mark.parametrize(
-    "spec, expected",
+    ("spec", "expected"),
     [
         (
             "1-SECOND-BID",  # For some reason 1 = secs but 1 = min

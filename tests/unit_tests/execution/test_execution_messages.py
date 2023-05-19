@@ -258,7 +258,7 @@ class TestCommands:
         assert CancelOrder.from_dict(CancelOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "CancelOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001)"  # noqa
+            == "CancelOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001)"
         )
         assert (
             repr(command)
@@ -283,7 +283,7 @@ class TestCommands:
         assert CancelOrder.from_dict(CancelOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "CancelOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None)"  # noqa
+            == "CancelOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None)"
         )
         assert (
             repr(command)
@@ -307,7 +307,7 @@ class TestCommands:
         assert CancelAllOrders.from_dict(CancelAllOrders.to_dict(command)) == command
         assert (
             str(command) == "CancelAllOrders(instrument_id=AUD/USD.SIM, order_side=NO_ORDER_SIDE)"
-        )  # noqa
+        )
         assert (
             repr(command)
             == f"CancelAllOrders(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_side=NO_ORDER_SIDE, command_id={uuid}, ts_init=0)"  # noqa
@@ -331,7 +331,7 @@ class TestCommands:
         assert QueryOrder.from_dict(QueryOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "QueryOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001)"  # noqa
+            == "QueryOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001)"
         )
         assert (
             repr(command)
@@ -356,7 +356,7 @@ class TestCommands:
         assert QueryOrder.from_dict(QueryOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "QueryOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None)"  # noqa
+            == "QueryOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None)"
         )
         assert (
             repr(command)

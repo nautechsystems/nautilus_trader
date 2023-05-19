@@ -81,7 +81,7 @@ class _BufferIterator:
     def __init__(
         self,
         buffers: list[_StreamingBuffer],
-        target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
+        target_batch_size_bytes: int = parse_bytes("100mb"),  # ,
     ):
         self._buffers = buffers
         self._target_batch_size_bytes = target_batch_size_bytes
@@ -145,18 +145,18 @@ class _BufferIterator:
 
 class StreamingEngine(_BufferIterator):
     """
-    Streams merged batches of nautilus objects from BacktestDataConfig objects.
+    Streams merged batches of Nautilus objects from `BacktestDataConfig` objects.
     """
 
     def __init__(
         self,
         data_configs: list[BacktestDataConfig],
-        target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
+        target_batch_size_bytes: int = parse_bytes("512mb"),  # ,
     ):
         # Sort configs (larger time_aggregated bar specifications first)
         # Define the order of objects with the same timestamp.
         # Larger bar aggregations first. H4 > H1
-        def _sort_larger_specifications_first(config) -> tuple[int, int]:
+        def _sort_larger_specifications_first(config: BacktestDataConfig) -> tuple[int, int]:
             if config.bar_spec is None:
                 return sys.maxsize, sys.maxsize  # last
             else:
@@ -184,7 +184,10 @@ class StreamingEngine(_BufferIterator):
             end_nanos=config.end_time_nanos,
             bar_spec=BarSpecification.from_str(config.bar_spec) if config.bar_spec else None,
         )
+
         assert files, f"No files found for {config}"
+        assert config.batch_size is not None
+
         if config.use_rust:
             batches = generate_batches_rust(
                 files=files,

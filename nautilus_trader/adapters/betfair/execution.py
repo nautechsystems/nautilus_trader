@@ -652,7 +652,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self.check_cache_against_order_image(order_change_message)
                     continue
 
-    def check_cache_against_order_image(self, order_change_message: OCM) -> None:  # noqa
+    def check_cache_against_order_image(self, order_change_message: OCM) -> None:
         for market in order_change_message.oc:
             for selection in market.orc:
                 instrument_id = betfair_instrument_id(
@@ -679,13 +679,12 @@ class BetfairExecutionClient(LiveExecutionClient):
                     matched = False
                     for order in orders:
                         for event in order.events:
-                            if isinstance(event, OrderFilled):
-                                if (
-                                    order.side == side
-                                    and order.price == price
-                                    and quantity <= order.quantity
-                                ):
-                                    matched = True
+                            if isinstance(event, OrderFilled) and (
+                                order.side == side
+                                and order.price == price
+                                and quantity <= order.quantity
+                            ):
+                                matched = True
                     if not matched:
                         self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
                         raise RuntimeError(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
@@ -844,10 +843,11 @@ class BetfairExecutionClient(LiveExecutionClient):
             if key not in self.pending_update_order_client_ids:
                 # The remainder of this order has been canceled
                 cancelled_ts = unmatched_order.cd or unmatched_order.ld or unmatched_order.md
-                if cancelled_ts is not None:
-                    cancelled_ts = millis_to_nanos(cancelled_ts)
-                else:
-                    cancelled_ts = self._clock.timestamp_ns()
+                cancelled_ts = (
+                    millis_to_nanos(cancelled_ts)
+                    if cancelled_ts is not None
+                    else self._clock.timestamp_ns()
+                )
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=instrument.id,

@@ -132,7 +132,7 @@ class TestCurrency:
         assert currency.name == "Australian dollar"
         assert (
             repr(currency)
-            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'  # noqa
+            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'
         )
 
     def test_currency_pickle(self):
@@ -153,7 +153,7 @@ class TestCurrency:
         assert unpickled == currency
         assert (
             repr(unpickled)
-            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'  # noqa
+            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'
         )
 
     def test_register_adds_currency_to_internal_currency_map(self):
@@ -206,7 +206,7 @@ class TestCurrency:
         assert result.currency_type == CurrencyType.CRYPTO
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [["AUD", AUD], ["GBP", GBP], ["BTC", BTC], ["ETH", ETH]],
     )
     def test_from_str(self, string, expected):
@@ -217,7 +217,7 @@ class TestCurrency:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [["AUD", True], ["ZZZ", False]],
     )
     def test_is_fiat(self, string, expected):
@@ -228,7 +228,7 @@ class TestCurrency:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string, expected",
+        ("string", "expected"),
         [["BTC", True], ["ZZZ", False]],
     )
     def test_is_crypto(self, string, expected):

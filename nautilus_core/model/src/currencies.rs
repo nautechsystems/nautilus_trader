@@ -19,6 +19,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{enums::CurrencyType, types::currency::Currency};
 
+#[must_use]
 pub fn currency_map() -> HashMap<String, Currency> {
     [
         // Fiat currencies

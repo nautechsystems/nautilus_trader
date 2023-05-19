@@ -15,6 +15,7 @@
 
 use std::ops::Deref;
 use std::rc::Rc;
+use std::str::FromStr;
 
 use derive_builder::{self, Builder};
 use nautilus_core::time::UnixNanos;
@@ -71,7 +72,7 @@ impl Default for OrderIdentifiers {
         Self {
             trader_id: TraderId::new("TRADER-001"),
             strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from("AUD/USD.SIM"),
+            instrument_id: InstrumentId::from_str("AUD/USD.SIM").unwrap(),
             client_order_id: ClientOrderId::new("O-123456789"),
         }
     }

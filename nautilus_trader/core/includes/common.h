@@ -66,13 +66,13 @@ typedef struct Rc_String Rc_String;
 
 typedef struct TestClock TestClock;
 
-typedef struct TestClockAPI {
+typedef struct TestClock_API {
     struct TestClock *_0;
-} TestClockAPI;
+} TestClock_API;
 
-typedef struct LiveClockAPI {
+typedef struct LiveClock_API {
     struct LiveClock *_0;
-} LiveClockAPI;
+} LiveClock_API;
 
 /**
  * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
@@ -119,36 +119,36 @@ typedef struct TimeEventHandler_t {
     PyObject *callback_ptr;
 } TimeEventHandler_t;
 
-struct TestClockAPI test_clock_new(void);
+struct TestClock_API test_clock_new(void);
 
-void test_clock_drop(struct TestClockAPI clock);
+void test_clock_drop(struct TestClock_API clock);
 
 /**
  * # Safety
  * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
-void test_clock_register_default_handler(struct TestClockAPI *clock, PyObject *callback_ptr);
+void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
 
-void test_clock_set_time(struct TestClockAPI *clock, uint64_t to_time_ns);
+void test_clock_set_time(struct TestClock_API *clock, uint64_t to_time_ns);
 
-double test_clock_timestamp(struct TestClockAPI *clock);
+double test_clock_timestamp(struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_ms(struct TestClockAPI *clock);
+uint64_t test_clock_timestamp_ms(struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_us(struct TestClockAPI *clock);
+uint64_t test_clock_timestamp_us(struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_ns(struct TestClockAPI *clock);
+uint64_t test_clock_timestamp_ns(struct TestClock_API *clock);
 
-PyObject *test_clock_timer_names(const struct TestClockAPI *clock);
+PyObject *test_clock_timer_names(const struct TestClock_API *clock);
 
-uintptr_t test_clock_timer_count(struct TestClockAPI *clock);
+uintptr_t test_clock_timer_count(struct TestClock_API *clock);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
-void test_clock_set_time_alert_ns(struct TestClockAPI *clock,
+void test_clock_set_time_alert_ns(struct TestClock_API *clock,
                                   const char *name_ptr,
                                   uint64_t alert_time_ns,
                                   PyObject *callback_ptr);
@@ -158,7 +158,7 @@ void test_clock_set_time_alert_ns(struct TestClockAPI *clock,
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
-void test_clock_set_timer_ns(struct TestClockAPI *clock,
+void test_clock_set_timer_ns(struct TestClock_API *clock,
                              const char *name_ptr,
                              uint64_t interval_ns,
                              uint64_t start_time_ns,
@@ -169,7 +169,7 @@ void test_clock_set_timer_ns(struct TestClockAPI *clock,
  * # Safety
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
-CVec test_clock_advance_time(struct TestClockAPI *clock, uint64_t to_time_ns, uint8_t set_time);
+CVec test_clock_advance_time(struct TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
 
 void vec_time_event_handlers_drop(CVec v);
 
@@ -177,27 +177,27 @@ void vec_time_event_handlers_drop(CVec v);
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-uint64_t test_clock_next_time_ns(struct TestClockAPI *clock, const char *name_ptr);
+uint64_t test_clock_next_time_ns(struct TestClock_API *clock, const char *name_ptr);
 
 /**
  * # Safety
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_cancel_timer(struct TestClockAPI *clock, const char *name_ptr);
+void test_clock_cancel_timer(struct TestClock_API *clock, const char *name_ptr);
 
-void test_clock_cancel_timers(struct TestClockAPI *clock);
+void test_clock_cancel_timers(struct TestClock_API *clock);
 
-struct LiveClockAPI live_clock_new(void);
+struct LiveClock_API live_clock_new(void);
 
-void live_clock_drop(struct LiveClockAPI clock);
+void live_clock_drop(struct LiveClock_API clock);
 
-double live_clock_timestamp(struct LiveClockAPI *clock);
+double live_clock_timestamp(struct LiveClock_API *clock);
 
-uint64_t live_clock_timestamp_ms(struct LiveClockAPI *clock);
+uint64_t live_clock_timestamp_ms(struct LiveClock_API *clock);
 
-uint64_t live_clock_timestamp_us(struct LiveClockAPI *clock);
+uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
 
-uint64_t live_clock_timestamp_ns(struct LiveClockAPI *clock);
+uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
 
 const char *component_state_to_cstr(enum ComponentState value);
 

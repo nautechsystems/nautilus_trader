@@ -505,7 +505,7 @@ cdef class Strategy(Actor):
         if order.is_emulated_c():
             self._send_emulator_command(command)
         elif order.exec_algorithm_id is not None:
-            self._send_algo_command(command)
+            self._send_algo_command(command, order.exec_algorithm_id)
         else:
             self._send_risk_command(command)
 
@@ -607,7 +607,7 @@ cdef class Strategy(Actor):
         if command.has_emulated_order:
             self._send_emulator_command(command)
         elif order_list.first.exec_algorithm_id is not None:
-            self._send_algo_command(command)
+            self._send_algo_command(command, order_list.first.exec_algorithm_id)
         else:
             self._send_risk_command(command)
 
@@ -794,7 +794,7 @@ cdef class Strategy(Actor):
         )
 
         if order.exec_algorithm_id is not None:
-            self._send_algo_command(command)
+            self._send_algo_command(command, order.exec_algorithm_id)
 
         if order.is_emulated_c():
             self._send_emulator_command(command)
@@ -1448,10 +1448,10 @@ cdef class Strategy(Actor):
     cdef void _send_emulator_command(self, TradingCommand command):
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
-    cdef void _send_algo_command(self, TradingCommand command):
+    cdef void _send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint=f"{command.exec_algorithm_id}.execute", msg=command)
+        self._msgbus.send(endpoint=f"{exec_algorithm_id}.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

@@ -68,7 +68,7 @@ class TestQuantity:
         assert str(result) == "1.23"
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [Quantity(2.15, precision=2), 0, Decimal("2")],
             [Quantity(2.15, precision=2), 1, Decimal("2.2")],
@@ -83,7 +83,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [Quantity(-0, precision=0), Decimal("0")],
             [Quantity(0, precision=0), Decimal("0")],
@@ -98,7 +98,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [Quantity(1, precision=0), Decimal("-1")],
             [Quantity(0, precision=0), Decimal("0")],
@@ -112,7 +112,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             [0, Quantity(0, precision=0)],
             [1, Quantity(1, precision=0)],
@@ -130,7 +130,7 @@ class TestQuantity:
         assert decimal_object == expected
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [0.0, 0, Quantity(0, precision=0)],
             [1.0, 0, Quantity(1, precision=0)],
@@ -152,7 +152,7 @@ class TestQuantity:
         assert decimal_object.precision == precision
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [0, -0, True],
             [-0, 0, True],
@@ -171,7 +171,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [0, -0, True],
             [-0, 0, True],
@@ -190,7 +190,7 @@ class TestQuantity:
         assert result2 == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [Quantity(0, precision=0), Decimal(0), True],
             [Quantity(0, precision=0), Decimal(-0), True],
@@ -205,7 +205,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected1, expected2, expected3, expected4",
+        ("value1", "value2", "expected1", "expected2", "expected3", "expected4"),
         [
             [0, 0, False, True, True, False],
             [1, 0, True, True, False, False],
@@ -227,7 +227,7 @@ class TestQuantity:
         assert (Quantity(value1, precision=0) < Quantity(value2, precision=0)) == expected4
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Quantity(0, precision=0), Quantity(0, precision=0), Decimal, 0],
             [
@@ -268,7 +268,7 @@ class TestQuantity:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Quantity(0, precision=0), Quantity(0, precision=0), Decimal, 0],
             [
@@ -309,7 +309,7 @@ class TestQuantity:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Quantity(0, 0), 0, Decimal, 0],
             [Quantity(1, 0), 1, Decimal, 1],
@@ -336,7 +336,7 @@ class TestQuantity:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [1, Quantity(1, 0), Decimal, 1],
             [1.1, Quantity(1.1, 1), float, 1],
@@ -374,7 +374,7 @@ class TestQuantity:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [1, Quantity(1, 0), Decimal, 1],
             [Quantity(0, 0), 1, Decimal, 0],
@@ -403,7 +403,7 @@ class TestQuantity:
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected_type, expected_value",
+        ("value1", "value2", "expected_type", "expected_value"),
         [
             [Quantity(100, 0), 10, Decimal, 0],
             [Quantity(23, 0), 2, Decimal, 1],
@@ -422,14 +422,14 @@ class TestQuantity:
         expected_value,
     ):
         # Arrange, Act
-        result = value1 % value2  # noqa (not modulo formatting)
+        result = value1 % value2
 
         # Assert
         assert type(result) == expected_type
         assert result == expected_value
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [Quantity(1, 0), Quantity(2, 0), Quantity(2, 0)],
             [Quantity(1, 0), 2, 2],
@@ -449,7 +449,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value1, value2, expected",
+        ("value1", "value2", "expected"),
         [
             [Quantity(1, 0), Quantity(2, 0), Quantity(1, 0)],
             [Quantity(1, 0), 2, Quantity(1, 0)],
@@ -469,7 +469,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [["1", 1], ["1.1", 1]],
     )
     def test_int(self, value, expected):
@@ -489,7 +489,7 @@ class TestQuantity:
         assert hash(decimal1) == hash(decimal2)
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [0, 0, "0"],
             [-0, 0, "0"],
@@ -517,7 +517,7 @@ class TestQuantity:
         assert result == "Quantity('1.1')"
 
     @pytest.mark.parametrize(
-        "value, precision, expected",
+        ("value", "precision", "expected"),
         [
             [0, 0, Quantity(0, 0)],
             [-0, 0, Quantity(0, 0)],
@@ -538,7 +538,7 @@ class TestQuantity:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [[0, 0], [-0, 0], [1, 1], [1.1, 1.1]],
     )
     def test_as_double_with_various_values_returns_expected_value(self, value, expected):
@@ -593,7 +593,7 @@ class TestQuantity:
         assert qty.precision == 3
 
     @pytest.mark.parametrize(
-        "value, expected",
+        ("value", "expected"),
         [
             ["0", "0"],
             ["10.05", "10.05"],
@@ -617,8 +617,8 @@ class TestQuantity:
         quantity = Quantity(2100.1666666, 6)
 
         # Act, Assert
-        assert "2100.166667" == str(quantity)
-        assert "Quantity('2100.166667')" == repr(quantity)
+        assert str(quantity) == "2100.166667"
+        assert repr(quantity) == "Quantity('2100.166667')"
 
     def test_pickle_dumps_and_loads(self):
         # Arrange

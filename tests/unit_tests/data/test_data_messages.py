@@ -166,7 +166,7 @@ class TestDataMessage:
             f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000}}, "
-            f"callback={repr(handler)}, "
+            f"callback={handler!r}, "
             f"id={request_id})"
         )
 
@@ -195,14 +195,14 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "DataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"  # noqa
+            == "DataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"
         )
         assert repr(request) == (
             f"DataRequest("
             f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000}}, "
-            f"callback={repr(handler)}, "
+            f"callback={handler!r}, "
             f"id={request_id})"
         )
 

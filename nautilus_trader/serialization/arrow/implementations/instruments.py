@@ -18,4 +18,4 @@ from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 for cls in Instrument.__subclasses__():
-    register_parquet(cls, partition_keys=tuple())
+    register_parquet(cls, partition_keys=())

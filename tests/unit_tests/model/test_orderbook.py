@@ -17,6 +17,7 @@ import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -29,7 +30,6 @@ from nautilus_trader.model.orderbook import OrderBookDelta
 from nautilus_trader.model.orderbook import OrderBookDeltas
 from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.model.orderbook.book import BookIntegrityError
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -87,7 +87,8 @@ class TestOrderBook:
         # Assert
         assert isinstance(book, L1OrderBook)
         assert book.type == BookType.L1_TBBO
-        assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
+        assert isinstance(book.bids, Ladder)
+        assert isinstance(book.asks, Ladder)
         assert book.bids.is_reversed
         assert not book.asks.is_reversed
         assert book.ts_last == 0
@@ -103,7 +104,8 @@ class TestOrderBook:
         # Assert
         assert isinstance(book, L2OrderBook)
         assert book.type == BookType.L2_MBP
-        assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
+        assert isinstance(book.bids, Ladder)
+        assert isinstance(book.asks, Ladder)
         assert book.bids.is_reversed
         assert not book.asks.is_reversed
 
@@ -118,7 +120,8 @@ class TestOrderBook:
         # Assert
         assert isinstance(book, L3OrderBook)
         assert book.type == BookType.L3_MBO
-        assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
+        assert isinstance(book.bids, Ladder)
+        assert isinstance(book.asks, Ladder)
         assert book.bids.is_reversed
         assert not book.asks.is_reversed
 
@@ -267,7 +270,6 @@ class TestOrderBook:
     def test_orderbook_snapshot(self):
         snapshot = OrderBookSnapshot(
             instrument_id=self.empty_l2_book.instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             ts_event=0,
@@ -282,7 +284,6 @@ class TestOrderBook:
     def test_orderbook_operation_update(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.UPDATE,
             order=BookOrder(
                 0.5814,
@@ -301,7 +302,6 @@ class TestOrderBook:
     def test_orderbook_operation_add(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=BookOrder(
                 0.5900,
@@ -320,7 +320,6 @@ class TestOrderBook:
     def test_orderbook_operations(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.UPDATE,
             order=BookOrder(
                 0.5814,
@@ -333,7 +332,6 @@ class TestOrderBook:
         )
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             deltas=[delta],
             ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
             ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -344,7 +342,6 @@ class TestOrderBook:
     def test_apply(self):
         snapshot = OrderBookSnapshot(
             instrument_id=self.empty_l2_book.instrument_id,
-            book_type=BookType.L2_MBP,
             bids=[[150.0, 0.51]],
             asks=[[160.0, 1.51]],
             ts_event=0,
@@ -355,7 +352,6 @@ class TestOrderBook:
         assert self.empty_l2_book.count == 2
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=BookOrder(
                 155.0,
@@ -379,7 +375,6 @@ class TestOrderBook:
     def test_timestamp_ns(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=BookOrder(
                 0.5900,
@@ -424,7 +419,7 @@ class TestOrderBook:
         assert ask_price == 0.0
 
     @pytest.mark.parametrize(
-        "is_buy, quote_volume, expected",
+        ("is_buy", "quote_volume", "expected"),
         [
             (True, 0.8860, 0.8860),
             (False, 0.8300, 0.8300),
@@ -434,7 +429,7 @@ class TestOrderBook:
         assert self.sample_book.get_price_for_quote_volume(is_buy, quote_volume) == expected
 
     @pytest.mark.parametrize(
-        "is_buy, price, expected",
+        ("is_buy", "price", "expected"),
         [
             (True, 1.0, 35.0),
             (True, 0.88600, 5.0),
@@ -451,7 +446,7 @@ class TestOrderBook:
         assert self.sample_book.get_volume_for_price(is_buy, price) == expected
 
     @pytest.mark.parametrize(
-        "is_buy, price, expected",
+        ("is_buy", "price", "expected"),
         [
             (True, 1.0, 31.3),
             (True, 0.88600, 4.43),
@@ -468,7 +463,7 @@ class TestOrderBook:
         assert self.sample_book.get_quote_volume_for_price(is_buy, price) == expected
 
     @pytest.mark.parametrize(
-        "is_buy, volume, expected",
+        ("is_buy", "volume", "expected"),
         [
             (True, 1.0, 0.886),
             (True, 3.0, 0.886),
@@ -495,13 +490,11 @@ class TestOrderBook:
             {
                 "type": "OrderBookDeltas",
                 "instrument_id": self.instrument_id.value,
-                "book_type": "L2_MBP",
                 "deltas": msgspec.json.encode(
                     [
                         {
                             "type": "OrderBookDelta",
                             "instrument_id": self.instrument_id.value,
-                            "book_type": "L2_MBP",
                             "action": "UPDATE",
                             "price": 0.990099,
                             "size": 2.0,
