@@ -1,10 +1,10 @@
 # NautilusTrader 1.174.0 Beta
 
-Released on TBD (UTC).
+Released on 19th May 2023 (UTC).
 
 ### Breaking Changes
+- Parquet schemas are now shifting towards catalog v2 (we recommend you don't upgrade if using legacy catalog)
 - Moved order book data from `model.orderbook.data` into the `model.data.book` namespace
-- Schemas are now shifting towards catalog v2
 
 ### Enhancements
 - Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
