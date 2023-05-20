@@ -27,7 +27,7 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
-from betfair_parser.spec.api.navigation import flatten_tree
+from betfair_parser.spec.navigation import flatten_tree
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
