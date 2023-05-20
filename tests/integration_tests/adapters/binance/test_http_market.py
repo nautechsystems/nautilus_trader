@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 import pytest
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -30,7 +28,6 @@ class TestBinanceSpotMarketHttpAPI:
         clock = LiveClock()
         logger = Logger(clock=clock)
         self.client = BinanceHttpClient(
-            loop=asyncio.get_event_loop(),
             clock=clock,
             logger=logger,
             key="SOME_BINANCE_API_KEY",
@@ -46,7 +43,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_ping_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -60,7 +56,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_request_server_time_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -74,7 +69,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_depth_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -89,7 +83,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_trades_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -104,7 +97,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_historical_trades_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -119,7 +111,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_agg_trades_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -140,7 +131,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_klines_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -161,7 +151,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_ticker_24hr_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -176,7 +165,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_ticker_price_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -191,7 +179,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_book_ticker_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -208,7 +195,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_spot_exchange_info_with_symbol_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -223,7 +209,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_spot_exchange_info_with_symbols_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -238,7 +223,6 @@ class TestBinanceSpotMarketHttpAPI:
     @pytest.mark.asyncio()
     async def test_query_spot_avg_price_sends_expected_request(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import pytest
 
@@ -31,7 +30,6 @@ class TestBinanceUserHttpAPI:
         clock = LiveClock()
         logger = Logger(clock=clock)
         self.client = BinanceHttpClient(
-            loop=asyncio.get_event_loop(),
             clock=clock,
             logger=logger,
             key="SOME_BINANCE_API_KEY",
@@ -47,7 +45,6 @@ class TestBinanceUserHttpAPI:
     @pytest.mark.asyncio()
     async def test_create_listen_key_spot(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -61,7 +58,6 @@ class TestBinanceUserHttpAPI:
     @pytest.mark.asyncio()
     async def test_keepalive_listen_key_spot(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -81,7 +77,6 @@ class TestBinanceUserHttpAPI:
     @pytest.mark.asyncio()
     async def test_delete_listen_key_spot(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -101,7 +96,6 @@ class TestBinanceUserHttpAPI:
     @pytest.mark.asyncio()
     async def test_create_listen_key_isolated_margin(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -116,7 +110,6 @@ class TestBinanceUserHttpAPI:
     @pytest.mark.asyncio()
     async def test_keepalive_listen_key_isolated_margin(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
@@ -137,7 +130,6 @@ class TestBinanceUserHttpAPI:
     @pytest.mark.asyncio()
     async def test_delete_listen_key_isolated_margin(self, mocker):
         # Arrange
-        await self.client.connect()
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
