@@ -32,7 +32,6 @@ use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 pub struct HttpClient {
     client: Client<HttpsConnector<hyper::client::HttpConnector>>,
     header_keys: Vec<String>,
-    debug: bool,
 }
 
 /// HttpResponse contains relevant data from a HTTP request.
@@ -53,7 +52,6 @@ impl Default for HttpClient {
         Self {
             client,
             header_keys: Default::default(),
-            debug: false,
         }
     }
 }
@@ -69,16 +67,15 @@ impl HttpResponse {
 #[pymethods]
 impl HttpClient {
     #[new]
-    #[pyo3(signature=(header_keys=[].to_vec(), debug=false))]
+    #[pyo3(signature=(header_keys=[].to_vec()))]
     #[must_use]
-    pub fn new(header_keys: Vec<String>, debug: bool) -> Self {
+    pub fn new(header_keys: Vec<String>) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
 
         Self {
             client,
             header_keys,
-            debug,
         }
     }
 
@@ -202,16 +199,6 @@ impl HttpClient {
         headers: HashMap<String, String>,
         body: Option<Vec<u8>>,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
-        if self.debug {
-            println!("method={:?}", method);
-            println!("url={:?}", url);
-            println!("headers={:?}", headers);
-            match &body {
-                Some(body_bytes) => println!("body={:?}", String::from_utf8_lossy(body_bytes)),
-                None => println!("No body present"),
-            }
-        }
-
         let mut req_builder = Request::builder().method(method).uri(url);
 
         for (header_name, header_value) in &headers {
@@ -219,12 +206,11 @@ impl HttpClient {
         }
 
         let req = if let Some(body) = body {
-            req_builder
-                .header("Content-Type", "application/json")
-                .body(Body::from(body))?
+            req_builder.body(Body::from(body))?
         } else {
             req_builder.body(Body::empty())?
         };
+
         let res = self.client.request(req).await?;
         self.to_response(res).await
     }

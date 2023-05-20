@@ -53,15 +53,14 @@ class BinanceHttpClient:
         self._show_limit_usage = show_limit_usage
         self._proxies = None
         self._headers: dict[str, Any] = {
+            "Content-Type": "application/json",
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
         }
-        self._client = HttpClient(debug=True)
+        self._client = HttpClient()
 
         if timeout is not None:
             self._headers["timeout"] = timeout
-
-        # TODO(cs): Implement limit usage
 
     @property
     def base_url(self) -> str:
@@ -83,21 +82,6 @@ class BinanceHttpClient:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
 
-    async def limit_request(
-        self,
-        http_method: str,
-        url_path: str,
-        payload: Optional[dict[str, Any]] = None,
-    ) -> Any:
-        """
-        Limit request is for those endpoints requiring an API key in the header.
-        """
-        return await self.send_request(
-            http_method,
-            url_path,
-            payload=payload,
-        )
-
     async def sign_request(
         self,
         http_method: str,
@@ -115,44 +99,17 @@ class BinanceHttpClient:
             payload=payload,
         )
 
-    async def limited_encoded_sign_request(
-        self,
-        http_method: str,
-        url_path: str,
-        payload: Optional[dict[str, str]] = None,
-    ) -> Any:
-        """
-        Limit encoded sign request.
-
-        This is used for some endpoints has special symbol in the url.
-        In some endpoints these symbols should not encoded.
-        - @
-        - [
-        - ]
-        so we have to append those parameters in the url.
-        """
-        if payload is None:
-            payload = {}
-        query_string = self._prepare_params(payload)
-        signature = self._get_sign(query_string)
-        url_path = url_path + "?" + query_string + "&signature=" + signature
-        return await self.send_request(
-            http_method,
-            url_path,
-            payload=payload,
-        )
-
     async def send_request(
         self,
         http_method: str,
         url_path: str,
         payload: Optional[dict[str, str]] = None,
     ) -> bytes:
-        print("############################################")
-        print(http_method)
-        print(url_path)
-        print(payload)
-        print("############################################")
+        # GET request and there is a payload, add it to the URL
+        if http_method == "GET" and payload is not None:
+            url_path += "?" + urllib.parse.urlencode(payload)
+            payload = None  # Don't send payload in the body
+
         response: HttpResponse = await self._client.request(
             http_method,
             url=self._base_url + url_path,
@@ -163,13 +120,13 @@ class BinanceHttpClient:
         if 400 <= response.status < 500:
             raise BinanceClientError(
                 status=response.status,
-                message=response.body,
+                message=response.body.decode(),
                 headers=response.headers,
             )
         elif response.status >= 500:
             raise BinanceServerError(
                 status=response.status,
-                message=response.body,
+                message=response.body.decode(),
                 headers=response.headers,
             )
 
