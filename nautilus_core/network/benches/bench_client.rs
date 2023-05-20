@@ -30,6 +30,7 @@ async fn main() {
                 Method::GET,
                 "http://localhost:8080".to_string(),
                 HashMap::new(),
+                None,
             )
             .await
         {

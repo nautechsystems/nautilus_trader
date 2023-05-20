@@ -237,7 +237,6 @@ impl HttpClient {
     }
 }
 
-// Uncomment to change for module name for reduced debug builds in testing
 #[pymodule]
 pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpClient>()?;
