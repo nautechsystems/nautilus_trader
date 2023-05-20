@@ -105,8 +105,7 @@ class BinanceHttpClient:
         url_path: str,
         payload: Optional[dict[str, str]] = None,
     ) -> bytes:
-        # GET request and there is a payload, add it to the URL
-        if http_method == "GET" and payload is not None:
+        if payload:
             url_path += "?" + urllib.parse.urlencode(payload)
             payload = None  # Don't send payload in the body
 
