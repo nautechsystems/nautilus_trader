@@ -12,9 +12,11 @@ crate-type = ["rlib", "staticlib", "cdylib" ]
 
 [dependencies]
 nautilus_core = { path = "../core" }
+criterion.workspace = true
 pyo3.workspace = true
 pyo3-asyncio.workspace = true
 tokio.workspace = true
+futures = "0.3.28"
 hyper = { version = "0.14.26", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
 

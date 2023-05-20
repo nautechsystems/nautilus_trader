@@ -1702,7 +1702,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_backtest"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "cbindgen",
  "nautilus_common",
@@ -1714,7 +1714,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_common"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_indicators"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nautilus_core",
  "nautilus_model",
@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_model"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "cbindgen",
  "criterion",
@@ -1769,8 +1769,10 @@ dependencies = [
 
 [[package]]
 name = "nautilus_network"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
+ "criterion",
+ "futures",
  "hyper",
  "hyper-tls",
  "nautilus_core",
@@ -1782,7 +1784,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_persistence"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "binary-heap-plus",
  "compare",
@@ -1800,7 +1802,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_pyo3"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "nautilus_indicators",
  "nautilus_model",
