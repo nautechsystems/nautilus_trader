@@ -58,6 +58,9 @@ cargo-update:
 cargo-test:
 	(cd nautilus_core && cargo test)
 
+cargo-bench:
+	(cd nautilus_core && cargo bench)
+
 docker-build: clean
 	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t ${IMAGE_FULL} .
