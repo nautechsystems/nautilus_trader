@@ -67,7 +67,6 @@ class TestBinanceSpotDataClient:
         self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(
-            loop=asyncio.get_event_loop(),
             clock=self.clock,
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
