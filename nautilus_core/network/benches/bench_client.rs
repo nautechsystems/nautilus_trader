@@ -12,33 +12,52 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-//
-use std::collections::HashMap;
 
+use std::{collections::HashMap, time::Instant};
+
+use criterion::{criterion_group, criterion_main, Criterion};
 use hyper::Method;
-use nautilus_network::HttpClient;
+use nautilus_network::http::HttpClient;
 
-// Testing with nginx docker container
-// `docker run --publish 8080:80 nginx`
-#[tokio::main]
-async fn main() {
-    let client = HttpClient::default();
-    let mut success = 0;
-    for _ in 0..100_000 {
-        if let Ok(resp) = client
-            .send_request(
-                Method::GET,
-                "http://localhost:8080".to_string(),
-                HashMap::new(),
-                None,
-            )
-            .await
-        {
-            if resp.status == 200 {
-                success += 1;
-            }
-        }
-    }
+const CONCURRENCY: usize = 256;
+const TOTAL: usize = 1_000_000;
 
-    println!("Successful requests: {success}");
+fn http_client_benchmark(c: &mut Criterion) {
+    let client = HttpClient::new(Vec::new());
+    let mut reqs = Vec::new();
+
+    c.bench_function("http_client", |b| {
+        b.iter(|| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let start_time = Instant::now();
+
+                for _ in 0..(TOTAL / CONCURRENCY) {
+                    for _ in 0..CONCURRENCY {
+                        reqs.push(client.send_request(
+                            Method::GET,
+                            "http://127.0.0.1:3000".to_string(),
+                            HashMap::new(),
+                            None,
+                        ));
+                    }
+
+                    let resp = futures::future::join_all(reqs.drain(0..)).await;
+                    assert!(resp.iter().all(|res| if let Ok(resp) = res {
+                        resp.status == 200
+                    } else {
+                        false
+                    }));
+                }
+
+                let end_time = Instant::now(); // End timing here
+                let duration = end_time.duration_since(start_time);
+
+                duration
+            })
+        })
+    });
 }
+
+criterion_group!(benches, http_client_benchmark);
+criterion_main!(benches);
