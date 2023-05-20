@@ -6,7 +6,8 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-None
+- Added core HTTP client based on `hyper`
+- Changed `BinanceHttpClient` to use new core HTTP client
 
 ### Fixes
 None
