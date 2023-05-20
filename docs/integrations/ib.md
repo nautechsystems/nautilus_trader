@@ -43,7 +43,7 @@ config_node = TradingNodeConfig(
 - Stock: `IBContract(secType='STK', exchange='SMART', primaryExchange='NASDAQ', symbol='INTC')`
 - Forex: `InstrumentId('EUR/USD.IDEALPRO')`, `InstrumentId('USD/JPY.IDEALPRO')`
 - CFD: `IBContract(secType='CFD', symbol='IBUS30')`
-- Future: `InstrumentId('ES.CME')`, `IBContract(secType='CONTFUT', exchange='CME', symbol='ES', build_futures_chain=True)`
+- Future: `InstrumentId("YMH24.CBOT")`, `InstrumentId("CLZ27.NYMEX")`, `InstrumentId("ESZ27.CME")`, `InstrumentId('ES.CME')`, `IBContract(secType='CONTFUT', exchange='CME', symbol='ES', build_futures_chain=True)`
 - Option: `InstrumentId('SPY251219C00395000.SMART')`, `IBContract(secType='STK', exchange='SMART', primaryExchange='ARCA', symbol='SPY', lastTradeDateOrContractMonth='20251219', build_options_chain=True)`
 - Bond: `IBContract(secType='BOND', secIdType='ISIN', secId='US03076KAA60')`
 - Crypto: `InstrumentId('BTC/USD.PAXOS')`

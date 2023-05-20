@@ -81,7 +81,17 @@ config_node = TradingNodeConfig(
                 build_options_chain=False,
                 min_expiry_days=10,
                 max_expiry_days=60,
-                load_ids=frozenset(["EUR/USD.IDEALPRO", "BTC/USD.PAXOS", "SPY.ARCA", "ABC.NYSE"]),
+                load_ids=frozenset(
+                    [
+                        "EUR/USD.IDEALPRO",
+                        "BTC/USD.PAXOS",
+                        "SPY.ARCA",
+                        "ABC.NYSE",
+                        "YMH24.CBOT",
+                        "CLZ27.NYMEX",
+                        "ESZ27.CME",
+                    ],
+                ),
                 load_contracts=frozenset(ib_contracts),
             ),
             gateway=gateway,
