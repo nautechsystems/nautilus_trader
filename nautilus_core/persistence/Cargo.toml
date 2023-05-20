@@ -32,5 +32,5 @@ default = []
 criterion.workspace = true
 
 [[bench]]
-name = "persistence_benchmark"
+name = "bench_persistence"
 harness = false
