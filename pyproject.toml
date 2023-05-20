@@ -64,7 +64,7 @@ hiredis = {version = "^2.2.3", optional = true}
 ib_insync = {version = "^0.9.85", optional = true}
 redis = {version = "^4.5.5", optional = true}
 docker = {version = "^6.1.2", optional = true}
-betfair_parser = {version = "^0.2.0", optional = true}
+betfair_parser = {version = "^0.2.1", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
