@@ -1701,25 +1701,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_backtest"
+name = "nautilus-backtest"
 version = "0.6.0"
 dependencies = [
  "cbindgen",
- "nautilus_common",
- "nautilus_core",
- "nautilus_model",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
  "pyo3",
  "tempfile",
 ]
 
 [[package]]
-name = "nautilus_common"
+name = "nautilus-common"
 version = "0.6.0"
 dependencies = [
  "cbindgen",
  "chrono",
- "nautilus_core",
- "nautilus_model",
+ "nautilus-core",
+ "nautilus-model",
  "pyo3",
  "serde",
  "serde_json",
@@ -1728,7 +1728,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_core"
+name = "nautilus-core"
 version = "0.6.0"
 dependencies = [
  "cbindgen",
@@ -1742,16 +1742,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_indicators"
+name = "nautilus-indicators"
 version = "0.6.0"
 dependencies = [
- "nautilus_core",
- "nautilus_model",
+ "nautilus-core",
+ "nautilus-model",
  "pyo3",
 ]
 
 [[package]]
-name = "nautilus_model"
+name = "nautilus-model"
 version = "0.6.0"
 dependencies = [
  "cbindgen",
@@ -1759,7 +1759,7 @@ dependencies = [
  "derive_builder",
  "iai",
  "lazy_static",
- "nautilus_core",
+ "nautilus-core",
  "pyo3",
  "rstest",
  "rust_decimal",
@@ -1768,14 +1768,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_network"
+name = "nautilus-network"
 version = "0.6.0"
 dependencies = [
  "criterion",
  "futures",
  "hyper",
  "hyper-tls",
- "nautilus_core",
+ "nautilus-core",
  "pyo3",
  "pyo3-asyncio",
  "serde_json",
@@ -1783,7 +1783,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_persistence"
+name = "nautilus-persistence"
 version = "0.6.0"
 dependencies = [
  "binary-heap-plus",
@@ -1791,8 +1791,8 @@ dependencies = [
  "criterion",
  "datafusion",
  "futures",
- "nautilus_core",
- "nautilus_model",
+ "nautilus-core",
+ "nautilus-model",
  "pin-project-lite",
  "pyo3",
  "pyo3-asyncio",
@@ -1801,13 +1801,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_pyo3"
+name = "nautilus-pyo3"
 version = "0.6.0"
 dependencies = [
- "nautilus_indicators",
- "nautilus_model",
- "nautilus_network",
- "nautilus_persistence",
+ "nautilus-indicators",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-persistence",
  "pyo3",
 ]
 

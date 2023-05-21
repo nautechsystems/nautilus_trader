@@ -1,5 +1,5 @@
 [package]
-name = "nautilus_persistence"
+name = "nautilus-persistence"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -11,8 +11,8 @@ name = "nautilus_persistence"
 crate-type = ["rlib", "staticlib", "cdylib" ]
 
 [dependencies]
-nautilus_core = { path = "../core" }
-nautilus_model = { path = "../model" }
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model" }
 pyo3.workspace = true
 pyo3-asyncio.workspace = true
 rand.workspace = true
@@ -25,7 +25,11 @@ futures = "0.3.28"
 pin-project-lite = "0.2.9"
 
 [features]
-extension-module = ["pyo3/extension-module", "nautilus_core/extension-module", "nautilus_model/extension-module"]
+extension-module = [
+  "pyo3/extension-module", 
+  "nautilus-core/extension-module", 
+  "nautilus-model/extension-module",
+]
 default = []
 
 [dev-dependencies]
