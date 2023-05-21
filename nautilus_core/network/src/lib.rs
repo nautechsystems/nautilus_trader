@@ -14,12 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod http;
+pub mod websocket;
 
 use http::{HttpClient, HttpResponse};
 use pyo3::prelude::*;
 
+/// Loaded as nautilus_pyo3.network
 #[pymodule]
-pub fn nautilus_network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpClient>()?;
     m.add_class::<HttpResponse>()?;
     Ok(())

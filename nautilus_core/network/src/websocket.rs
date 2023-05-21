@@ -12,29 +12,3 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-pub mod ema;
-
-use ema::ExponentialMovingAverage;
-use nautilus_model::data::bar::Bar;
-use nautilus_model::data::tick::QuoteTick;
-use nautilus_model::data::tick::TradeTick;
-use pyo3::prelude::*;
-use pyo3::types::PyModule;
-use pyo3::Python;
-
-trait Indicator {
-    fn has_inputs(&self) -> bool;
-    fn is_initialized(&self) -> bool;
-    fn handle_quote_tick(&mut self, tick: &QuoteTick);
-    fn handle_trade_tick(&mut self, tick: &TradeTick);
-    fn handle_bar(&mut self, bar: &Bar);
-    fn reset(&mut self);
-}
-
-/// Loaded as nautilus_pyo3.indicators
-#[pymodule]
-pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<ExponentialMovingAverage>()?;
-    Ok(())
-}

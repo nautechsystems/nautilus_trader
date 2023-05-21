@@ -32,7 +32,7 @@ pub mod orders;
 pub mod position;
 pub mod types;
 
-/// Loaded as nautilus_model
+/// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PriceType>()?;
