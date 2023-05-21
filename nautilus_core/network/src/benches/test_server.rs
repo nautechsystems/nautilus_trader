@@ -16,36 +16,26 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
 
-use criterion::{criterion_group, Criterion};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
-use tokio::runtime::Runtime;
 
 async fn handle(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
     Ok(Response::new(Body::from("Hello World")))
 }
 
-fn start_server(rt: &Runtime, addr: SocketAddr) {
+#[tokio::main]
+async fn main() {
+    // Construct our SocketAddr to listen on...
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+
+    // And a MakeService to handle each connection...
     let make_service = make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle)) });
+
+    // Then bind and serve...
     let server = Server::bind(&addr).serve(make_service);
 
-    rt.spawn(async move {
-        if let Err(e) = server.await {
-            eprintln!("server error: {}", e);
-        }
-    });
+    // And run forever...
+    if let Err(e) = server.await {
+        eprintln!("server error: {}", e);
+    }
 }
-
-fn server_benchmark(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    start_server(&rt, addr);
-
-    // Here we would generate load on the server and measure its response.
-    // We're just sleeping for demonstration purposes.
-    c.bench_function("server", |b| {
-        b.iter(|| std::thread::sleep(std::time::Duration::from_millis(10)))
-    });
-}
-
-criterion_group!(benches, server_benchmark);
