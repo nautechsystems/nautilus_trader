@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 from datetime import timedelta
 
 import pytest
@@ -1728,7 +1727,6 @@ class TestActor:
         assert msg.ts_init == 0
         assert msg.value == value
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_publish_data_persist(self):
         # Arrange
         actor = MockActor()
