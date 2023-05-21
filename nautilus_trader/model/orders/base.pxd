@@ -148,6 +148,8 @@ cdef class Order:
     cdef bint is_passive_c(self)
     cdef bint is_aggressive_c(self)
     cdef bint is_emulated_c(self)
+    cdef bint is_primary_c(self)
+    cdef bint is_spawned_c(self)
     cdef bint is_contingency_c(self)
     cdef bint is_parent_order_c(self)
     cdef bint is_child_order_c(self)

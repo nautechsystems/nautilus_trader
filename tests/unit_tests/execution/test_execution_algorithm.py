@@ -266,6 +266,10 @@ class TestExecAlgorithm:
         assert spawned_order.time_in_force == TimeInForce.DAY
         assert not spawned_order.is_reduce_only
         assert spawned_order.tags == "ENTRY"
+        assert primary_order.is_primary
+        assert not primary_order.is_spawned
+        assert not spawned_order.is_primary
+        assert spawned_order.is_spawned
 
     def test_exec_algorithm_spawn_market_to_limit_order(self) -> None:
         """Test that the primary order was reduced and the spawned order has the expected properties."""

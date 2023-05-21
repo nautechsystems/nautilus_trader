@@ -304,6 +304,12 @@ cdef class Order:
     cdef bint is_emulated_c(self):
         return self.emulation_trigger != TriggerType.NO_TRIGGER
 
+    cdef bint is_primary_c(self):
+        return self.exec_algorithm_id is not None and self.exec_spawn_id is None
+
+    cdef bint is_spawned_c(self):
+        return self.exec_spawn_id is not None
+
     cdef bint is_contingency_c(self):
         return self.contingency_type != ContingencyType.NO_CONTINGENCY
 
@@ -554,6 +560,30 @@ cdef class Order:
 
         """
         return self.is_emulated_c()
+
+    @property
+    def is_primary(self):
+        """
+        Return whether the order is the primary for an execution algorithm sequence.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_primary_c()
+
+    @property
+    def is_spawned(self):
+        """
+        Return whether the order was spawned as part of an execution algorithm sequence.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_spawned_c()
 
     @property
     def is_contingency(self):

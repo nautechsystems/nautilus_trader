@@ -301,6 +301,8 @@ class TestOrders:
         assert order.is_aggressive
         assert not order.is_sell
         assert not order.is_contingency
+        assert not order.is_primary
+        assert not order.is_spawned
         assert not order.is_passive
         assert not order.is_parent_order
         assert not order.is_child_order
@@ -414,6 +416,7 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
         )
 
         # Assert
@@ -427,14 +430,16 @@ class TestOrders:
         assert not order.is_open
         assert not order.is_aggressive
         assert not order.is_closed
+        assert order.is_primary
+        assert not order.is_spawned
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, exec_algorithm_id=TWAP, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, exec_algorithm_id=TWAP, tags=None)"  # noqa
         )
 
     def test_limit_order_to_dict(self):
