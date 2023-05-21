@@ -54,8 +54,8 @@ def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
     path = str(path)
     catalog = ParquetDataCatalog(path=path, fs_protocol=protocol)
 
-    if catalog.fs.exists(path):
-        catalog.fs.rm(path, recursive=True)
+    if catalog.fs.exists(catalog.path):
+        catalog.fs.rm(catalog.path, recursive=True)
 
     catalog.fs.mkdir(path, create_parents=True)
 
