@@ -87,7 +87,7 @@ def get_cached_ib_client(
     InteractiveBrokersClient
 
     """
-    global IB_CLIENTS, GATEWAY
+    global GATEWAY
     if gateway.start:
         # Start gateway
         if GATEWAY is None:

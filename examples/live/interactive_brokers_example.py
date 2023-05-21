@@ -27,6 +27,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBr
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
@@ -63,6 +64,25 @@ gateway = InteractiveBrokersGatewayConfig(
     read_only_api=True,
 )
 
+instrument_provider = InteractiveBrokersInstrumentProviderConfig(
+    build_futures_chain=False,
+    build_options_chain=False,
+    min_expiry_days=10,
+    max_expiry_days=60,
+    load_ids=frozenset(
+        [
+            "EUR/USD.IDEALPRO",
+            "BTC/USD.PAXOS",
+            "SPY.ARCA",
+            "ABC.NYSE",
+            "YMH24.CBOT",
+            "CLZ27.NYMEX",
+            "ESZ27.CME",
+        ],
+    ),
+    load_contracts=frozenset(ib_contracts),
+)
+
 # Configure the trading node
 
 config_node = TradingNodeConfig(
@@ -76,24 +96,7 @@ config_node = TradingNodeConfig(
             handle_revised_bars=False,
             use_regular_trading_hours=True,
             market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # If unset default is REALTIME
-            instrument_provider=InteractiveBrokersInstrumentProviderConfig(
-                build_futures_chain=False,
-                build_options_chain=False,
-                min_expiry_days=10,
-                max_expiry_days=60,
-                load_ids=frozenset(
-                    [
-                        "EUR/USD.IDEALPRO",
-                        "BTC/USD.PAXOS",
-                        "SPY.ARCA",
-                        "ABC.NYSE",
-                        "YMH24.CBOT",
-                        "CLZ27.NYMEX",
-                        "ESZ27.CME",
-                    ],
-                ),
-                load_contracts=frozenset(ib_contracts),
-            ),
+            instrument_provider=instrument_provider,
             gateway=gateway,
         ),
     },
@@ -104,6 +107,10 @@ config_node = TradingNodeConfig(
             ibg_client_id=1,
             account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
             gateway=gateway,
+            instrument_provider=instrument_provider,
+            routing=RoutingConfig(
+                default=True,
+            ),
         ),
     },
     data_engine=LiveDataEngineConfig(

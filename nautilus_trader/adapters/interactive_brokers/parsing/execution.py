@@ -16,6 +16,8 @@
 
 from typing import Callable
 
+import pandas as pd
+
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -95,3 +97,11 @@ map_order_status = {
     "Filled": OrderStatus.FILLED,
     "Inactive": OrderStatus.DENIED,
 }
+
+
+def timestring_to_timestamp(timestring: str) -> pd.Timestamp:
+    # Support string conversion not supported directly by pd.to_datetime
+    # 20230223 00:43:36 America/New_York
+    # 20230223 00:43:36 Universal
+    dt, tz = timestring.rsplit(" ", 1)
+    return pd.Timestamp(dt, tz=tz)

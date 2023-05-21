@@ -126,7 +126,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.remove(self.id)
-        if self._client.is_running() and self._client.registered_nautilus_clients == set():
+        if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
 
     async def _subscribe(self, data_type: DataType) -> None:
@@ -282,13 +282,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
-        if not (instrument := self._cache.instrument(instrument_id)):
-            await self.instrument_provider.load_async(instrument_id)
-            if instrument := self.instrument_provider.find(instrument_id):
-                self._handle_data(instrument)
-            else:
-                self._log.warning(f"{instrument_id} not available.")
-                return
+        await self.instrument_provider.load_async(instrument_id)
+        if instrument := self.instrument_provider.find(instrument_id):
+            self._handle_data(instrument)
+        else:
+            self._log.warning(f"{instrument_id} not available.")
+            return
         self._handle_instrument(instrument, correlation_id)
 
     async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
@@ -415,7 +414,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
 
         if not start:
-            limit = self._cache.tick_capacity
+            limit = self._cache.bar_capacity
 
         if not end:
             end = pd.Timestamp.utcnow()

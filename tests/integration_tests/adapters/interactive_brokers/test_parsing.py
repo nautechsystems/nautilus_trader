@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import datetime
+from decimal import Decimal
+from typing import Union
 
 import pytest
 
@@ -20,6 +22,7 @@ import pytest
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _tick_size_to_precision
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import re_cash
@@ -297,6 +300,24 @@ def test_bar_spec_to_bar_size(bar_spec, expected):
 def test_timedelta_to_duration_str(timedelta, expected):
     # Arrange, Act
     result = timedelta_to_duration_str(timedelta)
+
+    # Act, Assert
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "tick_size, expected",
+    [
+        (5e-10, 10),
+        (5e-07, 7),
+        (5e-05, 5),
+        (Decimal("0.01"), 2),
+        (Decimal("1E-8"), 8),
+    ],
+)
+def test_tick_size_to_precision(tick_size: Union[float, Decimal], expected: int):
+    # Arrange, Act
+    result = _tick_size_to_precision(tick_size)
 
     # Act, Assert
     assert result == expected

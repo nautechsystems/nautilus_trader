@@ -36,6 +36,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_o
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_time_in_force
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import map_trigger_method
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import order_side_to_order_action
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import timestring_to_timestamp
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -284,6 +285,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         price = (
             None if ib_order.lmtPrice == UNSET_DOUBLE else Price.from_str(str(ib_order.lmtPrice))
         )
+        if ib_order.tif == "GTD":
+            expire_time = timestring_to_timestamp(ib_order.goodTillDate)
+        else:
+            expire_time = None
+
         # TODO: Testing for advanced Open orders
         order_status = OrderStatusReport(
             account_id=self.account_id,
@@ -302,7 +308,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             client_order_id=ClientOrderId(ib_order.orderRef),
             # order_list_id=,
             # contingency_type=,
-            # expire_time=,
+            expire_time=expire_time,
             price=price,
             trigger_price=Price.from_str(str(ib_order.auxPrice)),
             trigger_type=TriggerType.BID_ASK,
@@ -697,6 +703,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 )
             else:
                 self._log.debug(f"{order.client_order_id} already accepted.")
+        elif status == OrderStatus.PENDING_CANCEL:
+            # TODO: self.generate_order_pending_cancel
+            self._log.warning(f"{order.client_order_id} is {status}")
         elif status == OrderStatus.CANCELED:
             self.generate_order_canceled(
                 strategy_id=order.strategy_id,
@@ -771,15 +780,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                     venue_order_id_modified=venue_order_id_modified,
                 )
-            self._handle_order_event(
-                status=OrderStatus.ACCEPTED,
-                order=nautilus_order,
-                order_id=order.orderId,
-            )
+            else:
+                self._handle_order_event(
+                    status=OrderStatus.ACCEPTED,
+                    order=nautilus_order,
+                    order_id=order.orderId,
+                )
 
     def _on_order_status(self, order_ref: str, order_status: str, reason: str = ""):
         if order_status in ["ApiCancelled", "Cancelled"]:
             status = OrderStatus.CANCELED
+        elif order_status == "PendingCancel":
+            status = OrderStatus.PENDING_CANCEL
         elif order_status == "Rejected":
             status = OrderStatus.REJECTED
         else:
@@ -807,7 +819,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
 
         instrument = self.instrument_provider.find(nautilus_order.instrument_id)
-        dt, tz = execution.time.rsplit(" ", 1)  # 20230223 00:43:36 America/New_York TWS >= v10.19
 
         self.generate_order_filled(
             strategy_id=nautilus_order.strategy_id,
@@ -826,5 +837,5 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 Currency.from_str(commission_report.currency),
             ),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-            ts_event=pd.Timestamp(dt, tz=tz).value,
+            ts_event=timestring_to_timestamp(execution.time).value,
         )

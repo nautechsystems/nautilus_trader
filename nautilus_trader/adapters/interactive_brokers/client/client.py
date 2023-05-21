@@ -44,6 +44,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
@@ -92,7 +93,9 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._cache = cache
         # self._clock = clock
         # self._logger = logger
-        self._bypass_pacing = True
+        self._contract_for_probe = instrument_id_to_ib_contract(
+            InstrumentId.from_str("EUR/CHF.IDEALPRO"),
+        )
 
         self._host = host
         self._port = port
@@ -100,13 +103,11 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         self._client: EClient = EClient(wrapper=self)
         self._incoming_msg_queue: asyncio.Queue = asyncio.Queue()
-        self._outgoing_msg_queue: asyncio.Queue = asyncio.Queue()
 
         # Tasks
         self._watch_dog_task: Optional[asyncio.Task] = None
         self._incoming_msg_reader_task: Optional[asyncio.Task] = None
         self._incoming_msg_queue_task: Optional[asyncio.Task] = None
-        self._outgoing_msg_queue_task: Optional[asyncio.Task] = None
 
         # Event Flags
         self.is_ready: asyncio.Event = asyncio.Event()  # Client is fully functional
@@ -255,7 +256,6 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # Start the Watchdog
         self._watch_dog_task = self.create_task(self._run_watch_dog())
-        # self._outgoing_msg_queue_task = self.create_task(self._run_outgoing_msg_queue())
 
     def _start(self):
         self.is_ready.set()
@@ -269,33 +269,25 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._accounts = set()
 
     def _stop(self):
-        self.is_ready.clear()
-        self._accounts = set()
-
         if not self.registered_nautilus_clients == set():
             self._log.warning(
                 f"Any registered Clients from {self.registered_nautilus_clients} will disconnect.",
             )
 
         # Cancel tasks
-        # if self._watch_dog_task:
-        #     self._log.debug("Canceling `watch_dog` task...")
-        #     self._watch_dog_task.cancel()
-        #     # self._watch_dog_task.done()
-        # if self._outgoing_msg_queue_task:
-        #     self._log.debug("Canceling `outgoing_msg_queue` task...")
-        #     self._outgoing_msg_queue_task.cancel()
-        #     # self._outgoing_msg_queue_task.done()
-        # if self._incoming_msg_reader_task:
-        #     self._log.debug("Canceling `incoming_msg_reader` task...")
-        #     self._incoming_msg_reader_task.cancel()
-        #     # self._incoming_msg_reader_task.done()
-        # if self._incoming_msg_queue_task:
-        #     self._log.debug("Canceling `incoming_msg_queue` task...")
-        #     self._incoming_msg_queue_task.cancel()
-        #     # self._msg_queue_task.done()
+        if self._watch_dog_task:
+            self._log.debug("Canceling `watch_dog` task...")
+            self._watch_dog_task.cancel()
+        if self._incoming_msg_reader_task:
+            self._log.debug("Canceling `incoming_msg_reader` task...")
+            self._incoming_msg_reader_task.cancel()
+        if self._incoming_msg_queue_task:
+            self._log.debug("Canceling `incoming_msg_queue` task...")
+            self._incoming_msg_queue_task.cancel()
 
         self._client.disconnect()
+        self.is_ready.clear()
+        self._accounts = set()
 
     ##########################################################################
     # Connectivity
@@ -312,6 +304,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         msg = f"{'Warning' if is_warning else 'Error'} {error_code} {req_id=}: {error_string}"
 
         # 2104, 2158, 2106: Data connectivity restored
+        # 10197: No market data during competing live session
         if not req_id == -1:
             # TODO: Order events & Cleanup/split the Error method
             # Error 10147 req_id=195: OrderId 195 that needs to be cancelled is not found.  # Send cancel event
@@ -321,7 +314,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             # 10187: Failed to request historical ticks:No market data permissions for ISLAND STK
             if subscription := self.subscriptions.get(req_id=req_id):
                 if error_code in [10189, 366, 102]:
-                    # --> 10189: Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for EUR.USD.
+                    # --> 10189: Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for.
                     # --> 366: No historical data query found for ticker id
                     # --> 102: Duplicate ticker ID.
                     # Although 10189 is triggered when the specified PriceType is actually not available.
@@ -347,6 +340,20 @@ class InteractiveBrokersClient(Component, EWrapper):
             elif req_id in self._order_id_to_order.keys():
                 if error_code == 321:
                     # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
+                    order = self._order_id_to_order.get(req_id, None)
+                    if order:
+                        name = f"orderStatus-{order.account}"
+                        if handler := self._event_subscriptions.get(name, None):
+                            handler(
+                                order_ref=self._order_id_to_order[req_id].orderRef.rsplit(":", 1)[
+                                    0
+                                ],
+                                order_status="Rejected",
+                                reason=error_string,
+                            )
+                elif error_code in [201, 203]:
+                    # --> Warning 201 req_id= Order rejected - reason
+                    # --> Warning 203 The security <security> is not available or allowed for this account.
                     order = self._order_id_to_order.get(req_id, None)
                     if order:
                         name = f"orderStatus-{order.account}"
@@ -442,10 +449,10 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     async def _handle_ib_is_not_ready(self):
         if self.is_degraded:
-            # Probe connectivity. Sometime restored event will not received from TWS without this
+            # Probe connectivity. Sometime restored event will not be received from TWS without this
             self._client.reqHistoricalData(
                 reqId=1,
-                contract=IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"),
+                contract=self._contract_for_probe,
                 endDateTime="",
                 durationStr="30 S",
                 barSizeSetting="5 secs",
@@ -455,7 +462,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 keepUpToDate=False,
                 chartOptions=[],
             )
-            await asyncio.sleep(5)
+            await asyncio.sleep(15)
             self._client.cancelHistoricalData(1)
         elif self.is_running:
             # Connectivity between TWS/Gateway and IB server is broken
@@ -463,7 +470,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                 self.degrade()
 
     async def _handle_socket_connectivity(self):
-        self.degrade() if self.is_running else None
+        if self.is_running:
+            self.degrade()
         self.is_ib_ready.clear()
         await asyncio.sleep(5)  # Avoid too fast attempts
         await self._socket_connect()
@@ -637,34 +645,6 @@ class InteractiveBrokersClient(Component, EWrapper):
                 self._log.debug("Msg queue processing stopped.")
         finally:
             self._client.disconnect()
-
-    async def _run_outgoing_msg_queue(self):
-        """
-        Process the messages in `outgoing_msg_queue` and do necessary pacing if `bypass_pacing=False`.
-        """
-        self._log.debug(
-            f"Outgoing Msg queue processing starting (qsize={self._outgoing_msg_queue.qsize()})...",
-        )
-        try:
-            while True:
-                msg = await self._outgoing_msg_queue.get()
-                try:
-                    msg()
-                except Exception as e:
-                    self._log.exception("error processing outgoing message", e)
-                if self._bypass_pacing:
-                    continue
-                else:
-                    pass
-                    # TODO Actions
-        except asyncio.CancelledError:
-            if not self._outgoing_msg_queue.empty():
-                self._log.warning(
-                    f"Outgoing Msg queue processing stopped "
-                    f"with {self._outgoing_msg_queue.qsize()} item(s) on queue.",
-                )
-            else:
-                self._log.debug("Outgoing Msg queue processing stopped.")
 
     # -- Market Data -------------------------------------------------------------------------------------
     async def set_market_data_type(self, market_data_type: MarketDataTypeEnum):
@@ -1186,7 +1166,10 @@ class InteractiveBrokersClient(Component, EWrapper):
             bar=bar,
             handle_revised_bars=subscription.handle.keywords.get("handle_revised_bars", False),
         ):
-            self._handle_data(bar)
+            if bar.is_single_price() and bar.open.as_double() == 0:
+                self._log.debug(f"Ignoring Zero priced {bar=}")
+            else:
+                self._handle_data(bar)
 
     def _process_bar_data(
         self,

@@ -17,6 +17,7 @@ import datetime
 import re
 import time
 from decimal import Decimal
+from typing import Union
 
 import msgspec
 
@@ -101,7 +102,7 @@ def _extract_isin(details: IBContractDetails):
     raise ValueError("No ISIN found")
 
 
-def _tick_size_to_precision(tick_size: float) -> int:
+def _tick_size_to_precision(tick_size: Union[float, Decimal]) -> int:
     tick_size_str = f"{tick_size:.10f}"
     return len(tick_size_str.partition(".")[2].rstrip("0"))
 
@@ -223,6 +224,7 @@ def parse_forex_contract(
     details: IBContractDetails,
 ) -> CurrencyPair:
     price_precision: int = _tick_size_to_precision(details.minTick)
+    size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
     return CurrencyPair(
@@ -231,9 +233,9 @@ def parse_forex_contract(
         base_currency=Currency.from_str(details.contract.symbol),
         quote_currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
-        size_precision=Quantity.from_int(1),
+        size_precision=size_precision,
         price_increment=Price(details.minTick, price_precision),
-        size_increment=Quantity(getattr(details, "sizeMinTick", None) or 1, 1),
+        size_increment=Quantity(details.sizeIncrement, size_precision),
         lot_size=None,
         max_quantity=None,
         min_quantity=None,
@@ -255,7 +257,7 @@ def parse_crypto_contract(
     details: IBContractDetails,
 ) -> CryptoPerpetual:
     price_precision: int = _tick_size_to_precision(details.minTick)
-    size_precision = details.minSize.as_tuple().exponent * -1
+    size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
     return CryptoPerpetual(
