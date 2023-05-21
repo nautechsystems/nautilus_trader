@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -65,7 +63,6 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
