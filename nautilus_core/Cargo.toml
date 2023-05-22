@@ -20,6 +20,7 @@ documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
 chrono = "0.4.24"
+futures = "0.3.28"
 pyo3 = "0.18.3"
 pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
 pyo3-macros = "0.18.3"
