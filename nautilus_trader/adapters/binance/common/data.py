@@ -199,7 +199,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 )
                 await asyncio.sleep(self._connect_websockets_interval)
                 if self._ws_client.has_subscriptions:
-                    await self._ws_client.connect()
+                    await self._ws_client.connect(heartbeat=15)  # type: ignore
                 else:
                     self._log.info("Awaiting subscriptions...")
         except asyncio.CancelledError:

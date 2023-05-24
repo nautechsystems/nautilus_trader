@@ -220,7 +220,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
-        await self._ws_client.connect()
+        await self._ws_client.connect(heartbeat=15)  # type: ignore
 
     async def _update_account_state(self) -> None:
         # Replace method in child class

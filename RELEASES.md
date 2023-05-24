@@ -11,6 +11,7 @@ None
 
 ### Fixes
 - Updated `BinanceAccountType` enum members and associated docs
+- Added heartbeats to Binance websocket clients
 
 ---
 
