@@ -609,9 +609,9 @@ class BinanceMarketHttpAPI:
 
         if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)

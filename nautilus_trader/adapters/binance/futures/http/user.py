@@ -34,7 +34,7 @@ class BinanceFuturesUserDataHttpAPI(BinanceUserDataHttpAPI):
     def __init__(
         self,
         client: BinanceHttpClient,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
     ):
         super().__init__(
             client=client,
@@ -43,5 +43,5 @@ class BinanceFuturesUserDataHttpAPI(BinanceUserDataHttpAPI):
 
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover (design-time error)
+                f"`BinanceAccountType` not USDT_FUTURE or COIN_FUTURE, was {account_type}",  # pragma: no cover (design-time error)
             )

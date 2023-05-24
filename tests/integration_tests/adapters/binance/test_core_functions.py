@@ -45,10 +45,10 @@ class TestBinanceCoreFunctions:
         ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, True],
-            [BinanceAccountType.MARGIN_CROSS, False],
-            [BinanceAccountType.MARGIN_ISOLATED, False],
-            [BinanceAccountType.FUTURES_USDT, False],
-            [BinanceAccountType.FUTURES_COIN, False],
+            [BinanceAccountType.MARGIN, False],
+            [BinanceAccountType.ISOLATED_MARGIN, False],
+            [BinanceAccountType.USDT_FUTURE, False],
+            [BinanceAccountType.COIN_FUTURE, False],
         ],
     )
     def test_binance_account_type_is_spot(self, account_type, expected):
@@ -59,10 +59,10 @@ class TestBinanceCoreFunctions:
         ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, False],
-            [BinanceAccountType.MARGIN_CROSS, True],
-            [BinanceAccountType.MARGIN_ISOLATED, True],
-            [BinanceAccountType.FUTURES_USDT, False],
-            [BinanceAccountType.FUTURES_COIN, False],
+            [BinanceAccountType.MARGIN, True],
+            [BinanceAccountType.ISOLATED_MARGIN, True],
+            [BinanceAccountType.USDT_FUTURE, False],
+            [BinanceAccountType.COIN_FUTURE, False],
         ],
     )
     def test_binance_account_type_is_margin(self, account_type, expected):
@@ -73,10 +73,10 @@ class TestBinanceCoreFunctions:
         ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, True],
-            [BinanceAccountType.MARGIN_CROSS, True],
-            [BinanceAccountType.MARGIN_ISOLATED, True],
-            [BinanceAccountType.FUTURES_USDT, False],
-            [BinanceAccountType.FUTURES_COIN, False],
+            [BinanceAccountType.MARGIN, True],
+            [BinanceAccountType.ISOLATED_MARGIN, True],
+            [BinanceAccountType.USDT_FUTURE, False],
+            [BinanceAccountType.COIN_FUTURE, False],
         ],
     )
     def test_binance_account_type_is_spot_or_margin(self, account_type, expected):
@@ -87,10 +87,10 @@ class TestBinanceCoreFunctions:
         ("account_type", "expected"),
         [
             [BinanceAccountType.SPOT, False],
-            [BinanceAccountType.MARGIN_CROSS, False],
-            [BinanceAccountType.MARGIN_ISOLATED, False],
-            [BinanceAccountType.FUTURES_USDT, True],
-            [BinanceAccountType.FUTURES_COIN, True],
+            [BinanceAccountType.MARGIN, False],
+            [BinanceAccountType.ISOLATED_MARGIN, False],
+            [BinanceAccountType.USDT_FUTURE, True],
+            [BinanceAccountType.COIN_FUTURE, True],
         ],
     )
     def test_binance_account_type_is_futures(self, account_type, expected):

@@ -39,7 +39,7 @@ class TestBinanceUserHttpAPI:
         self.spot_api = BinanceSpotUserDataHttpAPI(self.client, BinanceAccountType.SPOT)
         self.isolated_margin_api = BinanceSpotUserDataHttpAPI(
             self.client,
-            BinanceAccountType.MARGIN_ISOLATED,
+            BinanceAccountType.ISOLATED_MARGIN,
         )
 
     @pytest.mark.asyncio()

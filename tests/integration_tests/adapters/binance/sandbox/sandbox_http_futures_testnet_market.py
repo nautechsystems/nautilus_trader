@@ -30,7 +30,7 @@ async def test_binance_futures_testnet_market_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
-    account_type = BinanceAccountType.FUTURES_USDT
+    account_type = BinanceAccountType.USDT_FUTURE
 
     client = get_cached_binance_http_client(
         loop=loop,
@@ -46,7 +46,7 @@ async def test_binance_futures_testnet_market_http_client():
         client=client,
         logger=Logger(clock=clock),
         clock=clock,
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=BinanceAccountType.USDT_FUTURE,
     )
 
     await provider.load_all_async()

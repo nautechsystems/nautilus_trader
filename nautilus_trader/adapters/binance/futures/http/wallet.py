@@ -93,19 +93,19 @@ class BinanceFuturesWalletHttpAPI:
         self,
         client: BinanceHttpClient,
         clock: LiveClock,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
     ):
         self.client = client
         self._clock = clock
 
-        if account_type == BinanceAccountType.FUTURES_USDT:
+        if account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
 
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not USDT_FUTURE or COIN_FUTURE, was {account_type}",  # pragma: no cover
             )
 
         self._endpoint_futures_commission_rate = BinanceFuturesCommissionRateHttp(

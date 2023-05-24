@@ -74,7 +74,7 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
     def __init__(
         self,
         client: BinanceHttpClient,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
     ):
         super().__init__(
             client=client,
@@ -83,7 +83,7 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
 
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not USDT_FUTURE or COIN_FUTURE, was {account_type}",  # pragma: no cover
             )
 
         self._endpoint_futures_exchange_info = BinanceFuturesExchangeInfoHttp(

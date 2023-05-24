@@ -10,7 +10,7 @@ None
 - Changed `BinanceHttpClient` to use new core HTTP client
 
 ### Fixes
-None
+- Updated `BinanceAccountType` enum members and associated docs
 
 ---
 

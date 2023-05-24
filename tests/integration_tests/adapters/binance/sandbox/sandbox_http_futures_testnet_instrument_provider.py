@@ -37,7 +37,7 @@ async def test_binance_futures_testnet_instrument_provider():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=BinanceAccountType.USDT_FUTURE,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
