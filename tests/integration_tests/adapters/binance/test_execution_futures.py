@@ -121,7 +121,7 @@ class TestBinanceFuturesExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.provider,
-            account_type=BinanceAccountType.FUTURES_USDT,
+            account_type=BinanceAccountType.USDT_FUTURE,
         )
 
         self.strategy = Strategy()

@@ -87,13 +87,13 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceFuturesInstrumentProvider,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         base_url_ws: Optional[str] = None,
         warn_gtd_to_gtc: bool = True,
     ):
         PyCondition.true(
             account_type.is_futures,
-            "account_type was not FUTURES_USDT or FUTURES_COIN",
+            "account_type was not USDT_FUTURE or COIN_FUTURE",
         )
 
         # Futures HTTP API

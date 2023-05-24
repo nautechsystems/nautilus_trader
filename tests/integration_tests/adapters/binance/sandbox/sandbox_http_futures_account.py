@@ -33,13 +33,13 @@ async def test_binance_futures_account_http_client():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=BinanceAccountType.USDT_FUTURE,
     )
     await client.connect()
 
     http_account = BinanceFuturesAccountHttpAPI(
         client=client,
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=BinanceAccountType.USDT_FUTURE,
     )
 
     ############################################################################

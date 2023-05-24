@@ -70,7 +70,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         logger: Logger,
         clock: LiveClock,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(

@@ -536,7 +536,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
         if not account_type.is_spot_or_margin:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not SPOT, MARGIN or ISOLATED_MARGIN, was {account_type}",  # pragma: no cover
             )
 
         # Create endpoints
