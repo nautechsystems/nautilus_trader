@@ -27,14 +27,18 @@ pub trait FromU8 {
         Self: Sized;
 }
 
+/// Represents an account type provided by a trading venue or broker.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
 pub enum AccountType {
+    /// An account type with unleveraged cash assets only.
     Cash = 1,
+    /// An account type which facilitates trading on margin, using account assets as collateral.
     Margin = 2,
+    /// An account type specific to betting markets.
     Betting = 3,
 }
 

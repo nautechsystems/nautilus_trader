@@ -21,9 +21,21 @@
 
 #define QUANTITY_MIN 0.0
 
+/**
+ * Represents an account type provided by a trading venue or broker.
+ */
 typedef enum AccountType {
+    /**
+     * An account type with unleveraged cash assets only.
+     */
     CASH = 1,
+    /**
+     * An account type which facilitates trading on margin, using account assets as collateral.
+     */
     MARGIN = 2,
+    /**
+     * An account type specific to betting markets.
+     */
     BETTING = 3,
 } AccountType;
 
@@ -217,8 +229,6 @@ typedef struct Arc_String Arc_String;
 
 typedef struct OrderBook OrderBook;
 
-typedef struct Rc_String Rc_String;
-
 typedef struct BarSpecification_t {
     uint64_t step;
     uint8_t aggregation;
@@ -357,43 +367,43 @@ typedef struct Data_t {
 } Data_t;
 
 typedef struct AccountId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } AccountId_t;
 
 typedef struct ClientId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } ClientId_t;
 
 typedef struct ClientOrderId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } ClientOrderId_t;
 
 typedef struct ComponentId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } ComponentId_t;
 
 typedef struct ExecAlgorithmId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } ExecAlgorithmId_t;
 
 typedef struct OrderListId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } OrderListId_t;
 
 typedef struct PositionId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } PositionId_t;
 
 typedef struct StrategyId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } StrategyId_t;
 
 typedef struct TraderId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } TraderId_t;
 
 typedef struct VenueOrderId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } VenueOrderId_t;
 
 typedef struct OrderBook_API {
