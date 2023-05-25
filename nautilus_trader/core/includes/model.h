@@ -226,11 +226,11 @@ typedef struct BarSpecification_t {
 } BarSpecification_t;
 
 typedef struct Symbol_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } Symbol_t;
 
 typedef struct Venue_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } Venue_t;
 
 typedef struct InstrumentId_t {
@@ -311,7 +311,7 @@ typedef struct QuoteTick_t {
 } QuoteTick_t;
 
 typedef struct TradeId_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } TradeId_t;
 
 /**

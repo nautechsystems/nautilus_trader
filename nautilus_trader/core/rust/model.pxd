@@ -198,10 +198,10 @@ cdef extern from "../includes/model.h":
         PriceType price_type;
 
     cdef struct Symbol_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct Venue_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct InstrumentId_t:
         Symbol_t symbol;
@@ -266,7 +266,7 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct TradeId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:

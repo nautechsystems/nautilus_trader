@@ -22,6 +22,7 @@ use std::str::FromStr;
 
 use nautilus_core::string::string_to_cstr;
 use nautilus_core::time::UnixNanos;
+use pyo3::prelude::*;
 use thiserror::Error;
 
 use crate::enums::{AggregationSource, BarAggregation, PriceType};
@@ -305,6 +306,7 @@ pub extern "C" fn bar_type_drop(bar_type: BarType) {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[pyclass]
 pub struct Bar {
     pub bar_type: BarType,
     pub open: Price,

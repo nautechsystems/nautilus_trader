@@ -20,6 +20,7 @@ use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
+use pyo3::prelude::*;
 
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
@@ -30,6 +31,7 @@ pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
+#[pyclass]
 pub struct Price {
     pub raw: i64,
     pub precision: u8,

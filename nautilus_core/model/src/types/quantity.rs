@@ -20,6 +20,7 @@ use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
 
 use nautilus_core::correctness;
 use nautilus_core::parsing::precision_from_str;
+use pyo3::prelude::*;
 
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
@@ -30,6 +31,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
+#[pyclass]
 pub struct Quantity {
     pub raw: u64,
     pub precision: u8,

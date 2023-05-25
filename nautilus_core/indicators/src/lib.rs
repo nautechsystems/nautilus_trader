@@ -24,6 +24,7 @@ use pyo3::types::PyModule;
 use pyo3::Python;
 
 trait Indicator {
+    fn name(&self) -> String;
     fn has_inputs(&self) -> bool;
     fn is_initialized(&self) -> bool;
     fn handle_quote_tick(&mut self, tick: &QuoteTick);

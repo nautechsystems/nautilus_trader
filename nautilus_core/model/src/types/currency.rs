@@ -20,12 +20,14 @@ use std::sync::Arc;
 
 use nautilus_core::correctness;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use pyo3::prelude::*;
 
 use crate::enums::CurrencyType;
 
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[pyclass]
 pub struct Currency {
     pub code: Box<Arc<String>>,
     pub precision: u8,

@@ -17,7 +17,6 @@
 #[macro_use]
 extern crate lazy_static;
 
-use crate::enums::PriceType;
 use pyo3::prelude::*;
 use pyo3::{PyResult, Python};
 
@@ -35,6 +34,11 @@ pub mod types;
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PriceType>()?;
+    m.add_class::<enums::BarAggregation>()?;
+    m.add_class::<enums::PriceType>()?;
+    m.add_class::<types::currency::Currency>()?;
+    m.add_class::<types::money::Money>()?;
+    m.add_class::<types::price::Price>()?;
+    m.add_class::<types::quantity::Quantity>()?;
     Ok(())
 }
