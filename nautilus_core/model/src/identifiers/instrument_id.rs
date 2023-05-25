@@ -20,6 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use pyo3::prelude::*;
 use thiserror::Error;
 
 use crate::identifiers::symbol::Symbol;
@@ -28,6 +29,7 @@ use crate::identifiers::venue::Venue;
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,
     pub venue: Venue,

@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use nautilus_core::correctness;
+use pyo3::prelude::*;
 
 use crate::types::currency::Currency;
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
@@ -28,6 +29,7 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Debug)]
+#[pyclass]
 pub struct Money {
     raw: i64,
     pub currency: Currency,

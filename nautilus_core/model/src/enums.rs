@@ -27,43 +27,43 @@ pub trait FromU8 {
         Self: Sized;
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum AccountType {
     Cash = 1,
     Margin = 2,
     Betting = 3,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum AggregationSource {
     External = 1,
     Internal = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum AggressorSide {
     NoAggressor = 0, // Will be replaced by `Option`
     Buyer = 1,
     Seller = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 #[allow(non_camel_case_types)]
 pub enum AssetClass {
     FX = 1,
@@ -77,11 +77,11 @@ pub enum AssetClass {
     SportsBetting = 9,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum AssetType {
     Spot = 1,
     Swap = 2,
@@ -92,11 +92,11 @@ pub enum AssetType {
     Warrant = 7,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum BarAggregation {
     Tick = 1,
     TickImbalance = 2,
@@ -116,11 +116,11 @@ pub enum BarAggregation {
     Month = 16,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum BookAction {
     Add = 1,
     Update = 2,
@@ -140,12 +140,12 @@ impl FromU8 for BookAction {
     }
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(non_camel_case_types)]
+#[pyclass]
 pub enum BookType {
     /// Top-of-book best bid/offer.
     L1_TBBO = 1,
@@ -166,11 +166,11 @@ impl FromU8 for BookType {
     }
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum ContingencyType {
     NoContingency = 0, // Will be replaced by `Option`
     Oco = 1,
@@ -178,53 +178,53 @@ pub enum ContingencyType {
     Ouo = 3,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum CurrencyType {
     Crypto = 1,
     Fiat = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum DepthType {
     Volume = 1,
     Exposure = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum InstrumentCloseType {
     EndOfSession = 1,
     ContractExpired = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
+#[pyclass]
 pub enum LiquiditySide {
     NoLiquiditySide = 0, // Will be replaced by `Option`
     Maker = 1,
     Taker = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum MarketStatus {
     Closed = 1,
     PreOpen = 2,
@@ -233,33 +233,33 @@ pub enum MarketStatus {
     PreClose = 5,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum OmsType {
     Unspecified = 0, // Will be replaced by `Option`
     Netting = 1,
     Hedging = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum OptionKind {
     Call = 1,
     Put = 2,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
+#[pyclass]
 pub enum OrderSide {
     NoOrderSide = 0, // Will be replaced by `Option`
     Buy = 1,
@@ -277,11 +277,11 @@ impl FromU8 for OrderSide {
     }
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum OrderStatus {
     Initialized = 1,
     Denied = 2,
@@ -297,11 +297,11 @@ pub enum OrderStatus {
     Filled = 12,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum OrderType {
     Market = 1,
     Limit = 2,
@@ -314,12 +314,12 @@ pub enum OrderType {
     TrailingStopLimit = 9,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
+#[pyclass]
 pub enum PositionSide {
     NoPositionSide = 0, // Will be replaced by `Option`
     Flat = 1,
@@ -327,11 +327,11 @@ pub enum PositionSide {
     Short = 3,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum PriceType {
     Bid = 1,
     Ask = 2,
@@ -339,11 +339,11 @@ pub enum PriceType {
     Last = 4,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum TimeInForce {
     Gtc = 1,
     Ioc = 2,
@@ -354,22 +354,22 @@ pub enum TimeInForce {
     AtTheClose = 7,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum TradingState {
     Active = 1,
     Halted = 2,
     Reducing = 3,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum TrailingOffsetType {
     NoTrailingOffset = 0, // Will be replaced by `Option`
     Price = 1,
@@ -378,11 +378,11 @@ pub enum TrailingOffsetType {
     PriceTier = 4,
 }
 
-#[pyclass]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[pyclass]
 pub enum TriggerType {
     NoTrigger = 0, // Will be replaced by `Option`
     Default = 1,

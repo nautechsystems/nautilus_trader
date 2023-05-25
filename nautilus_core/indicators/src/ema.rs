@@ -23,10 +23,8 @@ use nautilus_model::{
     enums::PriceType,
 };
 
-use crate::Indicator;
-
-#[pyclass]
 #[derive(Debug)]
+#[pyclass]
 pub struct ExponentialMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
@@ -53,23 +51,12 @@ impl ExponentialMovingAverage {
         }
     }
 
-    pub fn update_raw(&mut self, value: f64) {
-        if !self._has_inputs {
-            self._has_inputs = true;
-            self.value = value;
-        }
-
-        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
-        self.count += 1;
-
-        // Initialization logic
-        if !self._is_initialized && self.count >= self.period {
-            self._is_initialized = true;
-        }
+    #[getter]
+    pub fn name(&self) -> String {
+        // Could use type_name
+        "ExponentialMovingAverage".to_string()
     }
-}
 
-impl Indicator for ExponentialMovingAverage {
     fn has_inputs(&self) -> bool {
         self._has_inputs
     }
@@ -96,7 +83,55 @@ impl Indicator for ExponentialMovingAverage {
         self._has_inputs = false;
         self._is_initialized = false;
     }
+
+    pub fn update_raw(&mut self, value: f64) {
+        if !self._has_inputs {
+            self._has_inputs = true;
+            self.value = value;
+        }
+
+        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
+        self.count += 1;
+
+        // Initialization logic
+        if !self._is_initialized && self.count >= self.period {
+            self._is_initialized = true;
+        }
+    }
 }
+
+// impl Indicator for ExponentialMovingAverage {
+//     fn name(&self) -> String {
+//         "ExponentialMovingAverage".to_string()
+//     }
+//
+//     fn has_inputs(&self) -> bool {
+//         self._has_inputs
+//     }
+//
+//     fn is_initialized(&self) -> bool {
+//         self._is_initialized
+//     }
+//
+//     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
+//         self.update_raw(tick.extract_price(self.price_type).into())
+//     }
+//
+//     fn handle_trade_tick(&mut self, tick: &TradeTick) {
+//         self.update_raw((&tick.price).into())
+//     }
+//
+//     fn handle_bar(&mut self, bar: &Bar) {
+//         self.update_raw((&bar.close).into())
+//     }
+//
+//     fn reset(&mut self) {
+//         self.value = 0.0;
+//         self.count = 0;
+//         self._has_inputs = false;
+//         self._is_initialized = false;
+//     }
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

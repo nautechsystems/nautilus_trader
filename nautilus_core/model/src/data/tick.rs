@@ -20,6 +20,7 @@ use std::fmt::{Display, Formatter};
 use nautilus_core::correctness;
 use nautilus_core::string::string_to_cstr;
 use nautilus_core::time::UnixNanos;
+use pyo3::prelude::*;
 
 use crate::enums::{AggressorSide, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
@@ -33,6 +34,7 @@ use super::Data;
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[pyclass]
 pub struct QuoteTick {
     pub instrument_id: InstrumentId,
     pub bid: Price,
@@ -104,6 +106,7 @@ impl Display for QuoteTick {
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[pyclass]
 pub struct TradeTick {
     pub instrument_id: InstrumentId,
     pub price: Price,
