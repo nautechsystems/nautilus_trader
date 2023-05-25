@@ -21,9 +21,13 @@ cdef extern from "../includes/model.h":
 
     const double QUANTITY_MIN # = 0.0
 
+    # Represents an account type provided by a trading venue or broker.
     cpdef enum AccountType:
+        # An account type with unleveraged cash assets only.
         CASH # = 1,
+        # An account type which facilitates trading on margin, using account assets as collateral.
         MARGIN # = 2,
+        # An account type specific to betting markets.
         BETTING # = 3,
 
     cpdef enum AggregationSource:
@@ -189,9 +193,6 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook:
         pass
 
-    cdef struct Rc_String:
-        pass
-
     cdef struct BarSpecification_t:
         uint64_t step;
         uint8_t aggregation;
@@ -294,34 +295,34 @@ cdef extern from "../includes/model.h":
         Bar_t bar;
 
     cdef struct AccountId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct ClientId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct ClientOrderId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct ComponentId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct ExecAlgorithmId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct OrderListId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct PositionId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct StrategyId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct TraderId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct VenueOrderId_t:
-        Rc_String *value;
+        Arc_String *value;
 
     cdef struct OrderBook_API:
         OrderBook *_0;

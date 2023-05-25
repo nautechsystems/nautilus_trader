@@ -28,7 +28,6 @@ use crate::identifiers::venue::Venue;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
 #[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,

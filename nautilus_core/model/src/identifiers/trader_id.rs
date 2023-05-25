@@ -15,17 +15,17 @@
 
 use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use nautilus_core::correctness;
 use nautilus_core::string::string_to_cstr;
+use pyo3::prelude::*;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[pyclass]
 pub struct TraderId {
-    pub value: Box<Rc<String>>,
+    pub value: Box<Arc<String>>,
 }
 
 impl Display for TraderId {
@@ -41,7 +41,7 @@ impl TraderId {
         correctness::string_contains(s, "-", "`TraderId` value");
 
         Self {
-            value: Box::new(Rc::new(s.to_string())),
+            value: Box::new(Arc::new(s.to_string())),
         }
     }
 }
