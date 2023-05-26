@@ -53,6 +53,7 @@ impl Symbol {
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {

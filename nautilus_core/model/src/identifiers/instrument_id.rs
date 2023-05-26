@@ -82,6 +82,7 @@ pub extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> Instrumen
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {

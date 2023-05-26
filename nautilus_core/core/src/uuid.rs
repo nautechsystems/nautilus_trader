@@ -83,8 +83,11 @@ pub extern "C" fn uuid4_drop(uuid4: UUID4) {
 /// Returns a [`UUID4`] from C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
+///
 /// - If `ptr` cannot be cast to a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {

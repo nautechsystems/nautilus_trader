@@ -25,6 +25,7 @@ use crate::string::cstr_to_string;
 /// Convert a C bytes pointer into an owned `Option<HashMap<String, Value>>`.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[must_use]
 pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<String, Value>> {
@@ -61,8 +62,11 @@ pub fn precision_from_str(s: &str) -> u8 {
 /// Return the decimal precision inferred from the given C string.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
