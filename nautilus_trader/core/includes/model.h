@@ -864,6 +864,7 @@ enum TriggerType trigger_type_from_cstr(const char *ptr);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct AccountId_t account_id_new(const char *ptr);
@@ -888,6 +889,7 @@ uint64_t account_id_hash(const struct AccountId_t *account_id);
  * Returns a Nautilus identifier from C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct ClientId_t client_id_new(const char *ptr);
@@ -912,6 +914,7 @@ uint64_t client_id_hash(const struct ClientId_t *client_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct ClientOrderId_t client_order_id_new(const char *ptr);
@@ -936,6 +939,7 @@ uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct ComponentId_t component_id_new(const char *ptr);
@@ -960,6 +964,7 @@ uint64_t component_id_hash(const struct ComponentId_t *component_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
@@ -987,6 +992,7 @@ struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const str
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
@@ -1011,6 +1017,7 @@ uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct OrderListId_t order_list_id_new(const char *ptr);
@@ -1035,6 +1042,7 @@ uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct PositionId_t position_id_new(const char *ptr);
@@ -1059,6 +1067,7 @@ uint64_t position_id_hash(const struct PositionId_t *position_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct StrategyId_t strategy_id_new(const char *ptr);
@@ -1079,6 +1088,7 @@ const char *strategy_id_to_cstr(const struct StrategyId_t *strategy_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct Symbol_t symbol_new(const char *ptr);
@@ -1103,6 +1113,7 @@ uint64_t symbol_hash(const struct Symbol_t *symbol);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct TradeId_t trade_id_new(const char *ptr);
@@ -1127,6 +1138,7 @@ uint64_t trade_id_hash(const struct TradeId_t *trade_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct TraderId_t trader_id_new(const char *ptr);
@@ -1147,6 +1159,7 @@ const char *trader_id_to_cstr(const struct TraderId_t *trader_id);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct Venue_t venue_new(const char *ptr);
@@ -1171,6 +1184,7 @@ uint64_t venue_hash(const struct Venue_t *venue);
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct VenueOrderId_t venue_order_id_new(const char *ptr);

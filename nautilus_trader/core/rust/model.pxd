@@ -711,6 +711,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     AccountId_t account_id_new(const char *ptr);
 
@@ -729,6 +730,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ClientId_t client_id_new(const char *ptr);
 
@@ -747,6 +749,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ClientOrderId_t client_order_id_new(const char *ptr);
 
@@ -765,6 +768,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ComponentId_t component_id_new(const char *ptr);
 
@@ -783,6 +787,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
@@ -803,6 +808,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
 
@@ -821,6 +827,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     OrderListId_t order_list_id_new(const char *ptr);
 
@@ -839,6 +846,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     PositionId_t position_id_new(const char *ptr);
 
@@ -857,6 +865,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     StrategyId_t strategy_id_new(const char *ptr);
 
@@ -871,6 +880,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     Symbol_t symbol_new(const char *ptr);
 
@@ -889,6 +899,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TradeId_t trade_id_new(const char *ptr);
 
@@ -907,6 +918,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     TraderId_t trader_id_new(const char *ptr);
 
@@ -921,6 +933,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     Venue_t venue_new(const char *ptr);
 
@@ -939,6 +952,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
     VenueOrderId_t venue_order_id_new(const char *ptr);
 

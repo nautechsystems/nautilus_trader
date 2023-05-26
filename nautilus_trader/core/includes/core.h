@@ -78,8 +78,11 @@ uint64_t nanos_to_micros(uint64_t nanos);
  * Return the decimal precision inferred from the given C string.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
+ *
  * - If `ptr` is null.
  */
 uint8_t precision_from_cstr(const char *ptr);
@@ -88,8 +91,11 @@ uint8_t precision_from_cstr(const char *ptr);
  * Drops the C string memory at the pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
+ *
  * - If `ptr` is null.
  */
 void cstr_drop(const char *ptr);
@@ -124,8 +130,11 @@ void uuid4_drop(struct UUID4_t uuid4);
  * Returns a [`UUID4`] from C string pointer.
  *
  * # Safety
+ *
  * - Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
+ *
  * - If `ptr` cannot be cast to a valid C string.
  */
 struct UUID4_t uuid4_from_cstr(const char *ptr);

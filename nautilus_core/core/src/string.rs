@@ -21,8 +21,11 @@ use pyo3::{ffi, FromPyPointer, Python};
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
@@ -33,8 +36,11 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 /// Convert a C string pointer into an owned `String`.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
@@ -48,6 +54,7 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 /// Convert a C string pointer into an owned `Option<String>`.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[must_use]
 pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
@@ -67,8 +74,11 @@ pub fn string_to_cstr(s: &str) -> *const c_char {
 /// Drops the C string memory at the pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
