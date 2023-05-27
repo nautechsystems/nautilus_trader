@@ -36,6 +36,14 @@ impl Display for Symbol {
     }
 }
 
+impl Default for Symbol {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("AUD/USD"))),
+        }
+    }
+}
+
 impl Symbol {
     #[must_use]
     pub fn new(s: &str) -> Self {

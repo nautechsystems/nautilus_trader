@@ -19,6 +19,7 @@ use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr};
 
 pub trait FromU8 {
@@ -29,7 +30,9 @@ pub trait FromU8 {
 
 /// Represents an account type provided by a trading venue or broker.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -43,7 +46,9 @@ pub enum AccountType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -53,7 +58,9 @@ pub enum AggregationSource {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -64,7 +71,9 @@ pub enum AggressorSide {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -82,7 +91,9 @@ pub enum AssetClass {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -97,7 +108,9 @@ pub enum AssetType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -121,7 +134,9 @@ pub enum BarAggregation {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -145,7 +160,9 @@ impl FromU8 for BookAction {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(non_camel_case_types)]
@@ -171,7 +188,9 @@ impl FromU8 for BookType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -183,7 +202,9 @@ pub enum ContingencyType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -193,7 +214,9 @@ pub enum CurrencyType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -203,7 +226,9 @@ pub enum DepthType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -213,7 +238,9 @@ pub enum InstrumentCloseType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
@@ -225,7 +252,9 @@ pub enum LiquiditySide {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -238,7 +267,9 @@ pub enum MarketStatus {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -249,7 +280,9 @@ pub enum OmsType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -259,7 +292,9 @@ pub enum OptionKind {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
@@ -282,7 +317,9 @@ impl FromU8 for OrderSide {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -302,7 +339,9 @@ pub enum OrderStatus {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -319,7 +358,9 @@ pub enum OrderType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
@@ -332,7 +373,9 @@ pub enum PositionSide {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -344,7 +387,9 @@ pub enum PriceType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -359,7 +404,9 @@ pub enum TimeInForce {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -370,7 +417,9 @@ pub enum TradingState {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
@@ -383,7 +432,9 @@ pub enum TrailingOffsetType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]

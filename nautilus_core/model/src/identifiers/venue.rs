@@ -36,6 +36,14 @@ impl Display for Venue {
     }
 }
 
+impl Default for Venue {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("SIM"))),
+        }
+    }
+}
+
 impl Venue {
     #[must_use]
     pub fn new(s: &str) -> Self {

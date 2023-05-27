@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef struct Rc_String Rc_String;
+typedef struct Arc_String Arc_String;
 
 /**
  * `CVec` is a C compatible struct that stores an opaque pointer to a block of
@@ -32,7 +32,7 @@ typedef struct CVec {
 } CVec;
 
 typedef struct UUID4_t {
-    struct Rc_String *value;
+    struct Arc_String *value;
 } UUID4_t;
 
 void cvec_drop(struct CVec cvec);

@@ -13,13 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::rc::Rc;
-
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
 use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
-    events::order::OrderIdentifiers,
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, order_list_id::OrderListId,
         strategy_id::StrategyId, trader_id::TraderId,
@@ -81,12 +78,6 @@ impl LimitOrder for Order {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
-        let metadata = OrderIdentifiers {
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-        };
         Self {
             events: Vec::new(),
             venue_order_ids: Vec::new(),
@@ -94,7 +85,10 @@ impl LimitOrder for Order {
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
-            ids: Rc::new(metadata),
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
             venue_order_id: None,
             position_id: None,
             account_id: None,

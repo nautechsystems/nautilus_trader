@@ -21,13 +21,14 @@ use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,
