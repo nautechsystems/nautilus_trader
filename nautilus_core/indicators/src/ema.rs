@@ -90,6 +90,7 @@ impl ExponentialMovingAverage {
 
     #[getter]
     #[pyo3(name = "name")]
+    #[must_use]
     pub fn name_py(&self) -> String {
         self.name()
     }

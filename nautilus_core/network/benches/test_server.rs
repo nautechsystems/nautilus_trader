@@ -36,6 +36,6 @@ async fn main() {
 
     // And run forever...
     if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
+        eprintln!("server error: {e}");
     }
 }
