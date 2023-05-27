@@ -34,6 +34,14 @@ impl Display for TraderId {
     }
 }
 
+impl Default for TraderId {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("TRADER-000"))),
+        }
+    }
+}
+
 impl TraderId {
     #[must_use]
     pub fn new(s: &str) -> Self {

@@ -17,18 +17,18 @@ use std::collections::hash_map::DefaultHasher;
 use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use std::str::FromStr;
+use std::sync::Arc;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct UUID4 {
-    pub value: Box<Rc<String>>,
+    pub value: Box<Arc<String>>,
 }
 
 impl UUID4 {
@@ -36,17 +36,25 @@ impl UUID4 {
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
         UUID4 {
-            value: Box::new(Rc::new(uuid.to_string())),
+            value: Box::new(Arc::new(uuid.to_string())),
         }
     }
 }
 
+impl FromStr for UUID4 {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::parse_str(s).map_err(|_| "Invalid UUID string")?;
+        Ok(Self {
+            value: Box::new(Arc::new(uuid.to_string())),
+        })
+    }
+}
+
 impl From<&str> for UUID4 {
-    fn from(s: &str) -> Self {
-        let uuid = Uuid::try_parse(s).expect("invalid UUID string");
-        Self {
-            value: Box::new(Rc::new(uuid.to_string())),
-        }
+    fn from(input: &str) -> Self {
+        input.parse().unwrap_or_else(|err| panic!("{}", err))
     }
 }
 
@@ -62,6 +70,25 @@ impl Display for UUID4 {
     }
 }
 
+impl Serialize for UUID4 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.value.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for UUID4 {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let uuid4_str: &str = Deserialize::deserialize(_deserializer)?;
+        let uuid4: UUID4 = uuid4_str.into();
+        Ok(uuid4)
+    }
+}
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////

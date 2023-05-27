@@ -4,7 +4,7 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
-    cdef struct Rc_String:
+    cdef struct Arc_String:
         pass
 
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
@@ -23,7 +23,7 @@ cdef extern from "../includes/core.h":
         uintptr_t cap;
 
     cdef struct UUID4_t:
-        Rc_String *value;
+        Arc_String *value;
 
     void cvec_drop(CVec cvec);
 

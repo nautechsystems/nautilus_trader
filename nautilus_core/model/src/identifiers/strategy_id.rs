@@ -34,6 +34,14 @@ impl Display for StrategyId {
     }
 }
 
+impl Default for StrategyId {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("S-001"))),
+        }
+    }
+}
+
 impl StrategyId {
     #[must_use]
     pub fn new(s: &str) -> Self {

@@ -17,8 +17,6 @@
 
 pub mod limit;
 
-use std::rc::Rc;
-
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use thiserror::Error;
@@ -29,14 +27,17 @@ use crate::enums::{
 };
 use crate::events::order::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
-    OrderFilled, OrderIdentifiers, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-    OrderPendingUpdate, OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
+    OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+    OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
 };
 use crate::identifiers::account_id::AccountId;
 use crate::identifiers::client_order_id::ClientOrderId;
+use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::order_list_id::OrderListId;
 use crate::identifiers::position_id::PositionId;
+use crate::identifiers::strategy_id::StrategyId;
 use crate::identifiers::trade_id::TradeId;
+use crate::identifiers::trader_id::TraderId;
 use crate::identifiers::venue_order_id::VenueOrderId;
 use crate::types::fixed::fixed_i64_to_f64;
 use crate::types::price::Price;
@@ -120,7 +121,10 @@ struct Order {
     previous_status: Option<OrderStatus>,
     triggered_price: Option<Price>,
     pub status: OrderStatus,
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub position_id: Option<PositionId>,
     pub account_id: Option<AccountId>,
@@ -158,8 +162,7 @@ struct Order {
 
 impl PartialEq<Self> for Order {
     fn eq(&self, other: &Self) -> bool {
-        // TODO: can implement deref and deref mut for order metadata here too
-        self.ids.client_order_id == other.ids.client_order_id
+        self.client_order_id == other.client_order_id
     }
 }
 
@@ -174,7 +177,10 @@ impl From<OrderInitialized> for Order {
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
-            ids: value.ids,
+            trader_id: value.trader_id,
+            strategy_id: value.strategy_id,
+            instrument_id: value.instrument_id,
+            client_order_id: value.client_order_id,
             venue_order_id: None,
             position_id: None,
             account_id: None,
@@ -215,7 +221,10 @@ impl From<OrderInitialized> for Order {
 impl From<&Order> for OrderInitialized {
     fn from(value: &Order) -> Self {
         Self {
-            ids: value.ids.clone(),
+            trader_id: value.trader_id.clone(),
+            strategy_id: value.strategy_id.clone(),
+            instrument_id: value.instrument_id.clone(),
+            client_order_id: value.client_order_id.clone(),
             order_side: value.side,
             order_type: value.order_type,
             quantity: value.quantity.clone(),
@@ -623,7 +632,10 @@ mod tests {
         // TODO: We should be able to derive defaults for the below?
         let init = OrderInitializedBuilder::default().build().unwrap();
         let submitted = OrderSubmittedBuilder::default()
-            .ids(init.ids.clone())
+            .trader_id(TraderId::default())
+            .strategy_id(StrategyId::default())
+            .instrument_id(InstrumentId::default())
+            .client_order_id(ClientOrderId::default())
             .account_id(AccountId::default())
             .event_id(UUID4::default())
             .ts_event(UnixNanos::default())
@@ -631,7 +643,10 @@ mod tests {
             .build()
             .unwrap();
         let accepted = OrderAcceptedBuilder::default()
-            .ids(init.ids.clone())
+            .trader_id(TraderId::default())
+            .strategy_id(StrategyId::default())
+            .instrument_id(InstrumentId::default())
+            .client_order_id(ClientOrderId::default())
             .account_id(AccountId::default())
             .venue_order_id(VenueOrderId::default())
             .event_id(UUID4::default())
@@ -659,6 +674,6 @@ mod tests {
         let _ = order.apply(OrderEvent::OrderAccepted(accepted));
         // let _ = order.apply(OrderEvent::OrderFilled(filled));
 
-        assert_eq!(order.ids.client_order_id, client_order_id);
+        assert_eq!(order.client_order_id, client_order_id);
     }
 }

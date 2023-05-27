@@ -16,15 +16,17 @@
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use nautilus_core::correctness;
 use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize, Serializer};
 
+use crate::currencies::CURRENCY_MAP;
 use crate::enums::CurrencyType;
 
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
 #[pyclass]
@@ -56,6 +58,42 @@ impl Currency {
             name: Box::new(Arc::new(name.to_string())),
             currency_type,
         }
+    }
+}
+
+impl FromStr for Currency {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        CURRENCY_MAP
+            .get(s)
+            .cloned()
+            .ok_or_else(|| format!("Unknown currency: {}", s))
+    }
+}
+
+impl From<&str> for Currency {
+    fn from(input: &str) -> Self {
+        input.parse().unwrap_or_else(|err| panic!("{}", err))
+    }
+}
+
+impl Serialize for Currency {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.code.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Currency {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let currency_str: &str = Deserialize::deserialize(deserializer)?;
+        Currency::from_str(currency_str).map_err(serde::de::Error::custom)
     }
 }
 

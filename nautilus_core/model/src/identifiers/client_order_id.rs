@@ -38,6 +38,14 @@ impl Display for ClientOrderId {
     }
 }
 
+impl Default for ClientOrderId {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("O-123456789"))),
+        }
+    }
+}
+
 impl ClientOrderId {
     #[must_use]
     pub fn new(s: &str) -> Self {
