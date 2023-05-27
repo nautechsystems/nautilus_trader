@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport OrderDenied_t
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport LiquiditySide
@@ -95,14 +96,17 @@ cdef class OrderInitialized(OrderEvent):
 
 
 cdef class OrderDenied(OrderEvent):
-    cdef readonly str reason
-    """The reason the order was denied.\n\n:returns: `str`"""
+    cdef OrderDenied_t _mem
+
+    cpdef bytes to_json(self)
+    cpdef bytes to_msgpack(self)
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(OrderDenied obj)
+
 
 
 cdef class OrderSubmitted(OrderEvent):
