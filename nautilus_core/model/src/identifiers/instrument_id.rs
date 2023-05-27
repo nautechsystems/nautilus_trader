@@ -28,7 +28,7 @@ use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Hash, PartialEq, Eq, Default)]
 #[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,
@@ -54,6 +54,12 @@ impl FromStr for InstrumentId {
                 input: s.to_string(),
             }),
         }
+    }
+}
+
+impl Debug for InstrumentId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}.{}\"", self.symbol, self.venue)
     }
 }
 

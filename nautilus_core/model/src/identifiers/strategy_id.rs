@@ -22,10 +22,16 @@ use nautilus_core::string::str_to_cstr;
 use pyo3::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 #[pyclass]
 pub struct StrategyId {
     pub value: Box<Arc<String>>,
+}
+
+impl Debug for StrategyId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
 }
 
 impl Display for StrategyId {

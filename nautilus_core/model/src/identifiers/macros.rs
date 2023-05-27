@@ -15,7 +15,7 @@
 
 #[macro_export]
 
-macro_rules! serialize_for_identifier {
+macro_rules! impl_serialization_for_identifier {
     ($ty:ty) => {
         impl Serialize for $ty {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -39,7 +39,7 @@ macro_rules! serialize_for_identifier {
     };
 }
 
-macro_rules! from_str_for_identifier {
+macro_rules! impl_from_str_for_identifier {
     ($ty:ty) => {
         impl FromStr for $ty {
             type Err = String;
