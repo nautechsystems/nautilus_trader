@@ -13,10 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ffi::{c_char, CString};
+
 use derive_builder::{self, Builder};
+use nautilus_core::string::cstr_to_string;
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 use crate::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
@@ -131,7 +135,7 @@ pub struct OrderDenied {
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub reason: String,
+    pub reason: Box<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -265,7 +269,7 @@ pub struct OrderModifyRejected {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: String,
+    pub reason: Box<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -281,7 +285,7 @@ pub struct OrderCancelRejected {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: String,
+    pub reason: Box<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -333,3 +337,47 @@ pub struct OrderFilled {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+/// Returns a Nautilus identifier from a C string pointer.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn order_denied_new(
+    trader_id: &TraderId,
+    strategy_id: &StrategyId,
+    instrument_id: &InstrumentId,
+    client_order_id: &ClientOrderId,
+    reason_ptr: *const c_char,
+    event_id: &UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderDenied {
+    OrderDenied {
+        trader_id: trader_id.clone(),
+        strategy_id: strategy_id.clone(),
+        instrument_id: instrument_id.clone(),
+        client_order_id: client_order_id.clone(),
+        reason: Box::new(cstr_to_string(reason_ptr)),
+        event_id: event_id.clone(),
+        ts_event,
+        ts_init,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn order_denied_clone(event: &OrderDenied) -> OrderDenied {
+    event.clone()
+}
+
+/// Frees the memory for the given `account_id` by dropping.
+#[no_mangle]
+pub extern "C" fn order_denied_drop(event: OrderDenied) {
+    drop(event); // Memory freed here
+}
+#[no_mangle]
+pub extern "C" fn order_denied_to_json(event: &OrderDenied) -> *const c_char {
+    let json = serde_json::to_string(event).expect("Failed to serialize OrderDenied to JSON");
+    let c_string = CString::new(json).expect("Failed to create CString from JSON string");
+    c_string.into_raw()
+}

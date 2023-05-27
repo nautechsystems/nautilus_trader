@@ -67,7 +67,7 @@ pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
 
 /// Create a C string pointer to newly allocated memory from a [&str].
 #[must_use]
-pub fn string_to_cstr(s: &str) -> *const c_char {
+pub fn str_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
 }
 
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn test_string_to_cstr() {
         let s = "test string";
-        let c_str_ptr = string_to_cstr(s);
+        let c_str_ptr = str_to_cstr(s);
         let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
         let result = c_str.to_str().expect("CStr::from_ptr failed");
         assert_eq!(result, s);

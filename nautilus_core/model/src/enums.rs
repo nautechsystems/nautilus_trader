@@ -17,7 +17,7 @@ use std::ffi::c_char;
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr};
@@ -453,7 +453,7 @@ pub enum TriggerType {
 
 #[no_mangle]
 pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -469,7 +469,7 @@ pub unsafe extern "C" fn account_type_from_cstr(ptr: *const c_char) -> AccountTy
 
 #[no_mangle]
 pub extern "C" fn aggregation_source_to_cstr(value: AggregationSource) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -485,7 +485,7 @@ pub unsafe extern "C" fn aggregation_source_from_cstr(ptr: *const c_char) -> Agg
 
 #[no_mangle]
 pub extern "C" fn aggressor_side_to_cstr(value: AggressorSide) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn aggressor_side_from_cstr(ptr: *const c_char) -> Aggress
 
 #[no_mangle]
 pub extern "C" fn asset_class_to_cstr(value: AssetClass) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -517,7 +517,7 @@ pub unsafe extern "C" fn asset_class_from_cstr(ptr: *const c_char) -> AssetClass
 
 #[no_mangle]
 pub extern "C" fn asset_type_to_cstr(value: AssetType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -533,7 +533,7 @@ pub unsafe extern "C" fn asset_type_from_cstr(ptr: *const c_char) -> AssetType {
 
 #[no_mangle]
 pub extern "C" fn bar_aggregation_to_cstr(value: BarAggregation) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -549,7 +549,7 @@ pub unsafe extern "C" fn bar_aggregation_from_cstr(ptr: *const c_char) -> BarAgg
 
 #[no_mangle]
 pub extern "C" fn book_action_to_cstr(value: BookAction) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -565,7 +565,7 @@ pub unsafe extern "C" fn book_action_from_cstr(ptr: *const c_char) -> BookAction
 
 #[no_mangle]
 pub extern "C" fn book_type_to_cstr(value: BookType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn book_type_from_cstr(ptr: *const c_char) -> BookType {
 
 #[no_mangle]
 pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -597,7 +597,7 @@ pub unsafe extern "C" fn contingency_type_from_cstr(ptr: *const c_char) -> Conti
 
 #[no_mangle]
 pub extern "C" fn currency_type_to_cstr(value: CurrencyType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -613,7 +613,7 @@ pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> Currency
 
 #[no_mangle]
 pub extern "C" fn depth_type_to_cstr(value: DepthType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -632,7 +632,7 @@ pub unsafe extern "C" fn instrument_close_type_from_cstr(
 
 #[no_mangle]
 pub extern "C" fn instrument_close_type_to_cstr(value: InstrumentCloseType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -648,7 +648,7 @@ pub unsafe extern "C" fn depth_type_from_cstr(ptr: *const c_char) -> DepthType {
 
 #[no_mangle]
 pub extern "C" fn liquidity_side_to_cstr(value: LiquiditySide) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -664,7 +664,7 @@ pub unsafe extern "C" fn liquidity_side_from_cstr(ptr: *const c_char) -> Liquidi
 
 #[no_mangle]
 pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -680,7 +680,7 @@ pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketSt
 
 #[no_mangle]
 pub extern "C" fn oms_type_to_cstr(value: OmsType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -696,7 +696,7 @@ pub unsafe extern "C" fn oms_type_from_cstr(ptr: *const c_char) -> OmsType {
 
 #[no_mangle]
 pub extern "C" fn option_kind_to_cstr(value: OptionKind) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -712,7 +712,7 @@ pub unsafe extern "C" fn option_kind_from_cstr(ptr: *const c_char) -> OptionKind
 
 #[no_mangle]
 pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -728,7 +728,7 @@ pub unsafe extern "C" fn order_side_from_cstr(ptr: *const c_char) -> OrderSide {
 
 #[no_mangle]
 pub extern "C" fn order_status_to_cstr(value: OrderStatus) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -744,7 +744,7 @@ pub unsafe extern "C" fn order_status_from_cstr(ptr: *const c_char) -> OrderStat
 
 #[no_mangle]
 pub extern "C" fn order_type_to_cstr(value: OrderType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -760,7 +760,7 @@ pub unsafe extern "C" fn order_type_from_cstr(ptr: *const c_char) -> OrderType {
 
 #[no_mangle]
 pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -776,7 +776,7 @@ pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> Position
 
 #[no_mangle]
 pub extern "C" fn price_type_to_cstr(value: PriceType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -792,7 +792,7 @@ pub unsafe extern "C" fn price_type_from_cstr(ptr: *const c_char) -> PriceType {
 
 #[no_mangle]
 pub extern "C" fn time_in_force_to_cstr(value: TimeInForce) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -808,7 +808,7 @@ pub unsafe extern "C" fn time_in_force_from_cstr(ptr: *const c_char) -> TimeInFo
 
 #[no_mangle]
 pub extern "C" fn trading_state_to_cstr(value: TradingState) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -824,7 +824,7 @@ pub unsafe extern "C" fn trading_state_from_cstr(ptr: *const c_char) -> TradingS
 
 #[no_mangle]
 pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -840,7 +840,7 @@ pub unsafe extern "C" fn trailing_offset_type_from_cstr(ptr: *const c_char) -> T
 
 #[no_mangle]
 pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.

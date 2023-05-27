@@ -19,7 +19,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -104,7 +104,7 @@ pub extern "C" fn instrument_id_drop(instrument_id: InstrumentId) {
 /// Returns an [`InstrumentId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
-    string_to_cstr(&instrument_id.to_string())
+    str_to_cstr(&instrument_id.to_string())
 }
 
 #[no_mangle]

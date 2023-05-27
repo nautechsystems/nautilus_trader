@@ -21,6 +21,12 @@ cdef extern from "Python.h":
     # UTF-8 encoded bytes. The size is determined with strlen().
     unicode PyUnicode_FromString(const char *u)  # noqa
 
+    # Return value: New reference.
+    # Return a new string object with the value v on success, and NULL
+    # on failure. The parameter v must not be NULL; it will not be
+    # checked.
+    bytes PyBytes_FromString(char *v)
+
     # Return a pointer to the UTF-8 encoding of the Unicode object,
     # and store the size of the encoded representation (in bytes) in size.
     # The size argument can be NULL; in this case no size will be stored.
@@ -53,6 +59,15 @@ cdef extern from "Python.h":
 
 cdef inline str cstr_to_pystr(const char* ptr):
     cdef str obj = PyUnicode_FromString(ptr)
+
+    # Assumes `ptr` was created from Rust `CString::from_raw`,
+    # otherwise will lead to undefined behaviour when passed to `cstr_drop`.
+    cstr_drop(ptr)
+    return obj
+
+
+cdef inline bytes cstr_to_pybytes(const char* ptr):
+    cdef bytes obj = PyBytes_FromString(ptr)
 
     # Assumes `ptr` was created from Rust `CString::from_raw`,
     # otherwise will lead to undefined behaviour when passed to `cstr_drop`.

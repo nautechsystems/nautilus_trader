@@ -229,6 +229,8 @@ typedef struct Arc_String Arc_String;
 
 typedef struct OrderBook OrderBook;
 
+typedef struct String String;
+
 typedef struct BarSpecification_t {
     uint64_t step;
     uint8_t aggregation;
@@ -366,6 +368,29 @@ typedef struct Data_t {
     };
 } Data_t;
 
+typedef struct TraderId_t {
+    struct Arc_String *value;
+} TraderId_t;
+
+typedef struct StrategyId_t {
+    struct Arc_String *value;
+} StrategyId_t;
+
+typedef struct ClientOrderId_t {
+    struct Arc_String *value;
+} ClientOrderId_t;
+
+typedef struct OrderDenied {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct String *reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderDenied;
+
 typedef struct AccountId_t {
     struct Arc_String *value;
 } AccountId_t;
@@ -373,10 +398,6 @@ typedef struct AccountId_t {
 typedef struct ClientId_t {
     struct Arc_String *value;
 } ClientId_t;
-
-typedef struct ClientOrderId_t {
-    struct Arc_String *value;
-} ClientOrderId_t;
 
 typedef struct ComponentId_t {
     struct Arc_String *value;
@@ -393,14 +414,6 @@ typedef struct OrderListId_t {
 typedef struct PositionId_t {
     struct Arc_String *value;
 } PositionId_t;
-
-typedef struct StrategyId_t {
-    struct Arc_String *value;
-} StrategyId_t;
-
-typedef struct TraderId_t {
-    struct Arc_String *value;
-} TraderId_t;
 
 typedef struct VenueOrderId_t {
     struct Arc_String *value;
@@ -859,6 +872,31 @@ const char *trigger_type_to_cstr(enum TriggerType value);
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum TriggerType trigger_type_from_cstr(const char *ptr);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct OrderDenied order_denied_new(const struct TraderId_t *trader_id,
+                                    const struct StrategyId_t *strategy_id,
+                                    const struct InstrumentId_t *instrument_id,
+                                    const struct ClientOrderId_t *client_order_id,
+                                    const char *reason_ptr,
+                                    const UUID4_t *event_id,
+                                    uint64_t ts_event,
+                                    uint64_t ts_init);
+
+struct OrderDenied order_denied_clone(const struct OrderDenied *event);
+
+/**
+ * Frees the memory for the given `account_id` by dropping.
+ */
+void order_denied_drop(struct OrderDenied event);
+
+const char *order_denied_to_json(const struct OrderDenied *event);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

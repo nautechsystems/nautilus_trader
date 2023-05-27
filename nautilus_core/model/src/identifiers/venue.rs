@@ -20,7 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::string::str_to_cstr;
 use pyo3::prelude::*;
 
 #[repr(C)]
@@ -82,7 +82,7 @@ pub extern "C" fn venue_drop(venue: Venue) {
 /// Returns a [`Venue`] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
-    string_to_cstr(&venue.value)
+    str_to_cstr(&venue.value)
 }
 
 #[no_mangle]

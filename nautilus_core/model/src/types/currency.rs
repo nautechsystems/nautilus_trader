@@ -20,7 +20,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -134,17 +134,17 @@ pub extern "C" fn currency_drop(currency: Currency) {
 
 #[no_mangle]
 pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(format!("{currency:?}").as_str())
+    str_to_cstr(format!("{currency:?}").as_str())
 }
 
 #[no_mangle]
 pub extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(&currency.code)
+    str_to_cstr(&currency.code)
 }
 
 #[no_mangle]
 pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(&currency.name)
+    str_to_cstr(&currency.name)
 }
 
 #[no_mangle]
