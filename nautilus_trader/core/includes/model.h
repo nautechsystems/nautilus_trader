@@ -380,7 +380,7 @@ typedef struct ClientOrderId_t {
     struct Arc_String *value;
 } ClientOrderId_t;
 
-typedef struct OrderDenied {
+typedef struct OrderDenied_t {
     struct TraderId_t trader_id;
     struct StrategyId_t strategy_id;
     struct InstrumentId_t instrument_id;
@@ -389,7 +389,7 @@ typedef struct OrderDenied {
     UUID4_t event_id;
     uint64_t ts_event;
     uint64_t ts_init;
-} OrderDenied;
+} OrderDenied_t;
 
 typedef struct AccountId_t {
     struct Arc_String *value;
@@ -880,23 +880,27 @@ enum TriggerType trigger_type_from_cstr(const char *ptr);
  *
  * - Assumes `ptr` is a valid C string pointer.
  */
-struct OrderDenied order_denied_new(const struct TraderId_t *trader_id,
-                                    const struct StrategyId_t *strategy_id,
-                                    const struct InstrumentId_t *instrument_id,
-                                    const struct ClientOrderId_t *client_order_id,
-                                    const char *reason_ptr,
-                                    const UUID4_t *event_id,
-                                    uint64_t ts_event,
-                                    uint64_t ts_init);
-
-struct OrderDenied order_denied_clone(const struct OrderDenied *event);
+struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
+                                      struct StrategyId_t strategy_id,
+                                      struct InstrumentId_t instrument_id,
+                                      struct ClientOrderId_t client_order_id,
+                                      const char *reason_ptr,
+                                      UUID4_t event_id,
+                                      uint64_t ts_event,
+                                      uint64_t ts_init);
 
 /**
  * Frees the memory for the given `account_id` by dropping.
  */
-void order_denied_drop(struct OrderDenied event);
+void order_denied_drop(struct OrderDenied_t event);
 
-const char *order_denied_to_json(const struct OrderDenied *event);
+struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
+
+const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
+
+const char *order_denied_to_json(const struct OrderDenied_t *event);
+
+const char *order_denied_to_msgpack(const struct OrderDenied_t *event);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

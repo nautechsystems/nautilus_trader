@@ -21,14 +21,14 @@ use std::str::FromStr;
 
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default)]
 #[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,
@@ -67,6 +67,26 @@ impl InstrumentId {
     #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
         Self { symbol, venue }
+    }
+}
+
+impl Serialize for InstrumentId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+
+impl<'de> Deserialize<'de> for InstrumentId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let instrument_id_str = String::deserialize(deserializer)?;
+        InstrumentId::from_str(&instrument_id_str)
+            .map_err(|err| serde::de::Error::custom(err.to_string()))
     }
 }
 

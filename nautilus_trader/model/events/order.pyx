@@ -22,6 +22,20 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.core cimport uuid4_clone
+from nautilus_trader.core.rust.model cimport client_order_id_clone
+from nautilus_trader.core.rust.model cimport component_id_to_cstr
+from nautilus_trader.core.rust.model cimport instrument_id_clone
+from nautilus_trader.core.rust.model cimport order_denied_new
+from nautilus_trader.core.rust.model cimport order_denied_reason_to_cstr
+from nautilus_trader.core.rust.model cimport order_denied_to_json
+from nautilus_trader.core.rust.model cimport order_denied_to_msgpack
+from nautilus_trader.core.rust.model cimport strategy_id_new
+from nautilus_trader.core.rust.model cimport trade_id_clone
+from nautilus_trader.core.rust.model cimport trader_id_new
+from nautilus_trader.core.string cimport cstr_to_pybytes
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -439,7 +453,16 @@ cdef class OrderDenied(OrderEvent):
             reconciliation=False,  # Internal system event
         )
 
-        self.reason = reason
+        self._mem = order_denied_new(
+            trader_id_new(component_id_to_cstr(&trader_id._mem)),
+            strategy_id_new(component_id_to_cstr(&strategy_id._mem)),
+            instrument_id_clone(&instrument_id._mem),
+            client_order_id_clone(&client_order_id._mem),
+            pystr_to_cstr(reason),
+            uuid4_clone(&event_id._mem),
+            ts_init,
+            ts_init,
+        )
 
     def __str__(self) -> str:
         return (
@@ -460,6 +483,40 @@ cdef class OrderDenied(OrderEvent):
             f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
+
+    @property
+    def reason(self) -> str:
+        """
+        Return the reason the order was denied.
+
+        Returns
+        -------
+        str
+
+        """
+        return cstr_to_pystr(order_denied_reason_to_cstr(&self._mem))
+
+    cpdef bytes to_json(self):
+        """
+        Serialize the event as JSON encoded bytes.
+
+        Returns
+        -------
+        bytes
+
+        """
+        return cstr_to_pybytes(order_denied_to_json(&self._mem))
+
+    cpdef bytes to_msgpack(self):
+        """
+        Serialize the event as MsgPack encoded bytes.
+
+        Returns
+        -------
+        bytes
+
+        """
+        return cstr_to_pybytes(order_denied_to_msgpack(&self._mem))
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values):
@@ -485,6 +542,7 @@ cdef class OrderDenied(OrderEvent):
             "client_order_id": obj.client_order_id.to_str(),
             "reason": obj.reason,
             "event_id": obj.id.to_str(),
+            "ts_event": obj.ts_init,
             "ts_init": obj.ts_init,
         }
 
