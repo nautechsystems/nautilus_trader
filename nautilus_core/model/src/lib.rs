@@ -34,6 +34,8 @@ pub mod types;
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<enums::AccountType>()?;
+    m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::BarAggregation>()?;
     m.add_class::<enums::PriceType>()?;
     m.add_class::<identifiers::account_id::AccountId>()?;
