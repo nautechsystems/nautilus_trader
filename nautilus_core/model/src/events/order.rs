@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(
             json_str,
             format!(
-                r#"{{"trader_id":"TRADER-001","strategy_id":"S-001","instrument_id":"AUD/USD.SIM","client_order_id":"O-123456789","reason":"Some reason","event_id":"{}","ts_event":0,"ts_init":0}}"#,
+                r#"{{"type":"OrderDenied","trader_id":"TRADER-001","strategy_id":"S-001","instrument_id":"AUD/USD.SIM","client_order_id":"O-123456789","reason":"Some reason","event_id":"{}","ts_event":0,"ts_init":0}}"#,
                 expected_uuid
             )
         );
