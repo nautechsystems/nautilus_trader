@@ -88,7 +88,7 @@ impl HttpClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let method: Method = Method::from_str(&method_str.to_uppercase())
-            .unwrap_or_else(|_| panic!("Invalid HTTP method {}", method_str));
+            .unwrap_or_else(|_| panic!("Invalid HTTP method {method_str}"));
 
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
         let client = slf.clone();
@@ -309,13 +309,13 @@ mod tests {
 
         let graceful = server.with_graceful_shutdown(async {
             if let Err(e) = rx.await {
-                eprintln!("shutdown signal error: {}", e);
+                eprintln!("shutdown signal error: {e}");
             }
         });
 
         tokio::spawn(async {
             if let Err(e) = graceful.await {
-                eprintln!("server error: {}", e);
+                eprintln!("server error: {e}");
             }
         });
 
@@ -329,7 +329,7 @@ mod tests {
 
         let client = HttpClient::default();
         let response = client
-            .send_request(Method::GET, format!("{}/get", url), HashMap::new(), None)
+            .send_request(Method::GET, format!("{url}/get"), HashMap::new(), None)
             .await
             .unwrap();
 
@@ -344,7 +344,7 @@ mod tests {
 
         let client = HttpClient::default();
         let response = client
-            .send_request(Method::POST, format!("{}/post", url), HashMap::new(), None)
+            .send_request(Method::POST, format!("{url}/post"), HashMap::new(), None)
             .await
             .unwrap();
 
@@ -374,7 +374,7 @@ mod tests {
         let response = client
             .send_request(
                 Method::POST,
-                format!("{}/post", url),
+                format!("{url}/post"),
                 HashMap::new(),
                 Some(body_bytes),
             )
@@ -391,12 +391,7 @@ mod tests {
 
         let client = HttpClient::default();
         let response = client
-            .send_request(
-                Method::PATCH,
-                format!("{}/patch", url),
-                HashMap::new(),
-                None,
-            )
+            .send_request(Method::PATCH, format!("{url}/patch"), HashMap::new(), None)
             .await
             .unwrap();
 
@@ -412,7 +407,7 @@ mod tests {
         let response = client
             .send_request(
                 Method::DELETE,
-                format!("{}/delete", url),
+                format!("{url}/delete"),
                 HashMap::new(),
                 None,
             )
