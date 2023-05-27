@@ -145,6 +145,8 @@ pub struct OrderDenied {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderSubmitted {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -158,6 +160,8 @@ pub struct OrderSubmitted {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderAccepted {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -173,6 +177,8 @@ pub struct OrderAccepted {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderRejected {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -189,6 +195,8 @@ pub struct OrderRejected {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderCanceled {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -204,6 +212,8 @@ pub struct OrderCanceled {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderExpired {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -219,6 +229,8 @@ pub struct OrderExpired {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderTriggered {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -234,6 +246,8 @@ pub struct OrderTriggered {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderPendingUpdate {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -249,6 +263,8 @@ pub struct OrderPendingUpdate {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderPendingCancel {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -264,6 +280,8 @@ pub struct OrderPendingCancel {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderModifyRejected {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -280,6 +298,8 @@ pub struct OrderModifyRejected {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderCancelRejected {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -296,6 +316,8 @@ pub struct OrderCancelRejected {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderUpdated {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -314,6 +336,7 @@ pub struct OrderUpdated {
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[serde(tag = "type")]
 pub struct OrderFilled {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
