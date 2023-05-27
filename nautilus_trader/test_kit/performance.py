@@ -15,6 +15,7 @@
 
 import inspect
 import timeit
+from typing import Callable
 
 import pytest
 
@@ -28,18 +29,25 @@ class PerformanceHarness:
 
 class PerformanceBench:
     @staticmethod
-    def profile_function(target, runs, iterations, print_output=True) -> float:
+    def profile_function(
+        target: Callable,
+        runs: int,
+        iterations: int,
+        print_output: bool = True,
+    ) -> float:
         """
         Profile the given function.
+
         Return the minimum elapsed time in seconds taken to call the given
         function iteration times.
+
         Also prints the elapsed time in milliseconds (ms), microseconds (μs) and
         nanoseconds (ns). As a rule of thumb a CPU cycles in 1 nanosecond per
         GHz of clock speed.
 
         Parameters
         ----------
-        target : callable
+        target : Callable
             The target to call and profile.
         runs : int
             The number of runs for the test.
