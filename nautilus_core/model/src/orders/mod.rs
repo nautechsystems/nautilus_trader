@@ -631,30 +631,8 @@ mod tests {
     fn test_buy_order_life_cyle_to_filled() {
         // TODO: We should be able to derive defaults for the below?
         let init = OrderInitializedBuilder::default().build().unwrap();
-        let submitted = OrderSubmittedBuilder::default()
-            .trader_id(TraderId::default())
-            .strategy_id(StrategyId::default())
-            .instrument_id(InstrumentId::default())
-            .client_order_id(ClientOrderId::default())
-            .account_id(AccountId::default())
-            .event_id(UUID4::default())
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
-        let accepted = OrderAcceptedBuilder::default()
-            .trader_id(TraderId::default())
-            .strategy_id(StrategyId::default())
-            .instrument_id(InstrumentId::default())
-            .client_order_id(ClientOrderId::default())
-            .account_id(AccountId::default())
-            .venue_order_id(VenueOrderId::default())
-            .event_id(UUID4::default())
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .reconciliation(false)
-            .build()
-            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
         // let filled = OrderFilledBuilder::default()
         //     .ids(init.ids.clone())
         //     .account_id(AccountId::default())
