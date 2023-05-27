@@ -17,7 +17,7 @@ use std::ffi::c_char;
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr};
 
@@ -152,7 +152,7 @@ pub enum LogFormat {
 
 #[no_mangle]
 pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -168,7 +168,7 @@ pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> Compon
 
 #[no_mangle]
 pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> Comp
 
 #[no_mangle]
 pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -200,7 +200,7 @@ pub unsafe extern "C" fn log_level_from_cstr(ptr: *const c_char) -> LogLevel {
 
 #[no_mangle]
 pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
-    string_to_cstr(&value.to_string())
+    str_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.

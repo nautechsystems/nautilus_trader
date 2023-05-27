@@ -193,6 +193,9 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook:
         pass
 
+    cdef struct String:
+        pass
+
     cdef struct BarSpecification_t:
         uint64_t step;
         uint8_t aggregation;
@@ -294,13 +297,29 @@ cdef extern from "../includes/model.h":
         TradeTick_t trade;
         Bar_t bar;
 
+    cdef struct TraderId_t:
+        Arc_String *value;
+
+    cdef struct StrategyId_t:
+        Arc_String *value;
+
+    cdef struct ClientOrderId_t:
+        Arc_String *value;
+
+    cdef struct OrderDenied:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        String *reason;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
     cdef struct AccountId_t:
         Arc_String *value;
 
     cdef struct ClientId_t:
-        Arc_String *value;
-
-    cdef struct ClientOrderId_t:
         Arc_String *value;
 
     cdef struct ComponentId_t:
@@ -313,12 +332,6 @@ cdef extern from "../includes/model.h":
         Arc_String *value;
 
     cdef struct PositionId_t:
-        Arc_String *value;
-
-    cdef struct StrategyId_t:
-        Arc_String *value;
-
-    cdef struct TraderId_t:
         Arc_String *value;
 
     cdef struct VenueOrderId_t:
@@ -707,6 +720,27 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
+
+    # Returns a Nautilus identifier from a C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    OrderDenied order_denied_new(const TraderId_t *trader_id,
+                                 const StrategyId_t *strategy_id,
+                                 const InstrumentId_t *instrument_id,
+                                 const ClientOrderId_t *client_order_id,
+                                 const char *reason_ptr,
+                                 const UUID4_t *event_id,
+                                 uint64_t ts_event,
+                                 uint64_t ts_init);
+
+    OrderDenied order_denied_clone(const OrderDenied *event);
+
+    # Frees the memory for the given `account_id` by dropping.
+    void order_denied_drop(OrderDenied event);
+
+    const char *order_denied_to_json(const OrderDenied *event);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

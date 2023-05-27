@@ -20,7 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::string::str_to_cstr;
 use pyo3::prelude::*;
 
 #[repr(C)]
@@ -82,7 +82,7 @@ pub extern "C" fn client_order_id_drop(client_order_id: ClientOrderId) {
 /// Returns a [`ClientOrderId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn client_order_id_to_cstr(client_order_id: &ClientOrderId) -> *const c_char {
-    string_to_cstr(&client_order_id.value)
+    str_to_cstr(&client_order_id.value)
 }
 
 #[no_mangle]

@@ -30,7 +30,7 @@ use chrono::prelude::*;
 use chrono::Utc;
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::parsing::optional_bytes_to_json;
-use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, str_to_cstr};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
@@ -492,12 +492,12 @@ pub extern "C" fn logger_drop(logger: CLogger) {
 
 #[no_mangle]
 pub extern "C" fn logger_get_trader_id_cstr(logger: &CLogger) -> *const c_char {
-    string_to_cstr(&logger.trader_id.to_string())
+    str_to_cstr(&logger.trader_id.to_string())
 }
 
 #[no_mangle]
 pub extern "C" fn logger_get_machine_id_cstr(logger: &CLogger) -> *const c_char {
-    string_to_cstr(&logger.machine_id)
+    str_to_cstr(&logger.machine_id)
 }
 
 #[no_mangle]

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use crate::string::string_to_cstr;
+use crate::string::str_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
 
 #[no_mangle]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
-    string_to_cstr(&uuid.value)
+    str_to_cstr(&uuid.value)
 }
 
 #[no_mangle]

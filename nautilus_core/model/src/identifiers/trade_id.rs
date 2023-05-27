@@ -20,7 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::string::str_to_cstr;
 use pyo3::prelude::*;
 
 #[repr(C)]
@@ -74,7 +74,7 @@ pub extern "C" fn trade_id_drop(trade_id: TradeId) {
 /// Returns [`TradeId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
-    string_to_cstr(&trade_id.value)
+    str_to_cstr(&trade_id.value)
 }
 
 #[no_mangle]

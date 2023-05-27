@@ -54,6 +54,7 @@ exclude = [
 "Symbol" = "Symbol_t"
 "TradeId" = "TradeId_t"
 "TraderId" = "TraderId_t"
+"UUID4" = "UUID4_t"
 "Venue" = "Venue_t"
 "VenueOrderId" = "VenueOrderId_t"
 "BarSpecification" = "BarSpecification_t"

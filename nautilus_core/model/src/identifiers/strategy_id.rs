@@ -18,7 +18,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::string::str_to_cstr;
 use pyo3::prelude::*;
 
 #[repr(C)]
@@ -83,7 +83,7 @@ pub extern "C" fn strategy_id_drop(strategy_id: StrategyId) {
 /// Returns a [`StrategyId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char {
-    string_to_cstr(&strategy_id.value)
+    str_to_cstr(&strategy_id.value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

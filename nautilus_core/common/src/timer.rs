@@ -19,7 +19,7 @@ use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use nautilus_core::time::{TimedeltaNanos, UnixNanos};
 use nautilus_core::uuid::UUID4;
 use pyo3::ffi;
@@ -126,13 +126,13 @@ pub extern "C" fn time_event_drop(event: TimeEvent) {
 
 #[no_mangle]
 pub extern "C" fn time_event_name_to_cstr(event: &TimeEvent) -> *const c_char {
-    string_to_cstr(&event.name)
+    str_to_cstr(&event.name)
 }
 
 /// Returns a [`TimeEvent`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {
-    string_to_cstr(&event.to_string())
+    str_to_cstr(&event.to_string())
 }
 
 pub trait Timer {
