@@ -872,7 +872,7 @@ class BinanceMarketHttpAPI:
                 break
 
             # Update the start_time to fetch the next set of bars
-            start_time = klines[-1].open_time + 1
+            start_time = str(klines[-1].open_time + 1)
 
         return all_bars
 
