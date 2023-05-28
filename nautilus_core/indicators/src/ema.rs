@@ -40,8 +40,7 @@ pub struct ExponentialMovingAverage {
 
 impl Indicator for ExponentialMovingAverage {
     fn name(&self) -> String {
-        // Could use type_name
-        "ExponentialMovingAverage".to_string()
+        stringify!(ExponentialMovingAverage).to_string()
     }
 
     fn has_inputs(&self) -> bool {
