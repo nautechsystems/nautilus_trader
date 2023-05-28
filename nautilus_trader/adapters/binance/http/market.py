@@ -862,7 +862,9 @@ class BinanceMarketHttpAPI:
                 start_time=start_time,
                 end_time=end_time,
             )
-            bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines]
+            bars: list[BinanceBar] = [
+                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
+            ]
             all_bars.extend(bars)
 
             if len(klines) < limit:
