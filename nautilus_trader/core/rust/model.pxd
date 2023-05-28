@@ -742,10 +742,6 @@ cdef extern from "../includes/model.h":
 
     const char *order_denied_reason_to_cstr(const OrderDenied_t *event);
 
-    const char *order_denied_to_json(const OrderDenied_t *event);
-
-    const char *order_denied_to_msgpack(const OrderDenied_t *event);
-
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety

@@ -13,15 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CString};
+use std::ffi::c_char;
 
 use derive_builder::{self, Builder};
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
-use rmp_serde;
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 use crate::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
@@ -406,92 +404,6 @@ pub extern "C" fn order_denied_reason_to_cstr(event: &OrderDenied) -> *const c_c
     str_to_cstr(&event.reason)
 }
 
-#[no_mangle]
-pub extern "C" fn order_denied_to_json(event: &OrderDenied) -> *const c_char {
-    let json = serde_json::to_string(event).expect("Error serializing `OrderDenied` to JSON");
-    let c_string = CString::new(json).expect("Error initializing `CString` from JSON string");
-    c_string.into_raw()
-}
-
-#[no_mangle]
-pub extern "C" fn order_denied_to_msgpack(event: &OrderDenied) -> *const c_char {
-    let mut buf = Vec::new();
-    event
-        .serialize(&mut rmp_serde::Serializer::new(&mut buf))
-        .expect("Error serializing `OrderDenied` to MsgPack");
-
-    let buf_ptr = buf.as_ptr();
-    std::mem::forget(buf); // Prevent the Vec from being deallocated
-
-    buf_ptr as *const c_char
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use std::{ffi::CStr, str::FromStr};
-
-    use nautilus_core::string::cstr_drop;
-
-    use super::*;
-
-    #[test]
-    fn test_order_denied_to_json() {
-        let order_denied = OrderDenied {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from_str("AUD/USD.SIM").unwrap(),
-            client_order_id: ClientOrderId::new("O-123456789"),
-            reason: Box::new(String::from("Some reason")),
-            event_id: UUID4::new(),
-            ts_event: 0,
-            ts_init: 0,
-        };
-
-        let c_str = order_denied_to_json(&order_denied);
-        let c_string = unsafe { CStr::from_ptr(c_str) };
-        let json_str = c_string.to_str().unwrap();
-
-        let expected_uuid = order_denied.event_id.value.to_string();
-
-        assert_eq!(
-            json_str,
-            format!(
-                r#"{{"type":"OrderDenied","trader_id":"TRADER-001","strategy_id":"S-001","instrument_id":"AUD/USD.SIM","client_order_id":"O-123456789","reason":"Some reason","event_id":"{}","ts_event":0,"ts_init":0}}"#,
-                expected_uuid
-            )
-        );
-
-        // Cleanup
-        unsafe { cstr_drop(c_str) };
-    }
-
-    #[test]
-    fn test_order_denied_to_msgpack() {
-        let order_denied = OrderDenied {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from_str("AUD/USD.SIM").unwrap(),
-            client_order_id: ClientOrderId::new("O-123456789"),
-            reason: Box::new(String::from("Some reason")),
-            event_id: UUID4::new(),
-            ts_event: 0,
-            ts_init: 0,
-        };
-
-        let _msgpack_data = order_denied_to_msgpack(&order_denied);
-        // let len = unsafe { libc::strlen(msgpack_data) };
-        // let msgpack_bytes = unsafe { std::slice::from_raw_parts(msgpack_data as *const u8, len) };
-        //
-        // // Define the expected bytes of the MsgPack data
-        // let expected_bytes: &[u8] = &[0x81, 0xA5, 0x72, 0x65, 0x61, 0x73, 0x6F, 0x6E];
-        //
-        // // Compare the `msgpack_bytes` with the `expected_bytes`
-        // assert_eq!(msgpack_bytes, expected_bytes);
-        //
-        // // Cleanup the CString
-        // unsafe { cstr_drop(msgpack_data) };
-    }
-}
