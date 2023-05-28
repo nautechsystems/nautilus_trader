@@ -28,8 +28,6 @@ from nautilus_trader.core.rust.model cimport component_id_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport order_denied_new
 from nautilus_trader.core.rust.model cimport order_denied_reason_to_cstr
-from nautilus_trader.core.rust.model cimport order_denied_to_json
-from nautilus_trader.core.rust.model cimport order_denied_to_msgpack
 from nautilus_trader.core.rust.model cimport strategy_id_new
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trader_id_new
@@ -495,28 +493,6 @@ cdef class OrderDenied(OrderEvent):
 
         """
         return cstr_to_pystr(order_denied_reason_to_cstr(&self._mem))
-
-    cpdef bytes to_json(self):
-        """
-        Serialize the event as JSON encoded bytes.
-
-        Returns
-        -------
-        bytes
-
-        """
-        return cstr_to_pybytes(order_denied_to_json(&self._mem))
-
-    cpdef bytes to_msgpack(self):
-        """
-        Serialize the event as MsgPack encoded bytes.
-
-        Returns
-        -------
-        bytes
-
-        """
-        return cstr_to_pybytes(order_denied_to_msgpack(&self._mem))
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values):

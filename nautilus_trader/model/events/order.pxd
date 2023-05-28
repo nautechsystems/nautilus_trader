@@ -98,9 +98,6 @@ cdef class OrderInitialized(OrderEvent):
 cdef class OrderDenied(OrderEvent):
     cdef OrderDenied_t _mem
 
-    cpdef bytes to_json(self)
-    cpdef bytes to_msgpack(self)
-
     @staticmethod
     cdef OrderDenied from_dict_c(dict values)
 

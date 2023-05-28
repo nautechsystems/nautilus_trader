@@ -898,10 +898,6 @@ struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
 
 const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
 
-const char *order_denied_to_json(const struct OrderDenied_t *event);
-
-const char *order_denied_to_msgpack(const struct OrderDenied_t *event);
-
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
