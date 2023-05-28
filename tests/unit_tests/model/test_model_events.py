@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-import msgspec
-
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
@@ -204,54 +201,6 @@ class TestModelEvents:
             repr(event)
             == f"OrderDenied(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_SUBMIT_RATE, event_id={uuid}, ts_init=0)"  # noqa
         )
-
-    def test_order_denied_event_to_json(self):
-        # Arrange
-        uuid = UUID4()
-        reason = "Exceeded MAX_ORDER_SUBMIT_RATE"
-        event = OrderDenied(
-            trader_id=TraderId("TRADER-001"),
-            strategy_id=StrategyId("SCALPER-001"),
-            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            client_order_id=ClientOrderId("O-2020872378423"),
-            reason=reason,
-            event_id=uuid,
-            ts_init=0,
-        )
-
-        deserialized = msgspec.json.decode(event.to_json())
-
-        assert deserialized == OrderDenied.to_dict(event)
-        assert deserialized == {
-            "type": "OrderDenied",
-            "trader_id": "TRADER-001",
-            "strategy_id": "SCALPER-001",
-            "instrument_id": "BTCUSDT.BINANCE",
-            "client_order_id": "O-2020872378423",
-            "reason": "Exceeded MAX_ORDER_SUBMIT_RATE",
-            "event_id": str(uuid),
-            "ts_event": 0,
-            "ts_init": 0,
-        }
-
-    def test_order_denied_event_to_msgpack(self):
-        # Arrange
-        uuid = UUID4()
-        reason = "Exceeded MAX_ORDER_SUBMIT_RATE"
-        event = OrderDenied(
-            trader_id=TraderId("TRADER-001"),
-            strategy_id=StrategyId("SCALPER-001"),
-            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            client_order_id=ClientOrderId("O-2020872378423"),
-            reason=reason,
-            event_id=uuid,
-            ts_init=0,
-        )
-
-        event.to_msgpack()
-        # TODO: WIP
-        # deserialized = msgspec.msgpack.decode(event.to_msgpack())
-        # assert deserialized == {}
 
     def test_order_submitted_event_to_from_dict_and_str_repr(self):
         # Arrange
