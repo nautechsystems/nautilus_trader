@@ -867,12 +867,13 @@ class BinanceMarketHttpAPI:
             ]
             all_bars.extend(bars)
 
-            if len(klines) < limit:
-                # No more bars to fetch
+            # Update the start_time to fetch the next set of bars
+            next_start_time = klines[-1].open_time + 1
+            # No more bars to fetch
+            if len(klines) < limit or next_start_time >= int(end_time):
                 break
 
-            # Update the start_time to fetch the next set of bars
-            start_time = str(klines[-1].open_time + 1)
+            start_time = str(next_start_time)
 
         return all_bars
 
