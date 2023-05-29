@@ -19,7 +19,7 @@ use pyo3::prelude::*;
 use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
 
 #[pyclass]
-struct WebSocketClient {
+pub struct WebSocketClient {
     stream: Mutex<WebSocket<MaybeTlsStream<TcpStream>>>,
 }
 
@@ -35,7 +35,16 @@ impl WebSocketClient {
         }
     }
 
+    pub fn close(&self) {
+        if let Ok(mut stream) = self.stream.lock() {
+            if let Err(err) = stream.close(None) {
+                panic!("Connection could not be closed {}", err);
+            };
+        }
+    }
+
     pub fn send(&self, msg: Message) {
+        // TODO: Will block till a message is received
         if let Ok(mut stream) = self.stream.lock() {
             if let Err(err) = stream.write_message(msg) {
                 panic!("Message could not be sent {}", err);
@@ -45,10 +54,13 @@ impl WebSocketClient {
 
     pub fn recv(&self) -> Option<Vec<u8>> {
         if let Ok(mut stream) = self.stream.lock() {
+            // TODO: will wait forever if the server doesn't send any message
             match stream.read_message() {
                 Ok(Message::Text(txt)) => Some(txt.into_bytes()),
                 Ok(Message::Binary(data)) => Some(data),
-                Ok(_) => None,
+                Ok(Message::Close(_)) => None,
+                // TODO: other messages should be filtered but returns an empty list
+                Ok(_) => Some(vec![]),
                 Err(err) => {
                     panic!("Error with stream {}", err);
                 }
@@ -62,8 +74,12 @@ impl WebSocketClient {
 #[pymethods]
 impl WebSocketClient {
     #[new]
-    pub fn new(url: String) -> Self {
+    fn new(url: String) -> Self {
         WebSocketClient::connect(&url)
+    }
+
+    fn close_conn(slf: PyRef<'_, Self>) {
+        slf.close();
     }
 
     pub fn send_bytes(slf: PyRef<'_, Self>, data: Vec<u8>) {
@@ -85,7 +101,7 @@ impl WebSocketClient {
 mod tests {
     use std::{net::TcpListener, thread};
 
-    use tungstenite::accept;
+    use tungstenite::{accept, client};
 
     use super::WebSocketClient;
 
@@ -113,5 +129,26 @@ mod tests {
             client.send(tungstenite::Message::Text("ping".to_string()));
             assert_eq!(client.recv(), Some("ping".to_string().into_bytes()));
         }
+    }
+
+    #[test]
+    fn test_close() {
+        thread::spawn(|| {
+            let server = TcpListener::bind("127.0.0.1:9001").unwrap();
+            let conn = server.incoming().next().unwrap();
+            let mut websocket = accept(conn.unwrap()).unwrap();
+
+            let msg = websocket.read_message().unwrap();
+
+            // We do not want to send back ping/pong messages.
+            if msg.is_binary() || msg.is_text() {
+                websocket.close(None).unwrap();
+            }
+        });
+
+        let client = WebSocketClient::connect("ws://127.0.0.1:9001");
+
+        client.send(tungstenite::Message::Text("ping".to_string()));
+        assert_eq!(client.recv(), None);
     }
 }
