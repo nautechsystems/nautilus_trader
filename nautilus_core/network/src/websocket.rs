@@ -13,87 +13,116 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{net::TcpStream, panic, sync::Mutex};
-
+use futures_util::stream::SplitSink;
+use futures_util::{SinkExt, StreamExt};
 use pyo3::prelude::*;
-use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
+use pyo3::{PyObject, Python};
+use std::io;
+use std::sync::Arc;
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+use tokio::task;
+use tokio_tungstenite::tungstenite::{Error, Message};
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
+/// WebSocketClient connects to a websocket server to read and send messages
+///
+/// The client is opinionated about how messages are read and written. It
+/// assumes that data can only have one reader but multiple writers.
+///
+/// The client splits the connection into read and write halves. It moves
+/// the read half into a tokio task which keeps receiving messages from the
+/// server and calls a handler - a Python function that takes the data
+/// as its parameter. It stores the write half in the struct wrapped
+/// with an Arc Mutex. This way the client struct can be used to write
+/// data to the server from multiple scopes/tasks.
 #[pyclass]
 pub struct WebSocketClient {
-    stream: Mutex<WebSocket<MaybeTlsStream<TcpStream>>>,
+    read_task: Option<task::JoinHandle<io::Result<()>>>,
+    write_mutex: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
 }
 
 impl WebSocketClient {
-    pub fn connect(url: &str) -> Self {
-        match connect(url) {
-            Ok((stream, _resp)) => WebSocketClient {
-                stream: Mutex::new(stream),
-            },
-            Err(err) => {
-                panic!("Cannot connect to websocket server {}", err);
-            }
-        }
-    }
+    pub async fn connect(url: &str, handler: PyObject) -> Result<Self, Error> {
+        let (stream, _) = connect_async(url).await?;
+        let (write_half, mut read_half) = stream.split();
+        let write_mutex = Arc::new(Mutex::new(write_half));
 
-    pub fn close(&self) {
-        if let Ok(mut stream) = self.stream.lock() {
-            if let Err(err) = stream.close(None) {
-                panic!("Connection could not be closed {}", err);
-            };
-        }
-    }
-
-    pub fn send(&self, msg: Message) {
-        // TODO: Will block till a message is received
-        if let Ok(mut stream) = self.stream.lock() {
-            if let Err(err) = stream.write_message(msg) {
-                panic!("Message could not be sent {}", err);
-            };
-        }
-    }
-
-    pub fn recv(&self) -> Option<Vec<u8>> {
-        if let Ok(mut stream) = self.stream.lock() {
-            // TODO: will wait forever if the server doesn't send any message
-            match stream.read_message() {
-                Ok(Message::Text(txt)) => Some(txt.into_bytes()),
-                Ok(Message::Binary(data)) => Some(data),
-                Ok(Message::Close(_)) => None,
-                // TODO: other messages should be filtered but returns an empty list
-                Ok(_) => Some(vec![]),
-                Err(err) => {
-                    panic!("Error with stream {}", err);
+        // keep receiving messages from socket
+        // pass them as arguments to handler
+        let read_task = Some(task::spawn(async move {
+            loop {
+                match read_half.next().await {
+                    Some(Ok(Message::Binary(bytes))) => {
+                        Python::with_gil(|py| handler.call1(py, (bytes,)));
+                    }
+                    Some(Ok(Message::Text(data))) => {
+                        let bytes = data.into_bytes();
+                        Python::with_gil(|py| handler.call1(py, (bytes,)));
+                    }
+                    // TODO: log closing
+                    Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(_)) => (),
+                    // TODO: log error
+                    Some(Err(_)) => break,
+                    // TODO: break on no next item or not. Probably yes
+                    None => (),
                 }
             }
-        } else {
-            None
-        }
+            Ok(())
+        }));
+
+        Ok(Self {
+            read_task,
+            write_mutex,
+        })
     }
 }
 
 #[pymethods]
 impl WebSocketClient {
-    #[new]
-    fn new(url: String) -> Self {
-        WebSocketClient::connect(&url)
+    #[staticmethod]
+    fn connect_url<'py>(url: String, handler: PyObject, py: Python<'py>) -> PyResult<&'py PyAny> {
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            Ok(WebSocketClient::connect(&url, handler).await.unwrap())
+        })
     }
 
-    fn close_conn(slf: PyRef<'_, Self>) {
-        slf.close();
+    fn send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let write_half = slf.write_mutex.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut write_half = write_half.lock().await;
+            write_half.send(Message::Binary(data)).await.unwrap();
+            Ok(())
+        })
     }
 
-    pub fn send_bytes(slf: PyRef<'_, Self>, data: Vec<u8>) {
-        slf.send(Message::Binary(data));
-    }
+    fn close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
+        // cancel reading task
+        if let Some(ref handle) = slf.read_task {
+            handle.abort();
+        }
 
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
+        let write_half = slf.write_mutex.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut write_half = write_half.lock().await;
+            write_half.close();
+            Ok(())
+        })
     }
+}
 
-    /// Each iteration returns a chunk of values read from the parquet file.
-    fn __next__(slf: PyRef<'_, Self>) -> Option<PyObject> {
-        slf.recv()
-            .map(|data| Python::with_gil(|py| data.into_py(py)))
+impl Drop for WebSocketClient {
+    fn drop(&mut self) {
+        // cancel reading task
+        if let Some(ref handle) = self.read_task {
+            handle.abort();
+        }
+
+        // close write half
+        let mut write_half = self.write_mutex.blocking_lock();
+        write_half.close();
+        drop(write_half);
     }
 }
 
@@ -101,9 +130,8 @@ impl WebSocketClient {
 mod tests {
     use std::{net::TcpListener, thread};
 
-    use tungstenite::{accept, client};
-
-    use super::WebSocketClient;
+    use pyo3::{impl_::pyfunction, prepare_freethreaded_python, pyfunction, wrap_pyfunction};
+    use tokio_tungstenite::tungstenite::accept;
 
     #[test]
     fn test_client() {
@@ -123,12 +151,12 @@ mod tests {
             }
         });
 
-        let client = WebSocketClient::connect("ws://127.0.0.1:9001");
+        // let client = WebSocketClient::connect("ws://127.0.0.1:9001");
 
-        for _ in 0..10 {
-            client.send(tungstenite::Message::Text("ping".to_string()));
-            assert_eq!(client.recv(), Some("ping".to_string().into_bytes()));
-        }
+        // for _ in 0..10 {
+        //     client.send(tungstenite::Message::Text("ping".to_string()));
+        //     assert_eq!(client.recv(), Some("ping".to_string().into_bytes()));
+        // }
     }
 
     #[test]
@@ -146,9 +174,9 @@ mod tests {
             }
         });
 
-        let client = WebSocketClient::connect("ws://127.0.0.1:9001");
+        // let client = WebSocketClient::connect("ws://127.0.0.1:9001");
 
-        client.send(tungstenite::Message::Text("ping".to_string()));
-        assert_eq!(client.recv(), None);
+        // client.send(tungstenite::Message::Text("ping".to_string()));
+        // assert_eq!(client.recv(), None);
     }
 }

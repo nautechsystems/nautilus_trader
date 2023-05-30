@@ -19,7 +19,8 @@ pyo3-asyncio.workspace = true
 tokio.workspace = true
 hyper = { version = "0.14.26", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
-tungstenite = { version = "0.19.0", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.19.0", features = ["native-tls"] }
+futures-util = "0.3.28"
 
 [dev-dependencies]
 serde_json.workspace = true

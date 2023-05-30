@@ -1831,6 +1831,7 @@ version = "0.6.0"
 dependencies = [
  "criterion",
  "futures",
+ "futures-util",
  "hyper",
  "hyper-tls",
  "nautilus-core",
@@ -1838,7 +1839,7 @@ dependencies = [
  "pyo3-asyncio",
  "serde_json",
  "tokio",
- "tungstenite",
+ "tokio-tungstenite",
 ]
 
 [[package]]
@@ -3024,6 +3025,20 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec509ac96e9a0c43427c74f003127d953a265737636129424288d27cb5c4b12c"
+dependencies = [
+ "futures-util",
+ "log",
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+ "tungstenite",
 ]
 
 [[package]]
