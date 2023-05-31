@@ -15,16 +15,16 @@
 
 import os
 
-import pytest
+import pandas as pd
 
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 
-@pytest.mark.skip(reason="Rust datafusion backend currently being integrated")
 class TestBatchingData:
     test_parquet_files = [
         os.path.join(TEST_DATA_DIR, "quote_tick_eurusd_2019_sim_rust.parquet"),
@@ -287,63 +287,65 @@ class TestGenerateBatches(TestBatchingData):
         last_timestamp = batches[-1][-1].ts_init
         assert last_timestamp == prev_timestamp
 
-    # TODO: Implement with new Rust datafusion backend
-    # def test_generate_batches_returns_valid_data(self):
-    #     # Arrange
-    #     parquet_data_path = self.test_parquet_files[0]
-    #     batch_gen = generate_batches_rust(
-    #         files=[parquet_data_path],
-    #         cls=QuoteTick,
-    #         batch_size=300,
-    #     )
-    #     reader = ParquetReader(
-    #         parquet_data_path,
-    #         1000,
-    #         ParquetType.QuoteTick,
-    #         ParquetReaderType.File,
-    #     )
-    #     mapped_chunk = map(QuoteTick.list_from_capsule, reader)
-    #     expected = list(itertools.chain(*mapped_chunk))
-    #
-    #     # Act
-    #     results = []
-    #     for batch in batch_gen:
-    #         results.extend(batch)
-    #
-    #     # Assert
-    #     assert len(results) == len(expected)
-    #     assert pd.Series([x.ts_init for x in results]).equals(
-    #         pd.Series([x.ts_init for x in expected]),
-    #     )
-    #
-    # def test_generate_batches_returns_has_inclusive_start_and_end(self):
-    #     # Arrange
-    #     parquet_data_path = self.test_parquet_files[0]
-    #
-    #     reader = ParquetReader(
-    #         parquet_data_path,
-    #         1000,
-    #         ParquetType.QuoteTick,
-    #         ParquetReaderType.File,
-    #     )
-    #     mapped_chunk = map(QuoteTick.list_from_capsule, reader)
-    #     expected = list(itertools.chain(*mapped_chunk))
-    #
-    #     batch_gen = generate_batches_rust(
-    #         files=[parquet_data_path],
-    #         cls=QuoteTick,
-    #         batch_size=500,
-    #         start_nanos=expected[0].ts_init,
-    #         end_nanos=expected[-1].ts_init,
-    #     )
-    #
-    #     # Act
-    #     results = []
-    #     for batch in batch_gen:
-    #         results.extend(batch)
-    #
-    #     # Assert
-    #     assert len(results) == len(expected)
-    #     assert pd.Series([x.ts_init for x in results]).equals(
-    #         pd.Series([x.ts_init for x in expected]),
-    #     )
+    def test_generate_batches_returns_valid_data_quote_tick(self):
+        # Arrange
+        parquet_data_path = self.test_parquet_files[0]
+        batch_gen = generate_batches_rust(
+            files=[parquet_data_path],
+            cls=QuoteTick,
+            batch_size=300,
+        )
+
+        expected = pd.read_parquet(parquet_data_path)
+
+        # Act
+        results = []
+        for batch in batch_gen:
+            results.extend(batch)
+
+        # Assert
+        assert len(results) == len(expected)
+        assert [x.ts_init for x in results] == list(expected.ts_init)
+
+    def test_generate_batches_returns_valid_data_trade_tick(self):
+        # Arrange
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
+        batch_gen = generate_batches_rust(
+            files=[parquet_data_path],
+            cls=TradeTick,
+            batch_size=300,
+        )
+
+        expected = pd.read_parquet(parquet_data_path)
+
+        # Act
+        results = []
+        for batch in batch_gen:
+            results.extend(batch)
+
+        # Assert
+        assert len(results) == len(expected)
+        assert [x.ts_init for x in results] == list(expected.ts_init)
+
+    def test_generate_batches_returns_has_inclusive_start_and_end(self):
+        # Arrange
+        parquet_data_path = self.test_parquet_files[0]
+
+        expected = pd.read_parquet(parquet_data_path)
+
+        batch_gen = generate_batches_rust(
+            files=[parquet_data_path],
+            cls=QuoteTick,
+            batch_size=500,
+            start_nanos=expected.iloc[0].ts_init,
+            end_nanos=expected.iloc[-1].ts_init,
+        )
+
+        # Act
+        results = []
+        for batch in batch_gen:
+            results.extend(batch)
+
+        # Assert
+        assert len(results) == len(expected)
+        assert [x.ts_init for x in results] == list(expected.ts_init)
