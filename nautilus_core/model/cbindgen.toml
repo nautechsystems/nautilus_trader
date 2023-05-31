@@ -45,3 +45,5 @@ exclude = [
 "BarSpecification" = "BarSpecification_t"
 "BarType" = "BarType_t"
 "Bar" = "Bar_t"
+"BookOrder" = "BookOrder_t"
+"OrderBookDelta" = "OrderBookDelta_t"

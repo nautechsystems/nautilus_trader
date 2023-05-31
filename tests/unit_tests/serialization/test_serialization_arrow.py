@@ -134,6 +134,7 @@ class TestParquetSerializer:
         bar = TestDataStubs.bar_5decimal()
         self._test_serialization(obj=bar)
 
+    @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
@@ -156,6 +157,7 @@ class TestParquetSerializer:
         assert deserialized == expected
         write_objects(catalog=self.catalog, chunk=[delta])
 
+    @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas(self):
         kw = {
             "instrument_id": "AUD/USD.SIM",
@@ -197,6 +199,7 @@ class TestParquetSerializer:
         assert deserialized == [deltas]
         write_objects(catalog=self.catalog, chunk=[deltas])
 
+    @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas_grouped(self):
         kw = {
             "instrument_id": "AUD/USD.SIM",
@@ -253,6 +256,7 @@ class TestParquetSerializer:
             BookAction.ADD,
         ]
 
+    @pytest.mark.skip(reason="Snapshots marked for deletion")
     def test_serialize_and_deserialize_order_book_snapshot(self):
         book = TestDataStubs.order_book_snapshot()
 

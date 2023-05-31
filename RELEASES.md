@@ -7,6 +7,7 @@ None
 
 ### Enhancements
 - Added core HTTP client based on `hyper`
+- Integrated core `OrderBook` into platform
 - Changed `BinanceHttpClient` to use new core HTTP client
 
 ### Fixes

@@ -21,6 +21,7 @@ strum.workspace = true
 thiserror.workspace = true
 derive_builder = "0.12.0"
 lazy_static = "1.4.0"
+tabled = "0.12.0"
 
 [features]
 extension-module = [

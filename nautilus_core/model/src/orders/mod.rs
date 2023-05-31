@@ -187,7 +187,7 @@ impl From<OrderInitialized> for Order {
             last_trade_id: None,
             side: value.order_side,
             order_type: value.order_type,
-            quantity: value.quantity.clone(),
+            quantity: value.quantity,
             price: value.price,
             trigger_price: value.trigger_price,
             trigger_type: value.trigger_type,
@@ -207,7 +207,7 @@ impl From<OrderInitialized> for Order {
             parent_order_id: value.parent_order_id,
             tags: value.tags,
             filled_qty: Quantity::new(0.0, 0),
-            leaves_qty: value.quantity.clone(),
+            leaves_qty: value.quantity,
             avg_px: None,
             slippage: None,
             init_id: value.event_id,
@@ -227,17 +227,17 @@ impl From<&Order> for OrderInitialized {
             client_order_id: value.client_order_id.clone(),
             order_side: value.side,
             order_type: value.order_type,
-            quantity: value.quantity.clone(),
-            price: value.price.clone(),
-            trigger_price: value.triggered_price.clone(),
+            quantity: value.quantity,
+            price: value.price,
+            trigger_price: value.triggered_price,
             trigger_type: value.trigger_type,
             time_in_force: value.time_in_force,
             expire_time: value.expire_time,
             post_only: value.is_post_only,
             reduce_only: value.is_reduce_only,
-            display_qty: value.display_qty.clone(),
-            limit_offset: value.limit_offset.clone(),
-            trailing_offset: value.trailing_offset.clone(),
+            display_qty: value.display_qty,
+            limit_offset: value.limit_offset,
+            trailing_offset: value.trailing_offset,
             trailing_offset_type: value.trailing_offset_type,
             emulation_trigger: value.emulation_trigger,
             contingency_type: value.contingency_type,
@@ -453,7 +453,7 @@ impl Order {
         }
         if let Some(price) = &event.price {
             if self.price.is_some() {
-                self.price.replace(price.clone());
+                self.price.replace(*price);
             } else {
                 panic!("invalid update of `price` when None")
             }
@@ -461,7 +461,7 @@ impl Order {
 
         if let Some(trigger_price) = &event.trigger_price {
             if self.trigger_price.is_some() {
-                self.trigger_price.replace(trigger_price.clone());
+                self.trigger_price.replace(*trigger_price);
             } else {
                 panic!("invalid update of `trigger_price` when None")
             }

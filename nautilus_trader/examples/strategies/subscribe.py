@@ -71,8 +71,8 @@ class SubscribeStrategy(Strategy):
             return
 
         if self.config.book_type:
-            self.book = OrderBook.create(
-                instrument=self.instrument,
+            self.book = OrderBook(
+                instrument_id=self.instrument.id,
                 book_type=self.config.book_type,
             )
             if self.config.snapshots:

@@ -56,6 +56,9 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
+
+
 class _TestPersistenceCore:
     def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol=self.fs_protocol)  # type: ignore

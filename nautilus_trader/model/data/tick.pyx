@@ -174,7 +174,7 @@ cdef class QuoteTick(Data):
 
         Returns
         -------
-        Price
+        InstrumentId
 
         """
         return InstrumentId.from_mem_c(self._mem.instrument_id)
@@ -596,7 +596,7 @@ cdef class TradeTick(Data):
 
         Returns
         -------
-        Price
+        InstrumentId
 
         """
         return InstrumentId.from_mem_c(self._mem.instrument_id)

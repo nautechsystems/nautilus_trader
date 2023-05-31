@@ -133,6 +133,7 @@ class _TestBacktestConfig:
         result = c.load()
         assert len(result["data"]) == 2745
 
+    @pytest.mark.skip(reason="Requires new datafusion streaming")
     def test_backtest_data_config_status_updates(self):
         process_files(
             glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",

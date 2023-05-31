@@ -95,7 +95,7 @@ impl LimitOrder for Order {
             last_trade_id: None,
             side: order_side,
             order_type: OrderType::Limit,
-            quantity: quantity.clone(),
+            quantity,
             price: Some(price),
             trigger_price: None,
             trigger_type: None,

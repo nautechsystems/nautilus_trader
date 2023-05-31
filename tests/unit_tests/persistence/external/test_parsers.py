@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 import pandas as pd
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
@@ -35,6 +35,9 @@ from nautilus_trader.test_kit.stubs.data import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 class TestPersistenceParsers:

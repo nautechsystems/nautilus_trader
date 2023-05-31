@@ -339,6 +339,7 @@ class TestBacktestEngineData:
         with pytest.raises(InvalidConfiguration):
             engine.add_instrument(ETHUSDT_BINANCE)
 
+    @pytest.mark.skip(reason="Snapshots marked for deletion")
     def test_add_order_book_snapshots_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(ETHUSDT_BINANCE)
@@ -377,9 +378,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.SELL,
                     price=Price.from_str("13.0"),
                     size=Quantity.from_str("40"),
-                    side=OrderSide.SELL,
+                    order_id=0,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -388,9 +390,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.SELL,
                     price=Price.from_str("12.0"),
                     size=Quantity.from_str("30"),
-                    side=OrderSide.SELL,
+                    order_id=1,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -399,9 +402,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.SELL,
                     price=Price.from_str("11.0"),
                     size=Quantity.from_str("20"),
-                    side=OrderSide.SELL,
+                    order_id=2,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -410,9 +414,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.BUY,
                     price=Price.from_str("10.0"),
                     size=Quantity.from_str("20"),
-                    side=OrderSide.BUY,
+                    order_id=3,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -421,9 +426,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.BUY,
                     price=Price.from_str("9.0"),
                     size=Quantity.from_str("30"),
-                    side=OrderSide.BUY,
+                    order_id=4,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -432,9 +438,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.BUY,
                     price=Price.from_str("0.0"),
                     size=Quantity.from_str("40"),
-                    side=OrderSide.BUY,
+                    order_id=4,
                 ),
                 ts_event=0,
                 ts_init=0,

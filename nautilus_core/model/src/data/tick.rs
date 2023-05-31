@@ -82,8 +82,8 @@ impl QuoteTick {
     #[must_use]
     pub fn extract_price(&self, price_type: PriceType) -> Price {
         match price_type {
-            PriceType::Bid => self.bid.clone(),
-            PriceType::Ask => self.ask.clone(),
+            PriceType::Bid => self.bid,
+            PriceType::Ask => self.ask,
             PriceType::Mid => Price::from_raw(
                 (self.bid.raw + self.ask.raw) / 2,
                 cmp::min(self.bid.precision + 1, FIXED_PRECISION),
@@ -192,12 +192,12 @@ pub extern "C" fn quote_tick_new(
 #[no_mangle]
 pub extern "C" fn quote_tick_from_raw(
     instrument_id: InstrumentId,
-    bid: i64,
-    ask: i64,
+    bid_price_raw: i64,
+    ask_price_raw: i64,
     bid_price_prec: u8,
     ask_price_prec: u8,
-    bid_size: u64,
-    ask_size: u64,
+    bid_size_raw: u64,
+    ask_size_raw: u64,
     bid_size_prec: u8,
     ask_size_prec: u8,
     ts_event: UnixNanos,
@@ -205,10 +205,10 @@ pub extern "C" fn quote_tick_from_raw(
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
-        Price::from_raw(bid, bid_price_prec),
-        Price::from_raw(ask, ask_price_prec),
-        Quantity::from_raw(bid_size, bid_size_prec),
-        Quantity::from_raw(ask_size, ask_size_prec),
+        Price::from_raw(bid_price_raw, bid_price_prec),
+        Price::from_raw(ask_price_raw, ask_price_prec),
+        Quantity::from_raw(bid_size_raw, bid_size_prec),
+        Quantity::from_raw(ask_size_raw, ask_size_prec),
         ts_event,
         ts_init,
     )
@@ -233,9 +233,9 @@ pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
 #[no_mangle]
 pub extern "C" fn trade_tick_from_raw(
     instrument_id: InstrumentId,
-    price: i64,
+    price_raw: i64,
     price_prec: u8,
-    size: u64,
+    size_raw: u64,
     size_prec: u8,
     aggressor_side: AggressorSide,
     trade_id: TradeId,
@@ -244,8 +244,8 @@ pub extern "C" fn trade_tick_from_raw(
 ) -> TradeTick {
     TradeTick::new(
         instrument_id,
-        Price::from_raw(price, price_prec),
-        Quantity::from_raw(size, size_prec),
+        Price::from_raw(price_raw, price_prec),
+        Quantity::from_raw(size_raw, size_prec),
         aggressor_side,
         trade_id,
         ts_event,

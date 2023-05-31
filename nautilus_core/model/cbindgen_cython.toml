@@ -13,6 +13,7 @@ header = '"../includes/model.h"'
     "uint8_t",
     "uint16_t",
     "uint64_t",
+    "uintptr_t",
     "int64_t",
 ]
 
@@ -61,3 +62,5 @@ exclude = [
 "BarSpecification" = "BarSpecification_t"
 "BarType" = "BarType_t"
 "Bar" = "Bar_t"
+"BookOrder" = "BookOrder_t"
+"OrderBookDelta" = "OrderBookDelta_t"
