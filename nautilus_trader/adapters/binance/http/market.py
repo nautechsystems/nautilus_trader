@@ -853,15 +853,29 @@ class BinanceMarketHttpAPI:
         end_time: Optional[str] = None,
     ) -> list[BinanceBar]:
         """Request Binance Bars from Klines."""
-        klines = await self.query_klines(
-            symbol=bar_type.instrument_id.symbol.value,
-            interval=interval,
-            limit=limit,
-            start_time=start_time,
-            end_time=end_time,
-        )
-        bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines]
-        return bars
+        all_bars: list[BinanceBar] = []
+        while True:
+            klines = await self.query_klines(
+                symbol=bar_type.instrument_id.symbol.value,
+                interval=interval,
+                limit=limit,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            bars: list[BinanceBar] = [
+                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
+            ]
+            all_bars.extend(bars)
+
+            # Update the start_time to fetch the next set of bars
+            next_start_time = klines[-1].open_time + 1
+            # No more bars to fetch
+            if len(klines) < limit or next_start_time >= int(end_time):
+                break
+
+            start_time = str(next_start_time)
+
+        return all_bars
 
     async def query_ticker_24hr(
         self,
