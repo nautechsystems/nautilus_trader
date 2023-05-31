@@ -63,7 +63,7 @@ hiredis = {version = "^2.2.3", optional = true}
 ib_insync = {version = "^0.9.85", optional = true}
 redis = {version = "^4.5.5", optional = true}
 docker = {version = "^6.1.2", optional = true}
-betfair_parser = {version = "^0.2.2", optional = true}
+betfair_parser = {version = "0.2.6", optional = true}  # Pinned for stability
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
@@ -88,7 +88,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.2.6"
+coverage = "^7.2.7"
 pytest = "^7.3.1"
 pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.0"
