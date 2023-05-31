@@ -50,7 +50,7 @@ impl Level {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.orders.len() == 0
+        self.orders.is_empty()
     }
 
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
