@@ -81,9 +81,9 @@ impl OrderBook {
 
     pub fn add(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         let order = match self.book_type {
-            BookType::L1_TBBO => panic!("Error adding to book: use update for a L1_TBBO book"),
+            BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L3_MBO => order, // Do nothing
+            BookType::L1_TBBO => panic!("Invalid book operation: call `update` for a L1_TBBO book"),
         };
 
         match order.side {
@@ -99,33 +99,12 @@ impl OrderBook {
 
     pub fn update(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         let order = match self.book_type {
+            BookType::L3_MBO => order, // No order pre-processing
+            BookType::L2_MBP => self.pre_process_order(order),
             BookType::L1_TBBO => {
-                // Because of the way we typically get updates from a L1 order book (bid
-                // and ask updates at the same time), its quite probable that the last
-                // bid is now the ask price we are trying to insert (or vice versa). We
-                // just need to add some extra protection against this if we aren't calling
-                // `check_integrity()` on each individual update.
-                match order.side {
-                    OrderSide::Buy => {
-                        if let Some(best_ask_price) = self.best_ask_price() {
-                            if order.price > best_ask_price {
-                                self.clear_bids(ts_event, sequence);
-                            }
-                        }
-                    }
-                    OrderSide::Sell => {
-                        if let Some(best_bid_price) = self.best_bid_price() {
-                            if order.price < best_bid_price {
-                                self.clear_asks(ts_event, sequence);
-                            }
-                        }
-                    }
-                    _ => panic!("{}", BookIntegrityError::NoOrderSide),
-                }
+                self.update_l1(order, ts_event, sequence);
                 self.pre_process_order(order)
             }
-            BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L3_MBO => order, // Do nothing
         };
 
         match order.side {
@@ -141,9 +120,9 @@ impl OrderBook {
 
     pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
         let order = match self.book_type {
-            BookType::L1_TBBO => self.pre_process_order(order),
+            BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L3_MBO => order, // Do nothing
+            BookType::L1_TBBO => self.pre_process_order(order),
         };
 
         match order.side {
@@ -385,6 +364,31 @@ impl OrderBook {
             .collect();
 
         Table::new(data).with(Style::rounded()).to_string()
+    }
+
+    fn update_l1(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
+        // Because of the way we typically get updates from a L1 order book (bid
+        // and ask updates at the same time), its quite probable that the last
+        // bid is now the ask price we are trying to insert (or vice versa). We
+        // just need to add some extra protection against this if we aren't calling
+        // `check_integrity()` on each individual update.
+        match order.side {
+            OrderSide::Buy => {
+                if let Some(best_ask_price) = self.best_ask_price() {
+                    if order.price > best_ask_price {
+                        self.clear_bids(ts_event, sequence);
+                    }
+                }
+            }
+            OrderSide::Sell => {
+                if let Some(best_bid_price) = self.best_bid_price() {
+                    if order.price < best_bid_price {
+                        self.clear_asks(ts_event, sequence);
+                    }
+                }
+            }
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        }
     }
 
     fn update_bid(&mut self, order: BookOrder) {

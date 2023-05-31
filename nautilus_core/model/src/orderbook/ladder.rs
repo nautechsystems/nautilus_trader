@@ -95,7 +95,7 @@ impl Ladder {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.levels.len() == 0
+        self.levels.is_empty()
     }
 
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
@@ -125,24 +125,23 @@ impl Ladder {
     }
 
     pub fn update(&mut self, order: BookOrder) {
-        match self.cache.get(&order.order_id) {
+        if let Some(price) = self.cache.get(&order.order_id) {
+            let level = self.levels.get_mut(price).unwrap();
+            if order.price == level.price.value {
+                // Size update for this level
+                level.update(order);
+            } else {
+                // Price update, delete and insert at new level
+                level.delete(&order);
+                if level.is_empty() {
+                    self.levels.remove(price);
+                }
+                self.add(order);
+            }
+        } else {
             // TODO(cs): Reinstate this with strict mode
             // None => panic!("No order with ID {}", &order.order_id),
-            Some(price) => {
-                let level = self.levels.get_mut(price).unwrap();
-                if order.price == level.price.value {
-                    // Size update for this level
-                    level.update(order);
-                } else {
-                    // Price update, delete and insert at new level
-                    level.delete(&order);
-                    if level.is_empty() {
-                        self.levels.remove(price);
-                    }
-                    self.add(order);
-                }
-            }
-            None => self.add(order),
+            self.add(order);
         }
     }
 
