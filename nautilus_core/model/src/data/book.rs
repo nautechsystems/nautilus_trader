@@ -159,50 +159,6 @@ impl Display for OrderBookDelta {
     }
 }
 
-// Represents a snapshot of an order book.
-#[repr(C)]
-#[derive(Clone, Debug)]
-pub struct OrderBookSnapshot {
-    pub instrument_id: InstrumentId,
-    pub bids: Vec<BookOrder>,
-    pub asks: Vec<BookOrder>,
-    pub sequence: u64,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
-}
-
-impl OrderBookSnapshot {
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        bids: Vec<BookOrder>,
-        asks: Vec<BookOrder>,
-        sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            bids,
-            asks,
-            sequence,
-            ts_event,
-            ts_init,
-        }
-    }
-}
-
-impl Display for OrderBookSnapshot {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // TODO: Add display for bids and asks
-        write!(
-            f,
-            "{},{},{},{}",
-            self.instrument_id, self.sequence, self.ts_event, self.ts_init
-        )
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -360,57 +316,6 @@ mod tests {
         assert_eq!(
             format!("{}", delta),
             "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
-        );
-    }
-
-    #[test]
-    fn test_order_book_snapshot_display() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let bids = vec![
-            BookOrder::new(
-                OrderSide::Buy,
-                Price::from("100.00"),
-                Quantity::from("10"),
-                123,
-            ),
-            BookOrder::new(
-                OrderSide::Buy,
-                Price::from("99.00"),
-                Quantity::from("5"),
-                124,
-            ),
-        ];
-        let asks = vec![
-            BookOrder::new(
-                OrderSide::Sell,
-                Price::from("101.00"),
-                Quantity::from("15"),
-                234,
-            ),
-            BookOrder::new(
-                OrderSide::Sell,
-                Price::from("102.00"),
-                Quantity::from("20"),
-                235,
-            ),
-        ];
-        let sequence = 123456;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let snapshot = OrderBookSnapshot::new(
-            instrument_id.clone(),
-            bids,
-            asks,
-            sequence,
-            ts_event,
-            ts_init,
-        );
-
-        // TODO(cs): WIP
-        assert_eq!(
-            format!("{}", snapshot),
-            "AAPL.NASDAQ,123456,1,2".to_string()
         );
     }
 }
