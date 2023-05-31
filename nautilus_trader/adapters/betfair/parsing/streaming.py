@@ -87,21 +87,21 @@ def market_change_to_updates(  # noqa: C901
     updates: list[PARSE_TYPES] = []
 
     # Handle instrument status and close updates first
-    if mc.marketDefinition is not None:
+    if mc.market_definition is not None:
         updates.extend(
             market_definition_to_instrument_status_updates(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
             ),
         )
         updates.extend(
-            market_definition_to_instrument_closes(mc.marketDefinition, mc.id, ts_event, ts_init),
+            market_definition_to_instrument_closes(mc.market_definition, mc.id, ts_event, ts_init),
         )
         updates.extend(
             market_definition_to_betfair_starting_prices(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
@@ -110,7 +110,7 @@ def market_change_to_updates(  # noqa: C901
 
     # Handle market data updates
     book_updates: list[Union[OrderBookSnapshot, OrderBookDeltas]] = []
-    bsp_book_updates: list[Union[BSPOrderBookDeltas]] = []
+    bsp_book_updates: list[BSPOrderBookDeltas] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
@@ -175,7 +175,7 @@ def market_definition_to_instrument_status_updates(
             selection_id=str(runner.runner_id),
             selection_handicap=parse_handicap(runner.handicap),
         )
-        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
+        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
         if runner.status == RunnerStatus.REMOVED:
             status = MarketStatus.CLOSED
         else:
@@ -183,7 +183,7 @@ def market_definition_to_instrument_status_updates(
                 status = MARKET_STATUS_MAPPING[key]
             except KeyError:
                 raise ValueError(
-                    f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
+                    f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
