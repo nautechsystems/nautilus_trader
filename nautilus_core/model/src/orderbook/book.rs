@@ -237,62 +237,6 @@ impl OrderBook {
         ));
     }
 
-    pub fn check_integrity(&self) -> Result<(), BookIntegrityError> {
-        match self.book_type {
-            BookType::L1_TBBO => {
-                if self.bids.len() > 1 {
-                    return Err(BookIntegrityError::TooManyLevels(
-                        OrderSide::Buy,
-                        self.bids.len(),
-                    ));
-                }
-                if self.asks.len() > 1 {
-                    return Err(BookIntegrityError::TooManyLevels(
-                        OrderSide::Sell,
-                        self.asks.len(),
-                    ));
-                }
-            }
-            BookType::L2_MBP => {
-                for (_, bid_level) in self.bids.levels.iter() {
-                    let num_orders = bid_level.orders.len();
-                    if num_orders > 1 {
-                        return Err(BookIntegrityError::TooManyOrders(
-                            OrderSide::Buy,
-                            num_orders,
-                        ));
-                    }
-                }
-
-                for (_, ask_level) in self.asks.levels.iter() {
-                    let num_orders = ask_level.orders.len();
-                    if num_orders > 1 {
-                        return Err(BookIntegrityError::TooManyOrders(
-                            OrderSide::Sell,
-                            num_orders,
-                        ));
-                    }
-                }
-            }
-            BookType::L3_MBO => {
-                let top_bid_level = self.bids.top();
-                let top_ask_level = self.asks.top();
-
-                if top_bid_level.is_none() || top_ask_level.is_none() {
-                    return Ok(());
-                }
-
-                let best_bid = top_bid_level.unwrap().price;
-                let best_ask = top_ask_level.unwrap().price;
-
-                if best_bid >= best_ask {
-                    return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         match order.side {
             OrderSide::Buy => self.asks.simulate_fills(order),
@@ -349,6 +293,73 @@ impl OrderBook {
             .collect();
 
         Table::new(data).with(Style::rounded()).to_string()
+    }
+
+    pub fn check_integrity(&self) -> Result<(), BookIntegrityError> {
+        match self.book_type {
+            BookType::L3_MBO => self.check_integrity_l3(),
+            BookType::L2_MBP => self.check_integrity_l2(),
+            BookType::L1_TBBO => self.check_integrity_l1(),
+        }
+    }
+
+    fn check_integrity_l3(&self) -> Result<(), BookIntegrityError> {
+        let top_bid_level = self.bids.top();
+        let top_ask_level = self.asks.top();
+
+        if top_bid_level.is_none() || top_ask_level.is_none() {
+            return Ok(());
+        }
+
+        let best_bid = top_bid_level.unwrap().price;
+        let best_ask = top_ask_level.unwrap().price;
+
+        if best_bid >= best_ask {
+            return Err(BookIntegrityError::OrdersCrossed(best_bid, best_ask));
+        }
+
+        Ok(())
+    }
+
+    fn check_integrity_l2(&self) -> Result<(), BookIntegrityError> {
+        for (_, bid_level) in self.bids.levels.iter() {
+            let num_orders = bid_level.orders.len();
+            if num_orders > 1 {
+                return Err(BookIntegrityError::TooManyOrders(
+                    OrderSide::Buy,
+                    num_orders,
+                ));
+            }
+        }
+
+        for (_, ask_level) in self.asks.levels.iter() {
+            let num_orders = ask_level.orders.len();
+            if num_orders > 1 {
+                return Err(BookIntegrityError::TooManyOrders(
+                    OrderSide::Sell,
+                    num_orders,
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn check_integrity_l1(&self) -> Result<(), BookIntegrityError> {
+        if self.bids.len() > 1 {
+            return Err(BookIntegrityError::TooManyLevels(
+                OrderSide::Buy,
+                self.bids.len(),
+            ));
+        }
+        if self.asks.len() > 1 {
+            return Err(BookIntegrityError::TooManyLevels(
+                OrderSide::Sell,
+                self.asks.len(),
+            ));
+        }
+
+        Ok(())
     }
 
     fn update_l1(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
