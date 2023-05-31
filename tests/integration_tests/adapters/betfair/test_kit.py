@@ -741,11 +741,11 @@ class BetfairDataProvider:
     @staticmethod
     def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
         instruments: list[BettingInstrument] = []
-        if mcm.marketDefinition:
-            instruments.extend(market_definition_to_instruments(mcm.marketDefinition, currency))
+        if mcm.market_definition:
+            instruments.extend(market_definition_to_instruments(mcm.market_definition, currency))
         for mc in mcm.mc:
-            if mc.marketDefinition:
-                market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
+            if mc.market_definition:
+                market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
                 instruments.extend(market_definition_to_instruments(market_def, currency))
         return instruments
 
