@@ -13,20 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::io;
+use std::sync::Arc;
+
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{PyObject, Python};
-use std::io;
-use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task;
 use tokio_tungstenite::tungstenite::{Error, Message};
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-/// WebSocketClient connects to a websocket server to read and send messages
+/// WebSocketClient connects to a websocket server to read and send messages.
 ///
 /// The client is opinionated about how messages are read and written. It
 /// assumes that data can only have one reader but multiple writers.
@@ -49,8 +50,7 @@ impl WebSocketClient {
         let (write_half, mut read_half) = stream.split();
         let write_mutex = Arc::new(Mutex::new(write_half));
 
-        // keep receiving messages from socket
-        // pass them as arguments to handler
+        // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Some(task::spawn(async move {
             loop {
                 match read_half.next().await {
@@ -127,7 +127,7 @@ impl WebSocketClient {
     }
 
     fn close<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
-        // cancel reading task
+        // Cancel reading task
         if let Some(ref handle) = slf.read_task {
             handle.abort();
         }
@@ -159,7 +159,7 @@ mod tests {
             let server = TcpListener::bind("127.0.0.1:0").unwrap();
             let port = TcpListener::local_addr(&server).unwrap().port();
 
-            // setup test server
+            // Setup test server
             thread::spawn(move || {
                 let conn = server.incoming().next().unwrap();
                 let mut websocket = accept(conn.unwrap()).unwrap();
@@ -167,7 +167,7 @@ mod tests {
                 loop {
                     let msg = websocket.read_message().unwrap();
 
-                    // We do not want to send back ping/pong messages.
+                    // We do not want to send back ping/pong messages
                     if msg.is_binary() || msg.is_text() {
                         websocket.write_message(msg).unwrap();
                     } else if msg.is_close() {
@@ -187,12 +187,12 @@ mod tests {
     async fn basic_client_test() {
         const N: usize = 10;
 
-        // initialize test server
+        // Initialize test server
         let server = TestServer::basic_client_test();
 
         prepare_freethreaded_python();
 
-        // create counter class and handler that increments it
+        // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
             let pymod = PyModule::from_code(
                 py,
@@ -225,19 +225,19 @@ counter = Counter()",
                 .await
                 .unwrap();
 
-        // check that websocket read task is running
+        // Check that websocket read task is running
         let task_running = client
             .read_task
             .as_ref()
             .map_or(false, |handle| !handle.is_finished());
         assert!(task_running);
 
-        // send messages that increment the count
+        // Send messages that increment the count
         for _ in 0..N {
             client.send("ping".to_string().into_bytes()).await;
         }
 
-        // shutdown client and wait for read task to terminate
+        // Shutdown client and wait for read task to terminate
         let handle = client.shutdown().await.unwrap();
         handle.await.unwrap().unwrap();
 
@@ -251,7 +251,7 @@ counter = Counter()",
                 .unwrap()
         });
 
-        // check count is same as number messages sent
+        // Check count is same as number messages sent
         assert_eq!(count_value, N);
     }
 }
