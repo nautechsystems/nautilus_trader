@@ -42,7 +42,7 @@ rstest = "0.17.0"
 tempfile = "3.5.0"
 
 # build-dependencies
-cbindgen = "0.24.5"
+cbindgen = "0.24.6"
 
 [profile.dev]
 opt-level = 0
