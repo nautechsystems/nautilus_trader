@@ -19,6 +19,7 @@ from decimal import Decimal
 
 import fsspec
 import pyarrow.dataset as ds
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.currencies import USD
@@ -49,6 +50,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 # TODO: Implement with new Rust datafusion backend

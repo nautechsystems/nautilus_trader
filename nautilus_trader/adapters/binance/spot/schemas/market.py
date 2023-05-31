@@ -23,10 +23,12 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
@@ -113,8 +115,14 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
     ) -> OrderBookSnapshot:
         return OrderBookSnapshot(
             instrument_id=instrument_id,
-            bids=[[float(o.price), float(o.size)] for o in self.bids],
-            asks=[[float(o.price), float(o.size)] for o in self.asks],
+            bids=[
+                BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+                for o in self.bids
+            ],
+            asks=[
+                BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+                for o in self.asks
+            ],
             ts_event=ts_init,
             ts_init=ts_init,
             sequence=self.lastUpdateId,

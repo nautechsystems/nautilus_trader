@@ -15,13 +15,19 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Display, Formatter};
 
 use crate::data::book::BookOrder;
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
 use crate::types::price::Price;
+use crate::types::quantity::Quantity;
 
-#[derive(Clone, Debug, Eq)]
+use super::book::BookIntegrityError;
+
+const EPSILON: f64 = 1e-10;
+
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
@@ -39,7 +45,7 @@ impl PartialOrd for BookPrice {
         match self.side {
             OrderSide::Buy => Some(other.value.cmp(&self.value)),
             OrderSide::Sell => Some(self.value.cmp(&other.value)),
-            _ => panic!("Invalid `OrderSide` {}", self.side),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
     }
 }
@@ -55,8 +61,14 @@ impl Ord for BookPrice {
         match self.side {
             OrderSide::Buy => other.value.cmp(&self.value),
             OrderSide::Sell => self.value.cmp(&other.value),
-            _ => panic!("Invalid `OrderSide` {}", self.side),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
+    }
+}
+
+impl Display for BookPrice {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -92,24 +104,30 @@ impl Ladder {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.levels = BTreeMap::new();
+        self.cache = HashMap::new();
+    }
+
     pub fn add(&mut self, order: BookOrder) {
         let book_price = order.to_book_price();
         match self.levels.get_mut(&book_price) {
+            Some(level) => {
+                level.add(order);
+            }
             None => {
                 let order_id = order.order_id;
                 let level = Level::from_order(order);
-                self.cache.insert(order_id, book_price.clone());
+                self.cache.insert(order_id, book_price);
                 self.levels.insert(book_price, level);
-            }
-            Some(level) => {
-                level.add(order);
             }
         }
     }
 
     pub fn update(&mut self, order: BookOrder) {
         match self.cache.get(&order.order_id) {
-            None => panic!("No order with ID {}", &order.order_id),
+            // TODO(cs): Reinstate this with strict mode
+            // None => panic!("No order with ID {}", &order.order_id),
             Some(price) => {
                 let level = self.levels.get_mut(price).unwrap();
                 if order.price == level.price.value {
@@ -124,18 +142,20 @@ impl Ladder {
                     self.add(order);
                 }
             }
+            None => self.add(order),
         }
     }
 
     pub fn delete(&mut self, order: BookOrder) {
-        match self.cache.remove(&order.order_id) {
-            None => panic!("No order with ID {}", &order.order_id),
-            Some(price) => {
-                let level = self.levels.get_mut(&price).unwrap();
-                level.delete(&order);
-                if level.is_empty() {
-                    self.levels.remove(&price);
-                }
+        self.remove(order.order_id);
+    }
+
+    pub fn remove(&mut self, order_id: u64) {
+        if let Some(price) = self.cache.remove(&order_id) {
+            let level = self.levels.get_mut(&price).unwrap();
+            level.remove(order_id);
+            if level.is_empty() {
+                self.levels.remove(&price);
             }
         }
     }
@@ -153,9 +173,43 @@ impl Ladder {
     #[must_use]
     pub fn top(&self) -> Option<&Level> {
         match self.levels.iter().next() {
-            None => Option::None,
             Some((_, l)) => Option::Some(l),
+            None => Option::None,
         }
+    }
+
+    pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
+        let size_prec = order.size.precision;
+        let is_reversed = self.side == OrderSide::Buy;
+
+        let mut fills = Vec::new();
+        let mut cumulative_denominator = 0.0;
+        let target = order.size.as_f64();
+
+        for level in self.levels.values() {
+            if (is_reversed && level.price.value < order.price)
+                || (!is_reversed && level.price.value > order.price)
+            {
+                break;
+            }
+
+            for book_order in &level.orders {
+                let current = book_order.size.as_f64();
+                let cumulative_current = cumulative_denominator + current;
+                if (cumulative_current - target).abs() <= EPSILON || cumulative_current >= target {
+                    // This order has filled us, add fill and return
+                    let remainder = target - cumulative_denominator;
+                    fills.push((book_order.price, Quantity::new(remainder, size_prec)));
+                    return fills;
+                } else {
+                    // Add this fill and continue
+                    fills.push((book_order.price, Quantity::new(current, size_prec)));
+                    cumulative_denominator += current;
+                }
+            }
+        }
+
+        fills
     }
 }
 
@@ -167,7 +221,7 @@ mod tests {
     use crate::data::book::BookOrder;
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::{BookPrice, Ladder};
-    use crate::types::price::Price;
+    use crate::types::price::{Price, PRICE_MAX, PRICE_MIN};
     use crate::types::quantity::Quantity;
 
     #[test]
@@ -442,5 +496,198 @@ mod tests {
         assert_eq!(ladder.volumes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
         assert_eq!(ladder.top(), None)
+    }
+
+    #[test]
+    fn test_simulate_order_fills_buy_when_far_from_market() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+
+        ladder.add(BookOrder {
+            price: Price::new(100.00, 2),
+            size: Quantity::new(100.0, 0),
+            side: OrderSide::Sell,
+            order_id: 1,
+        });
+
+        let order = BookOrder {
+            price: Price::new(50.00, 2), // <-- Simulate a MARKET order
+            size: Quantity::new(500.0, 0),
+            side: OrderSide::Buy,
+            order_id: 2,
+        };
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert!(fills.is_empty());
+    }
+
+    #[test]
+    fn test_simulate_order_fills_sell_when_far_from_market() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+
+        ladder.add(BookOrder {
+            price: Price::new(100.00, 2),
+            size: Quantity::new(100.0, 0),
+            side: OrderSide::Buy,
+            order_id: 1,
+        });
+
+        let order = BookOrder {
+            price: Price::new(150.00, 2), // <-- Simulate a MARKET order
+            size: Quantity::new(500.0, 0),
+            side: OrderSide::Buy,
+            order_id: 2,
+        };
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert!(fills.is_empty());
+    }
+
+    #[test]
+    fn test_simulate_order_fills_buy_with_volume_depth_type() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+
+        ladder.add_bulk(vec![
+            BookOrder {
+                price: Price::new(100.00, 2),
+                size: Quantity::new(100.0, 0),
+                side: OrderSide::Sell,
+                order_id: 1,
+            },
+            BookOrder {
+                price: Price::new(101.00, 2),
+                size: Quantity::new(200.0, 0),
+                side: OrderSide::Sell,
+                order_id: 2,
+            },
+            BookOrder {
+                price: Price::new(102.00, 2),
+                size: Quantity::new(400.0, 0),
+                side: OrderSide::Sell,
+                order_id: 3,
+            },
+        ]);
+
+        let order = BookOrder {
+            price: Price::new(PRICE_MAX, 2), // <-- Simulate a MARKET order
+            size: Quantity::new(500.0, 0),
+            side: OrderSide::Buy,
+            order_id: 4,
+        };
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert_eq!(fills.len(), 3);
+
+        let (price1, size1) = &fills[0];
+        assert_eq!(price1, &Price::new(100.00, 2));
+        assert_eq!(size1, &Quantity::new(100.0, 0));
+
+        let (price2, size2) = &fills[1];
+        assert_eq!(price2, &Price::new(101.00, 2));
+        assert_eq!(size2, &Quantity::new(200.0, 0));
+
+        let (price3, size3) = &fills[2];
+        assert_eq!(price3, &Price::new(102.00, 2));
+        assert_eq!(size3, &Quantity::new(200.0, 0));
+    }
+
+    #[test]
+    fn test_simulate_order_fills_sell_with_volume_depth_type() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+
+        ladder.add_bulk(vec![
+            BookOrder {
+                price: Price::new(102.00, 2),
+                size: Quantity::new(100.0, 0),
+                side: OrderSide::Buy,
+                order_id: 1,
+            },
+            BookOrder {
+                price: Price::new(101.00, 2),
+                size: Quantity::new(200.0, 0),
+                side: OrderSide::Buy,
+                order_id: 2,
+            },
+            BookOrder {
+                price: Price::new(100.00, 2),
+                size: Quantity::new(400.0, 0),
+                side: OrderSide::Buy,
+                order_id: 3,
+            },
+        ]);
+
+        let order = BookOrder {
+            price: Price::new(PRICE_MIN, 2), // <-- Simulate a MARKET order
+            size: Quantity::new(500.0, 0),
+            side: OrderSide::Sell,
+            order_id: 4,
+        };
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert_eq!(fills.len(), 3);
+
+        let (price1, size1) = &fills[0];
+        assert_eq!(price1, &Price::new(102.00, 2));
+        assert_eq!(size1, &Quantity::new(100.0, 0));
+
+        let (price2, size2) = &fills[1];
+        assert_eq!(price2, &Price::new(101.00, 2));
+        assert_eq!(size2, &Quantity::new(200.0, 0));
+
+        let (price3, size3) = &fills[2];
+        assert_eq!(price3, &Price::new(100.00, 2));
+        assert_eq!(size3, &Quantity::new(200.0, 0));
+    }
+
+    #[test]
+    fn test_simulate_order_fills_sell_with_volume_and_epsilon() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+
+        ladder.add_bulk(vec![
+            BookOrder {
+                price: Price::new(102.00, 2),
+                size: Quantity::new(100.0, 0),
+                side: OrderSide::Buy,
+                order_id: 1,
+            },
+            BookOrder {
+                price: Price::new(101.00, 2),
+                size: Quantity::new(200.0, 0),
+                side: OrderSide::Buy,
+                order_id: 2,
+            },
+            BookOrder {
+                price: Price::new(100.00, 2),
+                size: Quantity::new(400.0, 0),
+                side: OrderSide::Buy,
+                order_id: 3,
+            },
+        ]);
+
+        let order = BookOrder {
+            price: Price::new(PRICE_MIN, 2),       // <-- Simulate a MARKET order
+            size: Quantity::new(699.999999999, 9), // <-- Size slightly less than total size in ladder
+            side: OrderSide::Sell,
+            order_id: 4,
+        };
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert_eq!(fills.len(), 3);
+
+        let (price1, size1) = &fills[0];
+        assert_eq!(price1, &Price::new(102.00, 2));
+        assert_eq!(size1, &Quantity::new(100.0, 0));
+
+        let (price2, size2) = &fills[1];
+        assert_eq!(price2, &Price::new(101.00, 2));
+        assert_eq!(size2, &Quantity::new(200.0, 0));
+
+        let (price3, size3) = &fills[2];
+        assert_eq!(price3, &Price::new(100.00, 2));
+        assert_eq!(size3, &Quantity::new(399.999999999, 9)); // <-- Size adjusted due to EPSILON
     }
 }

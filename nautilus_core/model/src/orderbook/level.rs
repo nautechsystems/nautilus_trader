@@ -14,11 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
 
 use crate::data::book::BookOrder;
 use crate::orderbook::ladder::BookPrice;
 
+#[derive(Clone, Debug, Eq)]
 pub struct Level {
     pub price: BookPrice,
     pub orders: Vec<BookOrder>,
@@ -81,10 +81,14 @@ impl Level {
     }
 
     pub fn delete(&mut self, order: &BookOrder) {
+        self.remove(order.order_id);
+    }
+
+    pub fn remove(&mut self, order_id: u64) {
         let index = self
             .orders
             .iter()
-            .position(|o| o.order_id == order.order_id)
+            .position(|o| o.order_id == order_id)
             .expect("Cannot delete order: order not found");
         self.orders.remove(index);
     }
@@ -114,8 +118,6 @@ impl PartialEq for Level {
     }
 }
 
-impl Eq for Level {}
-
 impl PartialOrd for Level {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.price.partial_cmp(&other.price)
@@ -141,18 +143,6 @@ impl PartialOrd for Level {
 impl Ord for Level {
     fn cmp(&self, other: &Self) -> Ordering {
         self.price.cmp(&other.price)
-    }
-}
-
-impl Debug for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Level(price={})", self.price.value)
-    }
-}
-
-impl Display for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Level(price={})", self.price.value)
     }
 }
 

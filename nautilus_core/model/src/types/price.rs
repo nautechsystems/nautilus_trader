@@ -32,7 +32,7 @@ pub const PRICE_MAX: f64 = 9_223_372_036.0;
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
-#[derive(Eq, Clone, Default)]
+#[derive(Copy, Clone, Eq, Default)]
 #[pyclass]
 pub struct Price {
     pub raw: i64,

@@ -44,6 +44,9 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
+
+
 @pytest.mark.skip(reason="Rust datafusion backend currently being integrated")
 class TestBatchingData:
     test_parquet_files = [

@@ -114,7 +114,10 @@ class OrderBookImbalance(Strategy):
             self.subscribe_order_book_deltas(self.instrument.id, book_type)
         if self.config.subscribe_ticker:
             self.subscribe_ticker(self.instrument.id)
-        self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
+        self._book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
 
     def on_order_book_delta(
         self,
@@ -164,8 +167,8 @@ class OrderBookImbalance(Strategy):
             self.log.error("No instrument loaded.")
             return
 
-        bid_size = self._book.best_bid_qty()
-        ask_size = self._book.best_ask_qty()
+        bid_size = self._book.best_bid_size()
+        ask_size = self._book.best_ask_size()
         if not (bid_size and ask_size):
             return
 

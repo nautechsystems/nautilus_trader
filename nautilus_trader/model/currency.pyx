@@ -41,7 +41,7 @@ cdef class Currency:
     ----------
     code : str
         The currency code.
-    precision : uint8
+    precision : uint8_t
         The currency decimal precision.
     iso4217 : uint16
         The currency ISO 4217 code.

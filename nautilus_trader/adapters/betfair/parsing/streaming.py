@@ -26,6 +26,8 @@ from betfair_parser.spec.streaming.mcm import RunnerStatus
 
 from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -60,6 +62,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 PARSE_TYPES = Union[
@@ -444,7 +448,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.SELL),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price(back.price, BETFAIR_PRICE_PRECISION),
+                        Quantity(back.volume, BETFAIR_QUANTITY_PRECISION),
+                        ts_init,
+                    ),
                     ts_event,
                     ts_init,
                 )
@@ -459,7 +468,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
+                    BookOrder(
+                        OrderSide.BUY,
+                        Price(lay.price, BETFAIR_PRICE_PRECISION),
+                        Quantity(lay.volume, BETFAIR_QUANTITY_PRECISION),
+                        ts_init,
+                    ),
                     ts_event,
                     ts_init,
                 )

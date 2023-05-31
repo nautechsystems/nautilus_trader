@@ -260,7 +260,7 @@ class TestSimulatedExchange:
         self.exchange.process_quote_tick(tick)
 
         # Assert
-        assert self.exchange.get_book(USDJPY_SIM.id).type == BookType.L1_TBBO
+        assert self.exchange.get_book(USDJPY_SIM.id).book_type == BookType.L1_TBBO
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("90.005")
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("90.002")
 
@@ -2316,6 +2316,8 @@ class TestSimulatedExchange:
 
         # Assert
         position = self.cache.positions_open()[0]
+        assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("100.003")
+        assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("100.004")
         assert position.unrealized_pnl(Price.from_str("100.003")) == Money(499900, JPY)
 
     def test_adjust_account_changes_balance(self):

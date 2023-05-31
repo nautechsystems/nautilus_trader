@@ -54,6 +54,9 @@ cdef class Quantity:
     cdef double raw_to_f64_c(uint64_t raw)
 
     @staticmethod
+    cdef Quantity from_mem_c(Quantity_t mem)
+
+    @staticmethod
     cdef Quantity from_raw_c(uint64_t raw, uint8_t precision)
 
     @staticmethod
@@ -98,6 +101,9 @@ cdef class Price:
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw)
+
+    @staticmethod
+    cdef Price from_mem_c(Price_t mem)
 
     @staticmethod
     cdef Price from_raw_c(int64_t raw, uint8_t precision)

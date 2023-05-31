@@ -73,7 +73,10 @@ class MarketMaker(Strategy):
             return
 
         # Create orderbook
-        self._book = OrderBook.create(instrument=self.instrument, book_type=BookType.L2_MBP)
+        self._book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
 
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)

@@ -142,8 +142,14 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     ) -> OrderBookSnapshot:
         return OrderBookSnapshot(
             instrument_id=instrument_id,
-            bids=[[float(o[0]), float(o[1])] for o in self.bids or []],
-            asks=[[float(o[0]), float(o[1])] for o in self.asks or []],
+            bids=[
+                BookOrder(OrderSide.BUY, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
+                for o in self.bids or []
+            ],
+            asks=[
+                BookOrder(OrderSide.SELL, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
+                for o in self.asks or []
+            ],
             ts_event=ts_init,
             ts_init=ts_init,
             sequence=self.lastUpdateId or 0,
@@ -325,18 +331,17 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
         ts_init: int,
         update_id: int,
     ) -> OrderBookDelta:
-        price = float(self.price)
-        size = float(self.size)
-
+        size = Quantity.from_str(self.size)
         order = BookOrder(
-            price=price,
-            size=size,
             side=side,
+            price=Price.from_str(self.price),
+            size=size,
+            order_id=0,
         )
 
         return OrderBookDelta(
             instrument_id=instrument_id,
-            action=BookAction.UPDATE if size > 0.0 else BookAction.DELETE,
+            action=BookAction.UPDATE if size > 0 else BookAction.DELETE,
             order=order,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -397,8 +402,14 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
     ) -> OrderBookSnapshot:
         return OrderBookSnapshot(
             instrument_id=instrument_id,
-            bids=[[float(o.price), float(o.size)] for o in self.b],
-            asks=[[float(o.price), float(o.size)] for o in self.a],
+            bids=[
+                BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+                for o in self.b
+            ],
+            asks=[
+                BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+                for o in self.a
+            ],
             ts_event=millis_to_nanos(self.T),
             ts_init=ts_init,
             sequence=self.u,

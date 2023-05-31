@@ -23,7 +23,7 @@ use futures::executor::block_on;
 use futures::{Stream, StreamExt};
 use nautilus_core::cvec::CVec;
 use nautilus_model::data::bar::Bar;
-use nautilus_model::data::book::{OrderBookDelta, OrderBookSnapshot};
+use nautilus_model::data::book::OrderBookDelta;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
@@ -205,14 +205,6 @@ impl DataBackendSession {
         let _guard = rt.enter();
 
         match parquet_type {
-            ParquetType::OrderBookSnapshot => {
-                match block_on(
-                    slf.add_file_default_query::<OrderBookSnapshot>(table_name, file_path),
-                ) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
             ParquetType::OrderBookDelta => {
                 match block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
                 {
@@ -252,14 +244,6 @@ impl DataBackendSession {
         let _guard = rt.enter();
 
         match parquet_type {
-            ParquetType::OrderBookSnapshot => {
-                match block_on(slf.add_file_with_custom_query::<OrderBookSnapshot>(
-                    table_name, file_path, sql_query,
-                )) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
             ParquetType::OrderBookDelta => {
                 match block_on(
                     slf.add_file_with_custom_query::<OrderBookDelta>(

@@ -16,6 +16,8 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BookOrder_t
+from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.book cimport OrderBookSnapshot
@@ -30,20 +32,13 @@ cdef tuple ORDER_BOOK_DATA
 
 
 cdef class BookOrder:
-    cdef readonly double price
-    """The orders price.\n\n:returns: `double`"""
-    cdef readonly double size
-    """The orders size.\n\n:returns: `double`"""
-    cdef readonly OrderSide side
-    """The orders side.\n\n:returns: `OrderSide`"""
-    cdef readonly str order_id
-    """The orders ID.\n\n:returns: `str`"""
+    cdef BookOrder_t _mem
 
-    cpdef void update_price(self, double price)
-    cpdef void update_size(self, double size)
-    cpdef void update_order_id(self, str value)
     cpdef double exposure(self)
     cpdef double signed_size(self)
+
+    @staticmethod
+    cdef BookOrder from_mem_c(BookOrder_t mem)
 
     @staticmethod
     cdef BookOrder from_dict_c(dict values)
@@ -53,14 +48,10 @@ cdef class BookOrder:
 
 
 cdef class OrderBookDelta(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly BookAction action
-    """The order book delta action {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}.\n\n:returns: `BookAction`"""
-    cdef readonly BookOrder order
-    """The order to apply.\n\n:returns: `Order`"""
-    cdef readonly uint64_t sequence
-    """The unique sequence number.\n\n:returns: `uint64`"""
+    cdef OrderBookDelta_t _mem
+
+    @staticmethod
+    cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem)
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values)
