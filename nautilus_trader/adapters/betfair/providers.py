@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import time
 from typing import Optional, Union
 
@@ -186,19 +187,19 @@ def market_catalog_to_instruments(
     for runner in market_catalog.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=str(market_catalog.eventType.id),
-            event_type_name=market_catalog.eventType.name,
+            event_type_id=str(market_catalog.event_type.id),
+            event_type_name=market_catalog.event_type.name,
             competition_id=market_catalog.competition.id if market_catalog.competition else "",
             competition_name=market_catalog.competition.name if market_catalog.competition else "",
             event_id=market_catalog.event.id,
             event_name=market_catalog.event.name,
-            event_country_code=market_catalog.event.countryCode or "",
-            event_open_date=pd.Timestamp(market_catalog.event.openDate),
-            betting_type=market_catalog.description.bettingType.name,
-            market_id=market_catalog.marketId,
-            market_name=market_catalog.marketName,
-            market_start_time=pd.Timestamp(market_catalog.marketStartTime),
-            market_type=market_catalog.description.marketType,
+            event_country_code=market_catalog.event.country_code or "",
+            event_open_date=pd.Timestamp(market_catalog.event.open_date),
+            betting_type=market_catalog.description.betting_type.name,
+            market_id=market_catalog.market_id,
+            market_name=market_catalog.market_name,
+            market_start_time=pd.Timestamp(market_catalog.market_start_time),
+            market_type=market_catalog.description.market_type,
             selection_id=str(runner.runner_id),
             selection_name=runner.runner_name,
             selection_handicap=parse_handicap(runner.handicap),
@@ -219,22 +220,22 @@ def market_definition_to_instruments(
     for runner in market_definition.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=market_definition.eventTypeId,
+            event_type_id=market_definition.event_type_id,
             event_type_name=market_definition.event_type_name,
-            competition_id=market_definition.competitionId,
-            competition_name=market_definition.competitionName,
-            event_id=market_definition.eventId,
-            event_name=market_definition.eventName,
-            event_country_code=market_definition.countryCode,
-            event_open_date=pd.Timestamp(market_definition.openDate),
-            betting_type=market_definition.bettingType,
-            market_id=market_definition.marketId,
-            market_name=market_definition.marketName,
-            market_start_time=pd.Timestamp(market_definition.marketTime)
-            if market_definition.marketTime
+            competition_id=market_definition.competition_id,
+            competition_name=market_definition.competition_name,
+            event_id=market_definition.event_id,
+            event_name=market_definition.event_name,
+            event_country_code=market_definition.country_code,
+            event_open_date=pd.Timestamp(market_definition.open_date),
+            betting_type=market_definition.betting_type,
+            market_id=market_definition.market_id,
+            market_name=market_definition.market_name,
+            market_start_time=pd.Timestamp(market_definition.market_time)
+            if market_definition.market_time
             else pd.Timestamp(0, tz="UTC"),
-            market_type=market_definition.marketType,
-            selection_id=str(runner.selectionId or runner.id),
+            market_type=market_definition.market_type,
+            selection_id=str(runner.selection_id or runner.id),
             selection_name=runner.name or "",
             selection_handicap=parse_handicap(runner.hc),
             currency=currency,
