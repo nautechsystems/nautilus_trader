@@ -17,7 +17,7 @@ use tabled::settings::Style;
 use tabled::{Table, Tabled};
 use thiserror::Error;
 
-use crate::data::book::{BookOrder, OrderBookDelta, OrderBookSnapshot};
+use crate::data::book::{BookOrder, OrderBookDelta};
 use crate::data::tick::{QuoteTick, TradeTick};
 use crate::enums::{BookAction, BookType, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
@@ -164,21 +164,6 @@ impl OrderBook {
             BookAction::Update => self.update(delta.order, delta.ts_event, delta.sequence),
             BookAction::Delete => self.delete(delta.order, delta.ts_event, delta.sequence),
             BookAction::Clear => self.clear(delta.ts_event, delta.sequence),
-        }
-    }
-
-    pub fn apply_snapshot(&mut self, snapshot: OrderBookSnapshot) {
-        // Clear the existing bid and ask sides
-        self.clear(snapshot.ts_event, snapshot.sequence);
-
-        // Use `update` instead of `add` (when book has been cleared they're
-        // equivalent) to make work for L1_TBBO Orderbook.
-        for order in snapshot.bids {
-            self.update(order, snapshot.ts_event, snapshot.sequence)
-        }
-
-        for order in snapshot.asks {
-            self.update(order, snapshot.ts_event, snapshot.sequence)
         }
     }
 
