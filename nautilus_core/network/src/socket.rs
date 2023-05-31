@@ -64,7 +64,7 @@ impl SocketClient {
     #[staticmethod]
     fn connect_url(url: String, handler: PyObject, py: Python<'_>) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Ok(SocketClient::connect(&url, handler).await.unwrap())
+            Ok(Self::connect(&url, handler).await.unwrap())
         })
     }
 
