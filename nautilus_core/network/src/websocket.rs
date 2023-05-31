@@ -109,7 +109,7 @@ impl WebSocketClient {
     #[staticmethod]
     fn connect_url(url: String, handler: PyObject, py: Python<'_>) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Ok(WebSocketClient::connect(&url, handler).await.unwrap())
+            Ok(Self::connect(&url, handler).await.unwrap())
         })
     }
 
@@ -172,14 +172,14 @@ mod tests {
                         websocket.write_message(msg).unwrap();
                     } else if msg.is_close() {
                         if let Err(err) = websocket.close(None) {
-                            println!("Connection already closed {}", err);
+                            println!("Connection already closed {err}");
                         };
                         break;
                     }
                 }
             });
 
-            TestServer { port }
+            Self { port }
         }
     }
 
@@ -234,7 +234,7 @@ counter = Counter()",
 
         // Send messages that increment the count
         for _ in 0..N {
-            client.send("ping".to_string().into_bytes()).await;
+            client.send(b"ping".to_vec()).await;
         }
 
         // Shutdown client and wait for read task to terminate
