@@ -89,10 +89,9 @@ def _generate_batches_rust(
     session = DataBackendSession(chunk_size=batch_size)
 
     for file in files:
-        session.add_file_with_query(
+        session.add_file(
             "data",
             file,
-            "SELECT * FROM data;",
             py_type_to_parquet_type(cls),
         )
 
