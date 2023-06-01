@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from typing import Optional
 
 import msgspec
@@ -853,6 +854,7 @@ class BinanceMarketHttpAPI:
         end_time: Optional[str] = None,
     ) -> list[BinanceBar]:
         """Request Binance Bars from Klines."""
+        end_time_ms = int(end_time) if end_time is not None else sys.maxsize
         all_bars: list[BinanceBar] = []
         while True:
             klines = await self.query_klines(
@@ -868,9 +870,14 @@ class BinanceMarketHttpAPI:
             all_bars.extend(bars)
 
             # Update the start_time to fetch the next set of bars
-            next_start_time = klines[-1].open_time + 1
+            if klines:
+                next_start_time = klines[-1].open_time + 1
+            else:
+                # Handle the case when klines is empty
+                break
+
             # No more bars to fetch
-            if len(klines) < limit or next_start_time >= int(end_time):
+            if (limit and len(klines) < limit) or next_start_time >= end_time_ms:
                 break
 
             start_time = str(next_start_time)

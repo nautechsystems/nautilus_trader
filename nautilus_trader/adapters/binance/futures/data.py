@@ -61,10 +61,10 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
@@ -79,8 +79,8 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
+        base_url_ws: str,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        base_url_ws: Optional[str] = None,
         use_agg_trade_ticks: bool = False,
     ):
         PyCondition.true(

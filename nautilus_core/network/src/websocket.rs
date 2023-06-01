@@ -185,12 +185,12 @@ mod tests {
 
     #[tokio::test]
     async fn basic_client_test() {
+        prepare_freethreaded_python();
+
         const N: usize = 10;
 
         // Initialize test server
         let server = TestServer::basic_client_test();
-
-        prepare_freethreaded_python();
 
         // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {

@@ -86,7 +86,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
+    base_url_ws : str
         The base URL for the WebSocket client.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
@@ -109,7 +109,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
-        base_url_ws: Optional[str] = None,
+        base_url_ws: str,
         use_agg_trade_ticks: bool = False,
     ) -> None:
         super().__init__(
@@ -142,7 +142,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
-            loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_ws_message,
@@ -192,16 +191,15 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         try:
-            while not self._ws_client.is_connected:
-                self._log.debug(
-                    f"Scheduled `connect_websockets` to run in "
-                    f"{self._connect_websockets_interval}s.",
-                )
-                await asyncio.sleep(self._connect_websockets_interval)
-                if self._ws_client.has_subscriptions:
-                    await self._ws_client.connect(heartbeat=15)  # type: ignore
-                else:
-                    self._log.info("Awaiting subscriptions...")
+            self._log.debug(
+                f"Scheduled `connect_websockets` to run in "
+                f"{self._connect_websockets_interval}s.",
+            )
+            await asyncio.sleep(self._connect_websockets_interval)
+            if self._ws_client.has_subscriptions:
+                self._ws_client.connect()
+            else:
+                self._log.info("Awaiting subscriptions...")
         except asyncio.CancelledError:
             self._log.debug("`connect_websockets` task was canceled.")
 
@@ -230,9 +228,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.debug("Canceling `connect_websockets` task...")
             self._connect_websockets_task.cancel()
             self._connect_websockets_task.done()
-        # Disconnect WebSocket client
-        if self._ws_client.is_connected:
-            await self._ws_client.disconnect()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -331,9 +326,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 speed=update_speed,
             )
 
-            while not self._ws_client.is_connected:
-                await asyncio.sleep(self._connect_websockets_interval)
-
             snapshot = await self._http_market.request_order_book_snapshot(
                 instrument_id=instrument_id,
                 limit=depth,
@@ -393,7 +385,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
         self._add_subscription_bars(bar_type)
 
-    async def _unsubscribe(self, data_type: DataType):
+    async def _unsubscribe(self, data_type: DataType) -> None:
         # Replace method in child class, for exchange specific data types.
         raise NotImplementedError(f"Cannot unsubscribe from {data_type.type} (not implemented).")
 

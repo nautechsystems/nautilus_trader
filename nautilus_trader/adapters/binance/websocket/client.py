@@ -13,39 +13,36 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from typing import Any, Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.websocket import WebSocketClient
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
 
 
-class BinanceWebSocketClient(WebSocketClient):
+class BinanceWebSocketClient:
     """
     Provides a `Binance` streaming WebSocket client.
     """
 
     def __init__(
         self,
-        loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
         handler: Callable[[bytes], None],
         base_url: str,
     ) -> None:
-        super().__init__(
-            loop=loop,
-            logger=logger,
-            handler=handler,
-            max_retry_connection=6,
-        )
-
         self._base_url: str = base_url
 
         self._clock: LiveClock = clock
+        self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
+
         self._streams: list[str] = []
+        self._max_retry_connections = 6
+        self._handler = handler
+        self._client: Optional[WebSocketClient] = None
 
     @property
     def base_url(self) -> Optional[str]:
@@ -59,7 +56,7 @@ class BinanceWebSocketClient(WebSocketClient):
     def has_subscriptions(self) -> bool:
         return bool(self._streams)
 
-    async def connect(
+    def connect(
         self,
         key: Optional[str] = None,
         start: bool = True,
@@ -73,8 +70,8 @@ class BinanceWebSocketClient(WebSocketClient):
         if key is not None:
             ws_url += f"&listenKey={key}"
 
+        self._client = WebSocketClient.connect_url(ws_url, self._handler)
         self._log.info(f"Connecting to {ws_url}")
-        await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
 
     def _add_stream(self, stream: str) -> None:
         if stream not in self._streams:
