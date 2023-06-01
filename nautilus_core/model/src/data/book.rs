@@ -64,7 +64,7 @@ impl BookOrder {
         match self.side {
             OrderSide::Buy => self.size.as_f64(),
             OrderSide::Sell => -(self.size.as_f64()),
-            _ => panic!("Invalid `OrderSize` for signed size, was {}", self.side),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
     }
 
