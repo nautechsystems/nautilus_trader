@@ -21,11 +21,12 @@ use nautilus_core::time::UnixNanos;
 use crate::enums::BookAction;
 use crate::enums::OrderSide;
 use crate::identifiers::instrument_id::InstrumentId;
+use crate::orderbook::book::BookIntegrityError;
 use crate::orderbook::ladder::BookPrice;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 
-use super::tick::QuoteTick;
+use super::tick::{QuoteTick, TradeTick};
 
 /// Represents an order in a book.
 #[repr(C)]
@@ -79,7 +80,23 @@ impl BookOrder {
                 tick.ask_size,
                 tick.ask.raw as u64,
             ),
-            _ => panic!("Invalid order side"),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        }
+    }
+
+    #[must_use]
+    pub fn from_trade_tick(tick: &TradeTick, side: OrderSide) -> Self {
+        match side {
+            OrderSide::Buy => {
+                Self::new(OrderSide::Buy, tick.price, tick.size, tick.price.raw as u64)
+            }
+            OrderSide::Sell => Self::new(
+                OrderSide::Sell,
+                tick.price,
+                tick.size,
+                tick.price.raw as u64,
+            ),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
     }
 }

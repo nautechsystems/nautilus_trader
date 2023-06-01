@@ -42,22 +42,22 @@ pub struct OrderBook {
 pub enum InvalidBookOperation {
     #[error("Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),
-    #[error("Invalid book operation: cannot update {0} book")]
-    Update(BookType),
+    #[error("Invalid book operation: cannot add for {0} book")]
+    Add(BookType),
 }
 
 #[derive(Error, Debug)]
 pub enum BookIntegrityError {
-    #[error("Invalid book operation: order not found {0}")]
+    #[error("Invalid book operation: order ID not found {0}")]
     OrderNotFound(u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
     #[error("Integrity error: orders in cross [{0} @ {1}]")]
     OrdersCrossed(BookPrice, BookPrice),
-    #[error("Integrity error: number of {0} levels > 1 for L2_MBP book, was {1}")]
-    TooManyLevels(OrderSide, usize),
-    #[error("Integrity error: number of {0} orders > 1 for L1_TBBO book, was {1}")]
+    #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
     TooManyOrders(OrderSide, usize),
+    #[error("Integrity error: number of {0} levels > 1 for L1_TBBO book, was {1}")]
+    TooManyLevels(OrderSide, usize),
 }
 
 #[derive(Tabled)]
@@ -69,12 +69,12 @@ struct OrderLevelDisplay {
 
 impl OrderBook {
     #[must_use]
-    pub fn new(instrument_id: InstrumentId, book_level: BookType) -> Self {
+    pub fn new(instrument_id: InstrumentId, book_type: BookType) -> Self {
         Self {
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
             instrument_id,
-            book_type: book_level,
+            book_type,
             sequence: 0,
             ts_last: 0,
             count: 0,
@@ -93,7 +93,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => panic!("{}", InvalidBookOperation::Update(self.book_type)),
+            BookType::L1_TBBO => panic!("{}", InvalidBookOperation::Add(self.book_type)),
         };
 
         match order.side {
@@ -102,9 +102,7 @@ impl OrderBook {
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
 
-        self.sequence = sequence;
-        self.ts_last = ts_event;
-        self.count += 1;
+        self.increment(ts_event, sequence);
     }
 
     pub fn update(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
@@ -123,9 +121,7 @@ impl OrderBook {
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
 
-        self.sequence = sequence;
-        self.ts_last = ts_event;
-        self.count += 1;
+        self.increment(ts_event, sequence);
     }
 
     pub fn delete(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
@@ -141,31 +137,23 @@ impl OrderBook {
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
 
-        self.sequence = sequence;
-        self.ts_last = ts_event;
-        self.count += 1;
+        self.increment(ts_event, sequence);
     }
 
     pub fn clear(&mut self, ts_event: u64, sequence: u64) {
         self.bids.clear();
         self.asks.clear();
-        self.sequence = sequence;
-        self.ts_last = ts_event;
-        self.count += 1;
+        self.increment(ts_event, sequence);
     }
 
     pub fn clear_bids(&mut self, ts_event: u64, sequence: u64) {
         self.bids.clear();
-        self.sequence = sequence;
-        self.ts_last = ts_event;
-        self.count += 1;
+        self.increment(ts_event, sequence);
     }
 
     pub fn clear_asks(&mut self, ts_event: u64, sequence: u64) {
         self.asks.clear();
-        self.sequence = sequence;
-        self.ts_last = ts_event;
-        self.count += 1;
+        self.increment(ts_event, sequence);
     }
 
     pub fn apply_delta(&mut self, delta: OrderBookDelta) {
@@ -233,18 +221,8 @@ impl OrderBook {
     }
 
     pub fn update_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_bid(BookOrder::new(
-            OrderSide::Buy,
-            tick.price,
-            tick.size,
-            tick.price.raw as u64,
-        ));
-        self.update_ask(BookOrder::new(
-            OrderSide::Sell,
-            tick.price,
-            tick.size,
-            tick.price.raw as u64,
-        ));
+        self.update_bid(BookOrder::from_trade_tick(tick, OrderSide::Buy));
+        self.update_ask(BookOrder::from_trade_tick(tick, OrderSide::Sell));
     }
 
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
@@ -372,8 +350,14 @@ impl OrderBook {
         Ok(())
     }
 
+    fn increment(&mut self, ts_event: u64, sequence: u64) {
+        self.ts_last = ts_event;
+        self.sequence = sequence;
+        self.count += 1;
+    }
+
     fn update_l1(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        // Because of the way we typically get updates from a L1 order book (bid
+        // Because of the way we typically get updates from a L1_TBBO order book (bid
         // and ask updates at the same time), its quite probable that the last
         // bid is now the ask price we are trying to insert (or vice versa). We
         // just need to add some extra protection against this if we aren't calling
@@ -435,11 +419,11 @@ impl OrderBook {
 
     fn pre_process_order(&self, mut order: BookOrder) -> BookOrder {
         match self.book_type {
-            // Because a L1_TBBO book only has one level per side, we replace the
+            // Because a L1_TBBO only has one level per side, we replace the
             // `order.order_id` with the enum value of the side, which will let us easily process
             // the order.
             BookType::L1_TBBO => order.order_id = order.side as u64,
-            // Because a L2OrderBook only has one order per level, we replace the
+            // Because a L2_MBP only has one order per level, we replace the
             // `order.order_id` with a raw price value, which will let us easily process the order.
             BookType::L2_MBP => order.order_id = order.price.raw as u64,
             BookType::L3_MBO => panic!("{}", InvalidBookOperation::PreProcessOrder(self.book_type)),
