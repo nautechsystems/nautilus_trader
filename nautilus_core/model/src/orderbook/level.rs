@@ -16,6 +16,7 @@
 use std::cmp::Ordering;
 
 use crate::data::book::BookOrder;
+use crate::orderbook::book::BookIntegrityError;
 use crate::orderbook::ladder::BookPrice;
 
 #[derive(Clone, Debug, Eq)]
@@ -75,7 +76,9 @@ impl Level {
                 .orders
                 .iter()
                 .position(|o| o.order_id == order.order_id)
-                .expect("Cannot update order: order not found");
+                .unwrap_or_else(|| {
+                    panic!("{}", &BookIntegrityError::OrderNotFound(order.order_id))
+                });
             self.orders[idx] = order;
         }
     }
@@ -89,7 +92,7 @@ impl Level {
             .orders
             .iter()
             .position(|o| o.order_id == order_id)
-            .expect("Cannot delete order: order not found");
+            .unwrap_or_else(|| panic!("{}", &BookIntegrityError::OrderNotFound(order_id)));
         self.orders.remove(index);
     }
 

@@ -39,15 +39,25 @@ pub struct OrderBook {
 }
 
 #[derive(Error, Debug)]
+pub enum InvalidBookOperation {
+    #[error("Invalid book operation: cannot pre-process order for {0} book")]
+    PreProcessOrder(BookType),
+    #[error("Invalid book operation: cannot update {0} book")]
+    Update(BookType),
+}
+
+#[derive(Error, Debug)]
 pub enum BookIntegrityError {
-    #[error("Orders in cross [{0} @ {1}]")]
-    OrdersCrossed(BookPrice, BookPrice),
-    #[error("Integrity check failed for L2_MBP book: number of {0} levels > 1, was {1}")]
-    TooManyLevels(OrderSide, usize),
-    #[error("Integrity check failed for L1_TBBO book: number of {0} orders levels > 1, was {1}")]
-    TooManyOrders(OrderSide, usize),
-    #[error("Invalid `OrderSide::NoOrderSide` in book")]
+    #[error("Invalid book operation: order not found {0}")]
+    OrderNotFound(u64),
+    #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
+    #[error("Integrity error: orders in cross [{0} @ {1}]")]
+    OrdersCrossed(BookPrice, BookPrice),
+    #[error("Integrity error: number of {0} levels > 1 for L2_MBP book, was {1}")]
+    TooManyLevels(OrderSide, usize),
+    #[error("Integrity error: number of {0} orders > 1 for L1_TBBO book, was {1}")]
+    TooManyOrders(OrderSide, usize),
 }
 
 #[derive(Tabled)]
@@ -83,7 +93,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => panic!("Invalid book operation: call `update` for a L1_TBBO book"),
+            BookType::L1_TBBO => panic!("{}", InvalidBookOperation::Update(self.book_type)),
         };
 
         match order.side {
@@ -432,7 +442,7 @@ impl OrderBook {
             // Because a L2OrderBook only has one order per level, we replace the
             // `order.order_id` with a raw price value, which will let us easily process the order.
             BookType::L2_MBP => order.order_id = order.price.raw as u64,
-            BookType::L3_MBO => panic!("Invalid to process an order for a L3_MBO book"),
+            BookType::L3_MBO => panic!("{}", InvalidBookOperation::PreProcessOrder(self.book_type)),
         }
 
         order

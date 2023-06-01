@@ -25,8 +25,6 @@ use crate::types::quantity::Quantity;
 
 use super::book::BookIntegrityError;
 
-const EPSILON: f64 = 1e-10;
-
 #[derive(Copy, Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
@@ -178,12 +176,11 @@ impl Ladder {
     }
 
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
-        let size_prec = order.size.precision;
         let is_reversed = self.side == OrderSide::Buy;
 
         let mut fills = Vec::new();
-        let mut cumulative_denominator = 0.0;
-        let target = order.size.as_f64();
+        let mut cumulative_denominator = Quantity::zero(order.size.precision);
+        let target = order.size;
 
         for level in self.levels.values() {
             if (is_reversed && level.price.value < order.price)
@@ -193,16 +190,15 @@ impl Ladder {
             }
 
             for book_order in &level.orders {
-                let current = book_order.size.as_f64();
-                let cumulative_current = cumulative_denominator + current;
-                if (cumulative_current - target).abs() <= EPSILON || cumulative_current >= target {
+                let current = book_order.size;
+                if cumulative_denominator + current >= target {
                     // This order has filled us, add fill and return
                     let remainder = target - cumulative_denominator;
-                    fills.push((book_order.price, Quantity::new(remainder, size_prec)));
+                    fills.push((book_order.price, remainder));
                     return fills;
                 } else {
                     // Add this fill and continue
-                    fills.push((book_order.price, Quantity::new(current, size_prec)));
+                    fills.push((book_order.price, current));
                     cumulative_denominator += current;
                 }
             }
@@ -642,25 +638,25 @@ mod tests {
     }
 
     #[test]
-    fn test_simulate_order_fills_sell_with_volume_and_epsilon() {
+    fn test_simulate_order_fills_sell_with_volume_at_limit_of_precision() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
         ladder.add_bulk(vec![
             BookOrder {
                 price: Price::new(102.00, 2),
-                size: Quantity::new(100.0, 0),
+                size: Quantity::new(100.0, 9),
                 side: OrderSide::Buy,
                 order_id: 1,
             },
             BookOrder {
                 price: Price::new(101.00, 2),
-                size: Quantity::new(200.0, 0),
+                size: Quantity::new(200.0, 9),
                 side: OrderSide::Buy,
                 order_id: 2,
             },
             BookOrder {
                 price: Price::new(100.00, 2),
-                size: Quantity::new(400.0, 0),
+                size: Quantity::new(400.0, 9),
                 side: OrderSide::Buy,
                 order_id: 3,
             },
@@ -679,11 +675,11 @@ mod tests {
 
         let (price1, size1) = &fills[0];
         assert_eq!(price1, &Price::new(102.00, 2));
-        assert_eq!(size1, &Quantity::new(100.0, 0));
+        assert_eq!(size1, &Quantity::new(100.0, 9));
 
         let (price2, size2) = &fills[1];
         assert_eq!(price2, &Price::new(101.00, 2));
-        assert_eq!(size2, &Quantity::new(200.0, 0));
+        assert_eq!(size2, &Quantity::new(200.0, 9));
 
         let (price3, size3) = &fills[2];
         assert_eq!(price3, &Price::new(100.00, 2));
