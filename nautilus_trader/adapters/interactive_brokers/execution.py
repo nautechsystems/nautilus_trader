@@ -780,12 +780,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                     venue_order_id_modified=venue_order_id_modified,
                 )
-            else:
-                self._handle_order_event(
-                    status=OrderStatus.ACCEPTED,
-                    order=nautilus_order,
-                    order_id=order.orderId,
-                )
+            self._handle_order_event(
+                status=OrderStatus.ACCEPTED,
+                order=nautilus_order,
+                order_id=order.orderId,
+            )
 
     def _on_order_status(self, order_ref: str, order_status: str, reason: str = ""):
         if order_status in ["ApiCancelled", "Cancelled"]:

@@ -51,9 +51,9 @@ class Base:
     """
 
     def __init__(self):
-        self._req_id_to_name: dict[int, Union[str, tuple]] = {}
-        self._req_id_to_handle: dict[int, Callable] = {}
-        self._req_id_to_cancel: dict[int, Callable] = {}
+        self._req_id_to_name: dict[int, Union[str, tuple]] = {}  # type: ignore
+        self._req_id_to_handle: dict[int, Callable] = {}  # type: ignore
+        self._req_id_to_cancel: dict[int, Callable] = {}  # type: ignore
 
     def __repr__(self):
         return f"{self.__class__.__name__}:\n{[self.get(req_id=k) for k in self._req_id_to_name.keys()]!r}"
@@ -105,7 +105,7 @@ class Subscriptions(Base):
 
     def __init__(self):
         super().__init__()
-        self._req_id_to_last: dict[int, Any] = {}
+        self._req_id_to_last: dict[int, Any] = {}  # type: ignore
 
     def add(
         self,
@@ -149,8 +149,8 @@ class Requests(Base):
 
     def __init__(self):
         super().__init__()
-        self._req_id_to_future: dict[int, asyncio.Future] = {}
-        self._req_id_to_result: dict[int, Any] = {}
+        self._req_id_to_future: dict[int, asyncio.Future] = {}  # type: ignore
+        self._req_id_to_result: dict[int, Any] = {}  # type: ignore
 
     def get_futures(self):
         return self._req_id_to_future.values()
