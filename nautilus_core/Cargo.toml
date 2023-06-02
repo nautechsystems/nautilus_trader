@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.69.0"
+rust-version = "1.70.0"
 version = "0.6.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
@@ -42,7 +42,7 @@ rstest = "0.17.0"
 tempfile = "3.5.0"
 
 # build-dependencies
-cbindgen = "0.24.6"
+cbindgen = "0.24.5"
 
 [profile.dev]
 opt-level = 0
