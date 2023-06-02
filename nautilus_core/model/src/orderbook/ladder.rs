@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_add_single_order() {
+    fn test_add_single_order() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(
             OrderSide::Buy,
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_add_multiple_buy_orders() {
+    fn test_add_multiple_buy_orders() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_add_multiple_sell_orders() {
+    fn test_add_multiple_sell_orders() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order1 = BookOrder::new(
             OrderSide::Sell,
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_update_buy_order_price() {
+    fn test_update_buy_order_price() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(
             OrderSide::Buy,
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_update_sell_order_price() {
+    fn test_update_sell_order_price() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order = BookOrder::new(
             OrderSide::Sell,
@@ -390,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_update_buy_order_size() {
+    fn test_update_buy_order_size() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(
             OrderSide::Buy,
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_update_sell_order_size() {
+    fn test_update_sell_order_size() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order = BookOrder::new(
             OrderSide::Sell,
@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_delete_buy_order() {
+    fn test_delete_buy_order() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(
             OrderSide::Buy,
@@ -468,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ladder_delete_sell_order() {
+    fn test_delete_sell_order() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order = BookOrder::new(
             OrderSide::Sell,
@@ -683,6 +683,6 @@ mod tests {
 
         let (price3, size3) = &fills[2];
         assert_eq!(price3, &Price::new(100.00, 2));
-        assert_eq!(size3, &Quantity::new(399.999999999, 9)); // <-- Size adjusted due to EPSILON
+        assert_eq!(size3, &Quantity::new(399.999999999, 9));
     }
 }
