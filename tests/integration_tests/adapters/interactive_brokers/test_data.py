@@ -176,7 +176,7 @@ async def test_on_quote_tick_update_nans(data_client, instrument):
     expected = QuoteTick.from_dict(
         {
             "type": "QuoteTick",
-            "instrument_id": "AAPL.AMEX",
+            "instrument_id": "AAPL.NASDAQ",
             "bid": "0.00",
             "ask": "0.00",
             "bid_size": "44600",

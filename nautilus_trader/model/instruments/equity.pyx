@@ -63,6 +63,8 @@ cdef class Equity(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    info : dict[str, object], optional
+        The additional instrument information.
 
     Raises
     ------
@@ -92,6 +94,7 @@ cdef class Equity(Instrument):
         margin_maint: Optional[Decimal] = None,
         maker_fee: Optional[Decimal] = None,
         taker_fee: Optional[Decimal] = None,
+        dict info = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -118,7 +121,7 @@ cdef class Equity(Instrument):
             taker_fee=taker_fee if taker_fee else Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
-            info={},
+            info=info,
         )
         self.isin = isin
 

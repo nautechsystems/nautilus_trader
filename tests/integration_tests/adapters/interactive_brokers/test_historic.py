@@ -149,7 +149,7 @@ def test_parse_historic_trade_ticks():
     expected = TradeTick.from_dict(
         {
             "type": "TradeTick",
-            "instrument_id": "AAPL.AMEX",
+            "instrument_id": "AAPL.NASDAQ",
             "price": "6.20",
             "size": "30",
             "aggressor_side": "NO_AGGRESSOR",
@@ -174,7 +174,7 @@ def test_parse_historic_quote_ticks():
     expected = QuoteTick.from_dict(
         {
             "type": "QuoteTick",
-            "instrument_id": "AAPL.AMEX",
+            "instrument_id": "AAPL.NASDAQ",
             "bid": "0.99",
             "ask": "15.30",
             "bid_size": "1",
@@ -203,7 +203,7 @@ def test_parse_historic_bar():
     expected = Bar.from_dict(
         {
             "type": "Bar",
-            "bar_type": "AAPL.AMEX-1-MINUTE-LAST-EXTERNAL",
+            "bar_type": "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
             "open": "219.00",
             "high": "219.00",
             "low": "219.00",

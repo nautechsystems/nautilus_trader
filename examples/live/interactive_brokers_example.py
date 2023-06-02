@@ -14,15 +14,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
 
 # fmt: off
+
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
@@ -31,61 +36,102 @@ from nautilus_trader.live.node import TradingNode
 
 # fmt: on
 
-
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
-instrument_filters: Optional[list[dict[str, Any]]] = [
-    {
-        "secType": "STK",
-        "symbol": "AAPL",
-        "exchange": "SMART",
-        "primaryExchange": "NASDAQ",
-    },
-    {
-        "secType": "CASH",
-        "primaryExchange": "IDEALPRO",
-        "localSymbol": "EUR.USD",
-    },
+ib_contracts = [
+    IBContract(
+        secType="STK",
+        symbol="SPY",
+        exchange="SMART",
+        primaryExchange="ARCA",
+        build_options_chain=True,
+        min_expiry_days=7,
+        max_expiry_days=14,
+    ),
+    IBContract(secType="CONTFUT", exchange="CME", symbol="ES", build_futures_chain=True),
+    IBContract(secType="FUT", exchange="NYMEX", localSymbol="CLV3", build_futures_chain=False),
 ]
 
+gateway = InteractiveBrokersGatewayConfig(
+    start=False,
+    username=None,
+    password=None,
+    trading_mode="paper",
+    read_only_api=True,
+)
+
+instrument_provider = InteractiveBrokersInstrumentProviderConfig(
+    build_futures_chain=False,
+    build_options_chain=False,
+    min_expiry_days=10,
+    max_expiry_days=60,
+    load_ids=frozenset(
+        [
+            "EUR/USD.IDEALPRO",
+            "BTC/USD.PAXOS",
+            "SPY.ARCA",
+            "ABC.NYSE",
+            "YMH24.CBOT",
+            "CLZ27.NYMEX",
+            "ESZ27.CME",
+        ],
+    ),
+    load_contracts=frozenset(ib_contracts),
+)
+
 # Configure the trading node
+
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            instrument_provider=InstrumentProviderConfig(
-                load_all=True,
-                filters=instrument_filters,  # type: ignore
-            ),
-            start_gateway=False,
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=1,
+            handle_revised_bars=False,
+            use_regular_trading_hours=True,
+            market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # If unset default is REALTIME
+            instrument_provider=instrument_provider,
+            gateway=gateway,
         ),
     },
     exec_clients={
         "IB": InteractiveBrokersExecClientConfig(
-            start_gateway=False,
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=1,
+            account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
+            gateway=gateway,
+            instrument_provider=instrument_provider,
+            routing=RoutingConfig(
+                default=True,
+            ),
         ),
     },
+    data_engine=LiveDataEngineConfig(
+        time_bars_timestamp_on_close=False,  # Will use opening time as `ts_event` (same like IB)
+        validate_data_sequence=True,  # Will make sure DataEngine discards any Bars received out of sequence
+    ),
     timeout_connection=90.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=2.0,
 )
-
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="AAPL.NASDAQ",
+    instrument_id="EUR/USD.IDEALPRO",
     # book_type=None,
     # snapshots=True,
-    trade_ticks=True,
+    trade_ticks=False,
     quote_ticks=True,
     # bars=True,
 )
