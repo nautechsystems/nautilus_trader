@@ -16,4 +16,4 @@
 import pytest
 
 
-pytest.importorskip("ib_insync")
+pytest.importorskip("ibapi")

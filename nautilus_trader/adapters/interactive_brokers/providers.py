@@ -13,227 +13,270 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import datetime as dt
-import json
-from typing import Optional
+import copy
+from typing import Optional, Union
 
-import ib_insync
-import msgspec
-import numpy as np
 import pandas as pd
-from ib_insync import Contract
-from ib_insync import ContractDetails
-from ib_insync import Future
+from ibapi.contract import ContractDetails
 
+# fmt: off
+from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
-from nautilus_trader.common.functions import one
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments.base import Instrument
+
+
+# fmt: on
 
 
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Interactive Brokers.
-
-    Parameters
-    ----------
-    client : ib_insync.IB
-        The Interactive Brokers client.
-    config : InstrumentProviderConfig
-        The instrument provider config
-    logger : Logger
-        The logger for the instrument provider.
-    host : str
-        The client host name or IP address.
-    port : str
-        The client port number.
-    client_id : int
-        The unique client ID number for the connection.
     """
 
     def __init__(
         self,
-        client: ib_insync.IB,
-        config: InstrumentProviderConfig,
+        client: InteractiveBrokersClient,
+        config: InteractiveBrokersInstrumentProviderConfig,
         logger: Logger,
-        host: str = "127.0.0.1",
-        port: int = 7497,
-        client_id: int = 1,
-    ) -> None:
+    ):
+        """
+        Initialize a new instance of the ``InteractiveBrokersInstrumentProvider`` class.
+
+        Parameters
+        ----------
+        client : InteractiveBrokersClient
+            The Interactive Brokers client.
+        config : InteractiveBrokersInstrumentProviderConfig
+            The instrument provider config
+        logger : Logger
+            The logger for the instrument provider.
+
+        """
         super().__init__(
             venue=IB_VENUE,
             logger=logger,
             config=config,
         )
 
+        # Settings
+        self._load_contracts_on_start = (
+            set(config.load_contracts) if config.load_contracts is not None else None
+        )
+        self._min_expiry_days = config.min_expiry_days
+        self._max_expiry_days = config.max_expiry_days
+        self._build_options_chain = config.build_options_chain
+        self._build_futures_chain = config.build_futures_chain
+        self._cache_validity_days = config.cache_validity_days
+        # TODO: If cache_validity_days > 0 and Catalog is provided
+
         self._client = client
-        self._host = host
-        self._port = port
-        self._client_id = client_id
         self.config = config
-        self.contract_details: dict[str, ContractDetails] = {}
+        self.contract_details: dict[str, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
     async def load_all_async(self, filters: Optional[dict] = None) -> None:
-        for f in self._parse_filters(filters=filters or {}):
-            filt = dict(f)
-            kw = {
-                "build_options_chain": filt.pop("build_options_chain", False),
-                "option_kwargs": filt.pop("option_kwargs", None),
-            }
-            await self.load(**filt, **kw)
-
-    @staticmethod
-    def _one_not_both(a, b):
-        return a or b and not (a and b)
-
-    @staticmethod
-    def _parse_contract(**kwargs) -> Contract:
-        sec_type = kwargs.pop("secType", None)
-        return Contract(secType=sec_type, **kwargs)
-
-    @staticmethod
-    def _parse_filters(filters):
-        return msgspec.json.decode(filters)
+        await self.load_ids_async([])
 
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
         filters: Optional[dict] = None,
     ) -> None:
-        assert self._one_not_both(instrument_ids, filters)
-        for filt in self._parse_filters(filters):
-            await self.load(**dict(filt or {}))
+        # Parse and load InstrumentIds
+        if self._load_ids_on_start:
+            for instrument_id in [
+                (InstrumentId.from_str(i) if isinstance(i, str) else i)
+                for i in self._load_ids_on_start
+            ]:
+                await self.load_async(instrument_id)
+        # Load IBContracts
+        if self._load_contracts_on_start:
+            for contract in [
+                (IBContract(**c) if isinstance(c, dict) else c)
+                for c in self._load_contracts_on_start
+            ]:
+                await self.load_async(contract)
 
     async def get_contract_details(
         self,
-        contract: Contract,
-        build_futures_chain=False,
-        build_options_chain=False,
-        option_kwargs: Optional[str] = None,
+        contract: IBContract,
     ) -> list[ContractDetails]:
-        if build_futures_chain:
-            return await self.get_future_chain_details(contract)
-        elif build_options_chain:
-            return await self.get_option_chain_details(
-                underlying=contract, **(json.loads(option_kwargs or "{}"))
+        try:
+            details = await self._client.get_contract_details(contract=contract)
+            [qualified] = details
+            self._log.info(
+                f"Contract qualified for {qualified.contract.localSymbol}."
+                f"{qualified.contract.primaryExchange or qualified.contract.exchange} "
+                f"with ConId={qualified.contract.conId}",
             )
-        else:
-            # Regular contract
-            return await self._client.reqContractDetailsAsync(contract=contract)
+            self._log.debug(f"Got {details=}")
+        except ValueError as e:
+            self._log.error(f"No contract details found for the given kwargs {contract}, {e}")
+            return []
+        min_expiry = pd.Timestamp.now() + pd.Timedelta(
+            days=(contract.min_expiry_days or self._min_expiry_days or 0),
+        )
+        max_expiry = pd.Timestamp.now() + pd.Timedelta(
+            days=(contract.max_expiry_days or self._max_expiry_days or 90),
+        )
+
+        if (
+            contract.secType in ["FUT", "CONTFUT"]
+            and contract.build_futures_chain
+            or self._build_futures_chain
+        ):
+            # Return Underlying contract details with Future Chains
+            details = await self.get_future_chain_details(
+                underlying=qualified.contract,
+                min_expiry=min_expiry,
+                max_expiry=max_expiry,
+            )
+        elif contract.secType == "CONTFUT":
+            # Get Active Month's Future
+            details = await self._client.get_contract_details(
+                IBContract(
+                    secType="FUT",
+                    localSymbol=qualified.contract.localSymbol,
+                    exchange=qualified.contract.exchange,
+                    tradingClass=qualified.contract.tradingClass,
+                ),
+            )
+            self._log.debug(f"Got {details=}")
+
+        if (
+            contract.secType in ["STK", "FUT"]
+            and contract.build_options_chain
+            or self._build_options_chain
+        ):
+            # Return Underlying contract details with Option Chains, including for the Future Chains if apply
+            for detail in set(details):
+                details.extend(
+                    await self.get_option_chain_details(
+                        underlying=detail.contract,
+                        min_expiry=min_expiry,
+                        max_expiry=max_expiry,
+                        last_trading_date=contract.lastTradeDateOrContractMonth,
+                    ),
+                )
+        return details
 
     async def get_future_chain_details(
         self,
-        underlying: Contract,
-        exchange: Optional[str] = None,
-        currency: Optional[str] = None,
-        **kwargs,
+        underlying: IBContract,
+        min_expiry: pd.Timestamp,
+        max_expiry: pd.Timestamp,
     ) -> list[ContractDetails]:
-        futures = self._client.reqContractDetails(
-            Future(
+        self._log.info(f"Building futures chain for {underlying.symbol}.{underlying.exchange}")
+        details = await self._client.get_contract_details(
+            IBContract(
+                secType="FUT",
                 symbol=underlying.symbol,
-                exchange=exchange or underlying.exchange or "SMART",
-                currency=currency or underlying.currency,
-                **kwargs,
+                exchange=underlying.exchange,
+                tradingClass=underlying.tradingClass,
             ),
         )
-        return futures
+        details = [
+            d
+            for d in details
+            if (min_expiry <= pd.Timestamp(d.contract.lastTradeDateOrContractMonth) <= max_expiry)
+        ]
+        self._log.info(
+            f"Received {len(details)} Future Contracts for "
+            f"{underlying.symbol}.{underlying.exchange} with expiry between {min_expiry=} and {max_expiry=}",
+        )
+        self._log.debug(f"Got {details=}")
+        return details
 
     async def get_option_chain_details(
         self,
-        underlying: Contract,
-        min_expiry: Optional[dt.date] = None,
-        max_expiry: Optional[dt.date] = None,
-        min_strike: Optional[float] = None,
-        max_strike: Optional[float] = None,
-        kind: Optional[str] = None,
+        underlying: IBContract,
+        min_expiry: pd.Timestamp,
+        max_expiry: pd.Timestamp,
+        last_trading_date: str,
         exchange: Optional[str] = None,
     ) -> list[ContractDetails]:
-        chains = await self._client.reqSecDefOptParamsAsync(
-            underlying.symbol,
-            "",
-            underlying.secType,
-            underlying.conId,
-        )
+        if last_trading_date:
+            expirations = [last_trading_date]
+        else:
+            try:
+                chains = await self._client.get_option_chains(underlying)
+                [chain] = [chain for chain in chains if chain[0] == (exchange or "SMART")]
+            except ValueError as e:
+                self._log.error(
+                    f"No chain details loaded for the given underlying {underlying}, {e}",
+                )
+                return []
 
-        chain = one(
-            [chain for chain in chains if chain.exchange == (exchange or underlying.exchange)],
-        )
-
-        strikes = [
-            strike
-            for strike in chain.strikes
-            if (min_strike or -np.inf) <= strike <= (max_strike or np.inf)
-        ]
-        expirations = sorted(
-            exp
-            for exp in chain.expirations
-            if (pd.Timestamp(min_expiry or pd.Timestamp.min) <= pd.Timestamp(exp))
-            and (pd.Timestamp(exp) <= pd.Timestamp(max_expiry or pd.Timestamp.max))
-        )
-        rights = [kind] if kind is not None else ["P", "C"]
-
-        contracts = [
-            ib_insync.Option(
-                underlying.symbol,
-                expiration,
-                strike,
-                right,
-                exchange or underlying.exchange or "SMART",
+            expirations = sorted(
+                exp for exp in chain[1] if (min_expiry <= pd.Timestamp(exp) <= max_expiry)
             )
-            for right in rights
-            for expiration in expirations
-            for strike in strikes
-        ]
-        qualified = await self._client.qualifyContractsAsync(*contracts)
-        details = await asyncio.gather(
-            *[self._client.reqContractDetailsAsync(contract=c) for c in qualified]
-        )
-        return [x for d in details for x in d]
 
-    async def load(  # type: ignore
+        details = []
+        for expiration in expirations:
+            [option_details] = (
+                await self._client.get_contract_details(
+                    IBContract(
+                        secType="OPT",
+                        symbol=underlying.symbol,
+                        lastTradeDateOrContractMonth=expiration,
+                        exchange=exchange or "SMART",
+                    ),
+                ),
+            )
+            option_details = [d for d in option_details if d.underConId == underlying.conId]
+            self._log.info(
+                f"Received {len(option_details)} Option Contracts for "
+                f"{underlying.symbol}.{underlying.primaryExchange or underlying.exchange} expiring on {expiration}",
+            )
+            self._log.debug(f"Got {option_details=}")
+            details.extend(option_details)
+        # Finally we need to match the conId with underlying because results may include other securities
+        return details
+
+    async def load_async(
         self,
-        build_options_chain=False,
-        option_kwargs=None,
-        **kwargs,
-    ) -> None:
+        instrument_id: Union[InstrumentId, IBContract],
+        filters: Optional[dict] = None,
+    ):
         """
-        Search and load the instrument for the given symbol, exchange and (optional) kwargs.
+        Search and load the instrument for the given IBContract.
+        It is important that the Contract shall have enough parameters so only one match is returned.
 
         Parameters
         ----------
-        build_options_chain : bool, default False
-            Search for full option chain.
-        option_kwargs : str, default False
-            JSON string for options filtering, available fields: min_expiry, max_expiry, min_strike, max_strike, kind.
-        kwargs : **kwargs
-            Optional extra kwargs to search for, examples:
-                secType, conId, symbol, lastTradeDateOrContractMonth, strike, right, multiplier, exchange,
-                primaryExchange, currency, localSymbol, tradingClass, includeExpired, secIdType, secId,
-                comboLegsDescrip, comboLegs,  deltaNeutralContract.
+        instrument_id : IBContract
+            InteractiveBroker's Contract.
+        filters : dict, optional
+            Not applicable in this case.
         """
-        self._log.debug(f"Attempting to find instrument for {kwargs=}")
-        contract = self._parse_contract(**kwargs)
-        self._log.debug(f"Parsed {contract=}")
-        qualified = await self._client.qualifyContractsAsync(contract)
-        qualified = one(qualified)
-        self._log.debug(f"Qualified {contract=}")
-        contract_details: list[ContractDetails] = await self.get_contract_details(
-            qualified,
-            build_options_chain=build_options_chain,
-            option_kwargs=option_kwargs,
-        )
-        if not contract_details:
-            raise ValueError(f"No contract details found for the given kwargs ({kwargs})")
-        self._log.debug(f"Got {contract_details=}")
+        if isinstance(instrument_id, InstrumentId):
+            try:
+                contract = instrument_id_to_ib_contract(instrument_id)
+            except ValueError as e:
+                self._log.error(f"{e}")
+                return
+        elif isinstance(instrument_id, IBContract):
+            contract = instrument_id
+        else:
+            self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
+            return
 
-        for details in contract_details:
+        self._log.debug(f"Attempting to find instrument for {contract=}")
+        contract_details: list[ContractDetails]
+        if not (contract_details := await self.get_contract_details(contract)):
+            return
+        for details in copy.deepcopy(contract_details):
+            details.contract = IBContract(**details.contract.__dict__)
+            details = IBContractDetails(**details.__dict__)
             self._log.debug(f"Attempting to create instrument from {details}")
             instrument: Instrument = parse_instrument(
                 contract_details=details,
@@ -242,7 +285,15 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 filter_callable = resolve_path(self.config.filter_callable)
                 if not filter_callable(instrument):
                     continue
-            self._log.info(f"Adding {instrument=} from IB instrument provider")
+            self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
             self.add(instrument)
             self.contract_details[instrument.id.value] = details
             self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
+
+    async def find_with_contract_id(self, contract_id: int) -> Instrument:
+        instrument_id = self.contract_id_to_instrument_id.get(contract_id)
+        if not instrument_id:
+            await self.load_async(IBContract(conId=contract_id))
+            instrument_id = self.contract_id_to_instrument_id.get(contract_id)
+        instrument = self.find(instrument_id)
+        return instrument
