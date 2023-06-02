@@ -251,7 +251,11 @@ def write_tables(
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         path = f"{catalog.path}/data/{class_to_filename(cls)}.parquet"
-        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        if kwargs.get("merge_existing_data") is False:
+            merged = df
+        else:
+            merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        kwargs.pop("merge_existing_data", None)
 
         write_parquet(
             fs=catalog.fs,
