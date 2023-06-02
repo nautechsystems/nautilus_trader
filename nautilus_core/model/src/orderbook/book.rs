@@ -48,7 +48,7 @@ pub enum InvalidBookOperation {
 
 #[derive(Error, Debug)]
 pub enum BookIntegrityError {
-    #[error("Invalid book operation: order ID not found {0}")]
+    #[error("Invalid book operation: order ID {0} not found")]
     OrderNotFound(u64),
     #[error("Integrity error: invalid `NoOrderSide` in book")]
     NoOrderSide,
@@ -448,9 +448,9 @@ mod tests {
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
 
-    fn create_stub_book() -> OrderBook {
+    fn create_stub_book(book_type: BookType) -> OrderBook {
         let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
-        OrderBook::new(instrument_id, BookType::L2_MBP)
+        OrderBook::new(instrument_id, book_type)
     }
 
     #[test]
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_orderbook_reset() {
-        let mut book = create_stub_book();
+        let mut book = create_stub_book(BookType::L2_MBP);
         book.sequence = 10;
         book.ts_last = 100;
         book.count = 3;
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_best_bid_and_ask_when_nothing_in_book() {
-        let book = create_stub_book();
+        let book = create_stub_book(BookType::L2_MBP);
 
         assert_eq!(book.best_bid_price(), None);
         assert_eq!(book.best_ask_price(), None);
@@ -493,8 +493,7 @@ mod tests {
 
     #[test]
     fn test_bid_side_with_one_order() {
-        let mut book = create_stub_book();
-
+        let mut book = create_stub_book(BookType::L3_MBO);
         let order1 = BookOrder::new(
             OrderSide::Buy,
             Price::from("1.000"),
@@ -510,8 +509,7 @@ mod tests {
 
     #[test]
     fn test_ask_side_with_one_order() {
-        let mut book = create_stub_book();
-
+        let mut book = create_stub_book(BookType::L3_MBO);
         let order = BookOrder::new(
             OrderSide::Sell,
             Price::from("2.000"),
@@ -526,14 +524,13 @@ mod tests {
     }
     #[test]
     fn test_spread_with_no_bids_or_asks() {
-        let book = create_stub_book();
+        let book = create_stub_book(BookType::L3_MBO);
         assert_eq!(book.spread(), None);
     }
 
     #[test]
     fn test_spread_with_bids_and_asks() {
-        let mut book = create_stub_book();
-
+        let mut book = create_stub_book(BookType::L2_MBP);
         let bid1 = BookOrder::new(
             OrderSide::Buy,
             Price::from("1.000"),
@@ -554,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_midpoint_with_no_bids_or_asks() {
-        let book = create_stub_book();
+        let book = create_stub_book(BookType::L2_MBP);
         assert_eq!(book.midpoint(), None);
     }
 
@@ -582,9 +579,9 @@ mod tests {
     }
 
     #[test]
-    fn test_update_quote_tick_bid() {
+    fn test_update_quote_tick_l1() {
         let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
-        let mut order_book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 3),
@@ -595,38 +592,19 @@ mod tests {
             0,
         );
 
-        order_book.update_quote_tick(&tick);
-
-        // Check if the top bid order in order_book is the same as the one created from tick
-        let top_bid_order = order_book.bids.top().unwrap().orders.first().unwrap();
-        let expected_bid_order = BookOrder::from_quote_tick(&tick, OrderSide::Buy);
-        assert_eq!(*top_bid_order, expected_bid_order);
-    }
-
-    #[test]
-    fn test_update_quote_tick_ask() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
-        let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
-        let tick = QuoteTick::new(
-            instrument_id,
-            Price::new(5000.0, 3),
-            Price::new(5100.0, 3),
-            Quantity::new(100.0, 8),
-            Quantity::new(99.0, 8),
-            0,
-            0,
-        );
-
         book.update_quote_tick(&tick);
 
-        // Check if the top ask order in order_book is the same as the one created from tick
+        // Check if the top bid order in order_book is the same as the one created from tick
+        let top_bid_order = book.bids.top().unwrap().orders.first().unwrap();
         let top_ask_order = book.asks.top().unwrap().orders.first().unwrap();
+        let expected_bid_order = BookOrder::from_quote_tick(&tick, OrderSide::Buy);
         let expected_ask_order = BookOrder::from_quote_tick(&tick, OrderSide::Sell);
+        assert_eq!(*top_bid_order, expected_bid_order);
         assert_eq!(*top_ask_order, expected_ask_order);
     }
 
     #[test]
-    fn test_update_trade_tick() {
+    fn test_update_trade_tick_l1() {
         let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
 
@@ -652,8 +630,7 @@ mod tests {
 
     #[test]
     fn test_pprint() {
-        let mut book = create_stub_book();
-
+        let mut book = create_stub_book(BookType::L3_MBO);
         let order1 = BookOrder::new(
             OrderSide::Buy,
             Price::from("1.000"),
