@@ -489,6 +489,13 @@ class _TestPersistenceCatalog:
         instruments = self.catalog.instruments(as_nautilus=True)
         assert len(instruments) == 2
 
+    def test_writing_instruments_overwrite(self):
+        instruments = self.catalog.instruments(as_nautilus=True)
+        write_objects(catalog=self.catalog, chunk=[instruments[0]], merge_existing_data=False)
+        write_objects(catalog=self.catalog, chunk=[instruments[1]], merge_existing_data=False)
+        instruments = self.catalog.instruments(as_nautilus=True)
+        assert len(instruments) == 1
+
     def test_data_catalog_instruments_filtered_df(self):
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
