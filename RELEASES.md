@@ -6,7 +6,10 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-- Added core HTTP client based on `hyper`
+- Added Interactive Brokers adapter v2, many thanks @rsmb7z
+- Added core `HttpClient` based on `hyper`, thanks @twitu
+- Added core `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
+- Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
 - Integrated core `OrderBook` into platform
 - Changed `BinanceHttpClient` to use new core HTTP client
 

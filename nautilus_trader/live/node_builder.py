@@ -29,6 +29,7 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 
 
 class TradingNodeBuilder:
@@ -43,6 +44,8 @@ class TradingNodeBuilder:
         The data engine for the trading node.
     exec_engine : LiveExecutionEngine
         The execution engine for the trading node.
+    portfolio : Portfolio
+        The portfolio for the trading node.
     msgbus : MessageBus
         The message bus for the trading node.
     cache : Cache
@@ -60,6 +63,7 @@ class TradingNodeBuilder:
         loop: asyncio.AbstractEventLoop,
         data_engine: LiveDataEngine,
         exec_engine: LiveExecutionEngine,
+        portfolio: Portfolio,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -75,6 +79,7 @@ class TradingNodeBuilder:
         self._loop = loop
         self._data_engine = data_engine
         self._exec_engine = exec_engine
+        self._portfolio = portfolio
 
         self._data_factories: dict[str, type[LiveDataClientFactory]] = {}
         self._exec_factories: dict[str, type[LiveExecClientFactory]] = {}
@@ -188,6 +193,10 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
                 self._data_engine.register_venue_routing(client, venue)
 
+            # Temporary handling for setting specific 'venue' for portfolio
+            if name == "InteractiveBrokers":
+                self._portfolio.set_specific_venue(Venue("InteractiveBrokers"))
+
     def build_exec_clients(
         self,
         config: dict[str, LiveExecClientConfig],
@@ -238,3 +247,7 @@ class TradingNodeBuilder:
                 if not isinstance(venue, Venue):
                     venue = Venue(venue)
                 self._exec_engine.register_venue_routing(client, venue)
+
+            # Temporary handling for setting specific 'venue' for portfolio
+            if name == "InteractiveBrokers":
+                self._portfolio.set_specific_venue(Venue("InteractiveBrokers"))

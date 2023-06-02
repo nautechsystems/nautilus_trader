@@ -40,13 +40,14 @@ cdef class Portfolio(PortfolioFacade):
     cdef Cache _cache
     cdef AccountsManager _accounts
 
-    cdef Venue venue
+    cdef Venue _venue
     cdef dict _unrealized_pnls
     cdef dict _net_positions
     cdef set _pending_calcs
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)

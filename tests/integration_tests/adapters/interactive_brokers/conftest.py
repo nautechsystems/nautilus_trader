@@ -61,7 +61,7 @@ def gateway_config():
 def data_client_config():
     return InteractiveBrokersDataClientConfig(
         ibg_host="127.0.0.1",
-        ibg_port="0",
+        ibg_port=0,
         ibg_client_id=1,
     )
 
@@ -70,16 +70,16 @@ def data_client_config():
 def exec_client_config():
     return InteractiveBrokersExecClientConfig(
         ibg_host="127.0.0.1",
-        ibg_port="0",
+        ibg_port=0,
         ibg_client_id=1,
         account_id="DU123456",
     )
 
 
 @pytest.fixture()
-def client(data_client_config, venue, event_loop, msgbus, cache, clock, logger):
+def client(data_client_config, loop, msgbus, cache, clock, logger):
     client = InteractiveBrokersClient(
-        loop=event_loop,
+        loop=loop,
         msgbus=msgbus,
         cache=cache,
         clock=clock,

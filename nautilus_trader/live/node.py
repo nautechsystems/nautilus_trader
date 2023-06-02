@@ -68,6 +68,7 @@ class TradingNode:
             loop=loop,
             data_engine=self.kernel.data_engine,
             exec_engine=self.kernel.exec_engine,
+            portfolio=self.kernel.portfolio,
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             clock=self.kernel.clock,
