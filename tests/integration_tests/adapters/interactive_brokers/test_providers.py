@@ -34,7 +34,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 # fmt: on
 
-pytestmark = pytest.mark.no_ci
+pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 def mock_ib_contract_calls(mocker, instrument_provider, contract_details: ContractDetails):

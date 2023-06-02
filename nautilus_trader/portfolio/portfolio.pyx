@@ -62,7 +62,6 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 
 
 cdef tuple _UPDATE_ORDER_EVENTS = (
@@ -91,6 +90,7 @@ cdef class Portfolio(PortfolioFacade):
         The clock for the portfolio.
     logger : Logger
         The logger for the portfolio.
+
     """
 
     def __init__(
@@ -110,11 +110,7 @@ cdef class Portfolio(PortfolioFacade):
             log=self._log,
         )
 
-        if type(clock).__name__ == 'LiveClock':
-            self.venue = IB_VENUE
-        else:
-            self.venue = None
-
+        self._venue = None  # Venue for specific portfolio behaviour (Interactive Brokers)
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, float] = {}
         self._pending_calcs: set[InstrumentId] = set()
@@ -153,6 +149,20 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_specific_venue(self, Venue venue):
+        """
+        Set a specific venue for the portfolio.
+
+        Parameters
+        ----------
+        venue : Venue
+            The specific venue to set.
+
+        """
+        Condition.not_none(venue, "venue")
+
+        self._venue = venue
+
     cpdef void initialize_orders(self):
         """
         Initialize the portfolios orders.
@@ -182,7 +192,7 @@ cdef class Portfolio(PortfolioFacade):
                 initialized = False
                 break
 
-            account = self._cache.account_for_venue(self.venue or instrument.id.venue)
+            account = self._cache.account_for_venue(self._venue or instrument.id.venue)
             if account is None:
                 self._log.error(
                     f"Cannot update initial (order) margin: "
@@ -250,7 +260,7 @@ cdef class Portfolio(PortfolioFacade):
 
             self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
-            account = self._cache.account_for_venue(self.venue or instrument_id.venue)
+            account = self._cache.account_for_venue(self._venue or instrument_id.venue)
             if account is None:
                 self._log.error(
                     f"Cannot update maintenance (position) margin: "
@@ -315,7 +325,7 @@ cdef class Portfolio(PortfolioFacade):
         if tick.instrument_id not in self._pending_calcs:
             return
 
-        cdef Account account = self._cache.account_for_venue(self.venue or tick.instrument_id.venue)
+        cdef Account account = self._cache.account_for_venue(self._venue or tick.instrument_id.venue)
         if account is None:
             self._log.error(
                 f"Cannot update tick: "
@@ -323,7 +333,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No account registered
 
-        cdef Instrument instrument = self._cache.instrument(self.venue or tick.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(self._venue or tick.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot update tick: "
@@ -832,7 +842,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef Account account = self._cache.account_for_venue(self.venue or instrument_id.venue)
+        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
         if account is None:
             self._log.error(
                 f"Cannot calculate net exposure: "
@@ -1008,7 +1018,7 @@ cdef class Portfolio(PortfolioFacade):
             self._log.info(f"{instrument_id} net_position={net_position}")
 
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
-        cdef Account account = self._cache.account_for_venue(self.venue or instrument_id.venue)
+        cdef Account account = self._cache.account_for_venue(self._venue or instrument_id.venue)
         if account is None:
             self._log.error(
                 f"Cannot calculate unrealized PnL: "
@@ -1097,7 +1107,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
         if account.base_currency is not None:
             return self._cache.get_xrate(
-                venue=self.venue or instrument.id.venue,
+                venue=self._venue or instrument.id.venue,
                 from_currency=instrument.get_settlement_currency(),
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
