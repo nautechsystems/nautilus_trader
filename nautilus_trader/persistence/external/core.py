@@ -253,9 +253,6 @@ def write_tables(
         path = f"{catalog.path}/data/{class_to_filename(cls)}.parquet"
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
 
-        if not kwargs.get("basename_template") and cls in Instrument.__subclasses__():
-            kwargs["basename_template"] = "{i}.parquet"
-
         write_parquet(
             fs=catalog.fs,
             path=path,
@@ -263,6 +260,11 @@ def write_tables(
             partition_cols=partition_cols,
             schema=schema,
             **kwargs,
+            **(
+                {"basename_template": "{i}.parquet"}
+                if not kwargs.get("basename_template") and cls in Instrument.__subclasses__()
+                else {}
+            ),
         )
         rows_written += len(df)
 
