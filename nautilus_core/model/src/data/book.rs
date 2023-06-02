@@ -184,7 +184,10 @@ impl Display for OrderBookDelta {
 mod tests {
     use std::str::FromStr;
 
+    use rstest::rstest;
+
     use super::*;
+    use crate::{enums::AggressorSide, identifiers::trade_id::TradeId};
 
     #[test]
     fn test_book_order_new() {
@@ -216,6 +219,34 @@ mod tests {
     }
 
     #[test]
+    fn test_book_order_exposure() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let exposure = order.exposure();
+
+        assert_eq!(exposure, price.as_f64() * size.as_f64());
+    }
+
+    #[test]
+    fn test_book_order_signed_size() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let order_id = 123456;
+
+        let order_buy = BookOrder::new(OrderSide::Buy, price.clone(), size.clone(), order_id);
+        let signed_size_buy = order_buy.signed_size();
+        assert_eq!(signed_size_buy, size.as_f64());
+
+        let order_sell = BookOrder::new(OrderSide::Sell, price.clone(), size.clone(), order_id);
+        let signed_size_sell = order_sell.signed_size();
+        assert_eq!(signed_size_sell, -(size.as_f64()));
+    }
+
+    #[test]
     fn test_book_order_display() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -229,44 +260,45 @@ mod tests {
         assert_eq!(display, expected);
     }
 
-    #[test]
-    fn book_order_from_quote_tick_buy() {
+    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
+    fn book_order_from_quote_tick(side: OrderSide) {
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(50.0, 2),
-            Price::new(51.0, 2),
-            Quantity::new(100.0, 2),
-            Quantity::new(99.0, 2),
+            Price::new(5000.0, 2),
+            Price::new(5001.0, 2),
+            Quantity::new(100.0, 3),
+            Quantity::new(99.0, 3),
             0,
             0,
         );
 
-        let book_order = BookOrder::from_quote_tick(&tick, OrderSide::Buy);
+        let book_order = BookOrder::from_quote_tick(&tick, side.clone());
 
-        assert_eq!(book_order.side, OrderSide::Buy);
-        assert_eq!(book_order.price, tick.bid);
-        assert_eq!(book_order.size, tick.bid_size);
-        assert_eq!(book_order.order_id, tick.bid.raw as u64);
-    }
-
-    #[test]
-    fn book_order_from_quote_tick_sell() {
-        let tick = QuoteTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(50.0, 2),
-            Price::new(51.0, 2),
-            Quantity::new(100.0, 2),
-            Quantity::new(99.0, 2),
-            0,
-            0,
+        assert_eq!(book_order.side, side);
+        assert_eq!(
+            book_order.price,
+            match side {
+                OrderSide::Buy => tick.bid,
+                OrderSide::Sell => tick.ask,
+                _ => panic!("Invalid test"),
+            }
         );
-
-        let book_order = BookOrder::from_quote_tick(&tick, OrderSide::Sell);
-
-        assert_eq!(book_order.side, OrderSide::Sell);
-        assert_eq!(book_order.price, tick.ask);
-        assert_eq!(book_order.size, tick.ask_size);
-        assert_eq!(book_order.order_id, tick.ask.raw as u64);
+        assert_eq!(
+            book_order.size,
+            match side {
+                OrderSide::Buy => tick.bid_size,
+                OrderSide::Sell => tick.ask_size,
+                _ => panic!("Invalid test"),
+            }
+        );
+        assert_eq!(
+            book_order.order_id,
+            match side {
+                OrderSide::Buy => tick.bid.raw as u64,
+                OrderSide::Sell => tick.ask.raw as u64,
+                _ => panic!("Invalid test"),
+            }
+        );
     }
 
     #[test]
@@ -334,5 +366,25 @@ mod tests {
             format!("{}", delta),
             "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
         );
+    }
+
+    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
+    fn book_order_from_trade_tick(side: OrderSide) {
+        let tick = TradeTick::new(
+            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            Price::new(5000.0, 2),
+            Quantity::new(100.0, 2),
+            AggressorSide::Buyer,
+            TradeId::new("1"),
+            0,
+            0,
+        );
+
+        let book_order = BookOrder::from_trade_tick(&tick, side);
+
+        assert_eq!(book_order.side, side);
+        assert_eq!(book_order.price, tick.price);
+        assert_eq!(book_order.size, tick.size);
+        assert_eq!(book_order.order_id, tick.price.raw as u64);
     }
 }

@@ -149,25 +149,25 @@ pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
 #[no_mangle]
 pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
     book.best_bid_price()
-        .expect("Error: No bids for best bid price")
+        .expect("Error: No bid orders for best bid price")
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
     book.best_ask_price()
-        .expect("Error: No asks for best ask price")
+        .expect("Error: No ask orders for best ask price")
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
     book.best_bid_size()
-        .expect("Error: No bids for best bid size")
+        .expect("Error: No bid orders for best bid size")
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
     book.best_ask_size()
-        .expect("Error: No asks for best ask size")
+        .expect("Error: No ask orders for best ask size")
 }
 
 #[no_mangle]
