@@ -15,8 +15,14 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::c_char;
+use std::hash::{Hash, Hasher};
 
 use nautilus_core::string::str_to_cstr;
+
+use crate::enums::{AggregationSource, BarAggregation, PriceType};
+use crate::identifiers::instrument_id::InstrumentId;
+
+use super::bar::{Bar, BarSpecification, BarType};
 
 /// Returns a [`BarSpecification`] as a C string pointer.
 #[no_mangle]

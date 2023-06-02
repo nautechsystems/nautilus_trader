@@ -14,9 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod bar;
+pub mod bar_api;
 pub mod book;
 pub mod book_api;
 pub mod tick;
+pub mod tick_api;
 
 use nautilus_core::time::UnixNanos;
 
