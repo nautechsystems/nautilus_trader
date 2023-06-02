@@ -231,12 +231,6 @@ typedef struct OrderBook OrderBook;
 
 typedef struct String String;
 
-typedef struct BarSpecification_t {
-    uint64_t step;
-    uint8_t aggregation;
-    enum PriceType price_type;
-} BarSpecification_t;
-
 typedef struct Symbol_t {
     struct Arc_String *value;
 } Symbol_t;
@@ -249,6 +243,12 @@ typedef struct InstrumentId_t {
     struct Symbol_t symbol;
     struct Venue_t venue;
 } InstrumentId_t;
+
+typedef struct BarSpecification_t {
+    uint64_t step;
+    uint8_t aggregation;
+    enum PriceType price_type;
+} BarSpecification_t;
 
 typedef struct BarType_t {
     struct InstrumentId_t instrument_id;
@@ -300,61 +300,6 @@ typedef struct OrderBookDelta_t {
     uint64_t ts_init;
 } OrderBookDelta_t;
 
-/**
- * Represents a single quote tick in a financial market.
- */
-typedef struct QuoteTick_t {
-    struct InstrumentId_t instrument_id;
-    struct Price_t bid;
-    struct Price_t ask;
-    struct Quantity_t bid_size;
-    struct Quantity_t ask_size;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} QuoteTick_t;
-
-typedef struct TradeId_t {
-    struct Arc_String *value;
-} TradeId_t;
-
-/**
- * Represents a single trade tick in a financial market.
- */
-typedef struct TradeTick_t {
-    struct InstrumentId_t instrument_id;
-    struct Price_t price;
-    struct Quantity_t size;
-    enum AggressorSide aggressor_side;
-    struct TradeId_t trade_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} TradeTick_t;
-
-typedef enum Data_t_Tag {
-    DELTA,
-    QUOTE,
-    TRADE,
-    BAR,
-} Data_t_Tag;
-
-typedef struct Data_t {
-    Data_t_Tag tag;
-    union {
-        struct {
-            struct OrderBookDelta_t delta;
-        };
-        struct {
-            struct QuoteTick_t quote;
-        };
-        struct {
-            struct TradeTick_t trade;
-        };
-        struct {
-            struct Bar_t bar;
-        };
-    };
-} Data_t;
-
 typedef struct TraderId_t {
     struct Arc_String *value;
 } TraderId_t;
@@ -402,6 +347,10 @@ typedef struct PositionId_t {
     struct Arc_String *value;
 } PositionId_t;
 
+typedef struct TradeId_t {
+    struct Arc_String *value;
+} TradeId_t;
+
 typedef struct VenueOrderId_t {
     struct Arc_String *value;
 } VenueOrderId_t;
@@ -409,6 +358,32 @@ typedef struct VenueOrderId_t {
 typedef struct OrderBook_API {
     struct OrderBook *_0;
 } OrderBook_API;
+
+/**
+ * Represents a single quote tick in a financial market.
+ */
+typedef struct QuoteTick_t {
+    struct InstrumentId_t instrument_id;
+    struct Price_t bid;
+    struct Price_t ask;
+    struct Quantity_t bid_size;
+    struct Quantity_t ask_size;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} QuoteTick_t;
+
+/**
+ * Represents a single trade tick in a financial market.
+ */
+typedef struct TradeTick_t {
+    struct InstrumentId_t instrument_id;
+    struct Price_t price;
+    struct Quantity_t size;
+    enum AggressorSide aggressor_side;
+    struct TradeId_t trade_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} TradeTick_t;
 
 typedef struct Currency_t {
     struct Arc_String *code;
@@ -422,57 +397,6 @@ typedef struct Money_t {
     int64_t raw;
     struct Currency_t currency;
 } Money_t;
-
-/**
- * Returns a [`BarSpecification`] as a C string pointer.
- */
-const char *bar_specification_to_cstr(const struct BarSpecification_t *bar_spec);
-
-uint64_t bar_specification_hash(const struct BarSpecification_t *bar_spec);
-
-struct BarSpecification_t bar_specification_new(uint64_t step,
-                                                uint8_t aggregation,
-                                                uint8_t price_type);
-
-uint8_t bar_specification_eq(const struct BarSpecification_t *lhs,
-                             const struct BarSpecification_t *rhs);
-
-uint8_t bar_specification_lt(const struct BarSpecification_t *lhs,
-                             const struct BarSpecification_t *rhs);
-
-uint8_t bar_specification_le(const struct BarSpecification_t *lhs,
-                             const struct BarSpecification_t *rhs);
-
-uint8_t bar_specification_gt(const struct BarSpecification_t *lhs,
-                             const struct BarSpecification_t *rhs);
-
-uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
-                             const struct BarSpecification_t *rhs);
-
-struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
-                              struct BarSpecification_t spec,
-                              uint8_t aggregation_source);
-
-struct BarType_t bar_type_clone(const struct BarType_t *bar_type);
-
-uint8_t bar_type_eq(const struct BarType_t *lhs, const struct BarType_t *rhs);
-
-uint8_t bar_type_lt(const struct BarType_t *lhs, const struct BarType_t *rhs);
-
-uint8_t bar_type_le(const struct BarType_t *lhs, const struct BarType_t *rhs);
-
-uint8_t bar_type_gt(const struct BarType_t *lhs, const struct BarType_t *rhs);
-
-uint8_t bar_type_ge(const struct BarType_t *lhs, const struct BarType_t *rhs);
-
-uint64_t bar_type_hash(const struct BarType_t *bar_type);
-
-/**
- * Returns a [`BarType`] as a C string pointer.
- */
-const char *bar_type_to_cstr(const struct BarType_t *bar_type);
-
-void bar_type_drop(struct BarType_t bar_type);
 
 struct Bar_t bar_new(struct BarType_t bar_type,
                      struct Price_t open,
@@ -493,19 +417,6 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
                               uint8_t size_prec,
                               uint64_t ts_event,
                               uint64_t ts_init);
-
-/**
- * Returns a [`Bar`] as a C string.
- */
-const char *bar_to_cstr(const struct Bar_t *bar);
-
-struct Bar_t bar_clone(const struct Bar_t *bar);
-
-void bar_drop(struct Bar_t bar);
-
-uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
-
-uint64_t bar_hash(const struct Bar_t *bar);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
@@ -547,58 +458,6 @@ struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
 uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
 
 uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
-
-void quote_tick_drop(struct QuoteTick_t tick);
-
-struct QuoteTick_t quote_tick_clone(const struct QuoteTick_t *tick);
-
-struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
-                                  struct Price_t bid,
-                                  struct Price_t ask,
-                                  struct Quantity_t bid_size,
-                                  struct Quantity_t ask_size,
-                                  uint64_t ts_event,
-                                  uint64_t ts_init);
-
-struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
-                                       int64_t bid_price_raw,
-                                       int64_t ask_price_raw,
-                                       uint8_t bid_price_prec,
-                                       uint8_t ask_price_prec,
-                                       uint64_t bid_size_raw,
-                                       uint64_t ask_size_raw,
-                                       uint8_t bid_size_prec,
-                                       uint8_t ask_size_prec,
-                                       uint64_t ts_event,
-                                       uint64_t ts_init);
-
-/**
- * Returns a [`QuoteTick`] as a C string pointer.
- */
-const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
-
-void trade_tick_drop(struct TradeTick_t tick);
-
-struct TradeTick_t trade_tick_clone(const struct TradeTick_t *tick);
-
-struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
-                                       int64_t price_raw,
-                                       uint8_t price_prec,
-                                       uint64_t size_raw,
-                                       uint8_t size_prec,
-                                       enum AggressorSide aggressor_side,
-                                       struct TradeId_t trade_id,
-                                       uint64_t ts_event,
-                                       uint64_t ts_init);
-
-/**
- * Returns a [`TradeTick`] as a C string pointer.
- */
-const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
-
-void data_drop(struct Data_t data);
-
-struct Data_t data_clone(const struct Data_t *data);
 
 const char *account_type_to_cstr(enum AccountType value);
 

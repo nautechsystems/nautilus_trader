@@ -14,13 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
-use nautilus_core::string::str_to_cstr;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use thiserror::Error;
@@ -64,60 +61,6 @@ impl PartialOrd for BarSpecification {
     fn ge(&self, other: &Self) -> bool {
         self.to_string().ge(&other.to_string())
     }
-}
-
-/// Returns a [`BarSpecification`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
-    str_to_cstr(&bar_spec.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar_spec.hash(&mut h);
-    h.finish()
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_new(
-    step: u64,
-    aggregation: u8,
-    price_type: u8,
-) -> BarSpecification {
-    let aggregation =
-        BarAggregation::from_repr(aggregation as usize).expect("cannot parse enum value");
-    let price_type = PriceType::from_repr(price_type as usize).expect("cannot parse enum value");
-    BarSpecification {
-        step,
-        aggregation,
-        price_type,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_eq(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_lt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs < rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_le(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs <= rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_gt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs > rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs >= rhs)
 }
 
 #[repr(C)]
@@ -241,69 +184,6 @@ impl Display for BarType {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn bar_type_new(
-    instrument_id: InstrumentId,
-    spec: BarSpecification,
-    aggregation_source: u8,
-) -> BarType {
-    let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
-        .expect("Error converting enum from integer");
-    BarType {
-        instrument_id,
-        spec,
-        aggregation_source,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
-    bar_type.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_lt(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs < rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_le(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs <= rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_gt(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs > rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_ge(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs >= rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar_type.hash(&mut h);
-    h.finish()
-}
-
-/// Returns a [`BarType`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
-    str_to_cstr(&bar_type.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_drop(bar_type: BarType) {
-    drop(bar_type); // Memory freed here
-}
-
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 #[pyclass]
@@ -374,34 +254,6 @@ pub extern "C" fn bar_new_from_raw(
         ts_event,
         ts_init,
     }
-}
-
-/// Returns a [`Bar`] as a C string.
-#[no_mangle]
-pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
-    str_to_cstr(&bar.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
-    bar.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn bar_drop(bar: Bar) {
-    drop(bar); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar.hash(&mut h);
-    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
