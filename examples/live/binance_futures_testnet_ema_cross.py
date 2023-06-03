@@ -70,7 +70,7 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
-    timeout_connection=10.0,
+    timeout_connection=20.0,
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
