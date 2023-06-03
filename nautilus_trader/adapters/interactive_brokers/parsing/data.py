@@ -18,8 +18,8 @@ from decimal import Decimal
 
 # fmt: off
 from nautilus_trader.core.datetime import nanos_to_secs
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar_aggregation import BarAggregation
+from nautilus_trader.model.data import BarAggregation
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType

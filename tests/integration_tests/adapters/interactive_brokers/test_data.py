@@ -20,7 +20,7 @@ import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs

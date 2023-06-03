@@ -27,10 +27,10 @@ from nautilus_trader.adapters.interactive_brokers.historic import parse_historic
 from nautilus_trader.adapters.interactive_brokers.historic import parse_historic_quote_ticks
 from nautilus_trader.adapters.interactive_brokers.historic import parse_historic_trade_ticks
 from nautilus_trader.adapters.interactive_brokers.historic import parse_response_datetime
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs

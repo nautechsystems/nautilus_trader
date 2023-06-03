@@ -15,9 +15,9 @@
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.indicators.base.indicator import Indicator
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 
 

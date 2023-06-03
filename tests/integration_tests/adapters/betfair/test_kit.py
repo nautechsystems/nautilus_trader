@@ -51,8 +51,8 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs

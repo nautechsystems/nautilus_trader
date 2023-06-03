@@ -17,10 +17,10 @@ import json
 
 import msgspec
 
-from nautilus_trader.model.events.order import OrderEvent
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 

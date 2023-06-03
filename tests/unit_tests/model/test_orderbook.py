@@ -17,7 +17,7 @@ import msgspec
 import pandas as pd
 import pytest
 
-from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide

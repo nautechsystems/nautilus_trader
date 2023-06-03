@@ -31,9 +31,9 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId

@@ -37,7 +37,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ven
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_crypto
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_fut
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import venues_opt
-from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
 
 

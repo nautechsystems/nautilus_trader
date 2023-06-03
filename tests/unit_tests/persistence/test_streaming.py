@@ -30,8 +30,8 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.streaming.writer import generate_signal_class

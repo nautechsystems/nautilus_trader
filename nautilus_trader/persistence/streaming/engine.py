@@ -23,8 +23,8 @@ import numpy as np
 
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.persistence.streaming.batching import generate_batches

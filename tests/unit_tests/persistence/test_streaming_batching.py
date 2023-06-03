@@ -17,8 +17,8 @@ import os
 
 import pandas as pd
 
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
