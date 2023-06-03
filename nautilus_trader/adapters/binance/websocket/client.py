@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
@@ -58,13 +58,9 @@ class BinanceWebSocketClient:
 
     @property
     def is_connected(self) -> bool:
-        return self._client is not None
+        return self._client is not None and self._client.is_connected
 
-    async def connect(
-        self,
-        key: Optional[str] = None,
-        **ws_kwargs: dict[str, Any],
-    ) -> None:
+    async def connect(self, key: Optional[str] = None) -> None:
         if not self._streams:
             raise RuntimeError("no subscriptions for connection.")
 
@@ -74,24 +70,27 @@ class BinanceWebSocketClient:
             ws_url += f"&listenKey={key}"
 
         self._log.info(f"Connecting to {ws_url}")
-        self._client = await WebSocketClient.connect_url(ws_url, self._handler)
+        self._client = await WebSocketClient.connect_url(
+            url=ws_url,
+            handler=self._handler,
+            heartbeat=60,
+        )
         self._log.info("Connected.")
 
     async def send(self, data: bytes) -> None:
-        if self._client is None:
+        if self._client is None or not self._client.is_connected:
             self._log.error("Cannot send websocket message, not connected.")
             return
 
         await self._client.send(data)
 
     async def disconnect(self) -> None:
-        if self._client is None:
+        if self._client is None or not self._client.is_connected:
             self._log.error("Cannot disconnect websocket, not connected.")
             return
 
         self._log.info("Closing...")
         await self._client.close()
-        self._client = None
         self._log.info("Closed.")
 
     def _add_stream(self, stream: str) -> None:

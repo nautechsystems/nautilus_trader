@@ -15,13 +15,13 @@
 
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{PyObject, Python};
-use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task;
@@ -30,7 +30,7 @@ use tokio_tungstenite::tungstenite::{Error, Message};
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tracing::{event, Level};
 
-/// WebSocketClient connects to a websocket server to read and send messages
+/// WebSocketClient connects to a websocket server to read and send messages.
 ///
 /// The client is opinionated about how messages are read and written. It
 /// assumes that data can only have one reader but multiple writers.
@@ -217,7 +217,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Check if the client is still connected
+    /// Check if the client is still connected.
     ///
     /// The client is connected if the read task has not finished. It is expected
     /// that in case of any failure client or server side. The read task will be

@@ -90,7 +90,6 @@ cdef class Portfolio(PortfolioFacade):
         The clock for the portfolio.
     logger : Logger
         The logger for the portfolio.
-
     """
 
     def __init__(
