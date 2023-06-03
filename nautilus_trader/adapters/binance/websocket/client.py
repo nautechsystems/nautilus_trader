@@ -56,10 +56,13 @@ class BinanceWebSocketClient:
     def has_subscriptions(self) -> bool:
         return bool(self._streams)
 
-    def connect(
+    @property
+    def is_connected(self) -> bool:
+        return self._client is not None
+
+    async def connect(
         self,
         key: Optional[str] = None,
-        start: bool = True,
         **ws_kwargs: dict[str, Any],
     ) -> None:
         if not self._streams:
@@ -70,8 +73,26 @@ class BinanceWebSocketClient:
         if key is not None:
             ws_url += f"&listenKey={key}"
 
-        self._client = WebSocketClient.connect_url(ws_url, self._handler)
         self._log.info(f"Connecting to {ws_url}")
+        self._client = await WebSocketClient.connect_url(ws_url, self._handler)
+        self._log.info("Connected.")
+
+    async def send(self, data: bytes) -> None:
+        if self._client is None:
+            self._log.error("Cannot send websocket message, not connected.")
+            return
+
+        await self._client.send(data)
+
+    async def disconnect(self) -> None:
+        if self._client is None:
+            self._log.error("Cannot disconnect websocket, not connected.")
+            return
+
+        self._log.info("Closing...")
+        await self._client.close()
+        self._client = None
+        self._log.info("Closed.")
 
     def _add_stream(self, stream: str) -> None:
         if stream not in self._streams:

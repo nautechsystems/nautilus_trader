@@ -196,8 +196,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 f"{self._connect_websockets_interval}s.",
             )
             await asyncio.sleep(self._connect_websockets_interval)
+
             if self._ws_client.has_subscriptions:
-                self._ws_client.connect()
+                await self._ws_client.connect()
             else:
                 self._log.info("Awaiting subscriptions...")
         except asyncio.CancelledError:
@@ -221,13 +222,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
-            self._update_instruments_task.done()
+            self._update_instruments_task = None
 
         # Cancel WebSocket connect task
         if self._connect_websockets_task:
             self._log.debug("Canceling `connect_websockets` task...")
             self._connect_websockets_task.cancel()
-            self._connect_websockets_task.done()
+            self._connect_websockets_task = None
+
+        if self._ws_client.is_connected:
+            await self._ws_client.disconnect()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 

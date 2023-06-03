@@ -219,7 +219,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
-        self._ws_client.connect()
+        await self._ws_client.connect()
 
     async def _update_account_state(self) -> None:
         # Replace method in child class
@@ -244,7 +244,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
-            self._ping_listen_keys_task.done()
+            self._ping_listen_keys_task = None
+
+        if self._ws_client.is_connected:
+            await self._ws_client.disconnect()
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
