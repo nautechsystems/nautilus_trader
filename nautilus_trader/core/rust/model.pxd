@@ -83,10 +83,6 @@ cdef extern from "../includes/model.h":
         CRYPTO # = 1,
         FIAT # = 2,
 
-    cpdef enum DepthType:
-        VOLUME # = 1,
-        EXPOSURE # = 2,
-
     cpdef enum InstrumentCloseType:
         END_OF_SESSION # = 1,
         CONTRACT_EXPIRED # = 2,
@@ -579,8 +575,6 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     CurrencyType currency_type_from_cstr(const char *ptr);
 
-    const char *depth_type_to_cstr(DepthType value);
-
     # Returns an enum from a Python string.
     #
     # # Safety
@@ -588,12 +582,6 @@ cdef extern from "../includes/model.h":
     InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
     const char *instrument_close_type_to_cstr(InstrumentCloseType value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    DepthType depth_type_from_cstr(const char *ptr);
 
     const char *liquidity_side_to_cstr(LiquiditySide value);
 

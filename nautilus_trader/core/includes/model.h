@@ -106,11 +106,6 @@ typedef enum CurrencyType {
     FIAT = 2,
 } CurrencyType;
 
-typedef enum DepthType {
-    VOLUME = 1,
-    EXPOSURE = 2,
-} DepthType;
-
 typedef enum InstrumentCloseType {
     END_OF_SESSION = 1,
     CONTRACT_EXPIRED = 2,
@@ -700,8 +695,6 @@ const char *currency_type_to_cstr(enum CurrencyType value);
  */
 enum CurrencyType currency_type_from_cstr(const char *ptr);
 
-const char *depth_type_to_cstr(enum DepthType value);
-
 /**
  * Returns an enum from a Python string.
  *
@@ -711,14 +704,6 @@ const char *depth_type_to_cstr(enum DepthType value);
 enum InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
 const char *instrument_close_type_to_cstr(enum InstrumentCloseType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum DepthType depth_type_from_cstr(const char *ptr);
 
 const char *liquidity_side_to_cstr(enum LiquiditySide value);
 

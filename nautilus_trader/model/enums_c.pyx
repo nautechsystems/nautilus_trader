@@ -24,7 +24,6 @@ from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport CurrencyType
-from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
@@ -172,14 +171,6 @@ cpdef CurrencyType currency_type_from_str(str value):
 
 cpdef str currency_type_to_str(CurrencyType value):
     return cstr_to_pystr(currency_type_to_cstr(value))
-
-
-cpdef DepthType depth_type_from_str(str value):
-    return depth_type_from_cstr(pystr_to_cstr(value))
-
-
-cpdef str depth_type_to_str(DepthType value):
-    return cstr_to_pystr(depth_type_to_cstr(value))
 
 
 cpdef InstrumentCloseType instrument_close_type_from_str(str value):

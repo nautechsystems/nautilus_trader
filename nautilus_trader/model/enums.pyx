@@ -24,7 +24,6 @@ from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
-from nautilus_trader.core.rust.model import DepthType
 from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.core.rust.model import MarketStatus
@@ -103,7 +102,6 @@ __all__ = [
     "BookType",
     "ContingencyType",
     "CurrencyType",
-    "DepthType",
     "InstrumentCloseType",
     "LiquiditySide",
     "MarketStatus",

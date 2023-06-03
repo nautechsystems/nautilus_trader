@@ -220,18 +220,6 @@ pub enum CurrencyType {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[pyclass]
-pub enum DepthType {
-    Volume = 1,
-    Exposure = 2,
-}
-
-#[repr(C)]
-#[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
 pub enum InstrumentCloseType {
     EndOfSession = 1,
     ContractExpired = 2,
@@ -611,11 +599,6 @@ pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> Currency
         .unwrap_or_else(|_| panic!("invalid `CurrencyType` enum string value, was '{value}'"))
 }
 
-#[no_mangle]
-pub extern "C" fn depth_type_to_cstr(value: DepthType) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
 /// Returns an enum from a Python string.
 ///
 /// # Safety
@@ -633,17 +616,6 @@ pub unsafe extern "C" fn instrument_close_type_from_cstr(
 #[no_mangle]
 pub extern "C" fn instrument_close_type_to_cstr(value: InstrumentCloseType) -> *const c_char {
     str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn depth_type_from_cstr(ptr: *const c_char) -> DepthType {
-    let value = cstr_to_string(ptr);
-    DepthType::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `DepthType` enum string value, was '{value}'"))
 }
 
 #[no_mangle]
