@@ -13,23 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
-use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
 
 use crate::enums::BookAction;
 use crate::enums::OrderSide;
 use crate::identifiers::instrument_id::InstrumentId;
+use crate::orderbook::book::BookIntegrityError;
 use crate::orderbook::ladder::BookPrice;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 
+use super::tick::{QuoteTick, TradeTick};
+
 /// Represents an order in a book.
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Eq, Debug)]
 pub struct BookOrder {
     pub side: OrderSide,
     pub price: Price,
@@ -50,7 +51,7 @@ impl BookOrder {
 
     #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
-        BookPrice::new(self.price.clone(), self.side)
+        BookPrice::new(self.price, self.side)
     }
 
     #[must_use]
@@ -63,8 +64,52 @@ impl BookOrder {
         match self.side {
             OrderSide::Buy => self.size.as_f64(),
             OrderSide::Sell => -(self.size.as_f64()),
-            _ => panic!("Invalid `OrderSize` for signed size, was {}", self.side),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
+    }
+
+    #[must_use]
+    pub fn from_quote_tick(tick: &QuoteTick, side: OrderSide) -> Self {
+        match side {
+            OrderSide::Buy => {
+                Self::new(OrderSide::Buy, tick.bid, tick.bid_size, tick.bid.raw as u64)
+            }
+            OrderSide::Sell => Self::new(
+                OrderSide::Sell,
+                tick.ask,
+                tick.ask_size,
+                tick.ask.raw as u64,
+            ),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        }
+    }
+
+    #[must_use]
+    pub fn from_trade_tick(tick: &TradeTick, side: OrderSide) -> Self {
+        match side {
+            OrderSide::Buy => {
+                Self::new(OrderSide::Buy, tick.price, tick.size, tick.price.raw as u64)
+            }
+            OrderSide::Sell => Self::new(
+                OrderSide::Sell,
+                tick.price,
+                tick.size,
+                tick.price.raw as u64,
+            ),
+            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        }
+    }
+}
+
+impl PartialEq for BookOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.order_id == other.order_id
+    }
+}
+
+impl Hash for BookOrder {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.order_id.hash(state);
     }
 }
 
@@ -131,146 +176,6 @@ impl Display for OrderBookDelta {
     }
 }
 
-// Represents a snapshot of an order book.
-#[repr(C)]
-#[derive(Clone, Debug)]
-pub struct OrderBookSnapshot {
-    pub instrument_id: InstrumentId,
-    pub bids: CVec,
-    pub asks: CVec,
-    pub sequence: u64,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
-}
-
-impl OrderBookSnapshot {
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        bids: CVec,
-        asks: CVec,
-        sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            bids,
-            asks,
-            sequence,
-            ts_event,
-            ts_init,
-        }
-    }
-}
-
-impl Display for OrderBookSnapshot {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // TODO: Add display for bids and asks
-        write!(
-            f,
-            "{},{},{},{}",
-            self.instrument_id, self.sequence, self.ts_event, self.ts_init
-        )
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-#[allow(clippy::drop_non_drop)]
-#[no_mangle]
-pub extern "C" fn book_order_drop(order: BookOrder) {
-    drop(order); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn book_order_clone(order: &BookOrder) -> BookOrder {
-    order.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    order.hash(&mut hasher);
-    hasher.finish()
-}
-
-#[no_mangle]
-pub extern "C" fn book_order_new(
-    order_side: OrderSide,
-    price: Price,
-    quantity: Quantity,
-    order_id: u64,
-) -> BookOrder {
-    BookOrder::new(order_side, price, quantity, order_id)
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_delta_drop(delta: OrderBookDelta) {
-    drop(delta); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_delta_clone(delta: &OrderBookDelta) -> OrderBookDelta {
-    delta.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_delta_new(
-    instrument_id: InstrumentId,
-    action: BookAction,
-    order: BookOrder,
-    flags: u8,
-    sequence: u64,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> OrderBookDelta {
-    OrderBookDelta::new(
-        instrument_id,
-        action,
-        order,
-        flags,
-        sequence,
-        ts_event,
-        ts_init,
-    )
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_snapshot_drop(snapshot: OrderBookSnapshot) {
-    drop(snapshot); // Memory freed here
-}
-
-#[no_mangle]
-/// Creates a new `OrderBookSnapshot` from the provided data.
-///
-/// # Safety
-///
-/// This function is marked as `unsafe` because it relies on the assumption that the `CVec`
-/// objects were correctly initialized and point to valid memory regions with a valid layout.
-/// Improper use of this function with incorrect or uninitialized `CVec` objects can lead
-/// to undefined behavior, including memory unsafety and crashes.
-///
-/// It is the responsibility of the caller to ensure that the `CVec` objects are valid and
-/// have the correct layout matching the expected `Vec` types (`BookOrder` in this case).
-/// Failure to do so can result in memory corruption or access violations.
-///
-/// Additionally, the ownership of the provided memory is transferred to the returned
-/// `OrderBookSnapshot` object. It is crucial to ensure proper memory management and
-/// deallocation of the `OrderBookSnapshot` object to prevent memory leaks by calling
-/// `orderbook_snapshot_drop(...).
-pub unsafe extern "C" fn orderbook_snapshot_new(
-    instrument_id: InstrumentId,
-    bids: CVec,
-    asks: CVec,
-    sequence: u64,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> OrderBookSnapshot {
-    OrderBookSnapshot::new(instrument_id, bids, asks, sequence, ts_event, ts_init)
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -279,7 +184,10 @@ pub unsafe extern "C" fn orderbook_snapshot_new(
 mod tests {
     use std::str::FromStr;
 
+    use rstest::rstest;
+
     use super::*;
+    use crate::{enums::AggressorSide, identifiers::trade_id::TradeId};
 
     #[test]
     fn test_book_order_new() {
@@ -311,6 +219,34 @@ mod tests {
     }
 
     #[test]
+    fn test_book_order_exposure() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
+
+        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let exposure = order.exposure();
+
+        assert_eq!(exposure, price.as_f64() * size.as_f64());
+    }
+
+    #[test]
+    fn test_book_order_signed_size() {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let order_id = 123456;
+
+        let order_buy = BookOrder::new(OrderSide::Buy, price.clone(), size.clone(), order_id);
+        let signed_size_buy = order_buy.signed_size();
+        assert_eq!(signed_size_buy, size.as_f64());
+
+        let order_sell = BookOrder::new(OrderSide::Sell, price.clone(), size.clone(), order_id);
+        let signed_size_sell = order_sell.signed_size();
+        assert_eq!(signed_size_sell, -(size.as_f64()));
+    }
+
+    #[test]
     fn test_book_order_display() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -324,8 +260,49 @@ mod tests {
         assert_eq!(display, expected);
     }
 
+    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
+    fn book_order_from_quote_tick(side: OrderSide) {
+        let tick = QuoteTick::new(
+            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            Price::new(5000.0, 2),
+            Price::new(5001.0, 2),
+            Quantity::new(100.0, 3),
+            Quantity::new(99.0, 3),
+            0,
+            0,
+        );
+
+        let book_order = BookOrder::from_quote_tick(&tick, side.clone());
+
+        assert_eq!(book_order.side, side);
+        assert_eq!(
+            book_order.price,
+            match side {
+                OrderSide::Buy => tick.bid,
+                OrderSide::Sell => tick.ask,
+                _ => panic!("Invalid test"),
+            }
+        );
+        assert_eq!(
+            book_order.size,
+            match side {
+                OrderSide::Buy => tick.bid_size,
+                OrderSide::Sell => tick.ask_size,
+                _ => panic!("Invalid test"),
+            }
+        );
+        assert_eq!(
+            book_order.order_id,
+            match side {
+                OrderSide::Buy => tick.bid.raw as u64,
+                OrderSide::Sell => tick.ask.raw as u64,
+                _ => panic!("Invalid test"),
+            }
+        );
+    }
+
     #[test]
-    fn test_order_book_delta_new() {
+    fn test_orderbook_delta_new() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let action = BookAction::Add;
         let price = Price::from("100.00");
@@ -391,54 +368,23 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_order_book_snapshot_display() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let bids = vec![
-            BookOrder::new(
-                OrderSide::Buy,
-                Price::from("100.00"),
-                Quantity::from("10"),
-                123,
-            ),
-            BookOrder::new(
-                OrderSide::Buy,
-                Price::from("99.00"),
-                Quantity::from("5"),
-                124,
-            ),
-        ];
-        let asks = vec![
-            BookOrder::new(
-                OrderSide::Sell,
-                Price::from("101.00"),
-                Quantity::from("15"),
-                234,
-            ),
-            BookOrder::new(
-                OrderSide::Sell,
-                Price::from("102.00"),
-                Quantity::from("20"),
-                235,
-            ),
-        ];
-        let sequence = 123456;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let snapshot = OrderBookSnapshot::new(
-            instrument_id.clone(),
-            bids.clone().into(),
-            asks.clone().into(),
-            sequence,
-            ts_event,
-            ts_init,
+    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
+    fn book_order_from_trade_tick(side: OrderSide) {
+        let tick = TradeTick::new(
+            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            Price::new(5000.0, 2),
+            Quantity::new(100.0, 2),
+            AggressorSide::Buyer,
+            TradeId::new("1"),
+            0,
+            0,
         );
 
-        // TODO(cs): WIP
-        assert_eq!(
-            format!("{}", snapshot),
-            "AAPL.NASDAQ,123456,1,2".to_string()
-        );
+        let book_order = BookOrder::from_trade_tick(&tick, side);
+
+        assert_eq!(book_order.side, side);
+        assert_eq!(book_order.price, tick.price);
+        assert_eq!(book_order.size, tick.size);
+        assert_eq!(book_order.order_id, tick.price.raw as u64);
     }
 }

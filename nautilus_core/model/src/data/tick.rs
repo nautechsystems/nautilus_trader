@@ -14,11 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp;
-use std::ffi::c_char;
 use std::fmt::{Display, Formatter};
 
 use nautilus_core::correctness;
-use nautilus_core::string::str_to_cstr;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 
@@ -28,8 +26,6 @@ use crate::identifiers::trade_id::TradeId;
 use crate::types::fixed::FIXED_PRECISION;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-
-use super::Data;
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
@@ -82,8 +78,8 @@ impl QuoteTick {
     #[must_use]
     pub fn extract_price(&self, price_type: PriceType) -> Price {
         match price_type {
-            PriceType::Bid => self.bid.clone(),
-            PriceType::Ask => self.ask.clone(),
+            PriceType::Bid => self.bid,
+            PriceType::Ask => self.ask,
             PriceType::Mid => Price::from_raw(
                 (self.bid.raw + self.ask.raw) / 2,
                 cmp::min(self.bid.precision + 1, FIXED_PRECISION),
@@ -153,120 +149,6 @@ impl Display for TradeTick {
             self.ts_event,
         )
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
-    tick.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_new(
-    instrument_id: InstrumentId,
-    bid: Price,
-    ask: Price,
-    bid_size: Quantity,
-    ask_size: Quantity,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> QuoteTick {
-    QuoteTick::new(
-        instrument_id,
-        bid,
-        ask,
-        bid_size,
-        ask_size,
-        ts_event,
-        ts_init,
-    )
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_from_raw(
-    instrument_id: InstrumentId,
-    bid: i64,
-    ask: i64,
-    bid_price_prec: u8,
-    ask_price_prec: u8,
-    bid_size: u64,
-    ask_size: u64,
-    bid_size_prec: u8,
-    ask_size_prec: u8,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> QuoteTick {
-    QuoteTick::new(
-        instrument_id,
-        Price::from_raw(bid, bid_price_prec),
-        Price::from_raw(ask, ask_price_prec),
-        Quantity::from_raw(bid_size, bid_size_prec),
-        Quantity::from_raw(ask_size, ask_size_prec),
-        ts_event,
-        ts_init,
-    )
-}
-
-/// Returns a [`QuoteTick`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
-    str_to_cstr(&tick.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn trade_tick_drop(tick: TradeTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
-    tick.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn trade_tick_from_raw(
-    instrument_id: InstrumentId,
-    price: i64,
-    price_prec: u8,
-    size: u64,
-    size_prec: u8,
-    aggressor_side: AggressorSide,
-    trade_id: TradeId,
-    ts_event: u64,
-    ts_init: u64,
-) -> TradeTick {
-    TradeTick::new(
-        instrument_id,
-        Price::from_raw(price, price_prec),
-        Quantity::from_raw(size, size_prec),
-        aggressor_side,
-        trade_id,
-        ts_event,
-        ts_init,
-    )
-}
-
-/// Returns a [`TradeTick`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
-    str_to_cstr(&tick.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn data_drop(data: Data) {
-    drop(data); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn data_clone(data: &Data) -> Data {
-    data.clone()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

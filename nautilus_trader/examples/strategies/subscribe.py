@@ -17,11 +17,11 @@ from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
@@ -71,8 +71,8 @@ class SubscribeStrategy(Strategy):
             return
 
         if self.config.book_type:
-            self.book = OrderBook.create(
-                instrument=self.instrument,
+            self.book = OrderBook(
+                instrument_id=self.instrument.id,
                 book_type=self.config.book_type,
             )
             if self.config.snapshots:

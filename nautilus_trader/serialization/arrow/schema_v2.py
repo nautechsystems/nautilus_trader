@@ -15,10 +15,10 @@
 
 import pyarrow as pa
 
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 
 
 NAUTILUS_PARQUET_SCHEMA_V2 = {

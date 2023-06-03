@@ -32,7 +32,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus

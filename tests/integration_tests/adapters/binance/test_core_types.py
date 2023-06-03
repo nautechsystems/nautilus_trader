@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
-from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.data import TestDataStubs

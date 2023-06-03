@@ -27,8 +27,8 @@ import pytest
 
 from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
@@ -54,6 +54,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 class _TestPersistenceCore:

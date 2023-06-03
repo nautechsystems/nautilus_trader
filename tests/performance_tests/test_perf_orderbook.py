@@ -15,7 +15,8 @@
 
 import pytest
 
-from nautilus_trader.model.orderbook import L3OrderBook
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
@@ -34,10 +35,9 @@ def run_l3_test(book, feed):
 def test_orderbook_updates(benchmark):
     # We only care about the actual updates here, so instantiate orderbook and
     # load updates outside of benchmark
-    book = L3OrderBook(
+    book = OrderBook(
         instrument_id=TestIdStubs.audusd_id(),
-        price_precision=5,
-        size_precision=0,
+        book_type=BookType.L3_MBO,
     )
     filename = TEST_DATA_DIR + "/L3_feed.json"
     feed = TestDataStubs.l3_feed(filename)

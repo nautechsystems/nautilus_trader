@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
     PIP_DEFAULT_TIMEOUT=100 \
-    POETRY_VERSION=1.5.0 \
+    POETRY_VERSION=1.5.1 \
     POETRY_HOME="/opt/poetry" \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_NO_INTERACTION=1 \
@@ -16,7 +16,7 @@ WORKDIR $PYSETUP_PATH
 FROM base as builder
 
 # Install build deps
-RUN apt-get update && apt-get install -y curl clang pkg-config libssl-dev
+RUN apt-get update && apt-get install -y curl clang git pkg-config libssl-dev
 
 # Install Rust stable
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y

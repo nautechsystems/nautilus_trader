@@ -32,7 +32,7 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
-#[derive(Eq, Clone, Default)]
+#[derive(Copy, Clone, Eq, Default)]
 #[pyclass]
 pub struct Quantity {
     pub raw: u64,
@@ -53,6 +53,11 @@ impl Quantity {
     #[must_use]
     pub fn from_raw(raw: u64, precision: u8) -> Self {
         Self { raw, precision }
+    }
+
+    #[must_use]
+    pub fn zero(precision: u8) -> Self {
+        Self { raw: 0, precision }
     }
 
     #[must_use]
@@ -288,13 +293,20 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn test_qty_new() {
+    fn test_new() {
         let qty = Quantity::new(0.00812, 8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_zero() {
+        let qty = Quantity::zero(8);
+        assert_eq!(qty.raw, 0);
+        assert_eq!(qty.precision, 8);
     }
 
     #[test]

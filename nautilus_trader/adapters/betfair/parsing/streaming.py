@@ -26,6 +26,8 @@ from betfair_parser.spec.streaming.mcm import RunnerStatus
 
 from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -42,13 +44,13 @@ from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -60,6 +62,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 PARSE_TYPES = Union[
@@ -83,21 +87,21 @@ def market_change_to_updates(  # noqa: C901
     updates: list[PARSE_TYPES] = []
 
     # Handle instrument status and close updates first
-    if mc.marketDefinition is not None:
+    if mc.market_definition is not None:
         updates.extend(
             market_definition_to_instrument_status_updates(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
             ),
         )
         updates.extend(
-            market_definition_to_instrument_closes(mc.marketDefinition, mc.id, ts_event, ts_init),
+            market_definition_to_instrument_closes(mc.market_definition, mc.id, ts_event, ts_init),
         )
         updates.extend(
             market_definition_to_betfair_starting_prices(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
@@ -106,7 +110,7 @@ def market_change_to_updates(  # noqa: C901
 
     # Handle market data updates
     book_updates: list[Union[OrderBookSnapshot, OrderBookDeltas]] = []
-    bsp_book_updates: list[Union[BSPOrderBookDeltas]] = []
+    bsp_book_updates: list[BSPOrderBookDeltas] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
@@ -171,7 +175,7 @@ def market_definition_to_instrument_status_updates(
             selection_id=str(runner.runner_id),
             selection_handicap=parse_handicap(runner.handicap),
         )
-        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
+        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
         if runner.status == RunnerStatus.REMOVED:
             status = MarketStatus.CLOSED
         else:
@@ -179,7 +183,7 @@ def market_definition_to_instrument_status_updates(
                 status = MARKET_STATUS_MAPPING[key]
             except KeyError:
                 raise ValueError(
-                    f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
+                    f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
@@ -444,7 +448,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.SELL),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price(back.price, BETFAIR_PRICE_PRECISION),
+                        Quantity(back.volume, BETFAIR_QUANTITY_PRECISION),
+                        ts_init,
+                    ),
                     ts_event,
                     ts_init,
                 )
@@ -459,7 +468,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
+                    BookOrder(
+                        OrderSide.BUY,
+                        Price(lay.price, BETFAIR_PRICE_PRECISION),
+                        Quantity(lay.volume, BETFAIR_QUANTITY_PRECISION),
+                        ts_init,
+                    ),
                     ts_event,
                     ts_init,
                 )

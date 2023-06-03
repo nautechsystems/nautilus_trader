@@ -18,14 +18,14 @@ import asyncio
 import pytest
 
 from nautilus_trader.backtest.exchange import SimulatedExchange
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderPendingCancel
-from nautilus_trader.model.events.order import OrderPendingUpdate
-from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
@@ -99,7 +99,6 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
 
 
 @pytest.mark.skip(reason="WIP and lets not use capfd for tests")
-@pytest.mark.no_ci()  # Relies on capfd, which is unreliable on CI
 @pytest.mark.asyncio()
 async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument, events, capfd):
     # Arrange
@@ -148,7 +147,6 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
 
 
 @pytest.mark.skip(reason="WIP and lets not use capfd for tests")
-@pytest.mark.no_ci()  # Relies on capfd, which is unreliable on CI
 @pytest.mark.asyncio()
 async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events, capfd):
     # Arrange

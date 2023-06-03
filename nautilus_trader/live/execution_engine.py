@@ -43,15 +43,15 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderEvent
-from nautilus_trader.model.events.order import OrderExpired
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -220,11 +220,11 @@ class LiveExecutionEngine(ExecutionEngine):
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
-            self._cmd_queue_task.done()
+            self._cmd_queue_task = None
         if self._evt_queue_task:
             self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
             self._evt_queue_task.cancel()
-            self._evt_queue_task.done()
+            self._evt_queue_task = None
 
     def execute(self, command: TradingCommand) -> None:
         """

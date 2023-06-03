@@ -31,7 +31,7 @@ from pyarrow import parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -251,7 +251,11 @@ def write_tables(
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         path = f"{catalog.path}/data/{class_to_filename(cls)}.parquet"
-        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        if kwargs.get("merge_existing_data") is False:
+            merged = df
+        else:
+            merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        kwargs.pop("merge_existing_data", None)
 
         write_parquet(
             fs=catalog.fs,
@@ -260,7 +264,11 @@ def write_tables(
             partition_cols=partition_cols,
             schema=schema,
             **kwargs,
-            **({"basename_template": "{i}.parquet"} if cls in Instrument.__subclasses__() else {}),
+            **(
+                {"basename_template": "{i}.parquet"}
+                if not kwargs.get("basename_template") and cls in Instrument.__subclasses__()
+                else {}
+            ),
         )
         rows_written += len(df)
 

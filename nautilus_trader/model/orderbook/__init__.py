@@ -21,9 +21,6 @@ from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.orderbook.book import L1OrderBook
-from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
 
 
@@ -32,8 +29,5 @@ __all__ = [
     "OrderBookDelta",
     "OrderBookDeltas",
     "OrderBookSnapshot",
-    "L1OrderBook",
-    "L2OrderBook",
-    "L3OrderBook",
     "OrderBook",
 ]

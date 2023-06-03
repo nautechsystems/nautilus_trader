@@ -6,13 +6,19 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-- Added core HTTP client based on `hyper`
+- Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z
+- Integrated core `OrderBook` into platform
+- Added core `HttpClient` based on `hyper`, thanks @twitu
+- Added core `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
+- Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
 - Changed `BinanceHttpClient` to use new core HTTP client
+- Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
+- Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)
 
 ### Fixes
 - Updated `BinanceAccountType` enum members and associated docs
-- Added heartbeats to Binance websocket clients
 - Fixed `BinanceCommonExecutionClient` iteration of `OrderList` orders
+- Fixed heartbeats for Binance websocket clients (new Rust client now responds with `pong` frames)
 
 ---
 
@@ -83,9 +89,9 @@ Released on 30th April 2023 (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
-- Define public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
-- Define public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
-- Define public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
+- Defined public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
+- Defined public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
+- Defined public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
 - Now stripping debug symbols after build (reduced binary sizes)
 - Refined build and added additional `debug` Makefile convenience targets
 

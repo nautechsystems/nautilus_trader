@@ -16,9 +16,9 @@
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport L2OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBook
 
 
-cpdef L2OrderBook create_betfair_order_book(InstrumentId instrument_id)
+cpdef OrderBook create_betfair_order_book(InstrumentId instrument_id)
 cpdef Price betfair_float_to_price(double value)
 cpdef Quantity betfair_float_to_quantity(double value)

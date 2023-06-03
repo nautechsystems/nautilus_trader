@@ -13,25 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+from .client import InteractiveBrokersClient
 
 
-cdef class Bet:
-    cdef Price price
-    cdef Quantity quantity
-    cdef OrderSide side
-
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
-
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
+__all__ = ("InteractiveBrokersClient",)

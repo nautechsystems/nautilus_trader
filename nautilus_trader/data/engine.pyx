@@ -780,8 +780,8 @@ cdef class DataEngine(Component):
                     f"no instrument found in the cache.",
                 )
                 return
-            order_book = OrderBook.create(
-                instrument=instrument,
+            order_book = OrderBook(
+                instrument_id=instrument.id,
                 book_type=metadata["book_type"],
             )
 

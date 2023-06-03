@@ -379,8 +379,8 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 clock=clock,
                 logger=logger,
                 instrument_provider=provider,
-                account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                account_type=config.account_type,
                 warn_gtd_to_gtc=config.warn_gtd_to_gtc,
             )
         else:
@@ -402,8 +402,8 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 clock=clock,
                 logger=logger,
                 instrument_provider=provider,
-                account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                account_type=config.account_type,
                 warn_gtd_to_gtc=config.warn_gtd_to_gtc,
             )
 

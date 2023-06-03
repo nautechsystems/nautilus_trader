@@ -31,12 +31,12 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -61,10 +61,10 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
@@ -79,8 +79,8 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
+        base_url_ws: str,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        base_url_ws: Optional[str] = None,
         use_agg_trade_ticks: bool = False,
     ):
         PyCondition.true(

@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::io;
+use std::sync::Arc;
+
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{PyObject, Python};
-use std::io;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -61,8 +62,7 @@ impl WebSocketClient {
         let (write_half, mut read_half) = stream.split();
         let write_mutex = Arc::new(Mutex::new(write_half));
 
-        // keep receiving messages from socket
-        // pass them as arguments to handler
+        // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Some(task::spawn(async move {
             loop {
                 event!(Level::DEBUG, "websocket: Receiving message");
@@ -151,12 +151,12 @@ impl WebSocketClient {
 
 impl Drop for WebSocketClient {
     fn drop(&mut self) {
-        // cancel reading task
+        // Cancel reading task
         if let Some(ref handle) = self.read_task.take() {
             handle.abort();
         }
 
-        // cancel heart beat task
+        // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             handle.abort();
         }
@@ -250,7 +250,7 @@ mod tests {
             let server = TcpListener::bind("127.0.0.1:0").unwrap();
             let port = TcpListener::local_addr(&server).unwrap().port();
 
-            // setup test server
+            // Setup test server
             thread::spawn(move || {
                 let conn = server.incoming().next().unwrap();
                 let mut websocket = accept(conn.unwrap()).unwrap();
@@ -263,27 +263,27 @@ mod tests {
                         websocket.write_message(msg).unwrap();
                     } else if msg.is_close() {
                         if let Err(err) = websocket.close(None) {
-                            println!("Connection already closed {}", err);
+                            println!("Connection already closed {err}");
                         };
                         break;
                     }
                 }
             });
 
-            TestServer { port }
+            Self { port }
         }
     }
 
     #[tokio::test]
     async fn basic_client_test() {
-        const N: usize = 10;
-
-        // initialize test server
-        let server = TestServer::basic_client_test();
-
         prepare_freethreaded_python();
 
-        // create counter class and handler that increments it
+        const N: usize = 10;
+
+        // Initialize test server
+        let server = TestServer::basic_client_test();
+
+        // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
             let pymod = PyModule::from_code(
                 py,
@@ -319,19 +319,19 @@ counter = Counter()",
         .await
         .unwrap();
 
-        // check that websocket read task is running
+        // Check that websocket read task is running
         let task_running = client
             .read_task
             .as_ref()
             .map_or(false, |handle| !handle.is_finished());
         assert!(task_running);
 
-        // send messages that increment the count
+        // Send messages that increment the count
         for _ in 0..N {
-            client.send("ping".to_string().into_bytes()).await;
+            client.send(b"ping".to_vec()).await;
         }
 
-        // shutdown client and wait for read task to terminate
+        // Shutdown client and wait for read task to terminate
         let handle = client.shutdown().await.unwrap();
         handle.await.unwrap().unwrap();
 
@@ -345,7 +345,7 @@ counter = Counter()",
                 .unwrap()
         });
 
-        // check count is same as number messages sent
+        // Check count is same as number messages sent
         assert_eq!(count_value, N);
     }
 }

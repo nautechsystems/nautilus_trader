@@ -105,7 +105,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
+    base_url_ws : str
         The base URL for the WebSocket client.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
@@ -129,7 +129,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
-        base_url_ws: Optional[str] = None,
+        base_url_ws: str,
         warn_gtd_to_gtc: bool = True,
     ) -> None:
         super().__init__(
@@ -168,7 +168,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
-            loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
@@ -220,7 +219,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
-        await self._ws_client.connect(heartbeat=15)  # type: ignore
+        await self._ws_client.connect()
 
     async def _update_account_state(self) -> None:
         # Replace method in child class
@@ -245,9 +244,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
-            self._ping_listen_keys_task.done()
+            self._ping_listen_keys_task = None
 
-        # Disconnect WebSocket clients
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
 

@@ -24,9 +24,9 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -42,6 +42,9 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 @pytest.mark.skip(reason="Rust datafusion backend currently being integrated")

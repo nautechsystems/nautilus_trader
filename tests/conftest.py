@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler

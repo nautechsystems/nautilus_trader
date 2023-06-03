@@ -35,12 +35,12 @@ from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings

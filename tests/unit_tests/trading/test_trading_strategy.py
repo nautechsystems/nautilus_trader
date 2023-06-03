@@ -36,7 +36,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide

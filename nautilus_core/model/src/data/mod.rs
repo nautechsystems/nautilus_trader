@@ -14,21 +14,23 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod bar;
+pub mod bar_api;
 pub mod book;
+pub mod book_api;
 pub mod tick;
+pub mod tick_api;
 
 use nautilus_core::time::UnixNanos;
 
 use self::{
     bar::Bar,
-    book::{OrderBookDelta, OrderBookSnapshot},
+    book::OrderBookDelta,
     tick::{QuoteTick, TradeTick},
 };
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub enum Data {
-    Snapshot(OrderBookSnapshot),
     Delta(OrderBookDelta),
     Quote(QuoteTick),
     Trade(TradeTick),
@@ -39,18 +41,11 @@ impl Data {
     #[must_use]
     pub fn get_ts_init(&self) -> UnixNanos {
         match self {
-            Self::Snapshot(s) => s.ts_init,
             Self::Delta(d) => d.ts_init,
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
         }
-    }
-}
-
-impl From<OrderBookSnapshot> for Data {
-    fn from(value: OrderBookSnapshot) -> Self {
-        Self::Snapshot(value)
     }
 }
 

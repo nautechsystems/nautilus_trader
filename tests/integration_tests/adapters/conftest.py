@@ -25,9 +25,9 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.events.account import AccountState
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
@@ -54,7 +54,7 @@ def clock():
 
 @pytest.fixture()
 def logger(clock):
-    return Logger(clock)
+    return Logger(clock, bypass=True)
 
 
 @pytest.fixture()

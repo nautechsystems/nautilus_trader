@@ -17,15 +17,15 @@ from decimal import Decimal
 from typing import Optional, Union
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
@@ -73,7 +73,10 @@ class MarketMaker(Strategy):
             return
 
         # Create orderbook
-        self._book = OrderBook.create(instrument=self.instrument, book_type=BookType.L2_MBP)
+        self._book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
 
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)

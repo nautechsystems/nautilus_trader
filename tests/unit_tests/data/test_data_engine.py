@@ -16,6 +16,7 @@
 import sys
 
 import pandas as pd
+import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
@@ -30,16 +31,16 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.data.messages import Unsubscribe
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
@@ -52,7 +53,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook import L2OrderBook
+from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import write_objects
@@ -965,6 +966,7 @@ class TestDataEngine:
         # Assert
         assert len(handler) == 0
 
+    @pytest.mark.skip(reason="Snapshots marked for deletion")
     def test_process_order_book_snapshot_when_one_subscriber_then_sends_to_registered_handler(
         self,
     ):
@@ -1013,7 +1015,7 @@ class TestDataEngine:
         events[0].handle()
 
         # Assert
-        assert isinstance(handler[0], L2OrderBook)
+        assert isinstance(handler[0], OrderBook)
 
     def test_process_order_book_deltas_then_sends_to_registered_handler(self):
         # Arrange
@@ -1056,6 +1058,7 @@ class TestDataEngine:
         assert handler[0].instrument_id == ETHUSDT_BINANCE.id
         assert isinstance(handler[0], OrderBookDeltas)
 
+    @pytest.mark.skip(reason="Snapshots marked for deletion")
     def test_process_order_book_snapshots_when_multiple_subscribers_then_sends_to_registered_handlers(
         self,
     ):
@@ -1128,7 +1131,7 @@ class TestDataEngine:
 
         # Assert
         cached_book = self.cache.order_book(ETHUSDT_BINANCE.id)
-        assert isinstance(cached_book, L2OrderBook)
+        assert isinstance(cached_book, OrderBook)
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert handler1[0] == cached_book
         assert handler2[0] == cached_book
@@ -1169,7 +1172,7 @@ class TestDataEngine:
 
         # Assert
         cached_book = self.cache.order_book(BETFAIR_INSTRUMENT.id)
-        assert isinstance(cached_book, L2OrderBook)
+        assert isinstance(cached_book, OrderBook)
         assert cached_book.instrument_id == BETFAIR_INSTRUMENT.id
         assert cached_book.best_bid_price() == 100
 

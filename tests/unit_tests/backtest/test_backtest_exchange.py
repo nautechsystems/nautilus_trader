@@ -35,7 +35,7 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
@@ -45,15 +45,15 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderPendingCancel
-from nautilus_trader.model.events.order import OrderPendingUpdate
-from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -260,7 +260,7 @@ class TestSimulatedExchange:
         self.exchange.process_quote_tick(tick)
 
         # Assert
-        assert self.exchange.get_book(USDJPY_SIM.id).type == BookType.L1_TBBO
+        assert self.exchange.get_book(USDJPY_SIM.id).book_type == BookType.L1_TBBO
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("90.005")
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("90.002")
 
@@ -2316,6 +2316,8 @@ class TestSimulatedExchange:
 
         # Assert
         position = self.cache.positions_open()[0]
+        assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("100.003")
+        assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("100.004")
         assert position.unrealized_pnl(Price.from_str("100.003")) == Money(499900, JPY)
 
     def test_adjust_account_changes_balance(self):

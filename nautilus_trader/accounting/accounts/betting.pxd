@@ -30,3 +30,10 @@ cdef class BettingAccount(CashAccount):
         Price price,
         bint inverse_as_quote=*,
     )
+
+
+cpdef stake(Quantity quantity, Price price)
+cpdef liability(Quantity quantity, Price price, OrderSide side)
+cpdef win_payoff(Quantity quantity, Price price, OrderSide side)
+cpdef lose_payoff(Quantity quantity, OrderSide side)
+cpdef exposure(Quantity quantity, Price price, OrderSide side)

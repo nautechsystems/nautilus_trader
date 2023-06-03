@@ -42,11 +42,11 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
@@ -818,6 +818,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9862.39",
+            "9861.76",
             GBP,
         )

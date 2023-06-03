@@ -16,7 +16,7 @@
 import msgspec
 
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId

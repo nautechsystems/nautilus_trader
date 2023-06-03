@@ -25,7 +25,6 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import DepthType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatus
@@ -60,8 +59,6 @@ from nautilus_trader.model.enums import contingency_type_from_str
 from nautilus_trader.model.enums import contingency_type_to_str
 from nautilus_trader.model.enums import currency_type_from_str
 from nautilus_trader.model.enums import currency_type_to_str
-from nautilus_trader.model.enums import depth_type_from_str
-from nautilus_trader.model.enums import depth_type_to_str
 from nautilus_trader.model.enums import instrument_close_type_from_str
 from nautilus_trader.model.enums import instrument_close_type_to_str
 from nautilus_trader.model.enums import liquidity_side_from_str
@@ -463,36 +460,6 @@ class TestCurrencyType:
     def test_currency_type_from_str(self, string, expected):
         # Arrange, Act
         result = currency_type_from_str(string)
-
-        # Assert
-        assert result == expected
-
-
-class TestDepthType:
-    @pytest.mark.parametrize(
-        ("enum", "expected"),
-        [
-            [DepthType.VOLUME, "VOLUME"],
-            [DepthType.EXPOSURE, "EXPOSURE"],
-        ],
-    )
-    def test_depth_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = depth_type_to_str(enum)
-
-        # Assert
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        ("string", "expected"),
-        [
-            ["VOLUME", DepthType.VOLUME],
-            ["EXPOSURE", DepthType.EXPOSURE],
-        ],
-    )
-    def test_depth_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = depth_type_from_str(string)
 
         # Assert
         assert result == expected

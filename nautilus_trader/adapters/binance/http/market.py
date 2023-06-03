@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from typing import Optional
 
 import msgspec
@@ -35,9 +36,9 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -853,15 +854,35 @@ class BinanceMarketHttpAPI:
         end_time: Optional[str] = None,
     ) -> list[BinanceBar]:
         """Request Binance Bars from Klines."""
-        klines = await self.query_klines(
-            symbol=bar_type.instrument_id.symbol.value,
-            interval=interval,
-            limit=limit,
-            start_time=start_time,
-            end_time=end_time,
-        )
-        bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines]
-        return bars
+        end_time_ms = int(end_time) if end_time is not None else sys.maxsize
+        all_bars: list[BinanceBar] = []
+        while True:
+            klines = await self.query_klines(
+                symbol=bar_type.instrument_id.symbol.value,
+                interval=interval,
+                limit=limit,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            bars: list[BinanceBar] = [
+                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
+            ]
+            all_bars.extend(bars)
+
+            # Update the start_time to fetch the next set of bars
+            if klines:
+                next_start_time = klines[-1].open_time + 1
+            else:
+                # Handle the case when klines is empty
+                break
+
+            # No more bars to fetch
+            if (limit and len(klines) < limit) or next_start_time >= end_time_ms:
+                break
+
+            start_time = str(next_start_time)
+
+        return all_bars
 
     async def query_ticker_24hr(
         self,

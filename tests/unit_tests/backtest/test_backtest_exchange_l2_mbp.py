@@ -27,8 +27,8 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
@@ -134,8 +134,8 @@ class TestL2OrderBookExchange:
         # Prepare components
         self.cache.add_instrument(USDJPY_SIM)
         self.cache.add_order_book(
-            OrderBook.create(
-                instrument=USDJPY_SIM,
+            OrderBook(
+                instrument_id=USDJPY_SIM.id,
                 book_type=BookType.L2_MBP,  # <-- L2 MBP book
             ),
         )
@@ -215,9 +215,10 @@ class TestL2OrderBookExchange:
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_size=10000,
-            ask_size=10000,
+            bid_size=10_000,
+            ask_size=10_000,
         )
+        print(str(snapshot))
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
 

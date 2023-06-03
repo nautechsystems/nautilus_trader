@@ -19,19 +19,19 @@ from typing import Any, Optional
 import pandas as pd
 
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.data.venue import VenueStatusUpdate
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
@@ -48,7 +48,6 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -260,15 +259,17 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def order(price: float = 100, side: OrderSide = OrderSide.BUY, size=10):
-        return BookOrder(price=price, size=size, side=side)
-
-    @staticmethod
-    def ladder(reverse: bool, orders: list[BookOrder]):
-        ladder = Ladder(reverse=reverse, price_precision=2, size_precision=2)
-        for order in orders:
-            ladder.add(order)
-        return ladder
+    def order(
+        side: OrderSide = OrderSide.BUY,
+        price: float = 100,
+        size: float = 10,
+    ) -> BookOrder:
+        return BookOrder(
+            price=Price(price, 2),
+            size=Quantity(size, 0),
+            side=side,
+            order_id=0,
+        )
 
     @staticmethod
     def order_book(
@@ -282,8 +283,8 @@ class TestDataStubs:
         ask_size=10,
     ) -> OrderBook:
         instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        order_book = OrderBook.create(
-            instrument=instrument,
+        order_book = OrderBook(
+            instrument_id=instrument.id,
             book_type=book_type,
         )
         snapshot = TestDataStubs.order_book_snapshot(
@@ -313,8 +314,24 @@ class TestDataStubs:
 
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            bids=[(float(bid_price - i), float(bid_size * (1 + i))) for i in range(bid_levels)],
-            asks=[(float(ask_price + i), float(ask_size * (1 + i))) for i in range(ask_levels)],
+            bids=[
+                BookOrder(
+                    OrderSide.BUY,
+                    Price(bid_price - i, 2),
+                    Quantity(bid_size * (1 + i), 2),
+                    0,
+                )
+                for i in range(bid_levels)
+            ],
+            asks=[
+                BookOrder(
+                    OrderSide.SELL,
+                    Price(ask_price + i, 2),
+                    Quantity(ask_size * (1 + i), 2),
+                    0,
+                )
+                for i in range(ask_levels)
+            ],
             ts_event=0,
             ts_init=0,
         )
@@ -345,24 +362,40 @@ class TestDataStubs:
         bids: Optional[list[tuple]] = None,
         asks: Optional[list[tuple]] = None,
     ) -> OrderBook:
-        book = OrderBook.create(
+        book = OrderBook(
+            instrument_id=instrument.id,
             book_type=book_type,
-            instrument=instrument,
         )
 
+        bids_counter: int = 0
+        asks_counter: int = 0
+
         for price, size in bids or []:
-            order = BookOrder(price=price, size=size, side=OrderSide.BUY)
-            book.add(order)
+            order = BookOrder(
+                side=OrderSide.BUY,
+                price=Price(price, instrument.price_precision),
+                size=Quantity(size, instrument.size_precision),
+                order_id=bids_counter,
+            )
+            book.add(order, 0)
+            bids_counter += 1
         for price, size in asks or []:
-            order = BookOrder(price=price, size=size, side=OrderSide.SELL)
-            book.add(order)
+            order = BookOrder(
+                side=OrderSide.SELL,
+                price=Price(price, instrument.price_precision),
+                size=Quantity(size, instrument.size_precision),
+                order_id=asks_counter,
+            )
+            book.add(order, 0)
+            asks_counter += 1
+
         return book
 
     @staticmethod
     def venue_status_update(
         venue: Venue = None,
         status: MarketStatus = None,
-    ):
+    ) -> VenueStatusUpdate:
         return VenueStatusUpdate(
             venue=venue or Venue("BINANCE"),
             status=status or MarketStatus.OPEN,
@@ -374,7 +407,7 @@ class TestDataStubs:
     def instrument_status_update(
         instrument_id: InstrumentId = None,
         status: MarketStatus = None,
-    ):
+    ) -> InstrumentStatusUpdate:
         return InstrumentStatusUpdate(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             status=status or MarketStatus.PAUSE,

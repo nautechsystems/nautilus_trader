@@ -70,10 +70,10 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         The logger for the client.
     instrument_provider : BinanceFuturesInstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
     """
@@ -87,8 +87,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceFuturesInstrumentProvider,
+        base_url_ws: str,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        base_url_ws: Optional[str] = None,
         warn_gtd_to_gtc: bool = True,
     ):
         PyCondition.true(
