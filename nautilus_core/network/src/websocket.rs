@@ -238,6 +238,7 @@ mod tests {
 
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio_tungstenite::tungstenite::accept;
+    use tracing_test::traced_test;
 
     use super::WebSocketClient;
 
@@ -275,6 +276,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[traced_test]
     async fn basic_client_test() {
         prepare_freethreaded_python();
 

@@ -25,6 +25,7 @@ tracing = "0.1.37"
 
 [dev-dependencies]
 serde_json.workspace = true
+tracing-test = "0.2.4"
 
 [features]
 extension-module = ["pyo3/extension-module", "nautilus-core/extension-module"]
