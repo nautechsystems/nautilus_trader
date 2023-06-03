@@ -59,8 +59,6 @@ from nautilus_trader.model.enums_c import contingency_type_from_str
 from nautilus_trader.model.enums_c import contingency_type_to_str
 from nautilus_trader.model.enums_c import currency_type_from_str
 from nautilus_trader.model.enums_c import currency_type_to_str
-from nautilus_trader.model.enums_c import depth_type_from_str
-from nautilus_trader.model.enums_c import depth_type_to_str
 from nautilus_trader.model.enums_c import instrument_close_type_from_str
 from nautilus_trader.model.enums_c import instrument_close_type_to_str
 from nautilus_trader.model.enums_c import liquidity_side_from_str
@@ -136,8 +134,6 @@ __all__ = [
     "contingency_type_from_str",
     "currency_type_to_str",
     "currency_type_from_str",
-    "depth_type_to_str",
-    "depth_type_from_str",
     "instrument_close_type_to_str",
     "instrument_close_type_from_str",
     "liquidity_side_to_str",
