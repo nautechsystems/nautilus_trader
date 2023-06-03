@@ -44,7 +44,6 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport DepthType
 from nautilus_trader.model.enums_c cimport LiquiditySide
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide

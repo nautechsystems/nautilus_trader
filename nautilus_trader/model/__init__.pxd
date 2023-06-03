@@ -22,7 +22,6 @@ from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport CurrencyType
-from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
