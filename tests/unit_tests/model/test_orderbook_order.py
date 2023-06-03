@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

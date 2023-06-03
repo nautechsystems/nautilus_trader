@@ -23,9 +23,9 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide

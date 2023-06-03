@@ -37,8 +37,8 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId

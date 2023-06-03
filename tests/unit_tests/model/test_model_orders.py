@@ -31,10 +31,10 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.order import OrderDenied
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId

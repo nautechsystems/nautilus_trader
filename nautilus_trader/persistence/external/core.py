@@ -31,7 +31,7 @@ from pyarrow import parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog

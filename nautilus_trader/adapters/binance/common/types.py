@@ -16,9 +16,9 @@
 from decimal import Decimal
 from typing import Any, Optional
 
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

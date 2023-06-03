@@ -30,7 +30,7 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
-from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
 
 

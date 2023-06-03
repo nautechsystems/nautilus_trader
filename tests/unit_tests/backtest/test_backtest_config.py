@@ -30,10 +30,10 @@ from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.external.core import process_files

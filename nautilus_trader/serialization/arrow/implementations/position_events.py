@@ -15,10 +15,10 @@
 
 from typing import Union
 
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionEvent
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionEvent
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.objects import Money
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 

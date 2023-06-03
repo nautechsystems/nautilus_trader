@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.data.venue import VenueStatusUpdate
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import VenueStatusUpdate
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId

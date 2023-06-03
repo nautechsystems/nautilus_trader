@@ -16,7 +16,7 @@
 from enum import Enum
 from enum import unique
 
-from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
