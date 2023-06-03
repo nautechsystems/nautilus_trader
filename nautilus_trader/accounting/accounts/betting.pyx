@@ -17,7 +17,6 @@ from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.data.bet cimport Bet
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -68,10 +67,34 @@ cdef class BettingAccount(CashAccount):
         Condition.not_none(price, "price")
         Condition.not_equal(inverse_as_quote, True, "inverse_as_quote", "True")
 
-        cdef Bet bet = Bet(
-            price=price,
-            quantity=quantity,
-            side=side
-        )
-        locked: Decimal = bet.liability()
+        locked: Decimal = liability(quantity, price, side)
         return Money(locked, instrument.quote_currency)
+
+
+cpdef stake(Quantity quantity, Price price):
+    return quantity * (price - 1)
+
+
+cpdef liability(Quantity quantity, Price price, OrderSide side):
+    if side == OrderSide.BUY:
+        return quantity
+    elif side == OrderSide.SELL:
+        return stake(quantity, price)
+
+
+cpdef win_payoff(Quantity quantity, Price price, OrderSide side):
+    if side == OrderSide.BUY:
+        return stake(quantity, price)
+    elif side == OrderSide.SELL:
+        return -stake(quantity, price)
+
+
+cpdef lose_payoff(Quantity quantity, OrderSide side):
+    if side == OrderSide.BUY:
+        return -quantity
+    elif side == OrderSide.SELL:
+        return quantity
+
+
+cpdef exposure(Quantity quantity, Price price, OrderSide side):
+    return win_payoff(quantity, price, side) - lose_payoff(quantity, side)

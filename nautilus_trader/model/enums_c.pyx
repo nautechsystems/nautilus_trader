@@ -58,8 +58,6 @@ from nautilus_trader.core.rust.model cimport contingency_type_from_cstr
 from nautilus_trader.core.rust.model cimport contingency_type_to_cstr
 from nautilus_trader.core.rust.model cimport currency_type_from_cstr
 from nautilus_trader.core.rust.model cimport currency_type_to_cstr
-from nautilus_trader.core.rust.model cimport depth_type_from_cstr
-from nautilus_trader.core.rust.model cimport depth_type_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_to_cstr
 from nautilus_trader.core.rust.model cimport liquidity_side_from_cstr
