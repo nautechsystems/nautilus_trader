@@ -1,7 +1,7 @@
 # Interactive Brokers
 
 NautilusTrader offers an adapter for integrating with the Interactive Brokers Gateway via 
-[ib_insync](https://github.com/erdewit/ib_insync).
+[ibapi](https://github.com/nautechsystems/ibapi).
 
 **Note**: If you are planning on using the built-in docker TWS Gateway when using the Interactive Brokers adapter,
 you must ensure the `docker` package is installed. Run `poetry install --extras "ib docker"` 
