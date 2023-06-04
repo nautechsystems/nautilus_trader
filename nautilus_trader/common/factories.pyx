@@ -273,6 +273,7 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -302,6 +303,8 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -340,6 +343,7 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -360,6 +364,7 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -387,6 +392,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -426,6 +433,7 @@ cdef class OrderFactory:
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -449,6 +457,7 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -482,6 +491,8 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -526,6 +537,7 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -620,6 +632,7 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -647,6 +660,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -686,6 +701,7 @@ cdef class OrderFactory:
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -709,6 +725,7 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -742,6 +759,8 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -786,6 +805,7 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -808,6 +828,7 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -883,6 +904,7 @@ cdef class OrderFactory:
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -909,6 +931,7 @@ cdef class OrderFactory:
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ExecAlgorithmId exec_algorithm_id = None,
         dict exec_algorithm_params = None,
         str tags = None,
@@ -950,6 +973,8 @@ cdef class OrderFactory:
             The quantity of the order to display on the public book (iceberg).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The orders emulation trigger.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         exec_algorithm_id : ExecAlgorithmId, optional
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
@@ -999,6 +1024,7 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -1025,6 +1051,7 @@ cdef class OrderFactory:
         bint entry_post_only = False,
         bint tp_post_only = True,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ContingencyType contingency_type = ContingencyType.OUO,
         ExecAlgorithmId entry_exec_algorithm_id = None,
         ExecAlgorithmId sl_exec_algorithm_id = None,
@@ -1072,6 +1099,8 @@ cdef class OrderFactory:
             If the take-profit order will only provide liquidity (make a market).
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The emulation trigger type for the entry, as well as the TP and SL bracket orders.
+        trigger_instrument_id : InstrumentId, optional
+            The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
         contingency_type : ContingencyType, default ``OUO``
             The contingency type for the TP and SL bracket orders.
         entry_exec_algorithm_id : ExecAlgorithmId, optional
@@ -1134,6 +1163,7 @@ cdef class OrderFactory:
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
                 post_only=entry_post_only,
                 emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
@@ -1157,6 +1187,7 @@ cdef class OrderFactory:
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
                 emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
@@ -1182,6 +1213,7 @@ cdef class OrderFactory:
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
                 post_only=entry_post_only,
                 emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id, tp_client_order_id],
@@ -1212,6 +1244,7 @@ cdef class OrderFactory:
                 reduce_only=True,
                 display_qty=None,
                 emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
                 contingency_type=contingency_type,
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id],
@@ -1238,6 +1271,7 @@ cdef class OrderFactory:
                 reduce_only=True,
                 display_qty=None,
                 emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
                 contingency_type=contingency_type,
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id],
@@ -1261,6 +1295,7 @@ cdef class OrderFactory:
                 time_in_force=TimeInForce.GTC,
                 reduce_only=True,
                 emulation_trigger=emulation_trigger,
+                trigger_instrument_id=trigger_instrument_id,
                 contingency_type=contingency_type,
                 order_list_id=order_list_id,
                 linked_order_ids=[sl_client_order_id],
@@ -1289,6 +1324,7 @@ cdef class OrderFactory:
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[tp_client_order_id],

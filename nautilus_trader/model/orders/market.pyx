@@ -145,6 +145,7 @@ cdef class MarketOrder(Order):
             reduce_only=reduce_only,
             options={},
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,

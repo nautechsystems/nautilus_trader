@@ -799,6 +799,7 @@ class LiveExecutionEngine(ExecutionEngine):
             reduce_only=report.reduce_only,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=report.contingency_type,
             order_list_id=report.order_list_id,
             linked_order_ids=None,
