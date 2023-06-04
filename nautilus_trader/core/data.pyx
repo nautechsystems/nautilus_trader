@@ -13,52 +13,42 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import warnings
-
 import cython
-
-from libc.stdint cimport uint64_t
 
 
 @cython.auto_pickle(False)
 cdef class Data:
     """
-    The base class for all data.
-
-    Parameters
-    ----------
-    ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+    The abstract base class for all data.
 
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, uint64_t ts_event, uint64_t ts_init) -> None:
-        # Design-time invariant: correct ordering of timestamps.
-        # This was originally an `assert` to aid initial development of the core
-        # system. It can be used to assist development by uncommenting below.
-        # assert ts_event <= ts_init
-        if ts_event > ts_init:
-            warnings.warn(
-                "failed invariant: `ts_event` was greater than `ts_init`. "
-                "This should not occur in a backtest environment. Pending a "
-                "more permanent solution for live trading. This warning can be "
-                "silenced https://docs.python.org/3/library/warnings.html#warnings.warn."
-            )
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
 
-        self.ts_event = ts_event
-        self.ts_init = ts_init
+        Returns
+        -------
+        int
 
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"ts_event={self.ts_event}, "
-            f"ts_init={self.ts_init})"
-        )
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
 
     @classmethod
     def fully_qualified_name(cls) -> str:

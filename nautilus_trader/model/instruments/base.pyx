@@ -193,8 +193,6 @@ cdef class Instrument(Data):
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
 
-        super().__init__(ts_event, ts_init)
-
         self.id = instrument_id
         self.native_symbol = native_symbol
         self.asset_class = asset_class
@@ -219,6 +217,8 @@ cdef class Instrument(Data):
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
         self.info = info
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
         # Assign tick scheme if named
         if self.tick_scheme_name is not None:

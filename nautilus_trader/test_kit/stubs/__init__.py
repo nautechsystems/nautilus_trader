@@ -25,7 +25,7 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 class MyData(Data):
     """
-    Represents an example user defined data class.
+    Represents an example user-defined data class.
     """
 
     def __init__(
@@ -34,5 +34,14 @@ class MyData(Data):
         ts_event=0,
         ts_init=0,
     ):
-        super().__init__(ts_event, ts_init)
         self.value = value
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init

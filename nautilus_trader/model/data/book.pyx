@@ -251,8 +251,6 @@ cdef class OrderBookDelta(Data):
         uint8_t flags=0,
         uint64_t sequence=0,
     ):
-        super().__init__(ts_event, ts_init)
-
         # Placeholder for now
         cdef BookOrder_t book_order = order._mem if order is not None else book_order_from_raw(
             OrderSide.NO_ORDER_SIDE,
@@ -354,12 +352,34 @@ cdef class OrderBookDelta(Data):
         """
         return self._mem.sequence
 
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
     @staticmethod
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem):
         cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
         delta._mem = orderbook_delta_clone(&mem)
-        delta.ts_event = mem.ts_event
-        delta.ts_init = mem.ts_init
         return delta
 
     @staticmethod
@@ -454,11 +474,11 @@ cdef class OrderBookDeltas(Data):
         uint64_t ts_init,
         uint64_t sequence=0,
     ):
-        super().__init__(ts_event, ts_init)
-
         self.instrument_id = instrument_id
         self.deltas = deltas
         self.sequence = sequence
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __eq__(self, OrderBookDeltas other) -> bool:
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
@@ -558,12 +578,12 @@ cdef class OrderBookSnapshot(Data):
         uint64_t ts_init,
         uint64_t sequence=0,
     ):
-        super().__init__(ts_event, ts_init)
-
         self.instrument_id = instrument_id
         self.bids = bids
         self.asks = asks
         self.sequence = sequence
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __eq__(self, OrderBookSnapshot other) -> bool:
         return OrderBookSnapshot.to_dict_c(self) == OrderBookSnapshot.to_dict_c(other)
