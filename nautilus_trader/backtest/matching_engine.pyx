@@ -1609,7 +1609,7 @@ cdef class OrderMatchingEngine:
         cdef double notional = self.instrument.notional_value(
             quantity=last_qty,
             price=last_px,
-            inverse_as_quote=False,
+            use_quote_for_inverse=False,
         ).as_f64_c()
 
         cdef double commission_f64
@@ -1623,7 +1623,7 @@ cdef class OrderMatchingEngine:
             )
 
         cdef Money commission
-        if self.instrument.is_inverse:  # and not inverse_as_quote:
+        if self.instrument.is_inverse:  # Not using quote for inverse (see above):
             commission = Money(commission_f64, self.instrument.base_currency)
         else:
             commission = Money(commission_f64, self.instrument.quote_currency)
