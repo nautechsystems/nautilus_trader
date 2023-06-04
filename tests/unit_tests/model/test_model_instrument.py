@@ -389,13 +389,13 @@ class TestInstrument:
         assert result == Money(114936.00000000, USDT)
 
     @pytest.mark.parametrize(
-        ("inverse_as_quote", "expected"),
+        ("use_quote_for_inverse", "expected"),
         [
             [False, Money(8.70049419, BTC)],
             [True, Money(100000.00, USD)],
         ],
     )
-    def test_calculate_notional_value_for_inverse(self, inverse_as_quote, expected):
+    def test_calculate_notional_value_for_inverse(self, use_quote_for_inverse, expected):
         # Arrange
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
@@ -403,7 +403,7 @@ class TestInstrument:
         result = instrument.notional_value(
             Quantity.from_int(100_000),
             Price.from_str("11493.60"),
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         )
 
         # Assert
@@ -446,7 +446,7 @@ class TestBettingInstrument:
         notional = self.instrument.notional_value(
             quantity=Quantity.from_int(100),
             price=Price.from_str("0.5"),
-            inverse_as_quote=False,
+            use_quote_for_inverse=False,
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
         assert notional == Decimal("200.0")

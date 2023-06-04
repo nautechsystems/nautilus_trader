@@ -38,5 +38,5 @@ cdef class CashAccount(Account):
         OrderSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )

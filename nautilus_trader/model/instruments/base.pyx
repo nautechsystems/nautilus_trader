@@ -495,7 +495,7 @@ cdef class Instrument(Data):
         self,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the notional value.
@@ -509,7 +509,7 @@ cdef class Instrument(Data):
             The total quantity.
         price : Price
             The price for the calculation.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -521,8 +521,8 @@ cdef class Instrument(Data):
         Condition.not_none(price, "price")
 
         if self.is_inverse:
-            if inverse_as_quote:
-                # Quantity is notional
+            if use_quote_for_inverse:
+                # Quantity is notional in quote currency
                 return Money(quantity, self.quote_currency)
             return Money(quantity.as_f64_c() * float(self.multiplier) * (1 / price.as_f64_c()), self.base_currency)
         else:

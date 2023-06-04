@@ -166,13 +166,17 @@ class TestMarginAccount:
         assert result == Money(240.32, USD)
 
     @pytest.mark.parametrize(
-        ("inverse_as_quote", "expected"),
+        ("use_quote_for_inverse", "expected"),
         [
             [False, Money(0.10005568, BTC)],
             [True, Money(1150.00, USD)],
         ],
     )
-    def test_calculate_margin_init_with_no_leverage_for_inverse(self, inverse_as_quote, expected):
+    def test_calculate_margin_init_with_no_leverage_for_inverse(
+        self,
+        use_quote_for_inverse,
+        expected,
+    ):
         # Arrange
         account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
@@ -181,7 +185,7 @@ class TestMarginAccount:
             instrument=instrument,
             quantity=Quantity.from_int(100_000),
             price=Price.from_str("11493.60"),
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         )
 
         # Assert
