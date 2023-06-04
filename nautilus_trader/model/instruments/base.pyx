@@ -527,3 +527,27 @@ cdef class Instrument(Data):
             return Money(quantity.as_f64_c() * float(self.multiplier) * (1 / price.as_f64_c()), self.base_currency)
         else:
             return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+
+    cpdef Quantity calculate_base_quantity(
+        self,
+        Quantity quantity,
+        Price last_px,
+    ):
+        """
+        Calculate the base asset quantity from the given quote asset `quantity` and last price.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The quantity to convert from.
+        last_px : Price
+            The last price for the instrument.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        Condition.not_none(quantity, "quantity")
+
+        return Quantity(quantity.as_f64_c() * last_px.as_f64_c(), self.size_precision)
