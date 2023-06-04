@@ -409,6 +409,19 @@ class TestInstrument:
         # Assert
         assert result == expected
 
+    def test_calculate_base_quantity_audusd(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
+        # Act
+        result = instrument.calculate_base_quantity(
+            quantity=Quantity.from_str("1000"),
+            last_px=Price.from_str("0.80"),
+        )
+
+        # Assert
+        assert result == Quantity.from_str("800")
+
     @pytest.mark.parametrize(
         ("instrument", "value", "n", "expected"),
         [
