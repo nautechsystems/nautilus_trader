@@ -14,10 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
+from datetime import datetime
 from typing import Any, Optional
 
 import pandas as pd
+import pytz
 
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -54,9 +57,12 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
+UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+
+
 class TestDataStubs:
     @staticmethod
-    def ticker(instrument_id=None) -> Ticker:
+    def ticker(instrument_id: Optional[InstrumentId] = None) -> Ticker:
         return Ticker(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             ts_event=0,
@@ -517,3 +523,27 @@ class TestDataStubs:
                     }
 
         return [msg for data in json.loads(open(filename).read()) for msg in parser(data)]
+
+
+class MyData(Data):
+    """
+    Represents an example user-defined data class.
+    """
+
+    def __init__(
+        self,
+        value,
+        ts_event=0,
+        ts_init=0,
+    ):
+        self.value = value
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
