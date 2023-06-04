@@ -48,7 +48,6 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -152,7 +151,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._book_buffer: dict[
             InstrumentId,
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]],
+            list[Union[OrderBookDelta, OrderBookDeltas]],
         ] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
@@ -191,16 +190,18 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         try:
-            self._log.debug(
-                f"Scheduled `connect_websockets` to run in "
-                f"{self._connect_websockets_interval}s.",
-            )
-            await asyncio.sleep(self._connect_websockets_interval)
+            while True:
+                self._log.debug(
+                    f"Scheduled `connect_websockets` to run in "
+                    f"{self._connect_websockets_interval}s.",
+                )
+                await asyncio.sleep(self._connect_websockets_interval)
 
-            if self._ws_client.has_subscriptions:
-                await self._ws_client.connect()
-            else:
-                self._log.info("Awaiting subscriptions...")
+                if self._ws_client.has_subscriptions:
+                    await self._ws_client.connect()
+                    break
+                else:
+                    self._log.info("Awaiting subscriptions...")
         except asyncio.CancelledError:
             self._log.debug("`connect_websockets` task was canceled.")
 
@@ -315,7 +316,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
 
-        snapshot: Optional[OrderBookSnapshot] = None
+        snapshot: Optional[OrderBookDeltas] = None
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
@@ -601,9 +602,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: Optional[
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
-        ] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+            instrument_id,
+        )
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:

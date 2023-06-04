@@ -52,7 +52,6 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
@@ -194,7 +193,6 @@ class TestBetfairParsingStreaming:
                 "BetfairTicker": 4658,
                 "TradeTick": 3590,
                 "BSPOrderBookDeltas": 1139,
-                "OrderBookSnapshot": 152,
                 "InstrumentStatusUpdate": 260,
                 "BetfairStartingPrice": 72,
                 "InstrumentClose": 25,
@@ -220,7 +218,7 @@ class TestBetfairParsingStreaming:
 
         books: dict[InstrumentId, OrderBook] = {}
         for update in [x for mcm in mcms for x in parser.parse(mcm)]:
-            if isinstance(update, (OrderBookDeltas, OrderBookSnapshot)) and not isinstance(
+            if isinstance(update, OrderBookDeltas) and not isinstance(
                 update,
                 BSPOrderBookDeltas,
             ):

@@ -24,7 +24,6 @@ from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -43,7 +42,6 @@ __all__ = [
     "BookOrder",
     "OrderBookDelta",
     "OrderBookDeltas",
-    "OrderBookSnapshot",
     "QuoteTick",
     "Ticker",
     "TradeTick",

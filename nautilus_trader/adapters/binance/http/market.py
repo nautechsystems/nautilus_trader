@@ -37,7 +37,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -658,7 +658,7 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: Optional[int] = None,
-    ) -> OrderBookSnapshot:
+    ) -> OrderBookDeltas:
         """Request snapshot of order book depth."""
         depth = await self.query_depth(instrument_id.symbol.value, limit)
         return depth.parse_to_order_book_snapshot(

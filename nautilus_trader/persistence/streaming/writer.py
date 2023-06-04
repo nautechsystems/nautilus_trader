@@ -27,7 +27,6 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -85,7 +84,6 @@ class StreamingFeatherWriter:
             {
                 OrderBookDelta: self._schemas[OrderBookDelta],
                 OrderBookDeltas: self._schemas[OrderBookDelta],
-                OrderBookSnapshot: self._schemas[OrderBookDelta],
             },
         )
         self.logger = logger

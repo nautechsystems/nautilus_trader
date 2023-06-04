@@ -20,7 +20,6 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -121,7 +120,7 @@ class OrderBookImbalance(Strategy):
 
     def on_order_book_delta(
         self,
-        data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
+        data: Union[OrderBookDelta, OrderBookDeltas],
     ) -> None:
         """Actions to be performed when a delta is received."""
         if not self._book:
