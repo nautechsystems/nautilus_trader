@@ -19,7 +19,7 @@ import pytest
 
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
