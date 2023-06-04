@@ -123,15 +123,20 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
             BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
             for o in self.asks
         ]
-        deltas = [
-            OrderBookDelta(instrument_id, BookAction.ADD, o, ts_init, ts_init, self.lastUpdateId)
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId)]
+        deltas += [
+            OrderBookDelta(
+                instrument_id,
+                BookAction.ADD,
+                o,
+                ts_init,
+                ts_init,
+                sequence=self.lastUpdateId,
+            )
             for o in bids + asks
         ]
-        deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId))
-        return OrderBookDeltas(
-            instrument_id=instrument_id,
-            deltas=deltas,
-        )
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 class BinanceSpotOrderBookPartialDepthMsg(msgspec.Struct):

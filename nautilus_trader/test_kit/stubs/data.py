@@ -287,8 +287,10 @@ class TestDataStubs:
         ask_size: float = 10,
         bid_levels: int = 3,
         ask_levels: int = 3,
+        ts_event: int = 0,
+        ts_init: int = 0,
     ) -> OrderBook:
-        instrument_id = instrument_id or TestInstrumentProvider.default_fx_ccy("AUD/USD").id
+        instrument_id = instrument_id or TestIdStubs.audusd_id()
         order_book = OrderBook(
             instrument_id=instrument_id,
             book_type=book_type,
@@ -301,6 +303,8 @@ class TestDataStubs:
             ask_levels=ask_levels,
             bid_size=bid_size,
             ask_size=ask_size,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
         order_book.apply_deltas(snapshot)
         return order_book
@@ -314,6 +318,8 @@ class TestDataStubs:
         ask_size: float = 10,
         bid_levels: int = 3,
         ask_levels: int = 3,
+        ts_event: int = 0,
+        ts_init: int = 0,
     ) -> OrderBookDeltas:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
@@ -336,12 +342,14 @@ class TestDataStubs:
             )
             for i in range(ask_levels)
         ]
-        deltas = [
-            OrderBookDelta(instrument_id, BookAction.ADD, order, 0, 0) for order in bids + asks
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_event, ts_init)]
+        deltas += [
+            OrderBookDelta(instrument_id, BookAction.ADD, order, ts_event, ts_init)
+            for order in bids + asks
         ]
-        deltas.insert(0, OrderBookDelta.clear(instrument_id, 0, 0))
         return OrderBookDeltas(
-            instrument_id=instrument_id or TestIdStubs.audusd_id(),
+            instrument_id=instrument_id,
             deltas=deltas,
         )
 
