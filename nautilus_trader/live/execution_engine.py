@@ -797,6 +797,7 @@ class LiveExecutionEngine(ExecutionEngine):
             time_in_force=report.time_in_force,
             post_only=report.post_only,
             reduce_only=report.reduce_only,
+            quote_quantity=False,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
             trigger_instrument_id=None,

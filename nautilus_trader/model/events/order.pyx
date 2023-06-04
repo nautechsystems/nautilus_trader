@@ -151,6 +151,8 @@ cdef class OrderInitialized(OrderEvent):
         If the order will only provide liquidity (make a market).
     reduce_only : bool
         If the order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool
+        If the order quantity is denominated in the quote currency.
     options : dict[str, str]
         The order initialization options. Contains mappings for specific
         order parameters.
@@ -200,6 +202,7 @@ cdef class OrderInitialized(OrderEvent):
         TimeInForce time_in_force,
         bint post_only,
         bint reduce_only,
+        bint quote_quantity,
         dict options not None,
         TriggerType emulation_trigger,
         InstrumentId trigger_instrument_id: Optional[InstrumentId],
@@ -236,6 +239,7 @@ cdef class OrderInitialized(OrderEvent):
         self.time_in_force = time_in_force
         self.post_only = post_only
         self.reduce_only = reduce_only
+        self.quote_quantity = quote_quantity
         self.options = options
         self.emulation_trigger = emulation_trigger
         self.trigger_instrument_id = trigger_instrument_id
@@ -263,6 +267,7 @@ cdef class OrderInitialized(OrderEvent):
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
+            f"quote_quantity={self.quote_quantity}, "
             f"options={self.options}, "
             f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
             f"trigger_instrument_id={self.trigger_instrument_id}, "  # Can be None
@@ -293,6 +298,7 @@ cdef class OrderInitialized(OrderEvent):
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
+            f"quote_quantity={self.quote_quantity}, "
             f"options={self.options}, "
             f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
             f"trigger_instrument_id={self.trigger_instrument_id}, "  # Can be None
@@ -328,6 +334,7 @@ cdef class OrderInitialized(OrderEvent):
             time_in_force=time_in_force_from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
+            quote_quantity=values["quote_quantity"],
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
             emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
             trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
@@ -360,6 +367,7 @@ cdef class OrderInitialized(OrderEvent):
             "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
+            "quote_quantity": obj.quote_quantity,
             "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
             "emulation_trigger": trigger_type_to_str(obj.emulation_trigger),
             "trigger_instrument_id": obj.trigger_instrument_id.to_str() if obj.trigger_instrument_id is not None else None,
