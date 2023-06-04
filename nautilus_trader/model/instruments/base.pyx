@@ -524,7 +524,7 @@ cdef class Instrument(Data):
             if use_quote_for_inverse:
                 # Quantity is notional in quote currency
                 return Money(quantity, self.quote_currency)
-            return Money(quantity.as_f64_c() * float(self.multiplier) * (1 / price.as_f64_c()), self.base_currency)
+            return Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
         else:
             return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
 
@@ -550,4 +550,4 @@ cdef class Instrument(Data):
         """
         Condition.not_none(quantity, "quantity")
 
-        return Quantity(quantity.as_f64_c() * last_px.as_f64_c(), self.size_precision)
+        return Quantity(quantity.as_f64_c() * (1.0 / last_px.as_f64_c()), self.size_precision)

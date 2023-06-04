@@ -67,6 +67,8 @@ cdef class OrderInitialized(OrderEvent):
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint reduce_only
     """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
+    cdef readonly bint quote_quantity
+    """If the order quantity is denominated in the quote currency.\n\n:returns: `bool`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
     cdef readonly TriggerType emulation_trigger

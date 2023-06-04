@@ -59,6 +59,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport oms_type_to_str
@@ -595,9 +596,38 @@ cdef class ExecutionEngine(Component):
             )
 
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
-        if not self._cache.order_exists(command.order.client_order_id):
+        cdef Order order = command.order
+        if not self._cache.order_exists(order.client_order_id):
             # Cache order
-            self._cache.add_order(command.order, command.position_id)
+            self._cache.add_order(order, command.position_id)
+
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle submit order: "
+                f"no instrument found for {order.instrument_id}, {command}."
+            )
+            return
+
+        # Check if converting quote quantity
+        cdef QuoteTick last_quote
+        cdef Quantity base_qty
+        if not instrument.is_inverse and order.is_quote_quantity:
+            last_quote = self._cache.quote_tick(order.instrument_id)
+            if last_quote is None:
+                self._log.error(
+                    f"Cannot calculate order base quantity: "
+                    f"no quotes for {order.instrument_id}, {command}."
+                )
+                return
+            base_qty = instrument.calculate_base_quantity(order.quantity, last_quote)
+            self._log.info(
+                f"Converting {instrument.id} order quote quantity {order.quantity} to base quantity {base_qty}.",
+            )
+            order.quantity = base_qty
+            order.leaves_qty = base_qty
+            order.is_quote_quantity = False
+            # We need to determine how to handle contingency orders (simply adjust them here too)
 
         # Send to execution client
         client.submit_order(command)

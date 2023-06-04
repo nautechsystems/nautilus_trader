@@ -420,7 +420,7 @@ class TestInstrument:
         )
 
         # Assert
-        assert result == Quantity.from_str("800")
+        assert result == Quantity.from_str("1250")
 
     @pytest.mark.parametrize(
         ("instrument", "value", "n", "expected"),

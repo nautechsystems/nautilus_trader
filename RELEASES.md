@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Added core `HttpClient` based on `hyper`, thanks @twitu
 - Added core `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
 - Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
+- Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
 - Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
