@@ -147,7 +147,9 @@ class BinanceDepth(msgspec.Struct, frozen=True):
             BookOrder(OrderSide.SELL, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
             for o in self.asks or []
         ]
-        deltas = [
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId)]
+        deltas += [
             OrderBookDelta(
                 instrument_id,
                 BookAction.ADD,
@@ -155,11 +157,9 @@ class BinanceDepth(msgspec.Struct, frozen=True):
                 ts_init,
                 ts_init,
                 sequence=self.lastUpdateId or 0,
-                flags=0,
             )
             for o in bids + asks
         ]
-        deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_init, ts_init))
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
@@ -416,10 +416,11 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
             for o in self.a
         ]
-        deltas = [
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_event)]
+        deltas += [
             OrderBookDelta(instrument_id, BookAction.ADD, o, ts_event, ts_init) for o in bids + asks
         ]
-        deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 

@@ -56,13 +56,10 @@ def _build_order_book_snapshot(values):
     # bids = [(order["price"], order["size"]) for order in values[1:] if order["side"] == "BUY"]
     # asks = [(order["price"], order["size"]) for order in values[1:] if order["side"] == "SELL"]
 
-    deltas = [OrderBookDelta.from_dict(v) for v in values]
-    deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
+    deltas = [OrderBookDelta.clear(instrument_id, ts_event, ts_init)]
+    deltas += [OrderBookDelta.from_dict(v) for v in values]
 
-    return OrderBookDeltas(
-        instrument_id=instrument_id,
-        deltas=deltas,
-    )
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def _build_order_book_deltas(values):
