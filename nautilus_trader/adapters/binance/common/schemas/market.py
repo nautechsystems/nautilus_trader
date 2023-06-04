@@ -31,7 +31,6 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
@@ -139,21 +138,29 @@ class BinanceDepth(msgspec.Struct, frozen=True):
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-    ) -> OrderBookSnapshot:
-        return OrderBookSnapshot(
-            instrument_id=instrument_id,
-            bids=[
-                BookOrder(OrderSide.BUY, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
-                for o in self.bids or []
-            ],
-            asks=[
-                BookOrder(OrderSide.SELL, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
-                for o in self.asks or []
-            ],
-            ts_event=ts_init,
-            ts_init=ts_init,
-            sequence=self.lastUpdateId or 0,
-        )
+    ) -> OrderBookDeltas:
+        bids = [
+            BookOrder(OrderSide.BUY, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
+            for o in self.bids or []
+        ]
+        asks = [
+            BookOrder(OrderSide.SELL, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
+            for o in self.asks or []
+        ]
+        deltas = [
+            OrderBookDelta(
+                instrument_id,
+                BookAction.ADD,
+                o,
+                ts_init,
+                ts_init,
+                sequence=self.lastUpdateId or 0,
+                flags=0,
+            )
+            for o in bids + asks
+        ]
+        deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_init, ts_init))
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 class BinanceTrade(msgspec.Struct, frozen=True):
@@ -335,7 +342,7 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
         order = BookOrder(
             side=side,
             price=Price.from_str(self.price),
-            size=size,
+            size=Quantity.from_str(self.size),
             order_id=0,
         )
 
@@ -346,6 +353,7 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
             ts_event=ts_event,
             ts_init=ts_init,
             sequence=update_id,
+            flags=0,
         )
 
 
@@ -362,7 +370,6 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
 
     T: Optional[int] = None  # FUTURES only, transaction time
     pu: Optional[int] = None  # FUTURES only, previous final update ID
-
     ps: Optional[str] = None  # COIN-M FUTURES only, pair
 
     def parse_to_order_book_deltas(
@@ -373,7 +380,13 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
         ts_event: int = millis_to_nanos(self.T) if self.T is not None else millis_to_nanos(self.E)
 
         bid_deltas: list[OrderBookDelta] = [
-            delta.parse_to_order_book_delta(instrument_id, OrderSide.BUY, ts_event, ts_init, self.u)
+            delta.parse_to_order_book_delta(
+                instrument_id,
+                OrderSide.BUY,
+                ts_event,
+                ts_init,
+                self.u,
+            )
             for delta in self.b
         ]
         ask_deltas: list[OrderBookDelta] = [
@@ -387,33 +400,27 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             for delta in self.a
         ]
 
-        return OrderBookDeltas(
-            instrument_id=instrument_id,
-            deltas=bid_deltas + ask_deltas,
-            ts_event=ts_event,
-            ts_init=ts_init,
-            sequence=self.u,
-        )
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=bid_deltas + ask_deltas)
 
     def parse_to_order_book_snapshot(
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-    ) -> OrderBookSnapshot:
-        return OrderBookSnapshot(
-            instrument_id=instrument_id,
-            bids=[
-                BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
-                for o in self.b
-            ],
-            asks=[
-                BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
-                for o in self.a
-            ],
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
-            sequence=self.u,
-        )
+    ) -> OrderBookDeltas:
+        ts_event: int = millis_to_nanos(self.T)
+        bids: list[BookOrder] = [
+            BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.b
+        ]
+        asks: list[BookOrder] = [
+            BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.a
+        ]
+        deltas = [
+            OrderBookDelta(instrument_id, BookAction.ADD, o, ts_event, ts_init) for o in bids + asks
+        ]
+        deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 class BinanceOrderBookMsg(msgspec.Struct, frozen=True):

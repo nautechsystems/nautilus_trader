@@ -35,7 +35,6 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
@@ -164,14 +163,14 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg = self._decoder_order_book_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
+        book_snapshot: OrderBookDeltas = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: Optional[
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
-        ] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+            instrument_id,
+        )
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

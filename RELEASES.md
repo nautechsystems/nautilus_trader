@@ -3,6 +3,8 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Removed `OrderBookSnapshot` (redundant as can be represented as an initial CLEAR followed by deltas)
+- Removed `OrderBookData` (redundant)
 - Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
 
 ### Enhancements

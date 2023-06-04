@@ -57,7 +57,6 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -376,7 +375,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+        delta : OrderBookDelta, OrderBookDeltas
             The order book data received.
 
         Warnings
@@ -889,7 +888,7 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookSnapshot, metadata={
+            data_type=DataType(OrderBook, metadata={
                 "instrument_id": instrument_id,
                 "book_type": book_type,
                 "depth": depth,
@@ -1293,7 +1292,7 @@ cdef class Actor(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookSnapshot, metadata={
+            data_type=DataType(OrderBook, metadata={
                 "instrument_id": instrument_id,
                 "interval_ms": interval_ms,
             }),
@@ -1874,7 +1873,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+        delta : OrderBookDelta, OrderBookDeltas
             The order book delta received.
 
         Warnings

@@ -28,6 +28,8 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.book cimport BookOrder
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport BookType
@@ -121,7 +123,8 @@ cdef class OrderMatchingEngine:
 
 # -- DATA PROCESSING ------------------------------------------------------------------------------
 
-    cpdef void process_order_book(self, Data data)
+    cpdef void process_order_book_delta(self, OrderBookDelta delta)
+    cpdef void process_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)

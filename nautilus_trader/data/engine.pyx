@@ -67,10 +67,8 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.data.book cimport ORDER_BOOK_DATA
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentClose
@@ -605,7 +603,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBookSnapshot:
+        elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -661,7 +659,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBookSnapshot:
+        elif command.data_type.type == OrderBook:
             self._handle_unsubscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -743,7 +741,7 @@ cdef class DataEngine(Component):
             self._order_book_intervals[key] = []
             now = self._clock.utc_now()
             start_time = now - timedelta(milliseconds=int((now.second * 1000) % interval_ms), microseconds=now.microsecond)
-            timer_name = f"OrderBookSnapshot_{instrument_id}_{interval_ms}"
+            timer_name = f"OrderBook_{instrument_id}_{interval_ms}"
             self._clock.set_timer(
                 name=timer_name,
                 interval=timedelta(milliseconds=interval_ms),
@@ -1220,7 +1218,9 @@ cdef class DataEngine(Component):
     cpdef void _handle_data(self, Data data):
         self.data_count += 1
 
-        if isinstance(data, ORDER_BOOK_DATA):
+        if isinstance(data, OrderBookDelta):
+            self._handle_order_book_data(data)
+        elif isinstance(data, OrderBookDeltas):
             self._handle_order_book_data(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)

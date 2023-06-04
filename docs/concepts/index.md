@@ -78,7 +78,6 @@ which are used to aggregate multiple events to determine state.
 The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.
 - `OrderBookDelta`
 - `OrderBookDeltas` (L1/L2/L3)
-- `OrderBookSnapshot` (L1/L2/L3)
 - `Ticker`
 - `QuoteTick`
 - `TradeTick`

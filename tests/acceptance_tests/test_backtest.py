@@ -45,7 +45,6 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
@@ -733,7 +732,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot))
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
@@ -791,7 +790,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot))
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)

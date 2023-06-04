@@ -24,9 +24,11 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookSnapshot
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -112,20 +114,23 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-    ) -> OrderBookSnapshot:
-        return OrderBookSnapshot(
+    ) -> OrderBookDeltas:
+        bids = [
+            BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.bids
+        ]
+        asks = [
+            BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.asks
+        ]
+        deltas = [
+            OrderBookDelta(instrument_id, BookAction.ADD, o, ts_init, ts_init, self.lastUpdateId)
+            for o in bids + asks
+        ]
+        deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId))
+        return OrderBookDeltas(
             instrument_id=instrument_id,
-            bids=[
-                BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
-                for o in self.bids
-            ],
-            asks=[
-                BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
-                for o in self.asks
-            ],
-            ts_event=ts_init,
-            ts_init=ts_init,
-            sequence=self.lastUpdateId,
+            deltas=deltas,
         )
 
 

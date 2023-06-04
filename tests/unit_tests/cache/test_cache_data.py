@@ -23,13 +23,10 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -300,23 +297,9 @@ class TestCache:
         # Assert
         assert result == AUDUSD_SIM
 
-    @pytest.mark.skip(reason="Snapshots marked for deletion")
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
-        snapshot = OrderBookSnapshot(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bids=[[1550.15, 0.51], [1580.00, 1.20]],
-            asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event=0,
-            ts_init=0,
-        )
-
-        order_book = OrderBook(
-            instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
-        )
-        order_book.apply_snapshot(snapshot)
-
+        order_book = TestDataStubs.order_book(ETHUSDT_BINANCE.id)
         self.cache.add_order_book(order_book)
 
         # Act

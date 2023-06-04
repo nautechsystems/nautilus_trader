@@ -449,7 +449,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None):
         """
-        Subscribe to `OrderBookSnapshot` data for the given instrument ID.
+        Subscribe to `OrderBook` snapshots data for the given instrument ID.
 
         Parameters
         ----------
@@ -464,7 +464,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `OrderBookSnapshot` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot subscribe to `OrderBook` snapshots data for {instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
@@ -641,7 +641,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id):
         """
-        Unsubscribe from `OrderBookSnapshot` data for the given instrument ID.
+        Unsubscribe from `OrderBook` snapshots data for the given instrument ID.
 
         Parameters
         ----------
@@ -650,7 +650,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `OrderBookSnapshot` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot unsubscribe from `OrderBook` snapshot data for {instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `unsubscribe_order_book_snapshots` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")

@@ -310,22 +310,22 @@ cdef class OrderMatchingEngine:
 
 # -- DATA PROCESSING ------------------------------------------------------------------------------
 
-    cpdef void process_order_book(self, Data data):
+    cpdef void process_order_book_delta(self, OrderBookDelta delta):
         """
-        Process the exchanges market for the given order book data.
+        Process the exchanges market for the given order book delta.
 
         Parameters
         ----------
-        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book data to process.
+        delta : OrderBookDelta
+            The order book delta to process.
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(delta, "delta")
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processing {repr(data)}...")
+            self._log.debug(f"Processing {repr(delta)}...")
 
-        self._book.apply(data)
+        self._book.apply_delta(delta)
 
         # TODO(cs): WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
@@ -337,7 +337,36 @@ cdef class OrderMatchingEngine:
         # else:
         #     raise RuntimeError(data.time_in_force)
 
-        self.iterate(data.ts_init)
+        self.iterate(delta.ts_init)
+
+    cpdef void process_order_book_deltas(self, OrderBookDeltas deltas):
+        """
+        Process the exchanges market for the given order book deltas.
+
+        Parameters
+        ----------
+        delta : OrderBookDeltas
+            The order book deltas to process.
+
+        """
+        Condition.not_none(deltas, "deltas")
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(deltas)}...")
+
+        self._book.apply_deltas(deltas)
+
+        # TODO(cs): WIP to introduce flags
+        # if data.flags == TimeInForce.GTC:
+        #     self._book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_OPEN:
+        #     self._opening_auction_book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_CLOSE:
+        #     self._closing_auction_book.apply(data)
+        # else:
+        #     raise RuntimeError(data.time_in_force)
+
+        self.iterate(deltas.ts_init)
 
     cpdef void process_quote_tick(self, QuoteTick tick) :
         """
