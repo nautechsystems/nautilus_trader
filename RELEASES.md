@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
 
 ### Enhancements
 - Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z

@@ -67,6 +67,11 @@ cdef class OrderBookDeltas(Data):
     """The unique sequence number.\n\n:returns: `uint64`"""
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values)
@@ -84,6 +89,10 @@ cdef class OrderBookSnapshot(Data):
     """The snapshot bids.\n\n:returns: `list`"""
     cdef readonly list asks
     """The snapshot asks.\n\n:returns: `list`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef OrderBookSnapshot from_dict_c(dict values)
