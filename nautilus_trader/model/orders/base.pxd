@@ -102,6 +102,8 @@ cdef class Order:
     """The order total price slippage.\n\n:returns: `double`"""
     cdef readonly TriggerType emulation_trigger
     """The order emulation trigger type.\n\n:returns: `TriggerType`"""
+    cdef readonly InstrumentId trigger_instrument_id
+    """The order emulation trigger instrument ID (will be `instrument_id` if ``None``).\n\n:returns: `InstrumentId` or ``None``"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly OrderListId order_list_id
