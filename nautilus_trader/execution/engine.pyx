@@ -79,6 +79,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -611,6 +612,7 @@ cdef class ExecutionEngine(Component):
 
         # Check if converting quote quantity
         cdef QuoteTick last_quote
+        cdef Price last_px
         cdef Quantity base_qty
         if not instrument.is_inverse and order.is_quote_quantity:
             last_quote = self._cache.quote_tick(order.instrument_id)
@@ -620,7 +622,9 @@ cdef class ExecutionEngine(Component):
                     f"no quotes for {order.instrument_id}, {command}."
                 )
                 return
-            base_qty = instrument.calculate_base_quantity(order.quantity, last_quote)
+
+            last_px = last_quote.ask if order.is_buy_c() else last_quote.bid
+            base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
             self._log.info(
                 f"Converting {instrument.id} order quote quantity {order.quantity} to base quantity {base_qty}.",
             )
