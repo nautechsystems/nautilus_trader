@@ -33,12 +33,15 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -46,6 +49,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
@@ -2086,6 +2090,73 @@ class TestExecutionEngine:
         cached_order = self.cache.order(order.client_order_id)
         assert cached_order.venue_order_id == new_venue_id
 
+    def test_submit_order_with_quote_quantity_and_no_prices_denies(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert order.quantity == Quantity.from_int(100_000)
+        assert order.is_closed
+        assert isinstance(order.last_event, OrderDenied)
+
+    def test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            tp_price=Price.from_str("20.0"),
+            sl_trigger_price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        # Act
+        strategy.submit_order_list(bracket)
+
+        # Assert
+        assert bracket.orders[0].quantity == Quantity.from_int(100_000)
+        assert bracket.orders[1].quantity == Quantity.from_int(100_000)
+        assert bracket.orders[2].quantity == Quantity.from_int(100_000)
+        assert bracket.orders[0].is_quote_quantity
+        assert bracket.orders[1].is_quote_quantity
+        assert bracket.orders[2].is_quote_quantity
+        assert isinstance(bracket.orders[0].last_event, OrderDenied)
+        assert isinstance(bracket.orders[1].last_event, OrderDenied)
+        assert isinstance(bracket.orders[2].last_event, OrderDenied)
+
     @pytest.mark.parametrize(
         ("order_side, expected_quantity"),
         [
@@ -2093,7 +2164,7 @@ class TestExecutionEngine:
             [OrderSide.SELL, Quantity.from_str("125000")],
         ],
     )
-    def test_submit_order_with_quote_quantity_converts_to_base_quantity(
+    def test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantity(
         self,
         order_side: OrderSide,
         expected_quantity: Quantity,
@@ -2141,3 +2212,128 @@ class TestExecutionEngine:
         # Assert
         assert order.quantity == expected_quantity
         assert not order.is_quote_quantity
+
+    @pytest.mark.parametrize(
+        ("order_side, expected_quantity"),
+        [
+            [OrderSide.BUY, Quantity.from_str("124992")],
+            [OrderSide.SELL, Quantity.from_str("124992")],
+        ],
+    )
+    def test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quantity(
+        self,
+        order_side: OrderSide,
+        expected_quantity: Quantity,
+    ) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        # Setup market
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("0.80005"),
+            size=Quantity.from_int(100_000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_trade_tick(tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=order_side,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        strategy.submit_order(order)
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
+
+        # Assert
+        assert order.quantity == expected_quantity
+        assert not order.is_quote_quantity
+
+    @pytest.mark.parametrize(
+        ("order_side, expected_quantity"),
+        [
+            [OrderSide.BUY, Quantity.from_str("124984")],
+            [OrderSide.SELL, Quantity.from_str("125000")],
+        ],
+    )
+    def test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
+        self,
+        order_side: OrderSide,
+        expected_quantity: Quantity,
+    ) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        trade_tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("0.80005"),
+            size=Quantity.from_int(100_000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_trade_tick(trade_tick)
+
+        quote_tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80000"),
+            ask=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(10_000_000),
+            ask_size=Quantity.from_int(10_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote_tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=order_side,
+            tp_price=Price.from_str("20.0"),
+            sl_trigger_price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        # Act
+        strategy.submit_order_list(bracket)
+
+        # Assert
+        assert bracket.orders[0].quantity == expected_quantity
+        assert bracket.orders[1].quantity == expected_quantity
+        assert bracket.orders[2].quantity == expected_quantity
+        assert not bracket.orders[0].is_quote_quantity
+        assert not bracket.orders[1].is_quote_quantity
+        assert not bracket.orders[2].is_quote_quantity
