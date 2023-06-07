@@ -477,9 +477,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             start_time_ms = None
             end_time_ms = None
             if start:
-                start_time_ms = str(int(start.timestamp() * 1000))
+                start_time_ms = int(start.timestamp() * 1000)
             if end:
-                end_time_ms = str(int(end.timestamp() * 1000))
+                end_time_ms = int(end.timestamp() * 1000)
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=instrument_id,
                 limit=limit,

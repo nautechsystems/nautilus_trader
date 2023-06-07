@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Updated `BinanceAccountType` enum members and associated docs
 - Fixed `BinanceCommonExecutionClient` iteration of `OrderList` orders
 - Fixed heartbeats for Binance websocket clients (new Rust client now responds with `pong` frames)
+- Fixed Binance adapter typing for `orderId`, `fromId`, `startTime` and `endTime` (all are ints), thanks for reporting @davidsblom
 
 ---
 
