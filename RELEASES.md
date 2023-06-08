@@ -25,6 +25,8 @@ Released on TBD (UTC).
 - Fixed `BinanceCommonExecutionClient` iteration of `OrderList` orders
 - Fixed heartbeats for Binance websocket clients (new Rust client now responds with `pong` frames)
 - Fixed Binance adapter typing for `orderId`, `fromId`, `startTime` and `endTime` (all are ints), thanks for reporting @davidsblom
+- Fixed `Currency` equality to be based on the `code` field (avoiding equality issues over FFI), thanks for reporting @Otlk
+- Fixed `BinanceInstrumentProvider` parsing of initial and maintenance margin values
 
 ---
 
