@@ -17,8 +17,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::stream::SplitSink;
-use futures_util::{SinkExt, StreamExt};
+use fastwebsockets::{self, FragmentCollector, Frame, OpCode, Payload, Role, WebSocket};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{PyObject, Python};
@@ -26,11 +25,9 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task;
 use tokio::time::sleep;
-use tokio_tungstenite::tungstenite::{Error, Message};
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tracing::{event, Level};
 
-/// WebSocketClient connects to a websocket server to read and send messages.
+/// WebSocketClient connects to a websocket server to read and send messages
 ///
 /// The client is opinionated about how messages are read and written. It
 /// assumes that data can only have one reader but multiple writers.
@@ -49,7 +46,7 @@ use tracing::{event, Level};
 pub struct WebSocketClient {
     pub read_task: Option<task::JoinHandle<io::Result<()>>>,
     pub heartbeat_task: Option<task::JoinHandle<()>>,
-    write_mutex: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+    inner: Arc<Mutex<FragmentCollector<TcpStream>>>,
 }
 
 impl WebSocketClient {
@@ -57,52 +54,36 @@ impl WebSocketClient {
         url: &str,
         handler: PyObject,
         heartbeat: Option<u64>,
-    ) -> Result<Self, Error> {
-        let (stream, _) = connect_async(url).await?;
-        let (write_half, mut read_half) = stream.split();
-        let write_mutex = Arc::new(Mutex::new(write_half));
+    ) -> Result<Self, io::Error> {
+        let stream = TcpStream::connect(url).await?;
+        let ws = WebSocket::after_handshake(stream, Role::Client);
+        let inner = Arc::new(Mutex::new(FragmentCollector::new(ws)));
+        let reader = inner.clone();
 
         // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Some(task::spawn(async move {
             loop {
                 event!(Level::DEBUG, "websocket: Receiving message");
-                match read_half.next().await {
-                    Some(Ok(Message::Binary(bytes))) => {
-                        event!(Level::DEBUG, "websocket: Received binary message");
-                        Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &bytes),)))
-                            .unwrap();
-                    }
-                    Some(Ok(Message::Text(data))) => {
-                        event!(Level::DEBUG, "websocket: Received text message");
-                        Python::with_gil(|py| {
-                            handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
-                        })
-                        .unwrap();
-                    }
-                    // TODO: log closing
-                    Some(Ok(Message::Close(_))) => {
-                        event!(
-                            Level::DEBUG,
-                            "websocket: Received close message. Terminating."
-                        );
-                        break;
-                    }
-                    Some(Ok(_)) => (),
-                    // TODO: log error
-                    Some(Err(err)) => {
+                let mut reader = reader.lock().await;
+                match reader.read_frame().await {
+                    Ok(ref mut frame) => match frame.opcode {
+                        OpCode::Text | OpCode::Binary => {
+                            event!(Level::DEBUG, "websocket: Received binary message");
+                            Python::with_gil(|py| {
+                                handler
+                                    .call1(py, (PyBytes::new(py, frame.payload.to_mut()),))
+                                    .unwrap();
+                            });
+                        }
+                        op => {
+                            event!(Level::DEBUG, "websocket: Received message of type {:?}", op);
+                        }
+                    },
+                    Err(err) => {
                         event!(
                             Level::DEBUG,
                             "websocket: Received error message. Terminating. {}",
                             err
-                        );
-                        break;
-                    }
-                    // Internally tungstenite considers the connection closed when polling
-                    // for the next message in the stream returns None.
-                    None => {
-                        event!(
-                            Level::DEBUG,
-                            "websocket: No next message received. Terminating"
                         );
                         break;
                     }
@@ -112,13 +93,16 @@ impl WebSocketClient {
         }));
 
         let heartbeat_task = heartbeat.map(|duration| {
-            let heartbeat_writer = write_mutex.clone();
+            let heartbeat_writer = inner.clone();
             task::spawn(async move {
                 loop {
                     sleep(Duration::from_secs(duration)).await;
                     event!(Level::DEBUG, "websocket: Sending heartbeat");
-                    let mut write_half = heartbeat_writer.lock().await;
-                    write_half.send(Message::Ping(vec![])).await.unwrap();
+                    let mut writer = heartbeat_writer.lock().await;
+                    writer
+                        .write_frame(Frame::new(true, OpCode::Ping, None, Payload::Borrowed(&[])))
+                        .await
+                        .unwrap();
                     event!(Level::DEBUG, "websocket: Sent heartbeat");
                 }
             })
@@ -127,19 +111,31 @@ impl WebSocketClient {
         Ok(Self {
             read_task,
             heartbeat_task,
-            write_mutex,
+            inner,
         })
     }
 
     pub async fn send(&self, data: Vec<u8>) {
-        let mut write_half = self.write_mutex.lock().await;
-        write_half.send(Message::Binary(data)).await.unwrap();
+        let mut writer = self.inner.lock().await;
+        writer
+            .write_frame(Frame::binary(Payload::from(data)))
+            .await
+            .unwrap();
     }
 
-    pub async fn shutdown(mut self) -> Option<task::JoinHandle<Result<(), io::Error>>> {
-        let mut write_half = self.write_mutex.lock().await;
-        write_half.close().await.unwrap();
-        self.read_task.take()
+    pub fn shutdown(&mut self) {
+        event!(Level::DEBUG, "websocket: closing connection");
+        // Cancel reading task
+        if let Some(ref handle) = self.read_task.take() {
+            handle.abort();
+            event!(Level::DEBUG, "websocket: Aborted message read task");
+        }
+
+        // Cancel heart beat task
+        if let Some(ref handle) = self.heartbeat_task.take() {
+            handle.abort();
+            event!(Level::DEBUG, "websocket: Aborted heart beat task");
+        }
     }
 
     pub fn check_read_task(&self) -> bool {
@@ -151,15 +147,7 @@ impl WebSocketClient {
 
 impl Drop for WebSocketClient {
     fn drop(&mut self) {
-        // Cancel reading task
-        if let Some(ref handle) = self.read_task.take() {
-            handle.abort();
-        }
-
-        // Cancel heart beat task
-        if let Some(ref handle) = self.heartbeat_task.take() {
-            handle.abort();
-        }
+        self.shutdown();
     }
 }
 
@@ -179,54 +167,44 @@ impl WebSocketClient {
         })
     }
 
+    /// Send bytes data to the connection
     fn send_bytes<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
-        let write_half = slf.write_mutex.clone();
+        let inner = slf.inner.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             event!(Level::DEBUG, "websocket: Sending message");
-            let mut write_half = write_half.lock().await;
-            write_half.send(Message::Binary(data)).await.unwrap();
+            let mut writer = inner.lock().await;
+            writer
+                .write_frame(Frame::binary(Payload::from(data)))
+                .await
+                .unwrap();
             event!(Level::DEBUG, "websocket: Sent message");
             Ok(())
         })
     }
 
-    fn close<'py>(slf: PyRefMut<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
-        event!(Level::DEBUG, "websocket: closing connection");
-        // cancel reading task
-        if let Some(ref handle) = slf.read_task {
-            handle.abort();
-            event!(Level::DEBUG, "websocket: Aborted message read task");
-        }
-
-        // cancel heart beat task
-        if let Some(ref handle) = slf.heartbeat_task {
-            handle.abort();
-            event!(Level::DEBUG, "websocket: Aborted heart beat task");
-        }
-
-        let write_half = slf.write_mutex.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut write_half = write_half.lock().await;
-            write_half.close().await.unwrap();
-            event!(Level::DEBUG, "websocket: Closed writer");
-            Ok(())
-        })
+    /// Closes the client heart beat and reader task
+    ///
+    /// The connection is not completely closed the till all references
+    /// to the client are gone and the client is dropped.
+    ///
+    /// #Safety
+    /// - The client should not be used after closing it
+    /// - Any auto-reconnect job should be aborted before closing the client
+    fn close(mut slf: PyRefMut<'_, Self>) {
+        slf.shutdown()
     }
 
-    /// Check if the client is still connected.
+    /// Check if the client is still connected
     ///
     /// The client is connected if the read task has not finished. It is expected
     /// that in case of any failure client or server side. The read task will be
     /// shutdown or will receive a `Close` frame which will finish it. There
     /// might be some delay between the connection being closed and the client
     /// detecting.
-    ///
-    /// Internally tungstenite considers the connection closed when polling
-    /// for the next message in the stream returns None.
     fn is_connected(slf: PyRef<'_, Self>) -> bool {
         slf.check_read_task()
     }
@@ -234,44 +212,66 @@ impl WebSocketClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::TcpListener, thread};
+    use std::time::Duration;
 
+    use fastwebsockets::{FragmentCollector, OpCode, Role, WebSocket};
     use pyo3::{prelude::*, prepare_freethreaded_python};
-    use tokio_tungstenite::tungstenite::accept;
+    use tokio::{
+        net::TcpListener,
+        task::{self, JoinHandle},
+        time::sleep,
+    };
+    use tracing::{event, Level};
     use tracing_test::traced_test;
 
     use super::WebSocketClient;
 
     struct TestServer {
+        handle: JoinHandle<()>,
         port: u16,
     }
 
     impl TestServer {
-        fn basic_client_test() -> Self {
-            let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        fn shutdown(&self) {
+            self.handle.abort();
+        }
+
+        async fn basic_client_test() -> Self {
+            let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = TcpListener::local_addr(&server).unwrap().port();
+            event!(
+                Level::DEBUG,
+                "websocket:test Create tcp listener for test server",
+            );
 
             // Setup test server
-            thread::spawn(move || {
-                let conn = server.incoming().next().unwrap();
-                let mut websocket = accept(conn.unwrap()).unwrap();
+            let handle = task::spawn(async move {
+                let (stream, _) = server.accept().await.unwrap();
+                let ws = WebSocket::after_handshake(stream, Role::Server);
+                let mut server = FragmentCollector::new(ws);
+                event!(Level::DEBUG, "websocket:test Started websocket server",);
 
                 loop {
-                    let msg = websocket.read_message().unwrap();
-
-                    // We do not want to send back ping/pong messages.
-                    if msg.is_binary() || msg.is_text() {
-                        websocket.write_message(msg).unwrap();
-                    } else if msg.is_close() {
-                        if let Err(err) = websocket.close(None) {
-                            println!("Connection already closed {err}");
-                        };
-                        break;
+                    match server.read_frame().await {
+                        Ok(frame) => match frame.opcode {
+                            OpCode::Binary | OpCode::Text => {
+                                server.write_frame(frame).await.unwrap()
+                            }
+                            _ => (),
+                        },
+                        Err(err) => {
+                            event!(
+                                Level::DEBUG,
+                                "websocket:test Closing test server because of error: {}",
+                                err
+                            );
+                            break;
+                        }
                     }
                 }
             });
 
-            Self { port }
+            Self { handle, port }
         }
     }
 
@@ -283,7 +283,8 @@ mod tests {
         const N: usize = 10;
 
         // Initialize test server
-        let server = TestServer::basic_client_test();
+        event!(Level::DEBUG, "websocket:test Starting test server");
+        let server = TestServer::basic_client_test().await;
 
         // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
@@ -313,13 +314,10 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let client = WebSocketClient::connect(
-            &format!("ws://127.0.0.1:{}", server.port),
-            handler.clone(),
-            None,
-        )
-        .await
-        .unwrap();
+        let mut client =
+            WebSocketClient::connect(&format!("127.0.0.1:{}", server.port), handler.clone(), None)
+                .await
+                .unwrap();
 
         // Check that websocket read task is running
         let task_running = client
@@ -333,9 +331,12 @@ counter = Counter()",
             client.send(b"ping".to_vec()).await;
         }
 
-        // Shutdown client and wait for read task to terminate
-        let handle = client.shutdown().await.unwrap();
-        handle.await.unwrap().unwrap();
+        // let messages be sent and received
+        sleep(Duration::from_secs(1)).await;
+
+        // Shutdown client and server wait for read task to terminate
+        client.shutdown();
+        server.shutdown();
 
         let count_value: usize = Python::with_gil(|py| {
             counter
