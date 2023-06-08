@@ -19,7 +19,6 @@ from typing import Optional, Union
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
@@ -83,7 +82,7 @@ class MarketMaker(Strategy):
 
     def on_order_book_delta(
         self,
-        delta: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
+        delta: Union[OrderBookDelta, OrderBookDeltas],
     ) -> None:
         if not self._book:
             self.log.error("No book being maintained.")

@@ -27,7 +27,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -172,14 +171,14 @@ class EMACrossTWAP(Strategy):
 
     def on_order_book_delta(
         self,
-        data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
+        data: Union[OrderBookDelta, OrderBookDeltas],
     ) -> None:
         """
         Actions to be performed when the strategy is running and receives order data.
 
         Parameters
         ----------
-        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+        data : OrderBookDelta, OrderBookDeltas
             The order book data received.
 
         """

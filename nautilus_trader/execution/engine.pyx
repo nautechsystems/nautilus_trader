@@ -59,9 +59,12 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport oms_type_to_str
+from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -78,6 +81,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -556,6 +560,45 @@ cdef class ExecutionEngine(Component):
             self._pos_id_generator.set_count(strategy_id, count)
             self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
 
+    cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side):
+        cdef Price last_px = None
+        cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
+        cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
+        if last_quote is not None:
+            last_px = last_quote.ask if order_side == OrderSide.BUY else last_quote.bid
+        else:
+            if last_trade is not None:
+                last_px = last_trade.price
+
+        return last_px
+
+    cpdef void _set_order_base_qty(self, Order order, Quantity base_qty):
+        self._log.info(
+            f"Setting {order.instrument_id} order quote quantity {order.quantity} to base quantity {base_qty}.",
+        )
+        order.quantity = base_qty
+        order.leaves_qty = base_qty
+        order.is_quote_quantity = False
+
+    cpdef void _deny_order(self, Order order, str reason):
+        # Generate event
+        cdef OrderDenied denied = OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(denied)
+
+        self._cache.update_order(order)
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=denied,
+        )
+
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void _execute_command(self, TradingCommand command):
@@ -595,9 +638,29 @@ cdef class ExecutionEngine(Component):
             )
 
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
-        if not self._cache.order_exists(command.order.client_order_id):
+        cdef Order order = command.order
+        if not self._cache.order_exists(order.client_order_id):
             # Cache order
-            self._cache.add_order(command.order, command.position_id)
+            self._cache.add_order(order, command.position_id)
+
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle submit order: "
+                f"no instrument found for {order.instrument_id}, {command}."
+            )
+            return
+
+        # Check if converting quote quantity
+        cdef Price last_px = None
+        cdef Quantity base_qty = None
+        if not instrument.is_inverse and order.is_quote_quantity:
+            last_px = self._last_px_for_conversion(order.instrument_id, order.side)
+            if last_px is None:
+                self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
+                return  # Denied
+            base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
+            self._set_order_base_qty(order, base_qty)
 
         # Send to execution client
         client.submit_order(command)
@@ -608,6 +671,30 @@ cdef class ExecutionEngine(Component):
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, position_id=None)
+
+        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle submit order list: "
+                f"no instrument found for {command.instrument_id}, {command}."
+            )
+            return
+
+        # Check if converting quote quantity
+        cdef Price last_px = None
+        cdef Quantity quote_qty = None
+        cdef Quantity base_qty = None
+        if not instrument.is_inverse and command.order_list.first.is_quote_quantity:
+            for order in command.order_list.orders:
+                if order.quantity != quote_qty:
+                    last_px = self._last_px_for_conversion(order.instrument_id, order.side)
+                    quote_qty = order.quantity
+                if last_px is None:
+                    for order in command.order_list.orders:
+                        self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
+                    return  # Denied
+                base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
+                self._set_order_base_qty(order, base_qty)
 
         # Send to execution client
         client.submit_order_list(command)

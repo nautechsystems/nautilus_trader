@@ -26,12 +26,15 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
@@ -81,6 +84,9 @@ cdef class ExecutionEngine(Component):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cpdef void _set_position_id_counts(self)
+    cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side)
+    cpdef void _set_order_base_qty(self, Order order, Quantity base_qty)
+    cpdef void _deny_order(self, Order order, str reason)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

@@ -618,23 +618,41 @@ cdef class SimulatedExchange:
         cdef (uint64_t, uint64_t) key = (ts, self._inflight_counter[ts])
         return key, command
 
-    cpdef void process_order_book(self, Data data):
+    cpdef void process_order_book_delta(self, OrderBookDelta delta):
         """
-        Process the exchanges market for the given order book data.
+        Process the exchanges market for the given order book delta.
 
         Parameters
         ----------
-        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book data to process.
+        data : OrderBookDelta
+            The order book delta to process.
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(delta, "delta")
 
-        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(data.instrument_id)
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(delta.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {data.instrument_id}")
+            raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
 
-        matching_engine.process_order_book(data)
+        matching_engine.process_order_book_delta(delta)
+
+    cpdef void process_order_book_deltas(self, OrderBookDeltas deltas):
+        """
+        Process the exchanges market for the given order book deltas.
+
+        Parameters
+        ----------
+        data : OrderBookDeltas
+            The order book deltas to process.
+
+        """
+        Condition.not_none(deltas, "deltas")
+
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(deltas.instrument_id)
+        if matching_engine is None:
+            raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
+
+        matching_engine.process_order_book_deltas(deltas)
 
     cpdef void process_quote_tick(self, QuoteTick tick):
         """

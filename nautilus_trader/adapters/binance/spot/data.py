@@ -32,7 +32,6 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
@@ -58,10 +57,10 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
@@ -76,8 +75,8 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
+        base_url_ws: str,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        base_url_ws: Optional[str] = None,
         use_agg_trade_ticks: bool = False,
     ):
         PyCondition.true(
@@ -119,14 +118,14 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         instrument_id: InstrumentId = self._get_cached_instrument_id(
             msg.stream.partition("@")[0],
         )
-        book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
+        book_snapshot: OrderBookDeltas = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: Optional[
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
-        ] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+            instrument_id,
+        )
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

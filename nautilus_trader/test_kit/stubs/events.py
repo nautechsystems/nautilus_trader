@@ -49,6 +49,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -78,7 +79,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def cash_account_state(account_id=None) -> AccountState:
+    def cash_account_state(account_id: Optional[AccountId] = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.CASH,
@@ -99,7 +100,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def margin_account_state(account_id=None) -> AccountState:
+    def margin_account_state(account_id: Optional[AccountId] = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.MARGIN,
@@ -126,7 +127,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def betting_account_state(account_id=None) -> AccountState:
+    def betting_account_state(account_id: Optional[AccountId] = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.BETTING,
@@ -163,7 +164,11 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_accepted(order, account_id=None, venue_order_id=None) -> OrderAccepted:
+    def order_accepted(
+        order: Order,
+        account_id: Optional[AccountId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+    ) -> OrderAccepted:
         return OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -177,7 +182,10 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_rejected(order, account_id=None) -> OrderRejected:
+    def order_rejected(
+        order: Order,
+        account_id: Optional[AccountId] = None,
+    ) -> OrderRejected:
         return OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -191,7 +199,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_pending_update(order) -> OrderPendingUpdate:
+    def order_pending_update(order: Order) -> OrderPendingUpdate:
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -206,7 +214,7 @@ class TestEventStubs:
 
     @staticmethod
     def order_updated(
-        order,
+        order: Order,
         quantity: Optional[Quantity] = None,
         price: Optional[Price] = None,
         trigger_price: Optional[Price] = None,
@@ -227,7 +235,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_pending_cancel(order) -> OrderPendingCancel:
+    def order_pending_cancel(order: Order) -> OrderPendingCancel:
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -305,7 +313,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_canceled(order) -> OrderCanceled:
+    def order_canceled(order: Order) -> OrderCanceled:
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -319,7 +327,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_expired(order) -> OrderExpired:
+    def order_expired(order: Order) -> OrderExpired:
         return OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -333,7 +341,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_triggered(order) -> OrderTriggered:
+    def order_triggered(order: Order) -> OrderTriggered:
         return OrderTriggered(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -347,7 +355,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def position_opened(position) -> PositionOpened:
+    def position_opened(position: Position) -> PositionOpened:
         return PositionOpened.create(
             position=position,
             fill=position.last_event,
@@ -356,7 +364,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def position_changed(position) -> PositionChanged:
+    def position_changed(position: Position) -> PositionChanged:
         return PositionChanged.create(
             position=position,
             fill=position.last_event,
@@ -365,7 +373,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def position_closed(position) -> PositionClosed:
+    def position_closed(position: Position) -> PositionClosed:
         return PositionClosed.create(
             position=position,
             fill=position.last_event,

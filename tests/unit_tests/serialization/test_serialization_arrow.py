@@ -27,7 +27,6 @@ from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
@@ -151,45 +150,40 @@ class TestParquetSerializer:
         expected = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[delta],
-            ts_event=0,
-            ts_init=0,
         )
         assert deserialized == expected
         write_objects(catalog=self.catalog, chunk=[delta])
 
     @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas(self):
-        kw = {
-            "instrument_id": "AUD/USD.SIM",
-            "ts_event": 0,
-            "ts_init": 0,
-        }
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[
                 OrderBookDelta.from_dict(
                     {
+                        "instrument_id": "AUD/USD.SIM",
                         "action": "ADD",
                         "side": "BUY",
                         "price": 8.0,
                         "size": 30.0,
-                        "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
-                        **kw,
+                        "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",  # TODO: Needs to be int
+                        "ts_event": 0,
+                        "ts_init": 0,
                     },
                 ),
                 OrderBookDelta.from_dict(
                     {
+                        "instrument_id": "AUD/USD.SIM",
                         "action": "ADD",
                         "side": "SELL",
                         "price": 15.0,
                         "size": 10.0,
-                        "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",
-                        **kw,
+                        "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",  # TODO: Needs to be int
+                        "ts_event": 0,
+                        "ts_init": 0,
                     },
                 ),
             ],
-            ts_event=0,
-            ts_init=0,
         )
 
         serialized = ParquetSerializer.serialize(deltas)
@@ -239,8 +233,6 @@ class TestParquetSerializer:
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
-            ts_event=0,
-            ts_init=0,
         )
 
         serialized = ParquetSerializer.serialize(deltas)
@@ -258,10 +250,10 @@ class TestParquetSerializer:
 
     @pytest.mark.skip(reason="Snapshots marked for deletion")
     def test_serialize_and_deserialize_order_book_snapshot(self):
-        book = TestDataStubs.order_book_snapshot()
+        book = TestDataStubs.order_book_snapshot(AUDUSD_SIM.id)
 
         serialized = ParquetSerializer.serialize(book)
-        deserialized = ParquetSerializer.deserialize(cls=OrderBookSnapshot, chunk=serialized)
+        deserialized = ParquetSerializer.deserialize(cls=OrderBookDelta, chunk=serialized)
 
         # Assert
         assert deserialized == [book]

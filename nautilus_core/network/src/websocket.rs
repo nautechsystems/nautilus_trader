@@ -15,12 +15,12 @@
 
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 use fastwebsockets::{self, FragmentCollector, Frame, OpCode, Payload, Role, WebSocket};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{PyObject, Python};
-use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task;
@@ -205,9 +205,6 @@ impl WebSocketClient {
     /// shutdown or will receive a `Close` frame which will finish it. There
     /// might be some delay between the connection being closed and the client
     /// detecting.
-    ///
-    /// Internally tungstenite considers the connection closed when polling
-    /// for the next message in the stream returns None.
     fn is_connected(slf: PyRef<'_, Self>) -> bool {
         slf.check_read_task()
     }

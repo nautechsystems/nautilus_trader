@@ -14,61 +14,23 @@
 # -------------------------------------------------------------------------------------------------
 
 import itertools
-from itertools import repeat
 from typing import Union
 
-from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
-def _parse_delta(delta: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot], cls):
+def _parse_delta(delta: Union[OrderBookDelta, OrderBookDeltas], cls):
     return dict(**OrderBookDelta.to_dict(delta), _type=cls.__name__)
 
 
-def serialize(data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]):
+def serialize(data: Union[OrderBookDelta, OrderBookDeltas]):
     if isinstance(data, OrderBookDelta):
         result = [_parse_delta(delta=data, cls=OrderBookDelta)]
     elif isinstance(data, OrderBookDeltas):
         result = [_parse_delta(delta=delta, cls=OrderBookDeltas) for delta in data.deltas]
-    elif isinstance(data, OrderBookSnapshot):
-        # For a snapshot, we store the individual deltas required to rebuild, namely a CLEAR, followed by ADDs
-        result = [
-            _parse_delta(
-                OrderBookDelta(
-                    instrument_id=data.instrument_id,
-                    order=None,
-                    action=BookAction.CLEAR,
-                    ts_event=data.ts_event,
-                    ts_init=data.ts_init,
-                ),
-                cls=OrderBookSnapshot,
-            ),
-        ]
-        orders = list(zip(repeat(OrderSide.BUY), data.bids)) + list(
-            zip(repeat(OrderSide.SELL), data.asks),
-        )
-        result.extend(
-            [
-                _parse_delta(
-                    OrderBookDelta(
-                        instrument_id=data.instrument_id,
-                        ts_event=data.ts_event,
-                        ts_init=data.ts_init,
-                        order=BookOrder(price=price, size=volume, side=side),
-                        action=BookAction.ADD,
-                    ),
-                    cls=OrderBookSnapshot,
-                )
-                for side, (price, volume) in orders
-            ],
-        )
     else:  # pragma: no cover (design-time error)
         raise TypeError(f"invalid order book data, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages
@@ -78,6 +40,7 @@ def serialize(data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]):
 
 
 def _is_orderbook_snapshot(values: list):
+    # TODO: Reimplement
     return values[0]["_type"] == "OrderBookSnapshot"
 
 
@@ -85,23 +48,27 @@ def _build_order_book_snapshot(values):
     # First value is a CLEAR message, which we ignore
     assert len({v["instrument_id"] for v in values}) == 1
     assert len(values) >= 2, f"Not enough values passed! {values}"
-    return OrderBookSnapshot(
-        instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-        book_type=book_type_from_str(values[1]["book_type"]),
-        bids=[(order["price"], order["size"]) for order in values[1:] if order["side"] == "BUY"],
-        asks=[(order["price"], order["size"]) for order in values[1:] if order["side"] == "SELL"],
-        ts_event=values[1]["ts_event"],
-        ts_init=values[1]["ts_init"],
+
+    instrument_id = InstrumentId.from_str(values[1]["instrument_id"])
+    ts_event = values[1]["ts_event"]
+    ts_init = values[1]["ts_init"]
+
+    # bids = [(order["price"], order["size"]) for order in values[1:] if order["side"] == "BUY"]
+    # asks = [(order["price"], order["size"]) for order in values[1:] if order["side"] == "SELL"]
+
+    deltas = [OrderBookDelta.clear(instrument_id, ts_event, ts_init)]
+    deltas += [OrderBookDelta.from_dict(v) for v in values]
+
+    return OrderBookDeltas(
+        instrument_id=instrument_id,
+        deltas=deltas,
     )
 
 
 def _build_order_book_deltas(values):
     return OrderBookDeltas(
         instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
-        book_type=book_type_from_str(values[0]["book_type"]),
         deltas=[OrderBookDelta.from_dict(v) for v in values],
-        ts_event=values[0]["ts_event"],
-        ts_init=values[0]["ts_init"],
     )
 
 
@@ -121,7 +88,7 @@ def deserialize(data: list[dict]):
     return sorted(results, key=lambda x: x.ts_event)
 
 
-for cls in [OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]:
+for cls in [OrderBookDelta, OrderBookDeltas]:
     register_parquet(
         cls=cls,
         serializer=serialize,

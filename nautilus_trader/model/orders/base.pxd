@@ -90,6 +90,8 @@ cdef class Order:
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint is_reduce_only
     """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
+    cdef readonly bint is_quote_quantity
+    """If the order quantity is denominated in the quote currency.\n\n:returns: `bool`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty
@@ -102,6 +104,8 @@ cdef class Order:
     """The order total price slippage.\n\n:returns: `double`"""
     cdef readonly TriggerType emulation_trigger
     """The order emulation trigger type.\n\n:returns: `TriggerType`"""
+    cdef readonly InstrumentId trigger_instrument_id
+    """The order emulation trigger instrument ID (will be `instrument_id` if ``None``).\n\n:returns: `InstrumentId` or ``None``"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly OrderListId order_list_id

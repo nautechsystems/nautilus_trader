@@ -103,8 +103,8 @@ impl Ladder {
     }
 
     pub fn clear(&mut self) {
-        self.levels = BTreeMap::new();
-        self.cache = HashMap::new();
+        self.levels.clear();
+        self.cache.clear();
     }
 
     pub fn add(&mut self, order: BookOrder) {

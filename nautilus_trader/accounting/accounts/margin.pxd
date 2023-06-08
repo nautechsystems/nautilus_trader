@@ -61,7 +61,7 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )
 
     cpdef Money calculate_margin_maint(
@@ -70,5 +70,5 @@ cdef class MarginAccount(Account):
         PositionSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )

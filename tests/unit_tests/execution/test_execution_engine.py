@@ -15,7 +15,6 @@
 
 import pytest
 
-from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
@@ -33,11 +32,16 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -45,6 +49,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
@@ -65,10 +70,6 @@ from nautilus_trader.trading.strategy import Strategy
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-
-
-class MyAccount(CashAccount):
-    pass  # Dummy subclass for testing
 
 
 class TestExecutionEngine:
@@ -154,7 +155,7 @@ class TestExecutionEngine:
         self.portfolio.update_account(TestEventStubs.margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
-    def test_registered_clients_returns_expected(self):
+    def test_registered_clients_returns_expected(self) -> None:
         # Arrange, Act
         result = self.exec_engine.registered_clients
 
@@ -162,7 +163,7 @@ class TestExecutionEngine:
         assert result == [ClientId("SIM")]
         assert self.exec_engine.default_client is None
 
-    def test_register_exec_client_for_routing(self):
+    def test_register_exec_client_for_routing(self) -> None:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
@@ -186,7 +187,7 @@ class TestExecutionEngine:
             self.exec_client.id,
         ]
 
-    def test_register_venue_routing(self):
+    def test_register_venue_routing(self) -> None:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
@@ -210,7 +211,7 @@ class TestExecutionEngine:
             self.exec_client.id,
         ]
 
-    def test_register_strategy_with_external_order_claims_when_claim(self):
+    def test_register_strategy_with_external_order_claims_when_claim(self) -> None:
         # Arrange
         config = StrategyConfig(external_order_claims=["ETHUSDT-PERP.DYDX"])
         strategy = Strategy(config=config)
@@ -232,7 +233,7 @@ class TestExecutionEngine:
         # Assert
         assert claim == strategy.id
 
-    def test_register_strategy_with_external_order_claims_when_no_claim(self):
+    def test_register_strategy_with_external_order_claims_when_no_claim(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -253,7 +254,7 @@ class TestExecutionEngine:
         # Assert
         assert claim is None
 
-    def test_register_external_order_claims_conflict(self):
+    def test_register_external_order_claims_conflict(self) -> None:
         # Arrange
         config1 = StrategyConfig(
             order_id_tag="000",
@@ -289,14 +290,14 @@ class TestExecutionEngine:
         with pytest.raises(InvalidConfiguration):
             self.exec_engine.register_external_order_claims(strategy2)
 
-    def test_deregister_client_removes_client(self):
+    def test_deregister_client_removes_client(self) -> None:
         # Arrange, Act
         self.exec_engine.deregister_client(self.exec_client)
 
         # Assert
         assert self.exec_engine.registered_clients == []
 
-    def test_check_connected_when_client_disconnected_returns_false(self):
+    def test_check_connected_when_client_disconnected_returns_false(self) -> None:
         # Arrange
         self.exec_client.start()
         self.exec_client.stop()
@@ -307,7 +308,7 @@ class TestExecutionEngine:
         # Assert
         assert not result
 
-    def test_check_connected_when_client_connected_returns_true(self):
+    def test_check_connected_when_client_connected_returns_true(self) -> None:
         # Arrange
         self.exec_client.start()
 
@@ -317,14 +318,14 @@ class TestExecutionEngine:
         # Assert
         assert result
 
-    def test_check_disconnected_when_client_disconnected_returns_true(self):
+    def test_check_disconnected_when_client_disconnected_returns_true(self) -> None:
         # Arrange, Act
         result = self.exec_engine.check_disconnected()
 
         # Assert
         assert result
 
-    def test_check_disconnected_when_client_connected_returns_false(self):
+    def test_check_disconnected_when_client_connected_returns_false(self) -> None:
         # Arrange
         self.exec_client.start()
 
@@ -334,14 +335,14 @@ class TestExecutionEngine:
         # Assert
         assert not result
 
-    def test_check_integrity_calls_check_on_cache(self):
+    def test_check_integrity_calls_check_on_cache(self) -> None:
         # Arrange, Act
         result = self.exec_engine.check_integrity()
 
         # Assert
         assert result  # No exceptions raised
 
-    def test_setting_of_position_id_counts(self):
+    def test_setting_of_position_id_counts(self) -> None:
         # Arrange
         strategy_id = StrategyId("S-001")
         order = self.order_factory.market(
@@ -374,7 +375,7 @@ class TestExecutionEngine:
         # Assert
         assert self.exec_engine.position_id_count(strategy_id) == 1
 
-    def test_given_random_command_logs_and_continues(self):
+    def test_given_random_command_logs_and_continues(self) -> None:
         # Arrange
         random = TradingCommand(
             None,
@@ -387,7 +388,7 @@ class TestExecutionEngine:
 
         self.exec_engine.execute(random)
 
-    def test_submit_order_with_duplicate_client_order_id_logs(self):
+    def test_submit_order_with_duplicate_client_order_id_logs(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -424,7 +425,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.SUBMITTED
 
-    def test_submit_order_for_random_venue_logs(self):
+    def test_submit_order_for_random_venue_logs(self) -> None:
         # Arrange
         self.cache.add_instrument(BTCUSDT_BINANCE)
         self.exec_engine.start()
@@ -461,7 +462,7 @@ class TestExecutionEngine:
         assert self.exec_engine.command_count == 1
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_order_filled_with_unrecognized_strategy_id(self):
+    def test_order_filled_with_unrecognized_strategy_id(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -506,7 +507,7 @@ class TestExecutionEngine:
 
     def test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_not_submit(
         self,
-    ):
+    ) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -566,7 +567,7 @@ class TestExecutionEngine:
         assert take_profit.status == OrderStatus.SUBMITTED  # Did not invalidate originals
         assert self.exec_engine.command_count == 2
 
-    def test_submit_order(self):
+    def test_submit_order(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -602,7 +603,7 @@ class TestExecutionEngine:
         assert submit_order in self.exec_client.commands
         assert self.cache.order_exists(order.client_order_id)
 
-    def test_submit_order_with_cleared_cache_logs_error(self):
+    def test_submit_order_with_cleared_cache_logs_error(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -639,7 +640,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_when_applying_event_to_order_with_invalid_state_trigger_logs(self):
+    def test_when_applying_event_to_order_with_invalid_state_trigger_logs(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -675,7 +676,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_order_filled_event_when_order_not_found_in_cache_logs(self):
+    def test_order_filled_event_when_order_not_found_in_cache_logs(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -702,7 +703,7 @@ class TestExecutionEngine:
         assert self.exec_engine.event_count == 1
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_cancel_order_for_already_closed_order_logs_and_does_nothing(self):
+    def test_cancel_order_for_already_closed_order_logs_and_does_nothing(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -753,7 +754,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.FILLED
 
-    def test_cancel_order_then_filled_reopens_order(self):
+    def test_cancel_order_then_filled_reopens_order(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -795,7 +796,7 @@ class TestExecutionEngine:
         assert order.status == OrderStatus.FILLED
         assert order.is_closed
 
-    def test_cancel_order_then_partially_filled_reopens_order(self):
+    def test_cancel_order_then_partially_filled_reopens_order(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -840,7 +841,7 @@ class TestExecutionEngine:
         assert order.is_open
         assert order in self.cache.orders_open()
 
-    def test_process_event_with_no_venue_order_id_logs_and_does_nothing(self):
+    def test_process_event_with_no_venue_order_id_logs_and_does_nothing(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -886,7 +887,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.SUBMITTED
 
-    def test_modify_order_for_already_closed_order_logs_and_does_nothing(self):
+    def test_modify_order_for_already_closed_order_logs_and_does_nothing(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -942,7 +943,7 @@ class TestExecutionEngine:
         assert order.status == OrderStatus.FILLED
         assert order.quantity == Quantity.from_int(100_000)
 
-    def test_handle_order_event_with_random_client_order_id_and_order_id_cached(self):
+    def test_handle_order_event_with_random_client_order_id_and_order_id_cached(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -995,7 +996,7 @@ class TestExecutionEngine:
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
         self,
-    ):
+    ) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1046,7 +1047,7 @@ class TestExecutionEngine:
         # Assert (order was not found, engine did not crash)
         assert order.status == OrderStatus.ACCEPTED
 
-    def test_handle_duplicate_order_events_logs_error_and_does_not_apply(self):
+    def test_handle_duplicate_order_events_logs_error_and_does_not_apply(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1099,7 +1100,7 @@ class TestExecutionEngine:
         assert order.status == OrderStatus.CANCELED
         assert order.event_count == 4
 
-    def test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(self):
+    def test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1156,7 +1157,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
-    def test_handle_order_fill_event(self):
+    def test_handle_order_fill_event(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1208,7 +1209,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
-    def test_handle_multiple_partial_fill_events(self):
+    def test_handle_multiple_partial_fill_events(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1282,7 +1283,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
-    def test_handle_position_opening_with_position_id_none(self):
+    def test_handle_position_opening_with_position_id_none(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1334,7 +1335,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
-    def test_add_to_existing_position_on_order_fill(self):
+    def test_add_to_existing_position_on_order_fill(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1406,7 +1407,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
-    def test_close_position_on_order_fill(self):
+    def test_close_position_on_order_fill(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1486,7 +1487,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 0
         assert self.cache.positions_closed_count() == 1
 
-    def test_multiple_strategy_positions_opened(self):
+    def test_multiple_strategy_positions_opened(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1591,7 +1592,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 2
         assert self.cache.positions_closed_count() == 0
 
-    def test_multiple_strategy_positions_one_active_one_closed(self):
+    def test_multiple_strategy_positions_one_active_one_closed(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1714,7 +1715,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 1
 
-    def test_flip_position_on_opposite_filled_same_position_sell(self):
+    def test_flip_position_on_opposite_filled_same_position_sell(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1793,7 +1794,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 1
 
-    def test_flip_position_on_opposite_filled_same_position_buy(self):
+    def test_flip_position_on_opposite_filled_same_position_buy(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1872,7 +1873,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 1
 
-    def test_flip_position_on_flat_position_then_filled_reusing_position_id(self):
+    def test_flip_position_on_flat_position_then_filled_reusing_position_id(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1957,7 +1958,7 @@ class TestExecutionEngine:
         # Assert
         assert order3.status == OrderStatus.INITIALIZED
 
-    def test_flip_position_when_netting_oms(self):
+    def test_flip_position_when_netting_oms(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -1993,7 +1994,7 @@ class TestExecutionEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        position_id = PositionId("P-19700101-0000-000-001-1")
+        position_id = PositionId("P-19700101-0000-000-None-1")
 
         self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestEventStubs.order_submitted(order1))
@@ -2019,13 +2020,16 @@ class TestExecutionEngine:
             TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id),
         )
 
-        # Get netted position
-        # position = self.cache.position(position_id)
-
         # Assert
-        # TODO(cs)
+        position_id_flipped = PositionId("P-19700101-0000-000-None-1F")
+        position = self.cache.position(position_id)
+        position_flipped = self.cache.position(position_id_flipped)
+        assert position.id == position_id
+        assert position.quantity == Quantity.from_int(0)
+        assert position_flipped.quantity == Quantity.from_int(100_000)
+        assert position_flipped.side == PositionSide.LONG
 
-    def test_handle_updated_order_event(self):
+    def test_handle_updated_order_event(self) -> None:
         # Arrange
         self.exec_engine.start()
 
@@ -2085,3 +2089,251 @@ class TestExecutionEngine:
         # Order should have new venue_order_id
         cached_order = self.cache.order(order.client_order_id)
         assert cached_order.venue_order_id == new_venue_id
+
+    def test_submit_order_with_quote_quantity_and_no_prices_denies(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        # Act
+        strategy.submit_order(order)
+
+        # Assert
+        assert order.quantity == Quantity.from_int(100_000)
+        assert order.is_closed
+        assert isinstance(order.last_event, OrderDenied)
+
+    def test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            tp_price=Price.from_str("20.0"),
+            sl_trigger_price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        # Act
+        strategy.submit_order_list(bracket)
+
+        # Assert
+        assert bracket.orders[0].quantity == Quantity.from_int(100_000)
+        assert bracket.orders[1].quantity == Quantity.from_int(100_000)
+        assert bracket.orders[2].quantity == Quantity.from_int(100_000)
+        assert bracket.orders[0].is_quote_quantity
+        assert bracket.orders[1].is_quote_quantity
+        assert bracket.orders[2].is_quote_quantity
+        assert isinstance(bracket.orders[0].last_event, OrderDenied)
+        assert isinstance(bracket.orders[1].last_event, OrderDenied)
+        assert isinstance(bracket.orders[2].last_event, OrderDenied)
+
+    @pytest.mark.parametrize(
+        ("order_side, expected_quantity"),
+        [
+            [OrderSide.BUY, Quantity.from_str("124984")],
+            [OrderSide.SELL, Quantity.from_str("125000")],
+        ],
+    )
+    def test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantity(
+        self,
+        order_side: OrderSide,
+        expected_quantity: Quantity,
+    ) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        # Setup market
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80000"),
+            ask=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(10_000_000),
+            ask_size=Quantity.from_int(10_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=order_side,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        strategy.submit_order(order)
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
+
+        # Assert
+        assert order.quantity == expected_quantity
+        assert not order.is_quote_quantity
+
+    @pytest.mark.parametrize(
+        ("order_side, expected_quantity"),
+        [
+            [OrderSide.BUY, Quantity.from_str("124992")],
+            [OrderSide.SELL, Quantity.from_str("124992")],
+        ],
+    )
+    def test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quantity(
+        self,
+        order_side: OrderSide,
+        expected_quantity: Quantity,
+    ) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        # Setup market
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("0.80005"),
+            size=Quantity.from_int(100_000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_trade_tick(tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=order_side,
+            price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        strategy.submit_order(order)
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
+
+        # Assert
+        assert order.quantity == expected_quantity
+        assert not order.is_quote_quantity
+
+    @pytest.mark.parametrize(
+        ("order_side, expected_quantity"),
+        [
+            [OrderSide.BUY, Quantity.from_str("124984")],
+            [OrderSide.SELL, Quantity.from_str("125000")],
+        ],
+    )
+    def test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
+        self,
+        order_side: OrderSide,
+        expected_quantity: Quantity,
+    ) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        trade_tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("0.80005"),
+            size=Quantity.from_int(100_000),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_trade_tick(trade_tick)
+
+        quote_tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80000"),
+            ask=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(10_000_000),
+            ask_size=Quantity.from_int(10_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote_tick)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket = strategy.order_factory.bracket(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=order_side,
+            tp_price=Price.from_str("20.0"),
+            sl_trigger_price=Price.from_str("10.0"),
+            quantity=Quantity.from_int(100_000),
+            quote_quantity=True,  # <-- Quantity denominated in quote currency
+        )
+
+        # Act
+        strategy.submit_order_list(bracket)
+
+        # Assert
+        assert bracket.orders[0].quantity == expected_quantity
+        assert bracket.orders[1].quantity == expected_quantity
+        assert bracket.orders[2].quantity == expected_quantity
+        assert not bracket.orders[0].is_quote_quantity
+        assert not bracket.orders[1].is_quote_quantity
+        assert not bracket.orders[2].is_quote_quantity

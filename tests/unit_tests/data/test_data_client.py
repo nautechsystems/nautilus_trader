@@ -23,8 +23,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
@@ -199,13 +197,7 @@ class TestMarketDataClient:
 
     def test_handle_order_book_snapshot_sends_to_data_engine(self):
         # Arrange
-        snapshot = OrderBookSnapshot(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bids=[[1000, 1]],
-            asks=[[1001, 1]],
-            ts_event=0,
-            ts_init=0,
-        )
+        snapshot = TestDataStubs.order_book_snapshot(AUDUSD_SIM.id)
 
         # Act
         self.client._handle_data_py(snapshot)
@@ -215,12 +207,7 @@ class TestMarketDataClient:
 
     def test_handle_order_book_operations_sends_to_data_engine(self):
         # Arrange
-        deltas = OrderBookDeltas(
-            instrument_id=ETHUSDT_BINANCE.id,
-            deltas=[],
-            ts_event=0,
-            ts_init=0,
-        )
+        deltas = TestDataStubs.order_book_deltas()
 
         # Act
         self.client._handle_data_py(deltas)

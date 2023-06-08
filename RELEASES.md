@@ -3,7 +3,10 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Removed `OrderBookSnapshot` (redundant as can be represented as an initial CLEAR followed by deltas)
+- Removed `OrderBookData` (redundant)
+- Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional cals on inverse instruments)
+- Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
 
 ### Enhancements
 - Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z
@@ -11,6 +14,8 @@ None
 - Added core `HttpClient` based on `hyper`, thanks @twitu
 - Added core `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
 - Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
+- Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
+- Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
 - Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)
@@ -19,6 +24,7 @@ None
 - Updated `BinanceAccountType` enum members and associated docs
 - Fixed `BinanceCommonExecutionClient` iteration of `OrderList` orders
 - Fixed heartbeats for Binance websocket clients (new Rust client now responds with `pong` frames)
+- Fixed Binance adapter typing for `orderId`, `fromId`, `startTime` and `endTime` (all are ints), thanks for reporting @davidsblom
 
 ---
 

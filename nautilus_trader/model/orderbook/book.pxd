@@ -21,7 +21,6 @@ from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.model.data.book cimport BookOrder
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport BookType
@@ -29,7 +28,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class OrderBook:
+cdef class OrderBook(Data):
     cdef OrderBook_API _mem
 
     cpdef void reset(self)
@@ -41,7 +40,6 @@ cdef class OrderBook:
     cpdef void clear_asks(self, uint64_t ts_event, uint64_t sequence=*)
     cpdef void apply_delta(self, OrderBookDelta delta)
     cpdef void apply_deltas(self, OrderBookDeltas deltas)
-    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot)
     cpdef void apply(self, Data data)
     cpdef void check_integrity(self)
 

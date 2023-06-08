@@ -26,7 +26,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.model.orderbook import OrderBookDelta
 from nautilus_trader.model.orderbook import OrderBookDeltas
-from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -314,21 +313,6 @@ class TestOrderBook:
     #     self.empty_book.add(BookOrder(price=5.0, size=5, side=OrderSide.BUY))
     #     self.empty_book.check_integrity()
 
-    @pytest.mark.skip(reason="Snapshots marked for deletion")
-    def test_orderbook_snapshot(self):
-        snapshot = OrderBookSnapshot(
-            instrument_id=self.empty_book.instrument_id,
-            bids=[[1550.15, 0.51], [1580.00, 1.20]],
-            asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event=0,
-            ts_init=0,
-        )
-        self.empty_book.apply_snapshot(snapshot)
-        assert self.empty_book.best_bid_price() == 1580.0
-        assert self.empty_book.best_ask_price() == 1552.15
-        assert self.empty_book.count == 4
-        assert self.empty_book.sequence == 4
-
     def test_orderbook_operation_update(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
@@ -384,39 +368,9 @@ class TestOrderBook:
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[delta],
-            ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
-            ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
         )
         self.empty_book.apply_deltas(deltas)
         assert self.empty_book.best_ask_price() == Price(0.5814, 4)
-
-    @pytest.mark.skip(reason="Snapshots marked for deletion")
-    def test_apply(self):
-        snapshot = OrderBookSnapshot(
-            instrument_id=self.empty_book.instrument_id,
-            bids=[[150.0, 0.51]],
-            asks=[[160.0, 1.51]],
-            ts_event=0,
-            ts_init=0,
-        )
-        self.empty_book.apply_snapshot(snapshot)
-        assert self.empty_book.best_ask_price() == 160
-        assert self.empty_book.count == 2
-        delta = OrderBookDelta(
-            instrument_id=TestIdStubs.audusd_id(),
-            action=BookAction.ADD,
-            order=BookOrder(
-                155.0,
-                672.45,
-                OrderSide.SELL,
-                "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
-            ),
-            ts_event=0,
-            ts_init=0,
-        )
-        self.empty_book.apply(delta)
-        assert self.empty_book.best_ask_price() == 155
-        assert self.empty_book.count == 3
 
     def test_orderbook_midpoint(self):
         assert self.sample_book.midpoint() == pytest.approx(0.858)

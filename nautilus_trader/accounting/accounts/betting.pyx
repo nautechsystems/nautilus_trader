@@ -39,7 +39,7 @@ cdef class BettingAccount(CashAccount):
         OrderSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the locked balance.
@@ -54,7 +54,7 @@ cdef class BettingAccount(CashAccount):
             The order quantity.
         price : Price
             The order price.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             Not applicable for betting accounts.
 
         Returns
@@ -65,7 +65,7 @@ cdef class BettingAccount(CashAccount):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
-        Condition.not_equal(inverse_as_quote, True, "inverse_as_quote", "True")
+        Condition.not_equal(use_quote_for_inverse, True, "use_quote_for_inverse", "True")
 
         locked: Decimal = liability(quantity, price, side)
         return Money(locked, instrument.quote_currency)

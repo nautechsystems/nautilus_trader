@@ -26,6 +26,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport Price_t
@@ -64,7 +65,6 @@ from nautilus_trader.core.rust.model cimport orderbook_update_trade_tick
 from nautilus_trader.core.rust.model cimport vec_fills_drop
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data.book cimport BookOrder
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport BookType
@@ -78,7 +78,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderBook:
+cdef class OrderBook(Data):
     """
     Provides an order book which can handle L1/L2/L3 granularity data.
     """
@@ -132,37 +132,61 @@ cdef class OrderBook:
         return <BookType>orderbook_book_type(&self._mem)
 
     @property
-    def sequence(self) -> uint64_t:
+    def sequence(self) -> int:
         """
         Return the last sequence number for the book.
 
         Returns
         -------
-        uint64_t
+        int
 
         """
         return orderbook_sequence(&self._mem)
 
     @property
-    def ts_last(self) -> uint64_t:
+    def ts_event(self) -> int:
         """
-        Return the UNIX timestamp (nanoseconds) when the order book was last updated.
+        The UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
-        uint64_t
+        int
 
         """
         return orderbook_ts_last(&self._mem)
 
     @property
-    def count(self) -> uint64_t:
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_ts_last(&self._mem)
+
+    @property
+    def ts_last(self) -> int:
+        """
+        Return the UNIX timestamp (nanoseconds) when the order book was last updated.
+
+        Returns
+        -------
+        int
+
+        """
+        return orderbook_ts_last(&self._mem)
+
+    @property
+    def count(self) -> int:
         """
         Return the books update count.
 
         Returns
         -------
-        uint64_t
+        int
 
         """
         return orderbook_count(&self._mem)
@@ -275,40 +299,17 @@ cdef class OrderBook:
         for delta in deltas.deltas:
             self.apply_delta(delta)
 
-    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot):
-        """
-        Apply the bulk snapshot to the order book.
-
-        Parameters
-        ----------
-        snapshot : OrderBookSnapshot
-            The snapshot to apply.
-
-        """
-        Condition.not_none(snapshot, "snapshot")
-
-        self.clear(0, 0)
-        # Use `update` instead of `add` (when book has been cleared they're
-        # equivalent) to make work for L1_TBBO Orderbook.
-        cdef BookOrder order
-        for order in snapshot.bids:
-            self.update(order=order, ts_event=snapshot.ts_event, sequence=snapshot.sequence)
-        for order in snapshot.asks:
-            self.update(order=order, ts_event=snapshot.ts_event, sequence=snapshot.sequence)
-
     cpdef void apply(self, Data data):
         """
         Apply the given data to the order book.
 
         Parameters
         ----------
-        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+        delta : OrderBookDelta, OrderBookDeltas
             The data to apply.
 
         """
-        if isinstance(data, OrderBookSnapshot):
-            self.apply_snapshot(snapshot=data)
-        elif isinstance(data, OrderBookDeltas):
+        if isinstance(data, OrderBookDeltas):
             self.apply_deltas(deltas=data)
         elif isinstance(data, OrderBookDelta):
             self.apply_delta(delta=data)

@@ -178,7 +178,7 @@ class TestL2OrderBookExchange:
             ask_size=10000,
         )
         self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
 
         # Create order
         order = self.strategy.order_factory.limit(
@@ -220,7 +220,7 @@ class TestL2OrderBookExchange:
         )
         print(str(snapshot))
         self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
 
         # Act
         order = self.strategy.order_factory.limit(
@@ -249,7 +249,7 @@ class TestL2OrderBookExchange:
             ask_size=1000,
         )
         self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
 
         # Act
         order = self.strategy.order_factory.limit(
@@ -277,7 +277,7 @@ class TestL2OrderBookExchange:
             ask_size=1000,
         )
         self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
 
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
@@ -315,7 +315,7 @@ class TestL2OrderBookExchange:
             ask_size=1000,
         )
         self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
 
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,

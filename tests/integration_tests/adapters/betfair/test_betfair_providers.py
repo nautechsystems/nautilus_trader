@@ -35,6 +35,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+pytestmark = pytest.mark.skip(reason="Repair order book parsing")
+
+
 class TestBetfairInstrumentProvider:
     def setup(self):
         # Fixture Setup

@@ -942,6 +942,7 @@ cdef class Strategy(Actor):
             quantity=position.quantity,
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
+            quote_quantity=False,
             exec_algorithm_id=None,
             exec_algorithm_params=None,
             tags=tags,

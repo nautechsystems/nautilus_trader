@@ -171,7 +171,9 @@ cdef class Order:
         self.liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
+        self.is_quote_quantity = init.quote_quantity
         self.emulation_trigger = init.emulation_trigger
+        self.trigger_instrument_id = init.trigger_instrument_id
         self.contingency_type = init.contingency_type
         self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None

@@ -83,7 +83,7 @@ cdef class Account:
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,
-        bint inverse_as_quote=*,
+        bint use_quote_for_inverse=*,
     )
 
     cpdef list calculate_pnls(

@@ -20,7 +20,6 @@ Defines real-time and simulated order book components and data.
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.book import OrderBook
 
 
@@ -28,6 +27,5 @@ __all__ = [
     "BookOrder",
     "OrderBookDelta",
     "OrderBookDeltas",
-    "OrderBookSnapshot",
     "OrderBook",
 ]

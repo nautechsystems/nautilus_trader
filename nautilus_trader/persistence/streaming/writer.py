@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-from typing import BinaryIO, Optional
+from typing import Any, BinaryIO, Optional
 
 import fsspec
 import pyarrow as pa
@@ -27,7 +27,6 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -85,7 +84,6 @@ class StreamingFeatherWriter:
             {
                 OrderBookDelta: self._schemas[OrderBookDelta],
                 OrderBookDeltas: self._schemas[OrderBookDelta],
-                OrderBookSnapshot: self._schemas[OrderBookDelta],
             },
         )
         self.logger = logger
@@ -200,9 +198,20 @@ class StreamingFeatherWriter:
             self._files[cls].close()
 
 
-def generate_signal_class(name: str, value_type: type):
+def generate_signal_class(name: str, value_type: type) -> type:
     """
     Dynamically create a Data subclass for this signal.
+
+    Parameters
+    ----------
+    name : str
+        The name of the signal data.
+    value_type : type
+        The type for the signal data value.
+
+    Returns
+    -------
+    SignalData
     """
 
     class SignalData(Data):
@@ -210,14 +219,38 @@ def generate_signal_class(name: str, value_type: type):
         Represents generic signal data.
         """
 
-        def __init__(self, value, ts_event: int, ts_init: int):
-            super().__init__(ts_event=ts_event, ts_init=ts_init)
+        def __init__(self, value: Any, ts_event: int, ts_init: int) -> None:
             self.value = value
+            self._ts_event = ts_event
+            self._ts_init = ts_init
+
+        @property
+        def ts_event(self) -> int:
+            """
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+
+            Returns
+            -------
+            int
+
+            """
+            return self._ts_event
+
+        @property
+        def ts_init(self) -> int:
+            """
+            The UNIX timestamp (nanoseconds) when the object was initialized.
+
+            Returns
+            -------
+            int
+
+            """
+            return self._ts_init
 
     SignalData.__name__ = f"Signal{name.title()}"
 
     # Parquet serialization
-
     def serialize_signal(self):
         return {
             "ts_init": self.ts_init,

@@ -20,15 +20,11 @@ from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport InstrumentId
-
-
-cdef tuple ORDER_BOOK_DATA
 
 
 cdef class BookOrder:
@@ -59,6 +55,14 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef dict to_dict_c(OrderBookDelta obj)
 
+    @staticmethod
+    cdef OrderBookDelta clear_c(
+        InstrumentId instrument_id,
+        uint64_t ts_event,
+        uint64_t ts_init,
+        uint64_t sequence=*,
+    )
+
 
 cdef class OrderBookDeltas(Data):
     cdef readonly InstrumentId instrument_id
@@ -67,26 +71,16 @@ cdef class OrderBookDeltas(Data):
     """The unique sequence number.\n\n:returns: `uint64`"""
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
+    cdef readonly bint is_snapshot
+    """If the deltas represent a snapshot (an initial CLEAR then deltas).\n\n:returns: `bool`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDeltas obj)
-
-
-cdef class OrderBookSnapshot(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly uint64_t sequence
-    """The unique sequence number.\n\n:returns: `uint64`"""
-    cdef readonly list bids
-    """The snapshot bids.\n\n:returns: `list`"""
-    cdef readonly list asks
-    """The snapshot asks.\n\n:returns: `list`"""
-
-    @staticmethod
-    cdef OrderBookSnapshot from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookSnapshot obj)

@@ -18,7 +18,6 @@ import pytest
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
@@ -27,79 +26,6 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD = TestIdStubs.audusd_id()
-
-
-@pytest.mark.skip(reason="Marked for removal")
-class TestOrderBookSnapshot:
-    def test_fully_qualified_name(self):
-        # Arrange, Act, Assert
-        assert (
-            OrderBookSnapshot.fully_qualified_name()
-            == "nautilus_trader.model.data.book:OrderBookSnapshot"
-        )
-
-    def test_hash_str_and_repr(self):
-        # Arrange
-        snapshot = OrderBookSnapshot(
-            instrument_id=AUDUSD,
-            bids=[[1010, 2], [1009, 1]],
-            asks=[[1020, 2], [1021, 1]],
-            ts_event=0,
-            ts_init=0,
-        )
-
-        # Act, Assert
-        assert isinstance(hash(snapshot), int)
-        assert (
-            str(snapshot)
-            == "OrderBookSnapshot(instrument_id=AUD/USD.SIM, bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], sequence=0, ts_event=0, ts_init=0)"  # noqa
-        )
-        assert (
-            repr(snapshot)
-            == "OrderBookSnapshot(instrument_id=AUD/USD.SIM, bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], sequence=0, ts_event=0, ts_init=0)"  # noqa
-        )
-
-    def test_to_dict_returns_expected_dict(self):
-        # Arrange
-        snapshot = OrderBookSnapshot(
-            instrument_id=AUDUSD,
-            bids=[[1010, 2], [1009, 1]],
-            asks=[[1020, 2], [1021, 1]],
-            sequence=123456789,
-            ts_event=0,
-            ts_init=1_000_000_000,
-        )
-
-        # Act
-        result = OrderBookSnapshot.to_dict(snapshot)
-
-        # Assert
-        assert result == {
-            "type": "OrderBookSnapshot",
-            "instrument_id": "AUD/USD.SIM",
-            "bids": b"[[1010,2],[1009,1]]",
-            "asks": b"[[1020,2],[1021,1]]",
-            "sequence": 123456789,
-            "ts_event": 0,
-            "ts_init": 1_000_000_000,
-        }
-
-    def test_from_dict_returns_expected_tick(self):
-        # Arrange
-        snapshot = OrderBookSnapshot(
-            instrument_id=AUDUSD,
-            bids=[[1010, 2], [1009, 1]],
-            asks=[[1020, 2], [1021, 1]],
-            sequence=123456789,
-            ts_event=0,
-            ts_init=1_000_000_000,
-        )
-
-        # Act
-        result = OrderBookSnapshot.from_dict(OrderBookSnapshot.to_dict(snapshot))
-
-        # Assert
-        assert result == snapshot
 
 
 class TestOrderBookDelta:
@@ -269,8 +195,6 @@ class TestOrderBookDeltas:
         deltas = OrderBookDeltas(
             instrument_id=AUDUSD,
             deltas=[delta1, delta2],
-            ts_event=0,
-            ts_init=0,
         )
 
         # Act, Assert
@@ -325,8 +249,6 @@ class TestOrderBookDeltas:
         deltas = OrderBookDeltas(
             instrument_id=AUDUSD,
             deltas=[delta1, delta2],
-            ts_event=0,
-            ts_init=0,
         )
 
         # Act
@@ -383,8 +305,6 @@ class TestOrderBookDeltas:
         deltas = OrderBookDeltas(
             instrument_id=AUDUSD,
             deltas=[delta1, delta2],
-            ts_event=0,
-            ts_init=0,
         )
 
         # Act

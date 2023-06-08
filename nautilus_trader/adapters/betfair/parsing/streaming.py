@@ -42,14 +42,12 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import OrderBookSnapshot
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
@@ -69,7 +67,6 @@ from nautilus_trader.model.objects import Quantity
 PARSE_TYPES = Union[
     InstrumentStatusUpdate,
     InstrumentClose,
-    OrderBookSnapshot,
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
@@ -79,7 +76,7 @@ PARSE_TYPES = Union[
 ]
 
 
-def market_change_to_updates(  # noqa: C901
+def market_change_to_updates(  # noqa: too complex
     mc: MarketChange,
     ts_event: int,
     ts_init: int,
@@ -109,7 +106,7 @@ def market_change_to_updates(  # noqa: C901
         )
 
     # Handle market data updates
-    book_updates: list[Union[OrderBookSnapshot, OrderBookDeltas]] = []
+    book_updates: list[OrderBookDeltas] = []
     bsp_book_updates: list[BSPOrderBookDeltas] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
@@ -301,7 +298,7 @@ def runner_change_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     try:
         market_data_kind = runner_change_to_market_data_kind(rc)
     except ValueError:
@@ -326,13 +323,15 @@ def runner_change_all_depth_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     # ATL = Available To Lay = Back orders
-    asks = (
-        [(betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price]
-        if rc.atl
-        else []
-    )
+    if rc.atl:
+        asks: list = [
+            (betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price
+        ]
+    else:
+        asks = []
+
     # Asks are available to back (atb)
     if rc.atb:
         bids: list = [
@@ -341,13 +340,9 @@ def runner_change_all_depth_to_order_book_snapshot(
     else:
         bids = []
 
-    return OrderBookSnapshot(
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    deltas = bids + asks
+    deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_best_depth_to_order_book_snapshot(
@@ -355,7 +350,7 @@ def runner_change_best_depth_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     # Bids are best available to lay (batl)
     if rc.batl:
         asks: list = [
@@ -371,13 +366,9 @@ def runner_change_best_depth_to_order_book_snapshot(
         ]
     else:
         bids = []
-    return OrderBookSnapshot(
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    deltas = bids + asks
+    deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_display_depth_to_order_book_snapshot(
@@ -385,7 +376,7 @@ def runner_change_display_depth_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     # Bids are best display available to lay (bdatl)
     asks = (
         [(betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price]
@@ -399,12 +390,9 @@ def runner_change_display_depth_to_order_book_snapshot(
         ]
     else:
         bids = []
-    return OrderBookSnapshot(
+    return OrderBookDeltas(
         instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
+        deltas=bids + asks,
     )
 
 
@@ -482,12 +470,7 @@ def runner_change_all_depth_to_order_book_deltas(
         )
     if not deltas:
         return None
-    return OrderBookDeltas(
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_best_depth_to_deltas(
@@ -529,12 +512,7 @@ def runner_change_best_depth_to_deltas(
         )
     if not deltas:
         return None
-    return OrderBookDeltas(
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_display_depth_to_deltas(
@@ -704,8 +682,6 @@ def runner_change_to_bsp_order_book_deltas(
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
-    ts_event = one({deltas.ts_event for deltas in all_deltas})
-    ts_init = one({deltas.ts_init for deltas in all_deltas})
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -713,8 +689,6 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
         cls(
             instrument_id=instrument_id,
             deltas=deltas,
-            ts_event=ts_event,
-            ts_init=ts_init,
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]
