@@ -245,7 +245,7 @@ class EMACrossTrailingStop(Strategy):
             The bar received.
 
         """
-        self.log.info(f"Received {bar!r}")
+        # self.log.info(f"Received {bar!r}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
