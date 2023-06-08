@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import json
 import os
 
@@ -28,11 +27,9 @@ from nautilus_trader.common.logging import Logger
 
 @pytest.mark.asyncio()
 async def test_binance_futures_testnet_wallet_http_client():
-    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
         account_type=BinanceAccountType.USDT_FUTURE,
@@ -41,9 +38,6 @@ async def test_binance_futures_testnet_wallet_http_client():
         is_testnet=True,
     )
 
-    wallet = BinanceFuturesWalletHttpAPI(client=client)
-    await client.connect()
+    wallet = BinanceFuturesWalletHttpAPI(clock=clock, client=client)
     response = await wallet.commission_rate(symbol="BTCUSDT")
     print(json.dumps(response, indent=4))
-
-    await client.disconnect()
