@@ -41,7 +41,6 @@ BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
 
 
 def get_cached_binance_http_client(
-    loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
     account_type: BinanceAccountType,
@@ -59,8 +58,6 @@ def get_cached_binance_http_client(
 
     Parameters
     ----------
-    loop : asyncio.AbstractEventLoop
-        The event loop for the client.
     clock : LiveClock
         The clock for the client.
     logger : Logger
@@ -229,7 +226,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         """
         # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
-            loop=loop,
             clock=clock,
             logger=logger,
             account_type=config.account_type,
@@ -342,7 +338,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         """
         # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
-            loop=loop,
             clock=clock,
             logger=logger,
             account_type=config.account_type,
