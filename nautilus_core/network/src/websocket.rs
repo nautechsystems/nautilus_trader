@@ -27,7 +27,7 @@ use tokio::task;
 use tokio::time::sleep;
 use tracing::{event, Level};
 
-/// WebSocketClient connects to a websocket server to read and send messages
+/// WebSocketClient connects to a websocket server to read and send messages.
 ///
 /// The client is opinionated about how messages are read and written. It
 /// assumes that data can only have one reader but multiple writers.
@@ -167,7 +167,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Send bytes data to the connection
+    /// Send bytes data to the connection.
     fn send_bytes<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -186,7 +186,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Closes the client heart beat and reader task
+    /// Closes the client heart beat and reader task.
     ///
     /// The connection is not completely closed the till all references
     /// to the client are gone and the client is dropped.
