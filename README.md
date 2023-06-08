@@ -8,17 +8,17 @@
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 [![discord](https://img.shields.io/discord/924497682343550976?color=768AD4&label=discord)](https://discord.gg/AUWVs3XaCS)
 
-| Branch    | Version | Status |
-|:----------|:--------|:-------|
-| `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| Branch    | Version                                                                                                                                             | Status                                                                                                                                                                                            |
+| :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
 | Platform           | Rust    | Python |
-|:-------------------|:--------|:-------|
+| :----------------- | :------ | :----- |
 | `Linux (x86_64)`   | 1.70.0+ | 3.9+   |
 | `macOS (x86_64)`   | 1.70.0+ | 3.9+   |
 | `macOS (arm64)`    | 1.70.0+ | 3.9+   |
-| `Windows (x86_64)` | 1.70.0+ | 3.9+   |
+| `Windows (x86_64)` | 1.69.0+ | 3.9+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -30,8 +30,8 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
 
-The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant 
-and robust Python native environment. This helps to address the parity challenge of keeping the Python research/backtest 
+The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant
+and robust Python native environment. This helps to address the parity challenge of keeping the Python research/backtest
 environment, consistent with the production live trading environment.
 
 NautilusTraders design, architecture and implementation philosophy holds software correctness and safety at the
@@ -56,10 +56,11 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **AI Agent Training** - Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
-> *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
+
+> _nautilus - from ancient Greek 'sailor' and naus 'ship'._
 >
-> *The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
-> The idea is that this can be translated to the aesthetics of design and architecture.*
+> _The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
+> The idea is that this can be translated to the aesthetics of design and architecture._
 
 ## Why NautilusTrader?
 
@@ -75,7 +76,7 @@ express the granular time and event dependent complexity of real-time trading, w
 proven to be more suitable due to their inherently higher performance, and type safety.
 
 One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
-have all been written entirely in Rust or Cython. This means we're using the right tools for the job, where systems programming languages compile performant binaries, 
+have all been written entirely in Rust or Cython. This means we're using the right tools for the job, where systems programming languages compile performant binaries,
 with CPython C extension modules then able to offer a Python native environment, suitable for professional quantitative traders and trading firms.
 
 ## Why Python?
@@ -116,7 +117,8 @@ does not need to have Rust installed to run NautilusTrader. In the future as mor
 [PyO3](https://pyo3.rs/latest) will be leveraged for easier Python bindings.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
-> “The intent of this project is to be free of soundness bugs. 
+
+> “The intent of this project is to be free of soundness bugs.
 > The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
 
 ## Architecture (data flow)
@@ -138,13 +140,13 @@ NautilusTrader is designed in a modular way to work with 'adapters' which provid
 connectivity to data publishers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
-| Name                                                    | ID        | Type                    | Status                                              | Docs                                                              |
-|:--------------------------------------------------------|:----------|:------------------------|:----------------------------------------------------|:------------------------------------------------------------------|
-[Betfair](https://betfair.com)                            | `BETFAIR` | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-[Binance](https://binance.com)                            | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance US](https://binance.us)                          | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance Futures](https://www.binance.com/en/futures)     | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Interactive Brokers](https://www.interactivebrokers.com) | `IB`      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+| Name                                                      | ID        | Type                    | Status                                              | Docs                                                              |
+| :-------------------------------------------------------- | :-------- | :---------------------- | :-------------------------------------------------- | :---------------------------------------------------------------- |
+| [Betfair](https://betfair.com)                            | `BETFAIR` | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+| [Binance](https://binance.com)                            | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Binance US](https://binance.us)                          | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Interactive Brokers](https://www.interactivebrokers.com) | `IB`      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 
@@ -159,6 +161,7 @@ To install the latest binary wheel from PyPI:
     pip install -U nautilus_trader
 
 ### From Source
+
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
 You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
 
@@ -172,31 +175,33 @@ It's possible to install from source using `pip` if you first install the build 
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
+
    - Linux and macOS:
-       ```
-       curl https://sh.rustup.rs -sSf | sh
-       ```
+     ```
+     curl https://sh.rustup.rs -sSf | sh
+     ```
    - Windows:
-       - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+     - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
 
 2. Enable `cargo` in the current shell:
+
    - Linux and macOS:
-       ```
-       source $HOME/.cargo/env
-       ```
+     ```
+     source $HOME/.cargo/env
+     ```
    - Windows:
      - Start a new PowerShell
 
 3. Install poetry (or follow the installation guide on their site):
 
-       curl -sSL https://install.python-poetry.org | python3 -
+   curl -sSL https://install.python-poetry.org | python3 -
 
 4. Clone the source with `git`, and install from the projects root directory:
 
-       git clone https://github.com/nautechsystems/nautilus_trader
-       cd nautilus_trader
-       poetry install --only main --all-extras
+   git clone https://github.com/nautechsystems/nautilus_trader
+   cd nautilus_trader
+   poetry install --only main --all-extras
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 
@@ -207,9 +212,10 @@ The API is becoming more stable, however breaking changes are still possible bet
 Documentation of these changes in the release notes are made on a best-effort basis.
 
 ### Branches
+
 - `master` branch will always reflect the source code for the latest released version
-- `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable 
-passing build on this branch
+- `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable
+  passing build on this branch
 
 The current roadmap has a goal of achieving a stable API for a `2.x` version. From this
 point we will follow a formal process for releases, with deprecation periods for any API changes.
@@ -217,6 +223,7 @@ point we will follow a formal process for releases, with deprecation periods for
 ## Makefile
 
 A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
+
 - `make install` -- Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default)
 - `make install-debug` -- Same as `make install` but with `debug` build mode
 - `make install-just-deps` -- Installs just the `main`, `dev` and `test` dependencies (does not install package)
@@ -234,6 +241,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity are import we recommend Cython).
 The below are some examples of this:
+
 - [indicator](/examples/indicators/ema_python.py) example written in Python
 - [indicator](/nautilus_trader/indicators/) examples written in Cython
 - [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython
@@ -242,10 +250,11 @@ The below are some examples of this:
 ## Docker
 
 Docker containers are built using a base `python:3.10-slim` with the following image variant tags:
+
 - `nautilus_trader:latest` has the latest release version installed
 - `nautilus_trader:develop` has the head of the `develop` branch installed
 - `jupyterlab:develop` has the head of the `develop` branch installed along with `jupyterlab` and an
-example backtest notebook with accompanying data
+  example backtest notebook with accompanying data
 
 The container images can be pulled as follows:
 
@@ -256,8 +265,8 @@ You can launch the backtest example container by running:
     docker pull ghcr.io/nautechsystems/jupyterlab:develop
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
 
-| :warning: WARNING                                                               |
-|:--------------------------------------------------------------------------------|
+| :warning: WARNING |
+| :---------------- |
 
 **NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
 this is why `log_level` in the examples is set to "ERROR". If you lower this level to see more
@@ -375,23 +384,24 @@ Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/in
 
 ## Contributing
 
-Thank you for considering contributing to Nautilus Trader! We welcome any and all help to improve 
-the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues) 
-on GitHub to discuss it with the team. This helps to ensure that your contribution will be 
+Thank you for considering contributing to Nautilus Trader! We welcome any and all help to improve
+the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues)
+on GitHub to discuss it with the team. This helps to ensure that your contribution will be
 well-aligned with the goals of the project and avoids duplication of effort.
 
-Once you're ready to start working on your contribution, make sure to follow the guidelines 
-outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA) 
+Once you're ready to start working on your contribution, make sure to follow the guidelines
+outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)
 to ensure that your contributions can be included in the project.
 
-Note that all pull requests should be made to the `develop` branch. This is where new features 
+Note that all pull requests should be made to the `develop` branch. This is where new features
 and improvements are integrated before being released to the public.
 
 Thank you again for your interest in Nautilus Trader! We look forward to reviewing your contributions and working with you to improve the project.
 
 ## Community
-Join our community of users and contributors on [Discord](https://discord.gg/AUWVs3XaCS) to chat 
-and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a 
+
+Join our community of users and contributors on [Discord](https://discord.gg/AUWVs3XaCS) to chat
+and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
 developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
 
 ## License
@@ -401,10 +411,10 @@ Contributions to the project are welcome and require the completion of a standar
 
 ---
 
-NautilusTrader is developed and maintained by Nautech Systems, a technology 
-company specializing in the development of high-performance trading systems. 
-Although the project utilizes the Rust programming language and benefits from its ecosystem, 
-Nautech Systems is not affiliated with the Rust Foundation, and this project is not an official 
+NautilusTrader is developed and maintained by Nautech Systems, a technology
+company specializing in the development of high-performance trading systems.
+Although the project utilizes the Rust programming language and benefits from its ecosystem,
+Nautech Systems is not affiliated with the Rust Foundation, and this project is not an official
 work of the Rust Foundation.
 For more information, visit https://nautilustrader.io.
 
