@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import json
 import os
 
@@ -28,11 +27,9 @@ from nautilus_trader.common.logging import Logger
 
 @pytest.mark.asyncio()
 async def test_binance_spot_wallet_http_client():
-    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
         account_type=BinanceAccountType.SPOT,
@@ -40,9 +37,6 @@ async def test_binance_spot_wallet_http_client():
         secret=os.getenv("BINANCE_API_SECRET"),
     )
 
-    wallet = BinanceSpotWalletHttpAPI(client=client)
-    await client.connect()
+    wallet = BinanceSpotWalletHttpAPI(clock=clock, client=client)
     response = await wallet.trade_fee_spot(symbol="BTCUSDT")
     print(json.dumps(response, indent=4))
-
-    await client.disconnect()
