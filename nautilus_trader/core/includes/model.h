@@ -1009,6 +1009,16 @@ void instrument_id_drop(struct InstrumentId_t instrument_id);
  */
 const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
 
+/**
+ * Returns a cloned [`Symbol`].
+ */
+struct Symbol_t instrument_id_symbol(const struct InstrumentId_t *instrument_id);
+
+/**
+ * Returns a cloned [`Venue`].
+ */
+struct Venue_t instrument_id_venue(const struct InstrumentId_t *instrument_id);
+
 uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct InstrumentId_t *rhs);
 
 uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);

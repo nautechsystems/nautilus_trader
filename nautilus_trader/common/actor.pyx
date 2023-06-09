@@ -1079,7 +1079,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
             handler=self.handle_instrument_status_update,
         )
 
@@ -1481,7 +1481,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
             handler=self.handle_venue_status_update,
         )
         cdef Unsubscribe command = Unsubscribe(

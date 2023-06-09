@@ -133,6 +133,18 @@ pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const 
     str_to_cstr(&instrument_id.to_string())
 }
 
+/// Returns a cloned [`Symbol`].
+#[no_mangle]
+pub extern "C" fn instrument_id_symbol(instrument_id: &InstrumentId) -> Symbol {
+    instrument_id.symbol.clone()
+}
+
+/// Returns a cloned [`Venue`].
+#[no_mangle]
+pub extern "C" fn instrument_id_venue(instrument_id: &InstrumentId) -> Venue {
+    instrument_id.venue.clone()
+}
+
 #[no_mangle]
 pub extern "C" fn instrument_id_eq(lhs: &InstrumentId, rhs: &InstrumentId) -> u8 {
     u8::from(lhs == rhs)
