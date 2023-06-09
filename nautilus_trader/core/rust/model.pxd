@@ -820,12 +820,6 @@ cdef extern from "../includes/model.h":
     # Returns an [`InstrumentId`] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);
 
-    # Returns a cloned [`Symbol`].
-    Symbol_t instrument_id_symbol(const InstrumentId_t *instrument_id);
-
-    # Returns a cloned [`Venue`].
-    Venue_t instrument_id_venue(const InstrumentId_t *instrument_id);
-
     uint8_t instrument_id_eq(const InstrumentId_t *lhs, const InstrumentId_t *rhs);
 
     uint64_t instrument_id_hash(const InstrumentId_t *instrument_id);
