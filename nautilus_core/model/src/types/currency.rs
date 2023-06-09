@@ -28,7 +28,7 @@ use crate::currencies::CURRENCY_MAP;
 use crate::enums::CurrencyType;
 
 #[repr(C)]
-#[derive(Eq, PartialEq, Clone, Hash, Debug)]
+#[derive(Clone, Debug, Eq)]
 #[pyclass]
 pub struct Currency {
     pub code: Box<Arc<String>>,
@@ -58,6 +58,18 @@ impl Currency {
             name: Box::new(Arc::new(name.to_string())),
             currency_type,
         }
+    }
+}
+
+impl PartialEq for Currency {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code
+    }
+}
+
+impl Hash for Currency {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.code.hash(state);
     }
 }
 
@@ -149,7 +161,7 @@ pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn currency_eq(lhs: &Currency, rhs: &Currency) -> u8 {
-    u8::from(lhs == rhs)
+    u8::from(lhs.code == rhs.code)
 }
 
 #[no_mangle]
@@ -171,6 +183,10 @@ mod tests {
     fn test_currency_equality() {
         let currency1 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         let currency2 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
+        let currency3 = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
+        assert_eq!(currency1, currency2);
+        assert_ne!(currency1, currency3);
+        assert_eq!(currency_eq(&currency1, &currency2), 1);
         assert_ne!(currency_eq(&currency1, &currency2), 0);
     }
 

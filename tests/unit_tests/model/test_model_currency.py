@@ -184,7 +184,7 @@ class TestCurrency:
 
         result = Currency.from_str("AUD")
 
-        assert result != another_aud
+        assert result.precision == 2  # Correct precision from built-in currency
         assert result.currency_type == CurrencyType.FIAT
 
     def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
