@@ -160,7 +160,8 @@ def _build_extensions() -> list[Extension]:
         extra_link_args += [
             "AdvAPI32.Lib",
             "bcrypt.lib",
-            "kernel32.lib",
+            "Kernel32.lib",
+            "ntdll.lib",
             "User32.Lib",
             "UserEnv.Lib",
             "WS2_32.Lib",
