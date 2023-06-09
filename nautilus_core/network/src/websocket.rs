@@ -44,7 +44,7 @@ use tracing::{event, Level};
 /// frequently - than the required amount.
 #[pyclass]
 pub struct WebSocketClient {
-    pub read_task: Option<task::JoinHandle<io::Result<()>>>,
+    pub read_task: task::JoinHandle<io::Result<()>>,
     pub heartbeat_task: Option<task::JoinHandle<()>>,
     inner: Arc<Mutex<FragmentCollector<TcpStream>>>,
 }
@@ -58,18 +58,23 @@ impl WebSocketClient {
         let stream = TcpStream::connect(url).await?;
         let ws = WebSocket::after_handshake(stream, Role::Client);
         let inner = Arc::new(Mutex::new(FragmentCollector::new(ws)));
-        let reader = inner.clone();
+        let frame_reader = inner.clone();
 
         // Keep receiving messages from socket and pass them as arguments to handler
-        let read_task = Some(task::spawn(async move {
+        let read_task = task::spawn(async move {
             loop {
                 event!(Level::DEBUG, "websocket: Receiving message");
-                let mut reader = reader.lock().await;
-                match reader.read_frame().await {
+                let mut reader = frame_reader.lock().await;
+                let mut result = reader.read_frame().await;
+                drop(reader);
+                match result {
                     Ok(ref mut frame) => match frame.opcode {
                         OpCode::Text | OpCode::Binary => {
                             event!(Level::DEBUG, "websocket: Received binary message");
                             Python::with_gil(|py| {
+                                // use `as_bytes` in place of `to_mut` to avoid extra copying
+                                // `as_bytes` is currently unstable because of this issue -
+                                // https://github.com/rust-lang/rust/issues/110998
                                 handler
                                     .call1(py, (PyBytes::new(py, frame.payload.to_mut()),))
                                     .unwrap();
@@ -90,7 +95,7 @@ impl WebSocketClient {
                 }
             }
             Ok(())
-        }));
+        });
 
         let heartbeat_task = heartbeat.map(|duration| {
             let heartbeat_writer = inner.clone();
@@ -126,10 +131,8 @@ impl WebSocketClient {
     pub fn shutdown(&mut self) {
         event!(Level::DEBUG, "websocket: closing connection");
         // Cancel reading task
-        if let Some(ref handle) = self.read_task.take() {
-            handle.abort();
-            event!(Level::DEBUG, "websocket: Aborted message read task");
-        }
+        self.read_task.abort();
+        event!(Level::DEBUG, "websocket: Aborted message read task");
 
         // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
@@ -138,10 +141,9 @@ impl WebSocketClient {
         }
     }
 
-    pub fn check_read_task(&self) -> bool {
-        self.read_task
-            .as_ref()
-            .map_or(false, |handle| !handle.is_finished())
+    // Checks if the client is still connected
+    pub fn connection_is_alive(&self) -> bool {
+        !self.read_task.is_finished()
     }
 }
 
@@ -206,7 +208,7 @@ impl WebSocketClient {
     /// might be some delay between the connection being closed and the client
     /// detecting.
     fn is_connected(slf: PyRef<'_, Self>) -> bool {
-        slf.check_read_task()
+        slf.connection_is_alive()
     }
 }
 
@@ -320,11 +322,7 @@ counter = Counter()",
                 .unwrap();
 
         // Check that websocket read task is running
-        let task_running = client
-            .read_task
-            .as_ref()
-            .map_or(false, |handle| !handle.is_finished());
-        assert!(task_running);
+        assert!(client.connection_is_alive());
 
         // Send messages that increment the count
         for _ in 0..N {
