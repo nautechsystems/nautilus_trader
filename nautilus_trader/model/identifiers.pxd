@@ -33,14 +33,14 @@ cdef class Symbol(Identifier):
     cdef Symbol_t _mem
 
     @staticmethod
-    cdef Symbol from_mem_c(Symbol_t mem)
+    cdef Symbol from_mem_c(Symbol_t* mem)
 
 
 cdef class Venue(Identifier):
     cdef Venue_t _mem
 
     @staticmethod
-    cdef Venue from_mem_c(Venue_t mem)
+    cdef Venue from_mem_c(Venue_t* mem)
 
 
 cdef class InstrumentId(Identifier):

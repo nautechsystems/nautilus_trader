@@ -35,9 +35,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_symbol
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_venue
 from nautilus_trader.core.rust.model cimport order_list_id_drop
 from nautilus_trader.core.rust.model cimport order_list_id_eq
 from nautilus_trader.core.rust.model cimport order_list_id_hash
@@ -166,9 +164,9 @@ cdef class Symbol(Identifier):
         return symbol_hash(&self._mem)
 
     @staticmethod
-    cdef Symbol from_mem_c(Symbol_t mem):
+    cdef Symbol from_mem_c(Symbol_t* mem):
         cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = mem
+        symbol._mem = symbol_clone(mem)
         return symbol
 
     cdef str to_str(self):
@@ -213,9 +211,9 @@ cdef class Venue(Identifier):
         return venue_hash(&self._mem)
 
     @staticmethod
-    cdef Venue from_mem_c(Venue_t mem):
+    cdef Venue from_mem_c(Venue_t* mem):
         cdef Venue venue = Venue.__new__(Venue)
-        venue._mem = mem
+        venue._mem = venue_clone(mem)
         return venue
 
     cdef str to_str(self):
@@ -252,7 +250,7 @@ cdef class InstrumentId(Identifier):
         Symbol
 
         """
-        return Symbol.from_mem_c(instrument_id_symbol(&self._mem))
+        return Symbol.from_mem_c(&self._mem.symbol)
 
     @property
     def venue(self) -> Venue:
@@ -264,7 +262,7 @@ cdef class InstrumentId(Identifier):
         Venue
 
         """
-        return Venue.from_mem_c(instrument_id_venue(&self._mem))
+        return Venue.from_mem_c(&self._mem.venue)
 
     def __del__(self) -> None:
         if self._mem.symbol.value != NULL:
