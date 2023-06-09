@@ -1262,7 +1262,7 @@ cdef class BacktestEngine:
             self._kernel.data_engine.register_client(client)
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
-        cdef ClientId client_id = ClientId(venue.to_str())
+        cdef ClientId client_id = ClientId(venue.value)
         if client_id not in self._kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,
