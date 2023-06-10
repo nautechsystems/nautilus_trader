@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Removed `OrderBookData` (redundant)
 - Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional cals on inverse instruments)
 - Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
+- Renamed core `LogMessage.msg` to `.text` to better reflect the field being the logs text content (not the entire message itself)
 
 ### Enhancements
 - Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z

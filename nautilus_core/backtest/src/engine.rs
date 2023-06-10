@@ -15,7 +15,8 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::clock::{TestClock, TestClock_API};
+use nautilus_common::clock::TestClock;
+use nautilus_common::clock_api::TestClock_API;
 use nautilus_common::timer::TimeEventHandler;
 use nautilus_core::cvec::CVec;
 use nautilus_core::time::UnixNanos;
