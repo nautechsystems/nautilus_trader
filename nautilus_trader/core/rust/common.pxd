@@ -319,6 +319,7 @@ cdef extern from "../includes/common.h":
     TimeEventHandler_t dummy(TimeEventHandler_t v);
 
     # # Safety
+    #
     # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     TimeEvent_t time_event_new(const char *name,
                                UUID4_t event_id,

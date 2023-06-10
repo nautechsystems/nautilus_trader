@@ -181,7 +181,7 @@ cdef class Cache(CacheFacade):
         else:
             self._currencies = {}
 
-        # Register currencies in internal `_CURRENCY_MAP`.
+        # Register currencies with internal `CURRENCY_MAP`
         cdef Currency currency
         for currency in self._currencies.values():
             Currency.register_c(currency, overwrite=False)

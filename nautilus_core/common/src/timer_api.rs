@@ -21,6 +21,7 @@ use nautilus_core::uuid::UUID4;
 use crate::timer::TimeEvent;
 
 /// # Safety
+///
 /// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn time_event_new(
