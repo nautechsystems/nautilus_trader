@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
-use std::ffi::c_char;
 use std::fmt;
 use std::fs::{create_dir_all, File};
 use std::io::{Stderr, Stdout};
@@ -22,15 +21,12 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 use std::{
     io::{self, BufWriter, Write},
-    ops::{Deref, DerefMut},
     thread,
 };
 
 use chrono::prelude::*;
 use chrono::Utc;
 use nautilus_core::datetime::unix_nanos_to_iso8601;
-use nautilus_core::parsing::optional_bytes_to_json;
-use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, str_to_cstr};
 use nautilus_core::time::UnixNanos;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
@@ -42,8 +38,7 @@ use crate::enums::{LogColor, LogLevel};
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
 ///
 /// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
-/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
-/// per second).
+/// channel.
 pub struct Logger {
     tx: Sender<LogEvent>,
     /// The trader ID for the logger.
@@ -389,7 +384,7 @@ impl Logger {
         }
     }
 
-    fn send(
+    pub fn send(
         &mut self,
         timestamp: u64,
         level: LogLevel,
@@ -437,123 +432,19 @@ impl Logger {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Logger is not C FFI safe, so we box and pass it as an opaque pointer.
-/// This works because Logger fields don't need to be accessed, only functions
-/// are called.
-#[repr(C)]
-pub struct CLogger(Box<Logger>);
-
-impl Deref for CLogger {
-    type Target = Logger;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for CLogger {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-/// Creates a new logger.
-///
-/// # Safety
-/// - Assumes `trader_id_ptr` is a valid C string pointer.
-/// - Assumes `machine_id_ptr` is a valid C string pointer.
-/// - Assumes `instance_id_ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn logger_new(
-    trader_id_ptr: *const c_char,
-    machine_id_ptr: *const c_char,
-    instance_id_ptr: *const c_char,
-    level_stdout: LogLevel,
-    level_file: LogLevel,
-    file_logging: u8,
-    directory_ptr: *const c_char,
-    file_name_ptr: *const c_char,
-    file_format_ptr: *const c_char,
-    component_levels_ptr: *const c_char,
-    is_bypassed: u8,
-) -> CLogger {
-    CLogger(Box::new(Logger::new(
-        TraderId::new(&cstr_to_string(trader_id_ptr)),
-        String::from(&cstr_to_string(machine_id_ptr)),
-        UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
-        level_stdout,
-        if file_logging != 0 {
-            Some(level_file)
-        } else {
-            None
-        },
-        optional_cstr_to_string(directory_ptr),
-        optional_cstr_to_string(file_name_ptr),
-        optional_cstr_to_string(file_format_ptr),
-        optional_bytes_to_json(component_levels_ptr),
-        is_bypassed != 0,
-    )))
-}
-
-#[no_mangle]
-pub extern "C" fn logger_drop(logger: CLogger) {
-    drop(logger); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn logger_get_trader_id_cstr(logger: &CLogger) -> *const c_char {
-    str_to_cstr(&logger.trader_id.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn logger_get_machine_id_cstr(logger: &CLogger) -> *const c_char {
-    str_to_cstr(&logger.machine_id)
-}
-
-#[no_mangle]
-pub extern "C" fn logger_get_instance_id(logger: &CLogger) -> UUID4 {
-    logger.instance_id.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
-    logger.is_bypassed as u8
-}
-
-/// Create a new log event.
-///
-/// # Safety
-///
-/// - Assumes `component_ptr` is a valid C string pointer.
-/// - Assumes `message_ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn logger_log(
-    logger: &mut CLogger,
-    timestamp_ns: u64,
-    level: LogLevel,
-    color: LogColor,
-    component_ptr: *const c_char,
-    message_ptr: *const c_char,
-) {
-    let component = cstr_to_string(component_ptr);
-    let message = cstr_to_string(message_ptr);
-    logger.send(timestamp_ns, level, color, component, message);
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    use nautilus_core::uuid::UUID4;
+    use nautilus_model::identifiers::trader_id::TraderId;
+
     use crate::testing::wait_until;
 
     use super::*;
-    use nautilus_core::uuid::UUID4;
-    use nautilus_model::identifiers::trader_id::TraderId;
-    use std::{cell::RefCell, fs, path::PathBuf, time::Duration};
-    use tempfile::NamedTempFile;
 
     fn create_logger() -> Logger {
         Logger::new(
@@ -604,7 +495,7 @@ mod tests {
         let mut logger = create_logger();
 
         logger.debug(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test debug message."),
@@ -616,7 +507,7 @@ mod tests {
         let mut logger = create_logger();
 
         logger.info(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test info message."),
@@ -628,7 +519,7 @@ mod tests {
         let mut logger = create_logger();
 
         logger.error(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test error message."),
@@ -640,24 +531,16 @@ mod tests {
         let mut logger = create_logger();
 
         logger.critical(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test critical message."),
         );
     }
 
-    #[ignore]
     #[test]
     fn test_logging_to_file() {
-        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
-        let log_file_path = temp_log_file.path();
-
-        // Add the ".log" suffix to the log file path
-        let mut log_file_path_with_suffix = PathBuf::from(log_file_path);
-        log_file_path_with_suffix.set_extension("log");
-        let log_file_path_with_suffix_str =
-            RefCell::new(log_file_path_with_suffix.to_str().unwrap().to_string());
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
             TraderId::new("TRADER-001"),
@@ -665,7 +548,7 @@ mod tests {
             UUID4::new(),
             LogLevel::Info,
             Some(LogLevel::Debug),
-            Some(log_file_path.to_str().unwrap().to_string()),
+            Some(temp_dir.path().to_str().unwrap().to_string()),
             None,
             None,
             None,
@@ -673,7 +556,7 @@ mod tests {
         );
 
         logger.info(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test."),
@@ -683,11 +566,32 @@ mod tests {
 
         wait_until(
             || {
-                log_contents = fs::read_to_string(log_file_path_with_suffix_str.borrow().clone())
-                    .expect("Error while reading log file");
+                let log_file_exists = std::fs::read_dir(&temp_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.path().is_file())
+                    .next()
+                    .is_some();
+
+                log_file_exists
+            },
+            Duration::from_secs(2),
+        );
+
+        wait_until(
+            || {
+                let log_file_path = std::fs::read_dir(&temp_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.path().is_file())
+                    .next()
+                    .expect("No files found in directory")
+                    .path();
+                log_contents =
+                    std::fs::read_to_string(&log_file_path).expect("Error while reading log file");
                 !log_contents.is_empty()
             },
-            Duration::from_secs(3),
+            Duration::from_secs(2),
         );
 
         assert_eq!(
@@ -696,22 +600,9 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     fn test_log_component_level_filtering() {
-        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
-        let log_file_path = temp_log_file.path();
-
-        // Add the ".log" suffix to the log file path
-        let mut log_file_path_with_suffix = PathBuf::from(log_file_path);
-        log_file_path_with_suffix.set_extension("log");
-        let log_file_path_with_suffix_str =
-            RefCell::new(log_file_path_with_suffix.to_str().unwrap().to_string());
-
-        let component_levels = HashMap::from_iter(std::iter::once((
-            String::from("RiskEngine"),
-            Value::from("ERROR"), // <-- This should be filtered
-        )));
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
             TraderId::new("TRADER-001"),
@@ -719,40 +610,56 @@ mod tests {
             UUID4::new(),
             LogLevel::Info,
             Some(LogLevel::Debug),
-            Some(log_file_path.to_str().unwrap().to_string()),
+            Some(temp_dir.path().to_str().unwrap().to_string()),
             None,
             None,
-            Some(component_levels),
+            Some(HashMap::from_iter(std::iter::once((
+                String::from("RiskEngine"),
+                Value::from("ERROR"), // <-- This should be filtered
+            )))),
             false,
         );
 
         logger.info(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test."),
         );
 
-        thread::sleep(Duration::from_secs(1));
+        wait_until(
+            || {
+                if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.path().is_file())
+                    .next()
+                {
+                    let log_file_path = log_file.path();
+                    let log_contents = std::fs::read_to_string(&log_file_path)
+                        .expect("Error while reading log file");
+                    !log_contents.contains("RiskEngine")
+                } else {
+                    false
+                }
+            },
+            Duration::from_secs(3),
+        );
 
         assert!(
-            fs::read_to_string(log_file_path_with_suffix_str.borrow().clone())
-                .expect("Error while reading log file")
-                .is_empty()
+            std::fs::read_dir(&temp_dir)
+                .expect("Failed to read directory")
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().is_file())
+                .next()
+                .is_some(),
+            "Log file exists"
         );
     }
 
-    #[ignore]
     #[test]
     fn test_logging_to_file_in_json_format() {
-        let temp_log_file = NamedTempFile::new().expect("Failed to create temporary log file");
-        let log_file_path = temp_log_file.path();
-
-        // Add the ".log" suffix to the log file path
-        let mut log_file_path_with_suffix = PathBuf::from(log_file_path);
-        log_file_path_with_suffix.set_extension("json");
-        let log_file_path_with_suffix_str =
-            RefCell::new(log_file_path_with_suffix.to_str().unwrap().to_string());
+        let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
             TraderId::new("TRADER-001"),
@@ -760,15 +667,15 @@ mod tests {
             UUID4::new(),
             LogLevel::Info,
             Some(LogLevel::Debug),
+            Some(temp_dir.path().to_str().unwrap().to_string()),
             None,
-            Some(log_file_path.to_str().unwrap().to_string()),
             Some("json".to_string()),
             None,
             false,
         );
 
         logger.info(
-            1650000000000000,
+            1_650_000_000_000_000,
             LogColor::Normal,
             String::from("RiskEngine"),
             String::from("This is a test."),
@@ -778,16 +685,26 @@ mod tests {
 
         wait_until(
             || {
-                log_contents = fs::read_to_string(log_file_path_with_suffix_str.borrow().clone())
-                    .expect("Error while reading log file");
-                !log_contents.is_empty()
+                if let Some(log_file) = std::fs::read_dir(&temp_dir)
+                    .expect("Failed to read directory")
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.path().is_file())
+                    .next()
+                {
+                    let log_file_path = log_file.path();
+                    log_contents = std::fs::read_to_string(&log_file_path)
+                        .expect("Error while reading log file");
+                    !log_contents.is_empty()
+                } else {
+                    false
+                }
             },
-            Duration::from_secs(3),
+            Duration::from_secs(2),
         );
 
         assert_eq!(
-            log_contents,
-            "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
-        );
+        log_contents,
+        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+    );
     }
 }
