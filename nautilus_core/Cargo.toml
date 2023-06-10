@@ -6,6 +6,7 @@ members = [
     "indicators",
     "model",
     "network",
+    "network/tokio-tungstenite",
     "persistence",
     "pyo3"
 ]
