@@ -970,6 +970,14 @@ cdef class ExecutionEngine(Component):
             # Close original position
             self._update_position(instrument, position, fill_split1, oms_type)
 
+        # Guard against flipping a position with a zero fill size
+        if difference._mem.raw == 0:
+            self._log.warning(
+                "Zero fill size during position flip calculation, this could be caused by"
+                "a mismatch between instrument `size_precision` and a quantity `size_precision`."
+            )
+            return
+
         cdef PositionId position_id_flip = fill.position_id
         if oms_type == OmsType.HEDGING and fill.position_id.is_virtual_c():
             # Generate new position ID for flipped virtual position
