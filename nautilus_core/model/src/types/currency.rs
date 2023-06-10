@@ -78,6 +78,8 @@ impl FromStr for Currency {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         CURRENCY_MAP
+            .lock()
+            .unwrap()
             .get(s)
             .cloned()
             .ok_or_else(|| format!("Unknown currency: {}", s))
@@ -115,6 +117,7 @@ impl<'de> Deserialize<'de> for Currency {
 /// Returns a [`Currency`] from pointers and primitives.
 ///
 /// # Safety
+///
 /// - Assumes `code_ptr` is a valid C string pointer.
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
@@ -169,6 +172,32 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
     let mut h = DefaultHasher::new();
     currency.hash(&mut h);
     h.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn currency_register(currency: Currency) {
+    CURRENCY_MAP
+        .lock()
+        .unwrap()
+        .insert(currency.code.to_string(), currency);
+}
+
+/// # Safety
+///
+/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
+    let code = cstr_to_string(code_ptr);
+    u8::from(CURRENCY_MAP.lock().unwrap().contains_key(&code))
+}
+
+/// # Safety
+///
+/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
+    let code = cstr_to_string(code_ptr);
+    Currency::from_str(&code).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

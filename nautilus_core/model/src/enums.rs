@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Defines enumerations for the trading domain model.
+
 use std::ffi::c_char;
 use std::fmt::Debug;
 use std::str::FromStr;

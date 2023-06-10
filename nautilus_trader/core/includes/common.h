@@ -199,8 +199,7 @@ typedef struct LiveClock LiveClock;
  * Provides a high-performance logger utilizing a MPSC channel under the hood.
  *
  * A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
- * channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
- * per second).
+ * channel.
  */
 typedef struct Logger_t Logger_t;
 
@@ -417,6 +416,7 @@ enum LogColor log_color_from_cstr(const char *ptr);
  * Creates a new logger.
  *
  * # Safety
+ *
  * - Assumes `trader_id_ptr` is a valid C string pointer.
  * - Assumes `machine_id_ptr` is a valid C string pointer.
  * - Assumes `instance_id_ptr` is a valid C string pointer.
@@ -462,6 +462,7 @@ struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 
 /**
  * # Safety
+ *
  * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
  */
 struct TimeEvent_t time_event_new(const char *name,

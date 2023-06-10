@@ -13,87 +13,93 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Defines currency definition constants
+//! Defines established currency constants and an internal currency map.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use crate::{enums::CurrencyType, types::currency::Currency};
 
 #[must_use]
-pub fn currency_map() -> HashMap<String, Currency> {
-    [
-        // Fiat currencies
-        (String::from("AUD"), AUD.clone()),
-        (String::from("BRL"), BRL.clone()),
-        (String::from("CAD"), CAD.clone()),
-        (String::from("CHF"), CHF.clone()),
-        (String::from("CNY"), CNY.clone()),
-        (String::from("CNH"), CNH.clone()),
-        (String::from("CZK"), CZK.clone()),
-        (String::from("DKK"), DKK.clone()),
-        (String::from("EUR"), EUR.clone()),
-        (String::from("GBP"), GBP.clone()),
-        (String::from("HKD"), HKD.clone()),
-        (String::from("HUF"), HUF.clone()),
-        (String::from("ILS"), ILS.clone()),
-        (String::from("INR"), INR.clone()),
-        (String::from("JPY"), JPY.clone()),
-        (String::from("KRW"), KRW.clone()),
-        (String::from("MXN"), MXN.clone()),
-        (String::from("NOK"), NOK.clone()),
-        (String::from("NZD"), NZD.clone()),
-        (String::from("PLN"), PLN.clone()),
-        (String::from("RUB"), RUB.clone()),
-        (String::from("SAR"), SAR.clone()),
-        (String::from("SEK"), SEK.clone()),
-        (String::from("SGD"), SGD.clone()),
-        (String::from("THB"), THB.clone()),
-        (String::from("TRY"), TRY.clone()),
-        (String::from("USD"), USD.clone()),
-        (String::from("XAG"), XAG.clone()),
-        (String::from("XAU"), XAU.clone()),
-        (String::from("ZAR"), ZAR.clone()),
-        // Crypto currencies
-        (String::from("1INCH"), ONEINCH.clone()),
-        (String::from("AAVE"), AAVE.clone()),
-        (String::from("ACA"), ACA.clone()),
-        (String::from("ADA"), ADA.clone()),
-        (String::from("AVAX"), AVAX.clone()),
-        (String::from("BCH"), BCH.clone()),
-        (String::from("BNB"), BNB.clone()),
-        (String::from("BRZ"), BRZ.clone()),
-        (String::from("BSV"), BSV.clone()),
-        (String::from("BTC"), BTC.clone()),
-        (String::from("BUSD"), BUSD.clone()),
-        (String::from("DASH"), DASH.clone()),
-        (String::from("DOGE"), DOGE.clone()),
-        (String::from("DOT"), DOT.clone()),
-        (String::from("EOS"), EOS.clone()),
-        (String::from("ETH"), ETH.clone()),
-        (String::from("ETHW"), ETHW.clone()),
-        (String::from("JOE"), JOE.clone()),
-        (String::from("LINK"), LINK.clone()),
-        (String::from("LTC"), LTC.clone()),
-        (String::from("LUNA"), LUNA.clone()),
-        (String::from("NBT"), NBT.clone()),
-        (String::from("SOL"), SOL.clone()),
-        (String::from("TRX"), TRX.clone()),
-        (String::from("TRYB"), TRYB.clone()),
-        (String::from("VTC"), VTC.clone()),
-        (String::from("WSB"), WSB.clone()),
-        (String::from("XBT"), XBT.clone()),
-        (String::from("XEC"), XEC.clone()),
-        (String::from("XLM"), XLM.clone()),
-        (String::from("XMR"), XMR.clone()),
-        (String::from("XRP"), XRP.clone()),
-        (String::from("XTZ"), XTZ.clone()),
-        (String::from("USDC"), USDC.clone()),
-        (String::from("USDT"), USDT.clone()),
-        (String::from("ZEC"), ZEC.clone()),
-    ]
-    .iter()
-    .cloned()
-    .collect()
+pub fn currency_map() -> Mutex<HashMap<String, Currency>> {
+    Mutex::new(
+        [
+            // Fiat currencies
+            (String::from("AUD"), AUD.clone()),
+            (String::from("BRL"), BRL.clone()),
+            (String::from("CAD"), CAD.clone()),
+            (String::from("CHF"), CHF.clone()),
+            (String::from("CNY"), CNY.clone()),
+            (String::from("CNH"), CNH.clone()),
+            (String::from("CZK"), CZK.clone()),
+            (String::from("DKK"), DKK.clone()),
+            (String::from("EUR"), EUR.clone()),
+            (String::from("GBP"), GBP.clone()),
+            (String::from("HKD"), HKD.clone()),
+            (String::from("HUF"), HUF.clone()),
+            (String::from("ILS"), ILS.clone()),
+            (String::from("INR"), INR.clone()),
+            (String::from("JPY"), JPY.clone()),
+            (String::from("KRW"), KRW.clone()),
+            (String::from("MXN"), MXN.clone()),
+            (String::from("NOK"), NOK.clone()),
+            (String::from("NZD"), NZD.clone()),
+            (String::from("PLN"), PLN.clone()),
+            (String::from("RUB"), RUB.clone()),
+            (String::from("SAR"), SAR.clone()),
+            (String::from("SEK"), SEK.clone()),
+            (String::from("SGD"), SGD.clone()),
+            (String::from("THB"), THB.clone()),
+            (String::from("TRY"), TRY.clone()),
+            (String::from("USD"), USD.clone()),
+            (String::from("XAG"), XAG.clone()),
+            (String::from("XAU"), XAU.clone()),
+            (String::from("ZAR"), ZAR.clone()),
+            // Crypto currencies
+            (String::from("1INCH"), ONEINCH.clone()),
+            (String::from("AAVE"), AAVE.clone()),
+            (String::from("ACA"), ACA.clone()),
+            (String::from("ADA"), ADA.clone()),
+            (String::from("AVAX"), AVAX.clone()),
+            (String::from("BCH"), BCH.clone()),
+            (String::from("BTTC"), BTTC.clone()),
+            (String::from("BNB"), BNB.clone()),
+            (String::from("BRZ"), BRZ.clone()),
+            (String::from("BSV"), BSV.clone()),
+            (String::from("BTC"), BTC.clone()),
+            (String::from("BUSD"), BUSD.clone()),
+            (String::from("DASH"), DASH.clone()),
+            (String::from("DOGE"), DOGE.clone()),
+            (String::from("DOT"), DOT.clone()),
+            (String::from("EOS"), EOS.clone()),
+            (String::from("ETH"), ETH.clone()),
+            (String::from("ETHW"), ETHW.clone()),
+            (String::from("JOE"), JOE.clone()),
+            (String::from("LINK"), LINK.clone()),
+            (String::from("LTC"), LTC.clone()),
+            (String::from("LUNA"), LUNA.clone()),
+            (String::from("NBT"), NBT.clone()),
+            (String::from("SOL"), SOL.clone()),
+            (String::from("TRX"), TRX.clone()),
+            (String::from("TRYB"), TRYB.clone()),
+            (String::from("VTC"), VTC.clone()),
+            (String::from("WSB"), WSB.clone()),
+            (String::from("XBT"), XBT.clone()),
+            (String::from("XEC"), XEC.clone()),
+            (String::from("XLM"), XLM.clone()),
+            (String::from("XMR"), XMR.clone()),
+            (String::from("XRP"), XRP.clone()),
+            (String::from("XTZ"), XTZ.clone()),
+            (String::from("USDC"), USDC.clone()),
+            (String::from("USDT"), USDT.clone()),
+            (String::from("ZEC"), ZEC.clone()),
+        ]
+        .iter()
+        .cloned()
+        .collect(),
+    )
 }
 
 lazy_static! {
@@ -358,6 +364,13 @@ lazy_static! {
         name: Box::new(Arc::new(String::from("Bitcoin"))),
         currency_type: CurrencyType::Crypto,
     };
+    pub static ref BTTC: Currency = Currency {
+        code: Box::new(Arc::new(String::from("BTTC"))),
+        precision: 8,
+        iso4217: 0,
+        name: Box::new(Arc::new(String::from("BitTorrent"))),
+        currency_type: CurrencyType::Crypto,
+    };
     pub static ref BNB: Currency = Currency {
         code: Box::new(Arc::new(String::from("BNB"))),
         precision: 8,
@@ -561,5 +574,5 @@ lazy_static! {
         name: Box::new(Arc::new(String::from("Zcash"))),
         currency_type: CurrencyType::Crypto,
     };
-    pub static ref CURRENCY_MAP: HashMap<String, Currency> = currency_map();
+    pub static ref CURRENCY_MAP: Mutex<HashMap<String, Currency>> = currency_map();
 }
