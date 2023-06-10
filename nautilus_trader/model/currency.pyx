@@ -183,7 +183,7 @@ cdef class Currency:
         return self._mem.precision
 
     @staticmethod
-    cdef Currency get_currency_from_internal_map(str code):
+    cdef Currency from_internal_map_c(str code):
         cdef const char* code_ptr = pystr_to_cstr(code)
         if not currency_exists(code_ptr):
             return None
@@ -192,15 +192,8 @@ cdef class Currency:
         return currency
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=False):
-        cdef Currency existing = Currency.get_currency_from_internal_map(currency.code)
-        if existing is not None and not overwrite:
-            return  # Already exists in internal map
-        currency_register(currency_clone(&currency._mem))
-
-    @staticmethod
     cdef Currency from_str_c(str code, bint strict=False):
-        cdef Currency currency = Currency.get_currency_from_internal_map(code)
+        cdef Currency currency = Currency.from_internal_map_c(code)
         if currency is not None:
             return currency
         if strict:
@@ -216,6 +209,13 @@ cdef class Currency:
         )
         print(f"Currency '{code}' not found, created {repr(currency)}")
         return currency
+
+    @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=False):
+        cdef Currency existing = Currency.from_internal_map_c(currency.code)
+        if existing is not None and not overwrite:
+            return  # Already exists in internal map
+        currency_register(currency_clone(&currency._mem))
 
     @staticmethod
     def register(Currency currency, bint overwrite=False):
@@ -248,8 +248,7 @@ cdef class Currency:
         strict : bool, default False
             If not `strict` mode then an unknown currency will very likely
             be a Cryptocurrency, so for robustness will then return a new
-            `Currency` object using the given `code` with a default `precision`
-            of 8.
+            `Currency` object using the given `code` with a default `precision` of 8.
 
         Returns
         -------
@@ -260,7 +259,7 @@ cdef class Currency:
 
     @staticmethod
     cdef bint is_fiat_c(str code):
-        cdef Currency currency = Currency.get_currency_from_internal_map(code)
+        cdef Currency currency = Currency.from_internal_map_c(code)
         if currency is None:
             return False
 
@@ -268,7 +267,7 @@ cdef class Currency:
 
     @staticmethod
     cdef bint is_crypto_c(str code):
-        cdef Currency currency = Currency.get_currency_from_internal_map(code)
+        cdef Currency currency = Currency.from_internal_map_c(code)
         if currency is None:
             return False
 
