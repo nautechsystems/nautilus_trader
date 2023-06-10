@@ -21,7 +21,7 @@ use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr};
 
-/// Represents the state of a component within the system.
+/// The state of a component within the system.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
@@ -57,7 +57,7 @@ pub enum ComponentState {
     Faulted = 13,
 }
 
-/// Represents a trigger condition for a component within the system.
+/// A trigger condition for a component within the system.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
@@ -95,7 +95,7 @@ pub enum ComponentTrigger {
     FaultCompleted = 15,
 }
 
-/// Represents a log level for log messages.
+/// The log level for log messages.
 #[repr(C)]
 #[derive(
     Copy,
@@ -149,7 +149,7 @@ impl std::fmt::Display for LogLevel {
     }
 }
 
-/// Represents a log color for log messages.
+/// The log color for log messages.
 #[repr(C)]
 #[derive(
     Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
@@ -180,7 +180,7 @@ pub enum LogColor {
     Red = 6,
 }
 
-/// Represents an ANSI log line format specifier.
+/// An ANSI log line format specifier.
 /// This is used for formatting log messages with ANSI escape codes.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]

@@ -6,7 +6,7 @@ from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/common.h":
 
-    # Represents the state of a component within the system.
+    # The state of a component within the system.
     cpdef enum ComponentState:
         # When a component is instantiated, but not yet ready to fulfill its specification.
         PRE_INITIALIZED # = 0,
@@ -37,7 +37,7 @@ cdef extern from "../includes/common.h":
         # When a component has successfully shut down due to a detected fault.
         FAULTED # = 13,
 
-    # Represents a trigger condition for a component within the system.
+    # A trigger condition for a component within the system.
     cpdef enum ComponentTrigger:
         # A trigger for the component to initialize.
         INITIALIZE # = 1,
@@ -70,7 +70,7 @@ cdef extern from "../includes/common.h":
         # A trigger when the component has successfully faulted.
         FAULT_COMPLETED # = 15,
 
-    # Represents a log color for log messages.
+    # The log color for log messages.
     cpdef enum LogColor:
         # The default/normal log color.
         NORMAL # = 0,
@@ -87,7 +87,7 @@ cdef extern from "../includes/common.h":
         # The red log color, typically used with [`LogLevel::Error`] or [`LogLevel::Critical`] log levels.
         RED # = 6,
 
-    # Represents a log level for log messages.
+    # The log level for log messages.
     cpdef enum LogLevel:
         # The **DBG** debug log level.
         DEBUG # = 10,
