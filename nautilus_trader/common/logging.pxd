@@ -41,20 +41,20 @@ cdef class Logger:
     cpdef void change_clock(self, Clock clock)
     cdef void log(
         self,
-        uint64_t timestamp_ns,
+        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
-        str msg,
+        str message,
         dict annotations=*,
     )
     cdef void _log(
         self,
-        uint64_t timestamp_ns,
+        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
-        str msg,
+        str message,
         dict annotations,
     )
 
@@ -65,12 +65,12 @@ cdef class LoggerAdapter:
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void info(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void error(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void exception(self, str msg, ex, dict annotations=*)
+    cpdef void debug(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void info(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void warning(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void error(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void critical(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void exception(self, str message, ex, dict annotations=*)
 
 
 cpdef void nautilus_header(LoggerAdapter logger)

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_drop
 from nautilus_trader.core.rust.model cimport account_id_eq
 from nautilus_trader.core.rust.model cimport account_id_hash
@@ -74,7 +75,7 @@ from nautilus_trader.core.string cimport pystr_to_cstr
 
 cdef class Identifier:
     """
-    The base class for all identifiers.
+    The abstract base class for all identifiers.
     """
 
     def __getstate__(self):
@@ -119,18 +120,21 @@ cdef class Identifier:
 
 cdef class Symbol(Identifier):
     """
-    Represents a valid ticker symbol ID for a tradable financial market
-    instrument.
+    Represents a valid ticker symbol ID for a tradable financial market instrument.
 
     Parameters
     ----------
     value : str
         The ticker symbol ID value.
 
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
+
     Warnings
     --------
-    - The ID value must be unique for a trading venue.
-    - Panics at runtime if `value` is not a valid string.
+    The ID value must be unique for a trading venue.
 
     References
     ----------
@@ -138,6 +142,7 @@ cdef class Symbol(Identifier):
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = symbol_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -158,6 +163,12 @@ cdef class Symbol(Identifier):
     def __hash__ (self) -> int:
         return symbol_hash(&self._mem)
 
+    @staticmethod
+    cdef Symbol from_mem_c(Symbol_t* mem):
+        cdef Symbol symbol = Symbol.__new__(Symbol)
+        symbol._mem = symbol_clone(mem)
+        return symbol
+
     cdef str to_str(self):
         return cstr_to_pystr(symbol_to_cstr(&self._mem))
 
@@ -171,12 +182,14 @@ cdef class Venue(Identifier):
     name : str
         The venue ID value.
 
-    Warnings
-    --------
-    - Panics at runtime if `value` is not a valid string.
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(self, str name not None):
+        Condition.valid_string(name, "name")
         self._mem = venue_new(pystr_to_cstr(name))
 
     def __del__(self) -> None:
@@ -196,6 +209,12 @@ cdef class Venue(Identifier):
 
     def __hash__ (self) -> int:
         return venue_hash(&self._mem)
+
+    @staticmethod
+    cdef Venue from_mem_c(Venue_t* mem):
+        cdef Venue venue = Venue.__new__(Venue)
+        venue._mem = venue_clone(mem)
+        return venue
 
     cdef str to_str(self):
         return cstr_to_pystr(venue_to_cstr(&self._mem))
@@ -220,8 +239,30 @@ cdef class InstrumentId(Identifier):
             <Symbol_t *>&symbol._mem,
             <Venue_t *>&venue._mem,
         )
-        self.symbol = symbol
-        self.venue = venue
+
+    @property
+    def symbol(self) -> Symbol:
+        """
+        Returns the instrument ticker symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return Symbol.from_mem_c(&self._mem.symbol)
+
+    @property
+    def venue(self) -> Venue:
+        """
+        Returns the instrument trading venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return Venue.from_mem_c(&self._mem.venue)
 
     def __del__(self) -> None:
         if self._mem.symbol.value != NULL:
@@ -231,13 +272,9 @@ cdef class InstrumentId(Identifier):
         return self.to_str()
 
     def __setstate__(self, state):
-        cdef list pieces = state.rsplit('.', maxsplit=1)
-
         self._mem = instrument_id_new_from_cstr(
             pystr_to_cstr(state),
         )
-        self.symbol = Symbol(pieces[0])
-        self.venue = Venue(pieces[1])
 
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
@@ -252,28 +289,14 @@ cdef class InstrumentId(Identifier):
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
-        cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = symbol_clone(&mem.symbol)
-
-        cdef Venue venue = Venue.__new__(Venue)
-        venue._mem = venue_clone(&mem.venue)
-
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
         instrument_id._mem = instrument_id_clone(&mem)
-        instrument_id.symbol = symbol
-        instrument_id.venue = venue
-
         return instrument_id
 
     @staticmethod
     cdef InstrumentId from_str_c(str value):
-        cdef list pieces = value.rsplit('.', maxsplit=1)
-
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
         instrument_id._mem = instrument_id_new_from_cstr(pystr_to_cstr(value))
-        instrument_id.symbol = Symbol(pieces[0])
-        instrument_id.venue = Venue(pieces[1])
-
         return instrument_id
 
     @staticmethod
@@ -314,11 +337,11 @@ cdef class ComponentId(Identifier):
 
     Warnings
     --------
-    - The ID value must be unique at the trader level.
-    - Panics at runtime if `value` is not a valid string.
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = component_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -359,11 +382,11 @@ cdef class ClientId(ComponentId):
 
     Warnings
     --------
-    - The ID value must be unique at the trader level.
-    - Panics at runtime if `value` is not a valid string.
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         super().__init__(value)
 
 
@@ -377,18 +400,27 @@ cdef class TraderId(ComponentId):
 
     Example: "TESTER-001".
 
+    The reason for the numerical component of the ID is so that order and position IDs
+    do not collide with those from another node instance.
+
     Parameters
     ----------
     value : str
         The trader ID value.
 
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string containing a hyphen.
+
     Warnings
     --------
-    - The name and tag combination ID value must be unique at the firm level.
-    - Panics at runtime if `value` is not a valid string containing a hyphen.
+    The name and tag combination ID value must be unique at the firm level.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
+        Condition.true("-" in value, "value was malformed: did not contain a hyphen '-'")
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -417,18 +449,27 @@ cdef class StrategyId(ComponentId):
 
     Example: "EMACross-001".
 
+    The reason for the numerical component of the ID is so that order and position IDs
+    do not collide with those from another strategy within the node instance.
+
     Parameters
     ----------
     value : str
         The strategy ID value.
 
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string containing a hyphen.
+
     Warnings
     --------
-    - The name and tag combination must be unique at the trader level.
-    - Panics at runtime if `value` is not a valid string containing a hyphen.
+    The name and tag combination must be unique at the trader level.
     """
 
     def __init__(self, str value):
+        Condition.valid_string(value, "value")
+        Condition.true(value == "EXTERNAL" or "-" in value, "value was malformed: did not contain a hyphen '-'")
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -469,9 +510,10 @@ cdef class ExecAlgorithmId(ComponentId):
     value : str
         The execution algorithm ID value.
 
-    Warnings
-    --------
-    - Panics at runtime if `value` is not a valid string.
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
 
     References
     ----------
@@ -479,6 +521,7 @@ cdef class ExecAlgorithmId(ComponentId):
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         super().__init__(value)
 
 
@@ -498,13 +541,19 @@ cdef class AccountId(Identifier):
     value : str
         The account ID value.
 
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string containing a hyphen.
+
     Warnings
     --------
-    - The issuer and number ID combination must be unique at the firm level.
-    - Panics at runtime if `value` is not a valid string containing a hyphen.
+    The issuer and number ID combination must be unique at the firm level.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
+        Condition.true("-" in value, "value was malformed: did not contain a hyphen '-'")
         self._mem = account_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -560,13 +609,18 @@ cdef class ClientOrderId(Identifier):
     value : str
         The client order ID value.
 
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
+
     Warnings
     --------
-    - The ID value must be unique at the firm level.
-    - Panics at runtime if `value` is not a valid string.
+    The ID value must be unique at the firm level.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = client_order_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -600,12 +654,14 @@ cdef class VenueOrderId(Identifier):
     value : str
         The venue assigned order ID value.
 
-    Warnings
-    --------
-    - Panics at runtime if `value` is not a valid string.
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = venue_order_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -639,12 +695,14 @@ cdef class OrderListId(Identifier):
     value : str
         The order list ID value.
 
-    Warnings
-    --------
-    - Panics at runtime if `value` is not a valid string.
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = order_list_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -678,12 +736,14 @@ cdef class PositionId(Identifier):
     value : str
         The position ID value.
 
-    Warnings
-    --------
-    - Panics at runtime if `value` is not a valid string.
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string containing a hyphen.
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = position_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:
@@ -731,9 +791,10 @@ cdef class TradeId(Identifier):
     value : str
         The trade match ID value.
 
-    Warnings
-    --------
-    - Panics at runtime if `value` is not a valid string.
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
 
     References
     ----------
@@ -741,6 +802,7 @@ cdef class TradeId(Identifier):
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")
         self._mem = trade_id_new(pystr_to_cstr(value))
 
     def __del__(self) -> None:

@@ -39,8 +39,13 @@ use serde_json::Value;
 
 use crate::enums::{LogColor, LogLevel};
 
+/// Provides a high-performance logger utilizing a MPSC channel under the hood.
+///
+/// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
+/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
+/// per second).
 pub struct Logger {
-    tx: Sender<LogMessage>,
+    tx: Sender<LogEvent>,
     /// The trader ID for the logger.
     pub trader_id: TraderId,
     /// The machine ID for the logger.
@@ -55,31 +60,32 @@ pub struct Logger {
     pub is_bypassed: bool,
 }
 
+/// Represents a log event which includes a message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LogMessage {
-    timestamp_ns: UnixNanos,
+pub struct LogEvent {
+    /// The UNIX nanoseconds timestamp when the log event occurred.
+    timestamp: UnixNanos,
+    /// The log level for the event.
     level: LogLevel,
     #[serde(skip_serializing)]
+    /// The color for the log message content.
     color: LogColor,
+    /// The Nautilus system component the log event originated from.
     component: String,
-    msg: String,
+    /// The log message content.
+    message: String,
 }
 
-impl fmt::Display for LogMessage {
+impl fmt::Display for LogEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{} [{}] {}: {}",
-            self.timestamp_ns, self.level, self.component, self.msg
+            self.timestamp, self.level, self.component, self.message
         )
     }
 }
 
-/// Provides a high-performance logger utilizing a MPSC channel under the hood.
-///
-/// A separate thead is spawned at initialization which receives `LogMessage` structs over the
-/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
-/// per second).
 #[allow(clippy::too_many_arguments)]
 impl Logger {
     pub fn new(
@@ -94,7 +100,7 @@ impl Logger {
         component_levels: Option<HashMap<String, Value>>,
         is_bypassed: bool,
     ) -> Self {
-        let (tx, rx) = channel::<LogMessage>();
+        let (tx, rx) = channel::<LogEvent>();
         let mut level_filters = HashMap::<String, LogLevel>::new();
 
         if let Some(component_levels_map) = component_levels {
@@ -148,7 +154,7 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
-        rx: Receiver<LogMessage>,
+        rx: Receiver<LogEvent>,
     ) {
         // Setup std I/O buffers
         let mut out_buf = BufWriter::new(io::stdout());
@@ -192,27 +198,27 @@ impl Logger {
 
         // Setup templates for formatting
         let template_console = String::from(
-            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
+            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {message}\x1b[0m\n",
         );
-        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
+        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {message}\n");
 
-        // Continue to receive and handle log messages until channel is hung up
-        while let Ok(log_msg) = rx.recv() {
-            let component_level = level_filters.get(&log_msg.component);
+        // Continue to receive and handle log events until channel is hung up
+        while let Ok(event) = rx.recv() {
+            let component_level = level_filters.get(&event.component);
 
-            // Check if the component exists in level_filters and if its level is greater than log_msg.level
+            // Check if the component exists in level_filters and if its level is greater than event.level
             if let Some(&filter_level) = component_level {
-                if log_msg.level < filter_level {
+                if event.level < filter_level {
                     continue;
                 }
             }
 
-            if log_msg.level >= LogLevel::Error {
-                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
+            if event.level >= LogLevel::Error {
+                let line = Self::format_log_line_console(&event, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
-            } else if log_msg.level >= level_stdout {
-                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
+            } else if event.level >= level_stdout {
+                let line = Self::format_log_line_console(&event, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
             }
@@ -241,10 +247,10 @@ impl Logger {
                     file_buf = Some(BufWriter::new(file));
                 }
 
-                if log_msg.level >= level_file {
+                if event.level >= level_file {
                     if let Some(file_buf) = file_buf.as_mut() {
                         let line = Self::format_log_line_file(
-                            &log_msg,
+                            &event,
                             trader_id,
                             &template_file,
                             is_json_format,
@@ -311,33 +317,33 @@ impl Logger {
         file_path
     }
 
-    fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
+    fn format_log_line_console(event: &LogEvent, trader_id: &str, template: &str) -> String {
         template
-            .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-            .replace("{color}", &log_msg.color.to_string())
-            .replace("{level}", &log_msg.level.to_string())
+            .replace("{ts}", &unix_nanos_to_iso8601(event.timestamp))
+            .replace("{color}", &event.color.to_string())
+            .replace("{level}", &event.level.to_string())
             .replace("{trader_id}", trader_id)
-            .replace("{component}", &log_msg.component)
-            .replace("{msg}", &log_msg.msg)
+            .replace("{component}", &event.component)
+            .replace("{message}", &event.message)
     }
 
     fn format_log_line_file(
-        log_msg: &LogMessage,
+        event: &LogEvent,
         trader_id: &str,
         template: &str,
         is_json_format: bool,
     ) -> String {
         if is_json_format {
             let json_string =
-                serde_json::to_string(log_msg).expect("Error serializing log message to string");
+                serde_json::to_string(event).expect("Error serializing log event to string");
             format!("{}\n", json_string)
         } else {
             template
-                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-                .replace("{level}", &log_msg.level.to_string())
+                .replace("{ts}", &unix_nanos_to_iso8601(event.timestamp))
+                .replace("{level}", &event.level.to_string())
                 .replace("{trader_id}", trader_id)
-                .replace("{component}", &log_msg.component)
-                .replace("{msg}", &log_msg.msg)
+                .replace("{component}", &event.component)
+                .replace("{message}", &event.message)
         }
     }
 
@@ -385,42 +391,48 @@ impl Logger {
 
     fn send(
         &mut self,
-        timestamp_ns: u64,
+        timestamp: u64,
         level: LogLevel,
         color: LogColor,
         component: String,
-        msg: String,
+        message: String,
     ) {
-        let log_message = LogMessage {
-            timestamp_ns,
+        let event = LogEvent {
+            timestamp,
             level,
             color,
             component,
-            msg,
+            message,
         };
-        if let Err(SendError(msg)) = self.tx.send(log_message) {
-            eprintln!("Error sending log message: {}", msg);
+        if let Err(SendError(e)) = self.tx.send(event) {
+            eprintln!("Error sending log event: {}", e);
         }
     }
 
-    pub fn debug(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
+    pub fn debug(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
+        self.send(timestamp, LogLevel::Debug, color, component, message)
     }
 
-    pub fn info(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Info, color, component, msg)
+    pub fn info(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
+        self.send(timestamp, LogLevel::Info, color, component, message)
     }
 
-    pub fn warn(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
+    pub fn warn(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
+        self.send(timestamp, LogLevel::Warning, color, component, message)
     }
 
-    pub fn error(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Error, color, component, msg)
+    pub fn error(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
+        self.send(timestamp, LogLevel::Error, color, component, message)
     }
 
-    pub fn critical(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
+    pub fn critical(
+        &mut self,
+        timestamp: u64,
+        color: LogColor,
+        component: String,
+        message: String,
+    ) {
+        self.send(timestamp, LogLevel::Critical, color, component, message)
     }
 }
 
@@ -510,11 +522,12 @@ pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
     logger.is_bypassed as u8
 }
 
-/// Log a message.
+/// Create a new log event.
 ///
 /// # Safety
+///
 /// - Assumes `component_ptr` is a valid C string pointer.
-/// - Assumes `msg_ptr` is a valid C string pointer.
+/// - Assumes `message_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
     logger: &mut CLogger,
@@ -522,11 +535,11 @@ pub unsafe extern "C" fn logger_log(
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
-    msg_ptr: *const c_char,
+    message_ptr: *const c_char,
 ) {
     let component = cstr_to_string(component_ptr);
-    let msg = cstr_to_string(msg_ptr);
-    logger.send(timestamp_ns, level, color, component, msg);
+    let message = cstr_to_string(message_ptr);
+    logger.send(timestamp_ns, level, color, component, message);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -559,21 +572,21 @@ mod tests {
 
     #[test]
     fn log_message_serialization() {
-        let log_message = LogMessage {
-            timestamp_ns: 1_000_000_000,
+        let log_message = LogEvent {
+            timestamp: 1_000_000_000,
             level: LogLevel::Info,
             color: LogColor::Normal,
             component: "Portfolio".to_string(),
-            msg: "This is a log message".to_string(),
+            message: "This is a log message".to_string(),
         };
 
         let serialized_json = serde_json::to_string(&log_message).unwrap();
         let deserialized_value: Value = serde_json::from_str(&serialized_json).unwrap();
 
-        assert_eq!(deserialized_value["timestamp_ns"], 1_000_000_000);
+        assert_eq!(deserialized_value["timestamp"], 1_000_000_000);
         assert_eq!(deserialized_value["level"], "INFO");
         assert_eq!(deserialized_value["component"], "Portfolio");
-        assert_eq!(deserialized_value["msg"], "This is a log message");
+        assert_eq!(deserialized_value["message"], "This is a log message");
     }
 
     #[test]
@@ -774,7 +787,7 @@ mod tests {
 
         assert_eq!(
             log_contents,
-            "{\"timestamp_ns\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"msg\":\"This is a test.\"}\n"
+            "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
         );
     }
 }

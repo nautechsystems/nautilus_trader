@@ -6,58 +6,108 @@ from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
 cdef extern from "../includes/common.h":
 
+    # The state of a component within the system.
     cpdef enum ComponentState:
+        # When a component is instantiated, but not yet ready to fulfill its specification.
         PRE_INITIALIZED # = 0,
+        # When a component is able to be started.
         READY # = 1,
+        # When a component is executing its actions on `start`.
         STARTING # = 2,
+        # When a component is operating normally and can fulfill its specification.
         RUNNING # = 3,
+        # When a component is executing its actions on `stop`.
         STOPPING # = 4,
+        # When a component has successfully stopped.
         STOPPED # = 5,
+        # When a component is started again after its initial start.
         RESUMING # = 6,
+        # When a component is executing its actions on `reset`.
         RESETTING # = 7,
+        # When a component is executing its actions on `dispose`.
         DISPOSING # = 8,
+        # When a component has successfully shut down and released all of its resources.
         DISPOSED # = 9,
+        # When a component is executing its actions on `degrade`.
         DEGRADING # = 10,
+        # When a component has successfully degraded and may not meet its full specification.
         DEGRADED # = 11,
+        # When a component is executing its actions on `fault`.
         FAULTING # = 12,
+        # When a component has successfully shut down due to a detected fault.
         FAULTED # = 13,
 
+    # A trigger condition for a component within the system.
     cpdef enum ComponentTrigger:
+        # A trigger for the component to initialize.
         INITIALIZE # = 1,
+        # A trigger for the component to start.
         START # = 2,
+        # A trigger when the component has successfully started.
         START_COMPLETED # = 3,
+        # A trigger for the component to stop.
         STOP # = 4,
+        # A trigger when the component has successfully stopped.
         STOP_COMPLETED # = 5,
+        # A trigger for the component to resume (after being stopped).
         RESUME # = 6,
+        # A trigger when the component has successfully resumed.
         RESUME_COMPLETED # = 7,
+        # A trigger for the component to reset.
         RESET # = 8,
+        # A trigger when the component has successfully reset.
         RESET_COMPLETED # = 9,
+        # A trigger for the component to dispose and release resources.
         DISPOSE # = 10,
+        # A trigger when the component has successfully disposed.
         DISPOSE_COMPLETED # = 11,
+        # A trigger for the component to degrade.
         DEGRADE # = 12,
+        # A trigger when the component has successfully degraded.
         DEGRADE_COMPLETED # = 13,
+        # A trigger for the component to fault.
         FAULT # = 14,
+        # A trigger when the component has successfully faulted.
         FAULT_COMPLETED # = 15,
 
+    # The log color for log messages.
     cpdef enum LogColor:
+        # The default/normal log color.
         NORMAL # = 0,
+        # The green log color, typically used with [`LogLevel::Info`] log levels and associated with success events.
         GREEN # = 1,
+        # The blue log color, typically used with [`LogLevel::Info`] log levels and associated with user actions.
         BLUE # = 2,
+        # The magenta log color, typically used with [`LogLevel::Info`] log levels.
         MAGENTA # = 3,
+        # The cyan log color, typically used with [`LogLevel::Info`] log levels.
         CYAN # = 4,
+        # The yellow log color, typically used with [`LogLevel::Warning`] log levels.
         YELLOW # = 5,
+        # The red log color, typically used with [`LogLevel::Error`] or [`LogLevel::Critical`] log levels.
         RED # = 6,
 
+    # The log level for log messages.
     cpdef enum LogLevel:
+        # The **DBG** debug log level.
         DEBUG # = 10,
+        # The **INF** info log level.
         INFO # = 20,
+        # The **WRN** warning log level.
         WARNING # = 30,
+        # The **ERR** error log level.
         ERROR # = 40,
+        # The **CRT** critical log level.
         CRITICAL # = 50,
 
     cdef struct LiveClock:
         pass
 
+    # Provides a high-performance logger utilizing a MPSC channel under the hood.
+    #
+    # A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
+    # channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
+    # per second).
     cdef struct Logger_t:
         pass
 
@@ -67,9 +117,32 @@ cdef extern from "../includes/common.h":
     cdef struct TestClock:
         pass
 
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+    #
+    # This struct wraps `TestClock` in a way that makes it compatible with C function
+    # calls, enabling interaction with `TestClock` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `TestClock_API` to be
+    # dereferenced to `TestClock`, providing access to `TestClock`'s methods without
+    # having to manually access the underlying `TestClock` instance.
+    #
+    # # Note
+    # This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
     cdef struct TestClock_API:
         TestClock *_0;
 
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
+    #
+    # This struct wraps `LiveClock` in a way that makes it compatible with C function
+    # calls, enabling interaction with `LiveClock` in a C environment.
+    #
+    # It implements the `Deref` and `DerefMut` traits, allowing instances of `LiveClock_API` to be
+    # dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
+    # having to manually access the underlying `LiveClock` instance. This includes
+    # both mutable and immutable access.
+    #
+    # # Note
+    # This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
     cdef struct LiveClock_API:
         LiveClock *_0;
 
@@ -120,6 +193,7 @@ cdef extern from "../includes/common.h":
     uintptr_t test_clock_timer_count(TestClock_API *clock);
 
     # # Safety
+    #
     # - Assumes `name_ptr` is a valid C string pointer.
     # - Assumes `callback_ptr` is a valid PyCallable pointer.
     void test_clock_set_time_alert_ns(TestClock_API *clock,
@@ -128,6 +202,7 @@ cdef extern from "../includes/common.h":
                                       PyObject *callback_ptr);
 
     # # Safety
+    #
     # - Assumes `name_ptr` is a valid C string pointer.
     # - Assumes `callback_ptr` is a valid PyCallable pointer.
     void test_clock_set_timer_ns(TestClock_API *clock,
@@ -138,16 +213,19 @@ cdef extern from "../includes/common.h":
                                  PyObject *callback_ptr);
 
     # # Safety
+    #
     # - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
     CVec test_clock_advance_time(TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
 
     void vec_time_event_handlers_drop(CVec v);
 
     # # Safety
+    #
     # - Assumes `name_ptr` is a valid C string pointer.
     uint64_t test_clock_next_time_ns(TestClock_API *clock, const char *name_ptr);
 
     # # Safety
+    #
     # - Assumes `name_ptr` is a valid C string pointer.
     void test_clock_cancel_timer(TestClock_API *clock, const char *name_ptr);
 
@@ -225,17 +303,20 @@ cdef extern from "../includes/common.h":
 
     uint8_t logger_is_bypassed(const CLogger *logger);
 
-    # Log a message.
+    # Create a new log event.
     #
     # # Safety
+    #
     # - Assumes `component_ptr` is a valid C string pointer.
-    # - Assumes `msg_ptr` is a valid C string pointer.
+    # - Assumes `message_ptr` is a valid C string pointer.
     void logger_log(CLogger *logger,
                     uint64_t timestamp_ns,
                     LogLevel level,
                     LogColor color,
                     const char *component_ptr,
-                    const char *msg_ptr);
+                    const char *message_ptr);
+
+    TimeEventHandler_t dummy(TimeEventHandler_t v);
 
     # # Safety
     # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
@@ -252,5 +333,3 @@ cdef extern from "../includes/common.h":
 
     # Returns a [`TimeEvent`] as a C string pointer.
     const char *time_event_to_cstr(const TimeEvent_t *event);
-
-    TimeEventHandler_t dummy(TimeEventHandler_t v);

@@ -158,10 +158,13 @@ def _build_extensions() -> list[Extension]:
 
     if platform.system() == "Windows":
         extra_link_args += [
-            "WS2_32.Lib",
             "AdvAPI32.Lib",
-            "UserEnv.Lib",
             "bcrypt.lib",
+            "Kernel32.lib",
+            "ntdll.lib",
+            "User32.Lib",
+            "UserEnv.Lib",
+            "WS2_32.Lib",
         ]
 
     print("Creating C extension modules...")

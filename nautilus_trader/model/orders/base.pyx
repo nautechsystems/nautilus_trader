@@ -631,8 +631,8 @@ cdef class Order:
         An order is considered in-flight when its status is any of;
 
         - ``SUBMITTED``
-        - ``PENDING_CANCEL``
         - ``PENDING_UPDATE``
+        - ``PENDING_CANCEL``
 
         Returns
         -------
@@ -654,8 +654,8 @@ cdef class Order:
 
         - ``ACCEPTED``
         - ``TRIGGERED``
-        - ``PENDING_CANCEL``
         - ``PENDING_UPDATE``
+        - ``PENDING_CANCEL``
         - ``PARTIALLY_FILLED``
 
         Returns

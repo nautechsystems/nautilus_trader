@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Removed `OrderBookData` (redundant)
 - Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional cals on inverse instruments)
 - Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
+- Renamed core `LogMessage` to `LogEvent` to more clearly distinguish between the `message` field and the event struct itself (aligns with [vector](https://vector.dev/docs/about/under-the-hood/architecture/data-model/log/) language)
 
 ### Enhancements
 - Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z
