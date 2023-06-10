@@ -195,16 +195,50 @@ typedef enum LogLevel {
 
 typedef struct LiveClock LiveClock;
 
+/**
+ * Provides a high-performance logger utilizing a MPSC channel under the hood.
+ *
+ * A separate thead is spawned at initialization which receives `LogMessage` structs over the
+ * channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
+ * per second).
+ */
 typedef struct Logger_t Logger_t;
 
 typedef struct Rc_String Rc_String;
 
 typedef struct TestClock TestClock;
 
+/**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+ *
+ * This struct wraps `TestClock` in a way that makes it compatible with C function
+ * calls, enabling interaction with `TestClock` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `TestClock_API` to be
+ * dereferenced to `TestClock`, providing access to `TestClock`'s methods without
+ * having to manually access the underlying `TestClock` instance.
+ *
+ * # Note
+ * This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
+ */
 typedef struct TestClock_API {
     struct TestClock *_0;
 } TestClock_API;
 
+/**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
+ *
+ * This struct wraps `LiveClock` in a way that makes it compatible with C function
+ * calls, enabling interaction with `LiveClock` in a C environment.
+ *
+ * It implements the `Deref` and `DerefMut` traits, allowing instances of `LiveClock_API` to be
+ * dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
+ * having to manually access the underlying `LiveClock` instance. This includes
+ * both mutable and immutable access.
+ *
+ * # Note
+ * This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
+ */
 typedef struct LiveClock_API {
     struct LiveClock *_0;
 } LiveClock_API;
@@ -280,6 +314,7 @@ uintptr_t test_clock_timer_count(struct TestClock_API *clock);
 
 /**
  * # Safety
+ *
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
@@ -290,6 +325,7 @@ void test_clock_set_time_alert_ns(struct TestClock_API *clock,
 
 /**
  * # Safety
+ *
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid PyCallable pointer.
  */
@@ -302,6 +338,7 @@ void test_clock_set_timer_ns(struct TestClock_API *clock,
 
 /**
  * # Safety
+ *
  * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
 CVec test_clock_advance_time(struct TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
@@ -310,12 +347,14 @@ void vec_time_event_handlers_drop(CVec v);
 
 /**
  * # Safety
+ *
  * - Assumes `name_ptr` is a valid C string pointer.
  */
 uint64_t test_clock_next_time_ns(struct TestClock_API *clock, const char *name_ptr);
 
 /**
  * # Safety
+ *
  * - Assumes `name_ptr` is a valid C string pointer.
  */
 void test_clock_cancel_timer(struct TestClock_API *clock, const char *name_ptr);
@@ -409,14 +448,16 @@ uint8_t logger_is_bypassed(const struct CLogger *logger);
  *
  * # Safety
  * - Assumes `component_ptr` is a valid C string pointer.
- * - Assumes `msg_ptr` is a valid C string pointer.
+ * - Assumes `text_ptr` is a valid C string pointer.
  */
 void logger_log(struct CLogger *logger,
                 uint64_t timestamp_ns,
                 enum LogLevel level,
                 enum LogColor color,
                 const char *component_ptr,
-                const char *msg_ptr);
+                const char *text_ptr);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 
 /**
  * # Safety
@@ -437,5 +478,3 @@ const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
  * Returns a [`TimeEvent`] as a C string pointer.
  */
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
-
-struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

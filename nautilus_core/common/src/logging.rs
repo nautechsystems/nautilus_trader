@@ -39,6 +39,11 @@ use serde_json::Value;
 
 use crate::enums::{LogColor, LogLevel};
 
+/// Provides a high-performance logger utilizing a MPSC channel under the hood.
+///
+/// A separate thead is spawned at initialization which receives `LogMessage` structs over the
+/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
+/// per second).
 pub struct Logger {
     tx: Sender<LogMessage>,
     /// The trader ID for the logger.
@@ -55,14 +60,20 @@ pub struct Logger {
     pub is_bypassed: bool,
 }
 
+/// Represents a log message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogMessage {
+    /// The UNIX nanoseconds timestamp when the log event occurred.
     timestamp_ns: UnixNanos,
+    /// The log level for the message.
     level: LogLevel,
     #[serde(skip_serializing)]
+    /// The log color for the message content.
     color: LogColor,
+    /// The Nautilus system component the log message originated from.
     component: String,
-    msg: String,
+    /// The log message text content.
+    text: String,
 }
 
 impl fmt::Display for LogMessage {
@@ -70,16 +81,11 @@ impl fmt::Display for LogMessage {
         write!(
             f,
             "{} [{}] {}: {}",
-            self.timestamp_ns, self.level, self.component, self.msg
+            self.timestamp_ns, self.level, self.component, self.text
         )
     }
 }
 
-/// Provides a high-performance logger utilizing a MPSC channel under the hood.
-///
-/// A separate thead is spawned at initialization which receives `LogMessage` structs over the
-/// channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
-/// per second).
 #[allow(clippy::too_many_arguments)]
 impl Logger {
     pub fn new(
@@ -192,27 +198,27 @@ impl Logger {
 
         // Setup templates for formatting
         let template_console = String::from(
-            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n",
+            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {text}\x1b[0m\n",
         );
-        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {msg}\n");
+        let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {text}\n");
 
         // Continue to receive and handle log messages until channel is hung up
-        while let Ok(log_msg) = rx.recv() {
-            let component_level = level_filters.get(&log_msg.component);
+        while let Ok(msg) = rx.recv() {
+            let component_level = level_filters.get(&msg.component);
 
-            // Check if the component exists in level_filters and if its level is greater than log_msg.level
+            // Check if the component exists in level_filters and if its level is greater than msg.level
             if let Some(&filter_level) = component_level {
-                if log_msg.level < filter_level {
+                if msg.level < filter_level {
                     continue;
                 }
             }
 
-            if log_msg.level >= LogLevel::Error {
-                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
+            if msg.level >= LogLevel::Error {
+                let line = Self::format_log_line_console(&msg, trader_id, &template_console);
                 Self::write_stderr(&mut err_buf, &line);
                 Self::flush_stderr(&mut err_buf);
-            } else if log_msg.level >= level_stdout {
-                let line = Self::format_log_line_console(&log_msg, trader_id, &template_console);
+            } else if msg.level >= level_stdout {
+                let line = Self::format_log_line_console(&msg, trader_id, &template_console);
                 Self::write_stdout(&mut out_buf, &line);
                 Self::flush_stdout(&mut out_buf);
             }
@@ -241,10 +247,10 @@ impl Logger {
                     file_buf = Some(BufWriter::new(file));
                 }
 
-                if log_msg.level >= level_file {
+                if msg.level >= level_file {
                     if let Some(file_buf) = file_buf.as_mut() {
                         let line = Self::format_log_line_file(
-                            &log_msg,
+                            &msg,
                             trader_id,
                             &template_file,
                             is_json_format,
@@ -311,33 +317,33 @@ impl Logger {
         file_path
     }
 
-    fn format_log_line_console(log_msg: &LogMessage, trader_id: &str, template: &str) -> String {
+    fn format_log_line_console(msg: &LogMessage, trader_id: &str, template: &str) -> String {
         template
-            .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-            .replace("{color}", &log_msg.color.to_string())
-            .replace("{level}", &log_msg.level.to_string())
+            .replace("{ts}", &unix_nanos_to_iso8601(msg.timestamp_ns))
+            .replace("{color}", &msg.color.to_string())
+            .replace("{level}", &msg.level.to_string())
             .replace("{trader_id}", trader_id)
-            .replace("{component}", &log_msg.component)
-            .replace("{msg}", &log_msg.msg)
+            .replace("{component}", &msg.component)
+            .replace("{text}", &msg.text)
     }
 
     fn format_log_line_file(
-        log_msg: &LogMessage,
+        msg: &LogMessage,
         trader_id: &str,
         template: &str,
         is_json_format: bool,
     ) -> String {
         if is_json_format {
             let json_string =
-                serde_json::to_string(log_msg).expect("Error serializing log message to string");
+                serde_json::to_string(msg).expect("Error serializing log message to string");
             format!("{}\n", json_string)
         } else {
             template
-                .replace("{ts}", &unix_nanos_to_iso8601(log_msg.timestamp_ns))
-                .replace("{level}", &log_msg.level.to_string())
+                .replace("{ts}", &unix_nanos_to_iso8601(msg.timestamp_ns))
+                .replace("{level}", &msg.level.to_string())
                 .replace("{trader_id}", trader_id)
-                .replace("{component}", &log_msg.component)
-                .replace("{msg}", &log_msg.msg)
+                .replace("{component}", &msg.component)
+                .replace("{text}", &msg.text)
         }
     }
 
@@ -389,38 +395,44 @@ impl Logger {
         level: LogLevel,
         color: LogColor,
         component: String,
-        msg: String,
+        text: String,
     ) {
-        let log_message = LogMessage {
+        let msg = LogMessage {
             timestamp_ns,
             level,
             color,
             component,
-            msg,
+            text,
         };
-        if let Err(SendError(msg)) = self.tx.send(log_message) {
+        if let Err(SendError(msg)) = self.tx.send(msg) {
             eprintln!("Error sending log message: {}", msg);
         }
     }
 
-    pub fn debug(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Debug, color, component, msg)
+    pub fn debug(&mut self, timestamp_ns: u64, color: LogColor, component: String, text: String) {
+        self.send(timestamp_ns, LogLevel::Debug, color, component, text)
     }
 
-    pub fn info(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Info, color, component, msg)
+    pub fn info(&mut self, timestamp_ns: u64, color: LogColor, component: String, text: String) {
+        self.send(timestamp_ns, LogLevel::Info, color, component, text)
     }
 
-    pub fn warn(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Warning, color, component, msg)
+    pub fn warn(&mut self, timestamp_ns: u64, color: LogColor, component: String, text: String) {
+        self.send(timestamp_ns, LogLevel::Warning, color, component, text)
     }
 
-    pub fn error(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Error, color, component, msg)
+    pub fn error(&mut self, timestamp_ns: u64, color: LogColor, component: String, text: String) {
+        self.send(timestamp_ns, LogLevel::Error, color, component, text)
     }
 
-    pub fn critical(&mut self, timestamp_ns: u64, color: LogColor, component: String, msg: String) {
-        self.send(timestamp_ns, LogLevel::Critical, color, component, msg)
+    pub fn critical(
+        &mut self,
+        timestamp_ns: u64,
+        color: LogColor,
+        component: String,
+        text: String,
+    ) {
+        self.send(timestamp_ns, LogLevel::Critical, color, component, text)
     }
 }
 
@@ -514,7 +526,7 @@ pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
 ///
 /// # Safety
 /// - Assumes `component_ptr` is a valid C string pointer.
-/// - Assumes `msg_ptr` is a valid C string pointer.
+/// - Assumes `text_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
     logger: &mut CLogger,
@@ -522,10 +534,10 @@ pub unsafe extern "C" fn logger_log(
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
-    msg_ptr: *const c_char,
+    text_ptr: *const c_char,
 ) {
     let component = cstr_to_string(component_ptr);
-    let msg = cstr_to_string(msg_ptr);
+    let msg = cstr_to_string(text_ptr);
     logger.send(timestamp_ns, level, color, component, msg);
 }
 
@@ -564,7 +576,7 @@ mod tests {
             level: LogLevel::Info,
             color: LogColor::Normal,
             component: "Portfolio".to_string(),
-            msg: "This is a log message".to_string(),
+            text: "This is a log message".to_string(),
         };
 
         let serialized_json = serde_json::to_string(&log_message).unwrap();
@@ -573,7 +585,7 @@ mod tests {
         assert_eq!(deserialized_value["timestamp_ns"], 1_000_000_000);
         assert_eq!(deserialized_value["level"], "INFO");
         assert_eq!(deserialized_value["component"], "Portfolio");
-        assert_eq!(deserialized_value["msg"], "This is a log message");
+        assert_eq!(deserialized_value["text"], "This is a log message");
     }
 
     #[test]
