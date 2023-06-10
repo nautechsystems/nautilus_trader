@@ -1186,6 +1186,7 @@ cdef extern from "../includes/model.h":
     # Returns a [`Currency`] from pointers and primitives.
     #
     # # Safety
+    #
     # - Assumes `code_ptr` is a valid C string pointer.
     # - Assumes `name_ptr` is a valid C string pointer.
     Currency_t currency_from_py(const char *code_ptr,
@@ -1207,6 +1208,18 @@ cdef extern from "../includes/model.h":
     uint8_t currency_eq(const Currency_t *lhs, const Currency_t *rhs);
 
     uint64_t currency_hash(const Currency_t *currency);
+
+    void currency_register(Currency_t currency);
+
+    # # Safety
+    #
+    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t currency_exists(const char *code_ptr);
+
+    # # Safety
+    #
+    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    Currency_t currency_from_cstr(const char *code_ptr);
 
     Money_t money_new(double amount, Currency_t currency);
 

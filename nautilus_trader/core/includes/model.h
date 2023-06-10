@@ -1674,6 +1674,7 @@ const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t
  * Returns a [`Currency`] from pointers and primitives.
  *
  * # Safety
+ *
  * - Assumes `code_ptr` is a valid C string pointer.
  * - Assumes `name_ptr` is a valid C string pointer.
  */
@@ -1696,6 +1697,22 @@ const char *currency_name_to_cstr(const struct Currency_t *currency);
 uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
 
 uint64_t currency_hash(const struct Currency_t *currency);
+
+void currency_register(struct Currency_t currency);
+
+/**
+ * # Safety
+ *
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+uint8_t currency_exists(const char *code_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct Currency_t currency_from_cstr(const char *code_ptr);
 
 struct Money_t money_new(double amount, struct Currency_t currency);
 

@@ -24,6 +24,9 @@ cdef class Currency:
     cdef uint8_t get_precision(self)
 
     @staticmethod
+    cdef Currency get_currency_from_internal_map(str code)
+
+    @staticmethod
     cdef void register_c(Currency currency, bint overwrite=*)
 
     @staticmethod
