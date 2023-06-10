@@ -36,6 +36,11 @@ The NautilusTrader codebase is actually both a framework for composing trading
 systems, and a set of default system implementations which can operate in various 
 environment contexts.
 
+```{note}
+Throughout the documentation, the term _"Nautilus system boundary"_ refers to operations within
+the runtime of a single Nautilus node (also known as a trader instance).
+```
+
 ### Environment contexts
 - `Backtest` - Historical data with simulated venues
 - `Sandbox` - Real-time data with simulated venues

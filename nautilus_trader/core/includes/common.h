@@ -6,7 +6,7 @@
 #include <Python.h>
 
 /**
- * Represents the state of a component within the system.
+ * The state of a component within the system.
  */
 typedef enum ComponentState {
     /**
@@ -68,7 +68,7 @@ typedef enum ComponentState {
 } ComponentState;
 
 /**
- * Represents a trigger condition for a component within the system.
+ * A trigger condition for a component within the system.
  */
 typedef enum ComponentTrigger {
     /**
@@ -134,7 +134,7 @@ typedef enum ComponentTrigger {
 } ComponentTrigger;
 
 /**
- * Represents a log color for log messages.
+ * The log color for log messages.
  */
 typedef enum LogColor {
     /**
@@ -168,7 +168,7 @@ typedef enum LogColor {
 } LogColor;
 
 /**
- * Represents a log level for log messages.
+ * The log level for log messages.
  */
 typedef enum LogLevel {
     /**
