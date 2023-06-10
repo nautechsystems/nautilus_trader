@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Defines currency definition constants.
+//! Defines established currency constants and an internal currency map.
 
 use std::{
     collections::HashMap,
@@ -64,6 +64,7 @@ pub fn currency_map() -> Mutex<HashMap<String, Currency>> {
             (String::from("ADA"), ADA.clone()),
             (String::from("AVAX"), AVAX.clone()),
             (String::from("BCH"), BCH.clone()),
+            (String::from("BTTC"), BTTC.clone()),
             (String::from("BNB"), BNB.clone()),
             (String::from("BRZ"), BRZ.clone()),
             (String::from("BSV"), BSV.clone()),
@@ -361,6 +362,13 @@ lazy_static! {
         precision: 8,
         iso4217: 0,
         name: Box::new(Arc::new(String::from("Bitcoin"))),
+        currency_type: CurrencyType::Crypto,
+    };
+    pub static ref BTTC: Currency = Currency {
+        code: Box::new(Arc::new(String::from("BTTC"))),
+        precision: 8,
+        iso4217: 0,
+        name: Box::new(Arc::new(String::from("BitTorrent"))),
         currency_type: CurrencyType::Crypto,
     };
     pub static ref BNB: Currency = Currency {
