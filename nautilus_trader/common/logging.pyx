@@ -204,38 +204,38 @@ cdef class Logger:
 
     cdef void log(
         self,
-        uint64_t timestamp_ns,
+        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
-        str msg,
+        str message,
         dict annotations = None,
     ):
         self._log(
-            timestamp_ns,
+            timestamp,
             level,
             color,
             component,
-            msg,
+            message,
             annotations,
         )
 
     cdef void _log(
         self,
-        uint64_t timestamp_ns,
+        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
-        str msg,
+        str message,
         dict annotations,
     ):
         logger_log(
             &self._mem,
-            timestamp_ns,
+            timestamp,
             level,
             color,
             pystr_to_cstr(component),
-            pystr_to_cstr(msg),
+            pystr_to_cstr(message),
         )
 
 
@@ -335,7 +335,7 @@ cdef class LoggerAdapter:
 
     cpdef void debug(
         self,
-        str msg,
+        str message,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
     ):
@@ -344,15 +344,15 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        msg : str
-            The message to log.
+        message : str
+            The log message content.
         color : LogColor, optional
-            The color for the log record.
+            The log message color.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
         """
-        Condition.not_none(msg, "message")
+        Condition.not_none(message, "message")
 
         if self.is_bypassed:
             return
@@ -362,12 +362,12 @@ cdef class LoggerAdapter:
             LogLevel.DEBUG,
             color,
             self.component,
-            msg,
+            message,
             annotations,
         )
 
     cpdef void info(
-        self, str msg,
+        self, str message,
         LogColor color = LogColor.NORMAL,
         dict annotations = None,
     ):
@@ -376,15 +376,15 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        msg : str
-            The message to log.
+        message : str
+            The log message content.
         color : LogColor, optional
-            The color for the log record.
+            The log message color.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
         """
-        Condition.not_none(msg, "msg")
+        Condition.not_none(message, "message")
 
         if self.is_bypassed:
             return
@@ -394,13 +394,13 @@ cdef class LoggerAdapter:
             LogLevel.INFO,
             color,
             self.component,
-            msg,
+            message,
             annotations,
         )
 
     cpdef void warning(
         self,
-        str msg,
+        str message,
         LogColor color = LogColor.YELLOW,
         dict annotations = None,
     ):
@@ -409,15 +409,15 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        msg : str
-            The message to log.
+        message : str
+            The log message content.
         color : LogColor, optional
-            The color for the log record.
+            The log message color.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
         """
-        Condition.not_none(msg, "msg")
+        Condition.not_none(message, "message")
 
         if self.is_bypassed:
             return
@@ -427,13 +427,13 @@ cdef class LoggerAdapter:
             LogLevel.WARNING,
             color,
             self.component,
-            msg,
+            message,
             annotations,
         )
 
     cpdef void error(
         self,
-        str msg,
+        str message,
         LogColor color = LogColor.RED,
         dict annotations = None,
     ):
@@ -442,15 +442,15 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        msg : str
-            The message to log.
+        message : str
+            The log message content.
         color : LogColor, optional
-            The color for the log record.
+            The log message color.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
         """
-        Condition.not_none(msg, "msg")
+        Condition.not_none(message, "message")
 
         if self.is_bypassed:
             return
@@ -460,13 +460,13 @@ cdef class LoggerAdapter:
             LogLevel.ERROR,
             color,
             self.component,
-            msg,
+            message,
             annotations,
         )
 
     cpdef void critical(
         self,
-        str msg,
+        str message,
         LogColor color = LogColor.RED,
         dict annotations = None,
     ):
@@ -475,15 +475,15 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        msg : str
-            The message to log.
+        message : str
+            The log message content.
         color : LogColor, optional
-            The color for the log record.
+            The log message color.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
         """
-        Condition.not_none(msg, "msg")
+        Condition.not_none(message, "message")
 
         if self.is_bypassed:
             return
@@ -493,13 +493,13 @@ cdef class LoggerAdapter:
             LogLevel.CRITICAL,
             color,
             self.component,
-            msg,
+            message,
             annotations,
         )
 
     cpdef void exception(
         self,
-        str msg,
+        str message,
         ex,
         dict annotations = None,
     ):
@@ -508,8 +508,8 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        msg : str
-            The message to log.
+        message : str
+            The log message content.
         ex : Exception
             The exception to log.
         annotations : dict[str, object], optional
@@ -527,7 +527,7 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(f"{msg}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
+        self.error(f"{message}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
 
 
 cpdef void nautilus_header(LoggerAdapter logger):

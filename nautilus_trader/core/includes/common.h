@@ -198,8 +198,8 @@ typedef struct LiveClock LiveClock;
 /**
  * Provides a high-performance logger utilizing a MPSC channel under the hood.
  *
- * A separate thead is spawned at initialization which receives `LogMessage` structs over the
- * channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
+ * A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
+ * channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
  * per second).
  */
 typedef struct Logger_t Logger_t;
@@ -444,18 +444,19 @@ UUID4_t logger_get_instance_id(const struct CLogger *logger);
 uint8_t logger_is_bypassed(const struct CLogger *logger);
 
 /**
- * Log a message.
+ * Create a new log event.
  *
  * # Safety
+ *
  * - Assumes `component_ptr` is a valid C string pointer.
- * - Assumes `text_ptr` is a valid C string pointer.
+ * - Assumes `message_ptr` is a valid C string pointer.
  */
 void logger_log(struct CLogger *logger,
                 uint64_t timestamp_ns,
                 enum LogLevel level,
                 enum LogColor color,
                 const char *component_ptr,
-                const char *text_ptr);
+                const char *message_ptr);
 
 struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 

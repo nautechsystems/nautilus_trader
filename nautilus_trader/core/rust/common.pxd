@@ -105,8 +105,8 @@ cdef extern from "../includes/common.h":
 
     # Provides a high-performance logger utilizing a MPSC channel under the hood.
     #
-    # A separate thead is spawned at initialization which receives `LogMessage` structs over the
-    # channel. Rate limiting is implemented using a simple token bucket algorithm (maximum messages
+    # A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
+    # channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
     # per second).
     cdef struct Logger_t:
         pass
@@ -303,17 +303,18 @@ cdef extern from "../includes/common.h":
 
     uint8_t logger_is_bypassed(const CLogger *logger);
 
-    # Log a message.
+    # Create a new log event.
     #
     # # Safety
+    #
     # - Assumes `component_ptr` is a valid C string pointer.
-    # - Assumes `text_ptr` is a valid C string pointer.
+    # - Assumes `message_ptr` is a valid C string pointer.
     void logger_log(CLogger *logger,
                     uint64_t timestamp_ns,
                     LogLevel level,
                     LogColor color,
                     const char *component_ptr,
-                    const char *text_ptr);
+                    const char *message_ptr);
 
     TimeEventHandler_t dummy(TimeEventHandler_t v);
 
