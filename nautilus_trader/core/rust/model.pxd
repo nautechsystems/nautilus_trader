@@ -471,6 +471,14 @@ cdef extern from "../includes/model.h":
     cdef struct VenueOrderId_t:
         Arc_String *value;
 
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
+    #
+    # This struct wraps `OrderBook` in a way that makes it compatible with C function
+    # calls, enabling interaction with `OrderBook` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `OrderBook_API` to be
+    # dereferenced to `OrderBook`, providing access to `OrderBook`'s methods without
+    # having to manually access the underlying `OrderBook` instance.
     cdef struct OrderBook_API:
         OrderBook *_0;
 
