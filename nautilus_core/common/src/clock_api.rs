@@ -35,9 +35,6 @@ use crate::timer::{TimeEvent, TimeEventHandler};
 /// It implements the `Deref` trait, allowing instances of `TestClock_API` to be
 /// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
 /// having to manually access the underlying `TestClock` instance.
-///
-/// # Note
-/// This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct TestClock_API(Box<TestClock>);
@@ -233,9 +230,6 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
 /// dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
 /// having to manually access the underlying `LiveClock` instance. This includes
 /// both mutable and immutable access.
-///
-/// # Note
-/// This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct LiveClock_API(Box<LiveClock>);

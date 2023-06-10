@@ -19,8 +19,8 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.rust.common cimport CLogger
 from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport Logger_API
 from nautilus_trader.core.rust.common cimport LogLevel
 
 
@@ -35,7 +35,7 @@ cdef str RES
 
 
 cdef class Logger:
-    cdef CLogger _mem
+    cdef Logger_API _mem
     cdef Clock _clock
 
     cpdef void change_clock(self, Clock clock)
