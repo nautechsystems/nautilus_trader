@@ -16,6 +16,40 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// Repeatedly evaluates a condition with a delay until it becomes true or a timeout occurs.
+///
+/// # Arguments
+///
+/// * `condition` - A closure that represents the condition to be met. This closure should return `true`
+///                 when the condition is met and `false` otherwise.
+/// * `timeout` - The maximum amount of time to wait for the condition to be met. If this duration is
+///               exceeded, the function will panic.
+///
+/// # Panics
+///
+/// This function will panic if the timeout duration is exceeded without the condition being met.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use std::thread;
+/// use nautilus_common::testing::wait_until;
+///
+/// let start_time = std::time::Instant::now();
+/// let timeout = Duration::from_secs(5);
+///
+/// wait_until(|| {
+///     if start_time.elapsed().as_secs() > 2 {
+///         true
+///     } else {
+///         false
+///     }
+/// }, timeout);
+/// ```
+///
+/// In the above example, the `wait_until` function will block for at least 2 seconds, as that's how long
+/// it takes for the condition to be met. If the condition was not met within 5 seconds, it would panic.
 pub fn wait_until<F>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> bool,

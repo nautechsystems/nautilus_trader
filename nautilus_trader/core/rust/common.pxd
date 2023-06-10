@@ -106,8 +106,7 @@ cdef extern from "../includes/common.h":
     # Provides a high-performance logger utilizing a MPSC channel under the hood.
     #
     # A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
-    # channel. Rate limiting is implemented using a simple token bucket algorithm (maximum events
-    # per second).
+    # channel.
     cdef struct Logger_t:
         pass
 
@@ -278,6 +277,7 @@ cdef extern from "../includes/common.h":
     # Creates a new logger.
     #
     # # Safety
+    #
     # - Assumes `trader_id_ptr` is a valid C string pointer.
     # - Assumes `machine_id_ptr` is a valid C string pointer.
     # - Assumes `instance_id_ptr` is a valid C string pointer.
