@@ -319,8 +319,8 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    TimeEvent_t time_event_new(const char *name,
+    # - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+    TimeEvent_t time_event_new(const char *name_ptr,
                                UUID4_t event_id,
                                uint64_t ts_event,
                                uint64_t ts_init);

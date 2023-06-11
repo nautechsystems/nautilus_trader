@@ -462,9 +462,9 @@ struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 /**
  * # Safety
  *
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct TimeEvent_t time_event_new(const char *name,
+struct TimeEvent_t time_event_new(const char *name_ptr,
                                   UUID4_t event_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
