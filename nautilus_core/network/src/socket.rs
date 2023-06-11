@@ -60,19 +60,14 @@ impl SocketClient {
                 if bytes == 0 {
                     break;
                 } else {
-                    loop {
-                        // if received data has a line break
-                        // extract and write it to the stream
-                        if let Some((i, _)) =
-                            &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
-                        {
-                            debug!("socket: Found line ending");
-                            let data = buf.drain(0..i + 2);
-                            Python::with_gil(|py| handler.call1(py, (data.as_slice(),))).unwrap();
-                        } else {
-                            // break if the data received doesn't have a line break
-                            break;
-                        }
+                    // while received data has a line break
+                    // drain and write it to the stream
+                    while let Some((i, _)) =
+                        &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
+                    {
+                        debug!("socket: Found line ending");
+                        let data = buf.drain(0..i + 2);
+                        Python::with_gil(|py| handler.call1(py, (data.as_slice(),))).unwrap();
                     }
                 }
             }
@@ -97,7 +92,7 @@ impl SocketClient {
 
     pub async fn send_bytes(&mut self, data: &[u8]) {
         let mut writer = self.inner.lock().await;
-        writer.write_all(&data).await.unwrap();
+        writer.write_all(data).await.unwrap();
     }
 
     #[inline]
@@ -197,24 +192,18 @@ mod tests {
                     if bytes == 0 {
                         break;
                     } else {
-                        loop {
-                            // if received data has a line break
-                            // extract and write it to the stream
-                            if let Some((i, _)) =
-                                &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
-                            {
-                                debug!("socket:test Server sending message");
-                                stream
-                                    .write_all(&buf.drain(0..i + 2).as_slice())
-                                    .await
-                                    .unwrap();
-                            } else {
-                                // break if the data received doesn't have a line break
-                                break;
-                            }
+                        // if received data has a line break
+                        // extract and write it to the stream
+                        while let Some((i, _)) =
+                            &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
+                        {
+                            debug!("socket:test Server sending message");
+                            stream
+                                .write_all(&buf.drain(0..i + 2).as_slice())
+                                .await
+                                .unwrap();
                         }
                     }
-                    break;
                 }
             });
 
