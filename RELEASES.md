@@ -19,7 +19,7 @@ Released on TBD (UTC).
 - Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
 - Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
 - Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
-- Added `use_random_ids` to `add_venue(...)` method, whether venue order and position IDs use a random uin32 component (no change to current behaviour)
+- Added `use_random_ids` to `add_venue(...)` method, whether venue order and position IDs will be random UUID4s (no change to current behaviour)
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
 - Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)

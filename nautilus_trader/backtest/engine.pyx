@@ -401,9 +401,7 @@ cdef class BacktestEngine:
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
         use_random_ids : bool, default False
-            If venue order and position IDs will use a random raw ID component.
-            If True will use a random uint32 component, otherwise will be deterministically based on
-            the order in which instruments are added to the exchange.
+            If venue order and position IDs will be randomly generated UUID4s.
 
         Raises
         ------
