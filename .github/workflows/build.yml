@@ -27,8 +27,8 @@ jobs:
         uses: actions/checkout@v3
 
       # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain (Liux/Windows)
-        if: runner.os == 'Linux'
+      - name: Set up Rust tool-chain (Linux/Windows)
+        if: runner.os != 'macOS'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -39,13 +39,6 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          components: rustfmt, clippy
-
-      - name: Set up Rust tool-chain (Liux/Windows)
-        if: runner.os == 'Windows'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: 1.69.0 # Issues on Windows with toolchain version 1.70.0
           override: true
           components: rustfmt, clippy
 

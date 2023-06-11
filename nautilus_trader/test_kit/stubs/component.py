@@ -29,6 +29,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LogLevel
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -51,7 +52,7 @@ class TestComponentStubs:
         return LiveClock()
 
     @staticmethod
-    def logger(level="INFO") -> Logger:
+    def logger(level: LogLevel = LogLevel.INFO) -> Logger:
         return Logger(
             clock=TestComponentStubs.clock(),
             level_stdout=log_level_from_str(level),
