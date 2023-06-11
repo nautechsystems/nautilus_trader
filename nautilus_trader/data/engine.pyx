@@ -1219,9 +1219,9 @@ cdef class DataEngine(Component):
         self.data_count += 1
 
         if isinstance(data, OrderBookDelta):
-            self._handle_order_book_data(data)
+            self._handle_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
-            self._handle_order_book_data(data)
+            self._handle_order_book_deltas(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)
         elif isinstance(data, QuoteTick):
@@ -1252,12 +1252,24 @@ cdef class DataEngine(Component):
             msg=instrument,
         )
 
-    cpdef void _handle_order_book_data(self, Data data):
+    cpdef void _handle_order_book_delta(self, OrderBookDelta delta):
+        cdef OrderBookDeltas deltas = OrderBookDeltas(
+            instrument_id=delta.instrument_id,
+            deltas=[delta]
+        )
         self._msgbus.publish_c(
             topic=f"data.book.deltas"
-                  f".{data.instrument_id.venue}"
-                  f".{data.instrument_id.symbol}",
-            msg=data,
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
+        )
+
+    cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas):
+        self._msgbus.publish_c(
+            topic=f"data.book.deltas"
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
         )
 
     cpdef void _handle_ticker(self, Ticker ticker):
