@@ -835,11 +835,9 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
 
-    # Returns a Nautilus identifier from a C string pointer.
-    #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # - Assumes `reason_ptr` is a valid C string pointer.
     OrderDenied_t order_denied_new(TraderId_t trader_id,
                                    StrategyId_t strategy_id,
                                    InstrumentId_t instrument_id,
@@ -849,7 +847,7 @@ cdef extern from "../includes/model.h":
                                    uint64_t ts_event,
                                    uint64_t ts_init);
 
-    # Frees the memory for the given `account_id` by dropping.
+    # Frees the memory for the given `event` by dropping.
     void order_denied_drop(OrderDenied_t event);
 
     OrderDenied_t order_denied_clone(const OrderDenied_t *event);
