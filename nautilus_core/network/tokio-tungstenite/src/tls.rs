@@ -69,6 +69,7 @@ pub mod encryption {
         }
     }
 
+    /// Use rust-tls implementation to encrypt
     #[cfg(feature = "__rustls-tls")]
     pub mod rustls {
         pub use rustls::ClientConfig;
@@ -82,6 +83,7 @@ pub mod encryption {
 
         use crate::stream::MaybeTlsStream;
 
+        /// Wraps the stream with rust-tls encryption
         pub async fn wrap_stream<S>(
             socket: S,
             domain: String,
