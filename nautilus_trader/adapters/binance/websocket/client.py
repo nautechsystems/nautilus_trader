@@ -25,6 +25,17 @@ from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
 class BinanceWebSocketClient:
     """
     Provides a `Binance` streaming WebSocket client.
+
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    handler : Callable[[bytes], None]
+        The callback handler for message events.
+    base_url : str
+        The base URL for the WebSocket connection.
     """
 
     def __init__(
@@ -34,11 +45,10 @@ class BinanceWebSocketClient:
         handler: Callable[[bytes], None],
         base_url: str,
     ) -> None:
-        self._base_url: str = base_url
-
         self._clock: LiveClock = clock
         self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
 
+        self._base_url: str = base_url
         self._streams: list[str] = []
         self._max_retry_connections = 6
         self._handler = handler
@@ -46,21 +56,56 @@ class BinanceWebSocketClient:
 
     @property
     def base_url(self) -> Optional[str]:
+        """
+        Return the base URL being used by the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._base_url
 
     @property
     def subscriptions(self) -> list[str]:
+        """
+        Return the current active subscriptions for the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._streams.copy()
 
     @property
     def has_subscriptions(self) -> bool:
+        """
+        Return whether the client has subscriptions.
+
+        Returns
+        -------
+        bool
+
+        """
         return bool(self._streams)
 
     @property
     def is_connected(self) -> bool:
+        """
+        Return whether the client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
         return self._client is not None and self._client.is_connected
 
     async def connect(self, key: Optional[str] = None) -> None:
+        """
+        Connect the client to the server.
+        """
         if not self._streams:
             raise RuntimeError("no subscriptions for connection.")
 
@@ -78,13 +123,25 @@ class BinanceWebSocketClient:
         self._log.info("Connected.")
 
     async def send(self, data: bytes) -> None:
+        """
+        Send the given `data` bytes to the server.
+
+        Parameters
+        ----------
+        data : bytes
+            The message data to send.
+
+        """
         if self._client is None or not self._client.is_connected:
             self._log.error("Cannot send websocket message, not connected.")
             return
 
-        await self._client.send(data)
+        await self._client.send_bytes(data)
 
     async def disconnect(self) -> None:
+        """
+        Disconnect the client from the server.
+        """
         if self._client is None or not self._client.is_connected:
             self._log.error("Cannot disconnect websocket, not connected.")
             return

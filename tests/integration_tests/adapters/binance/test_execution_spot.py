@@ -75,6 +75,7 @@ class TestBinanceSpotExecutionClient:
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.provider = BinanceSpotInstrumentProvider(

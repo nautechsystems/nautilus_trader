@@ -46,6 +46,7 @@ def binance_http_client(loop, live_clock, live_logger):
         logger=live_logger,
         key="SOME_BINANCE_API_KEY",
         secret="SOME_BINANCE_API_SECRET",
+        base_url="https://api.binance.com/",  # Spot/Margin
     )
     return client
 
