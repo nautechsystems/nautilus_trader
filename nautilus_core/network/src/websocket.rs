@@ -126,7 +126,7 @@ impl WebSocketClient {
         write_half.send(Message::Binary(data)).await.unwrap();
     }
 
-    /// Shutdown read and hearbeat task and the connection
+    /// Shutdown read and hearbeat task and the connection.
     ///
     /// The client must be explicitly shutdown before dropping otherwise
     /// the connection might still be alive for some time before terminating.
@@ -242,7 +242,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Check if the client is still connected
+    /// Check if the client is still connected.
     ///
     /// The client is connected if the read task has not finished. It is expected
     /// that in case of any failure client or server side. The read task will be
