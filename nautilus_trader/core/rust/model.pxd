@@ -340,6 +340,11 @@ cdef extern from "../includes/model.h":
     cdef struct String:
         pass
 
+    cdef struct BarSpecification_t:
+        uint64_t step;
+        uint8_t aggregation;
+        PriceType price_type;
+
     cdef struct Symbol_t:
         Arc_String *value;
 
@@ -349,11 +354,6 @@ cdef extern from "../includes/model.h":
     cdef struct InstrumentId_t:
         Symbol_t symbol;
         Venue_t venue;
-
-    cdef struct BarSpecification_t:
-        uint64_t step;
-        uint8_t aggregation;
-        PriceType price_type;
 
     cdef struct BarType_t:
         InstrumentId_t instrument_id;
@@ -493,6 +493,48 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
+    BarSpecification_t bar_specification_new(uint64_t step,
+                                             uint8_t aggregation,
+                                             uint8_t price_type);
+
+    # Returns a [`BarSpecification`] as a C string pointer.
+    const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
+
+    uint64_t bar_specification_hash(const BarSpecification_t *bar_spec);
+
+    uint8_t bar_specification_eq(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_lt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_le(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_gt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_ge(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    BarType_t bar_type_new(InstrumentId_t instrument_id,
+                           BarSpecification_t spec,
+                           uint8_t aggregation_source);
+
+    void bar_type_drop(BarType_t bar_type);
+
+    BarType_t bar_type_clone(const BarType_t *bar_type);
+
+    uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_le(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_gt(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_ge(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint64_t bar_type_hash(const BarType_t *bar_type);
+
+    # Returns a [`BarType`] as a C string pointer.
+    const char *bar_type_to_cstr(const BarType_t *bar_type);
+
     Bar_t bar_new(BarType_t bar_type,
                   Price_t open,
                   Price_t high,
@@ -513,54 +555,12 @@ cdef extern from "../includes/model.h":
                            uint64_t ts_event,
                            uint64_t ts_init);
 
-    # Returns a [`BarSpecification`] as a C string pointer.
-    const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
-
-    uint64_t bar_specification_hash(const BarSpecification_t *bar_spec);
-
-    BarSpecification_t bar_specification_new(uint64_t step,
-                                             uint8_t aggregation,
-                                             uint8_t price_type);
-
-    uint8_t bar_specification_eq(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_lt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_le(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_gt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_ge(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    BarType_t bar_type_new(InstrumentId_t instrument_id,
-                           BarSpecification_t spec,
-                           uint8_t aggregation_source);
-
-    BarType_t bar_type_clone(const BarType_t *bar_type);
-
-    uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_le(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_gt(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_ge(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint64_t bar_type_hash(const BarType_t *bar_type);
-
-    # Returns a [`BarType`] as a C string pointer.
-    const char *bar_type_to_cstr(const BarType_t *bar_type);
-
-    void bar_type_drop(BarType_t bar_type);
-
-    # Returns a [`Bar`] as a C string.
-    const char *bar_to_cstr(const Bar_t *bar);
+    void bar_drop(Bar_t bar);
 
     Bar_t bar_clone(const Bar_t *bar);
 
-    void bar_drop(Bar_t bar);
+    # Returns a [`Bar`] as a C string.
+    const char *bar_to_cstr(const Bar_t *bar);
 
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
@@ -603,46 +603,38 @@ cdef extern from "../includes/model.h":
 
     uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
 
+    QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
+                               int64_t bid_price_raw,
+                               int64_t ask_price_raw,
+                               uint8_t bid_price_prec,
+                               uint8_t ask_price_prec,
+                               uint64_t bid_size_raw,
+                               uint64_t ask_size_raw,
+                               uint8_t bid_size_prec,
+                               uint8_t ask_size_prec,
+                               uint64_t ts_event,
+                               uint64_t ts_init);
+
     void quote_tick_drop(QuoteTick_t tick);
 
     QuoteTick_t quote_tick_clone(const QuoteTick_t *tick);
 
-    QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
-                               Price_t bid,
-                               Price_t ask,
-                               Quantity_t bid_size,
-                               Quantity_t ask_size,
-                               uint64_t ts_event,
-                               uint64_t ts_init);
-
-    QuoteTick_t quote_tick_from_raw(InstrumentId_t instrument_id,
-                                    int64_t bid_price_raw,
-                                    int64_t ask_price_raw,
-                                    uint8_t bid_price_prec,
-                                    uint8_t ask_price_prec,
-                                    uint64_t bid_size_raw,
-                                    uint64_t ask_size_raw,
-                                    uint8_t bid_size_prec,
-                                    uint8_t ask_size_prec,
-                                    uint64_t ts_event,
-                                    uint64_t ts_init);
-
     # Returns a [`QuoteTick`] as a C string pointer.
     const char *quote_tick_to_cstr(const QuoteTick_t *tick);
+
+    TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
+                               int64_t price_raw,
+                               uint8_t price_prec,
+                               uint64_t size_raw,
+                               uint8_t size_prec,
+                               AggressorSide aggressor_side,
+                               TradeId_t trade_id,
+                               uint64_t ts_event,
+                               uint64_t ts_init);
 
     void trade_tick_drop(TradeTick_t tick);
 
     TradeTick_t trade_tick_clone(const TradeTick_t *tick);
-
-    TradeTick_t trade_tick_from_raw(InstrumentId_t instrument_id,
-                                    int64_t price_raw,
-                                    uint8_t price_prec,
-                                    uint64_t size_raw,
-                                    uint8_t size_prec,
-                                    AggressorSide aggressor_side,
-                                    TradeId_t trade_id,
-                                    uint64_t ts_event,
-                                    uint64_t ts_init);
 
     # Returns a [`TradeTick`] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);
