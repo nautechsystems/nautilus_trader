@@ -97,8 +97,8 @@ cdef class OrderMatchingEngine:
     ----------
     instrument : Instrument
         The market instrument for the matching engine.
-    product_id : int
-        The product ID for the instrument.
+    raw_id : uint32_t
+        The raw integer ID for the instrument.
     fill_model : FillModel
         The fill model for the matching engine.
     book_type : BookType
@@ -127,7 +127,7 @@ cdef class OrderMatchingEngine:
     def __init__(
         self,
         Instrument instrument not None,
-        int product_id,
+        uint32_t raw_id,
         FillModel fill_model not None,
         BookType book_type,
         OmsType oms_type,
@@ -150,7 +150,7 @@ cdef class OrderMatchingEngine:
 
         self.venue = instrument.id.venue
         self.instrument = instrument
-        self.product_id = product_id
+        self.raw_id = raw_id
         self.book_type = book_type
         self.oms_type = oms_type
         self.market_status = MarketStatus.OPEN
@@ -199,7 +199,7 @@ cdef class OrderMatchingEngine:
             f"{type(self).__name__}("
             f"venue={self.venue.value}, "
             f"instrument_id={self.instrument.id.value}, "
-            f"product_id={self.product_id})"
+            f"raw_id={self.raw_id})"
         )
 
     cpdef void reset(self):
@@ -1731,19 +1731,19 @@ cdef class OrderMatchingEngine:
     cdef PositionId _generate_venue_position_id(self):
         self._position_count += 1
         return PositionId(
-            f"{self.venue.to_str()}-{self.product_id}-{self._position_count:03d}")
+            f"{self.venue.to_str()}-{self.raw_id}-{self._position_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self):
         self._order_count += 1
         return VenueOrderId(
-            f"{self.venue.to_str()}-{self.product_id}-{self._order_count:03d}")
+            f"{self.venue.to_str()}-{self.raw_id}-{self._order_count:03d}")
 
     cdef TradeId _generate_trade_id(self):
         self._execution_count += 1
         return TradeId(self._generate_trade_id_str())
 
     cdef str _generate_trade_id_str(self):
-        return f"{self.venue.to_str()}-{self.product_id}-{self._execution_count:03d}"
+        return f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}"
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 

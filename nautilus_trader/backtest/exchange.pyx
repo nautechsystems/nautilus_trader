@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
 from decimal import Decimal
 from heapq import heappush
 from typing import Optional
 
 from nautilus_trader.config.error import InvalidConfiguration
 
+from libc.limits cimport UINT_MAX
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -101,6 +104,10 @@ cdef class SimulatedExchange:
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_random_ids : bool, default False
+        If venue order and position IDs will use a random raw ID component.
+        If True will use a random uint32 component, otherwise will be deterministically based on
+        the order in which instruments are added to the exchange.
 
     Raises
     ------
@@ -140,6 +147,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_random_ids = False,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -177,6 +185,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
+        self.use_random_ids = use_random_ids
         self.fill_model = fill_model
         self.latency_model = latency_model
 
@@ -195,6 +204,7 @@ cdef class SimulatedExchange:
             self._log.info(f"Loaded {module}.")
 
         # Markets
+        self._raw_ids: set[uint32_t] = set()
         self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
 
         # Load instruments
@@ -280,6 +290,8 @@ cdef class SimulatedExchange:
         """
         Add the given instrument to the venue.
 
+        A random and unique 32-bit unsigned integer raw ID will be generated.
+
         Parameters
         ----------
         instrument : Instrument
@@ -311,9 +323,16 @@ cdef class SimulatedExchange:
 
         self.instruments[instrument.id] = instrument
 
+        cdef uint32_t raw_id = 0
+        if self.use_random_ids:
+            while raw_id == 0 or raw_id in self._raw_ids:
+                raw_id = random.randint(0, UINT_MAX)
+        else:
+                raw_id = len(self.instruments)
+
         matching_engine = OrderMatchingEngine(
             instrument=instrument,
-            product_id=len(self.instruments),
+            raw_id=raw_id,
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,

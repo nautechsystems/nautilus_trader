@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -85,11 +86,14 @@ cdef class SimulatedExchange:
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
     """If orders with GTD time in force will be supported by the venue.\n\n:returns: `bool`"""
+    cdef readonly bint use_random_ids
+    """If venue order and position IDs will use a random raw ID component.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
+    cdef set[uint32_t] _raw_ids
     cdef dict _matching_engines
     cdef Queue _message_queue
     cdef list _inflight_queue

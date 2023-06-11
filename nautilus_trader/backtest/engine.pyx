@@ -360,6 +360,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
+        use_random_ids: bool = False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -399,6 +400,10 @@ cdef class BacktestEngine:
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
+        use_random_ids : bool, default False
+            If venue order and position IDs will use a random raw ID component.
+            If True will use a random uint32 component, otherwise will be deterministically based on
+            the order in which instruments are added to the exchange.
 
         Raises
         ------
@@ -444,6 +449,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
+            use_random_ids=use_random_ids,
         )
 
         self._venues[venue] = exchange

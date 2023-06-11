@@ -65,7 +65,7 @@ class TestOrderMatchingEngine:
 
         self.matching_engine = OrderMatchingEngine(
             instrument=self.instrument,
-            product_id=0,
+            raw_id=0,
             fill_model=FillModel(),
             book_type=BookType.L1_TBBO,
             oms_type=OmsType.NETTING,
@@ -80,7 +80,7 @@ class TestOrderMatchingEngine:
         # Arrange, Act, Assert
         assert (
             repr(self.matching_engine)
-            == "OrderMatchingEngine(venue=BINANCE, instrument_id=ETHUSDT-PERP.BINANCE, product_id=0)"
+            == "OrderMatchingEngine(venue=BINANCE, instrument_id=ETHUSDT-PERP.BINANCE, raw_id=0)"
         )
 
     def test_set_fill_model(self) -> None:
