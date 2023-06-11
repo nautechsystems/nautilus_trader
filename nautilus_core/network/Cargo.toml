@@ -19,7 +19,7 @@ pyo3-asyncio.workspace = true
 tokio.workspace = true
 hyper = { version = "0.14.26", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
-tokio-tungstenite = { path = "./tokio-tungstenite", features = ["native-tls"] }
+tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3.28"
 tracing = "0.1.37"
 
