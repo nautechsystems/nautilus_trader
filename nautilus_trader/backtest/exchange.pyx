@@ -13,15 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import random
 from decimal import Decimal
 from heapq import heappush
 from typing import Optional
 
 from nautilus_trader.config.error import InvalidConfiguration
 
-from libc.limits cimport UINT_MAX
-from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -105,9 +102,7 @@ cdef class SimulatedExchange:
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
     use_random_ids : bool, default False
-        If venue order and position IDs will use a random raw ID component.
-        If True will use a random uint32 component, otherwise will be deterministically based on
-        the order in which instruments are added to the exchange.
+        If venue order and position IDs will be randomly generated UUID4s.
 
     Raises
     ------
@@ -204,7 +199,6 @@ cdef class SimulatedExchange:
             self._log.info(f"Loaded {module}.")
 
         # Markets
-        self._raw_ids: set[uint32_t] = set()
         self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
 
         # Load instruments
@@ -301,16 +295,12 @@ cdef class SimulatedExchange:
         ------
         ValueError
             If `instrument.id.venue` is not equal to the venue ID.
-        KeyError
-            If `instrument` is already contained within the venue.
-            This is to enforce correct internal identifier indexing.
         InvalidConfiguration
             If `instrument` is invalid for this venue.
 
         """
         Condition.not_none(instrument, "instrument")
         Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
-        Condition.not_in(instrument.id, self.instruments, "instrument.id", "self.instruments")
 
         # Validate instrument
         if isinstance(instrument, (CryptoPerpetual, CryptoFuture)):
@@ -323,16 +313,9 @@ cdef class SimulatedExchange:
 
         self.instruments[instrument.id] = instrument
 
-        cdef uint32_t raw_id = 0
-        if self.use_random_ids:
-            while raw_id == 0 or raw_id in self._raw_ids:
-                raw_id = random.randint(0, UINT_MAX)
-        else:
-                raw_id = len(self.instruments)
-
-        matching_engine = OrderMatchingEngine(
+        cdef OrderMatchingEngine matching_engine = OrderMatchingEngine(
             instrument=instrument,
-            raw_id=raw_id,
+            raw_id=len(self.instruments),
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
@@ -343,11 +326,12 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
+            use_random_ids=self.use_random_ids,
         )
 
         self._matching_engines[instrument.id] = matching_engine
 
-        self._log.info(f"Loaded instrument {instrument.id}.")
+        self._log.info(f"Added instrument {instrument.id} and created matching engine.")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
