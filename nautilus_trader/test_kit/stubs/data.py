@@ -89,11 +89,11 @@ class TestDataStubs:
 
     @staticmethod
     def quote_tick_3decimal(
-        instrument_id=None,
-        bid=None,
-        ask=None,
-        bid_size=None,
-        ask_size=None,
+        instrument_id: Optional[InstrumentId] = None,
+        bid: Optional[Price] = None,
+        ask: Optional[Price] = None,
+        bid_size: Optional[Quantity] = None,
+        ask_size: Optional[Quantity] = None,
     ) -> QuoteTick:
         return QuoteTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
@@ -107,9 +107,9 @@ class TestDataStubs:
 
     @staticmethod
     def quote_tick_5decimal(
-        instrument_id=None,
-        bid=None,
-        ask=None,
+        instrument_id: Optional[InstrumentId] = None,
+        bid: Optional[Price] = None,
+        ask: Optional[Price] = None,
     ) -> QuoteTick:
         return QuoteTick(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
@@ -134,10 +134,10 @@ class TestDataStubs:
 
     @staticmethod
     def trade_tick_3decimal(
-        instrument_id=None,
-        price=None,
-        aggressor_side=None,
-        quantity=None,
+        instrument_id: Optional[InstrumentId] = None,
+        price: Optional[Price] = None,
+        aggressor_side: Optional[AggressorSide] = None,
+        quantity: Optional[Quantity] = None,
     ) -> TradeTick:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
@@ -151,10 +151,10 @@ class TestDataStubs:
 
     @staticmethod
     def trade_tick_5decimal(
-        instrument_id=None,
-        price=None,
-        aggressor_side=None,
-        quantity=None,
+        instrument_id: Optional[InstrumentId] = None,
+        price: Optional[Price] = None,
+        aggressor_side: Optional[AggressorSide] = None,
+        quantity: Optional[Quantity] = None,
     ) -> TradeTick:
         return TradeTick(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
