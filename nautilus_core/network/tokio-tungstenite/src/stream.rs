@@ -13,6 +13,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 /// A stream that might be protected with TLS.
 #[non_exhaustive]
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum MaybeTlsStream<S> {
     /// Unencrypted socket stream.
     Plain(S),
