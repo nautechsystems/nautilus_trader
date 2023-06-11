@@ -1236,11 +1236,9 @@ const char *trigger_type_to_cstr(enum TriggerType value);
 enum TriggerType trigger_type_from_cstr(const char *ptr);
 
 /**
- * Returns a Nautilus identifier from a C string pointer.
- *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * - Assumes `reason_ptr` is a valid C string pointer.
  */
 struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       struct StrategyId_t strategy_id,
@@ -1252,7 +1250,7 @@ struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       uint64_t ts_init);
 
 /**
- * Frees the memory for the given `account_id` by dropping.
+ * Frees the memory for the given `event` by dropping.
  */
 void order_denied_drop(struct OrderDenied_t event);
 
