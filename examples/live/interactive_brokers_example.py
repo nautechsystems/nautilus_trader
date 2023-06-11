@@ -17,6 +17,7 @@
 
 # fmt: off
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
@@ -52,7 +53,12 @@ ib_contracts = [
         min_expiry_days=7,
         max_expiry_days=14,
     ),
-    IBContract(secType="CONTFUT", exchange="CME", symbol="ES", build_futures_chain=True),
+    IBContract(
+        secType="CONTFUT",
+        exchange="CME",
+        symbol="ES",
+        build_futures_chain=True,
+    ),
     IBContract(secType="FUT", exchange="NYMEX", localSymbol="CLV3", build_futures_chain=False),
 ]
 
@@ -145,6 +151,7 @@ node.trader.add_strategy(strategy)
 node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
 node.build()
+node.portfolio.set_specific_venue(IB_VENUE)
 
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":

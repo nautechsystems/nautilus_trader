@@ -31,12 +31,12 @@ from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -287,8 +287,10 @@ def parse_crypto_contract(
     )
 
 
-def decade_digit(last_digit: str):
-    if int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):
+def decade_digit(last_digit: str, contract: IBContract):
+    if year := contract.lastTradeDateOrContractMonth[:4]:
+        return int(year[2:3])
+    elif int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):
         return int(repr(datetime.datetime.now().year)[-2]) - 1
     else:
         return int(repr(datetime.datetime.now().year)[-2])
@@ -308,13 +310,13 @@ def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
         symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")
         venue = contract.exchange
     elif security_type == "FUT" and (m := re_fut_original.match(contract.localSymbol)):
-        symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'])}{m['year']}"
+        symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'], contract)}{m['year']}"
         venue = contract.exchange
     elif security_type == "FUT" and (m := re_fut2_original.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{futures_month_to_code[m['month']]}{m['year']}"
         venue = contract.exchange
     elif security_type == "FOP" and (m := re_fop_original.match(contract.localSymbol)):
-        symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'])}{m['year']}{m['right']}{m['strike']}"
+        symbol = f"{m['symbol']}{m['month']}{decade_digit(m['year'], contract)}{m['year']}{m['right']}{m['strike']}"
         venue = contract.exchange
 
     elif security_type in ["CASH", "CRYPTO"]:
@@ -365,14 +367,12 @@ def instrument_id_to_ib_contract(instrument_id: InstrumentId) -> IBContract:
                     secType="FUT",
                     exchange=instrument_id.venue.value,
                     localSymbol=f"{m['symbol'].ljust(4)} {futures_code_to_month[m['month']]} {m['year']}",
-                    includeExpired=True,
                 )
             else:
                 return IBContract(
                     secType="FUT",
                     exchange=instrument_id.venue.value,
                     localSymbol=f"{m['symbol']}{m['month']}{m['year'][-1]}",
-                    includeExpired=True,
                 )
         elif m := re_ind.match(instrument_id.symbol.value):
             return IBContract(
