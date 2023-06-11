@@ -54,7 +54,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
-from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -285,6 +284,9 @@ class TestEventStubs:
         if last_qty is None:
             last_qty = order.quantity
         if account is None:
+            # Causes circular import if moved to the top
+            from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+
             account = TestExecStubs.cash_account()
         assert account is not None  # Type checking
 

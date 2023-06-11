@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.model.enums import LogLevel
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.network.socket import SocketClient
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 

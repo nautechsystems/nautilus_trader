@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.network.websocket import WebSocketClient
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
@@ -30,7 +31,7 @@ class TestWebsocketClient:
 
         self.client = WebSocketClient(
             loop=asyncio.get_event_loop(),
-            logger=TestComponentStubs.logger(level="DEBUG"),
+            logger=TestComponentStubs.logger(level=LogLevel.DEBUG),
             handler=record,
             max_retry_connection=6,
             log_send=True,
