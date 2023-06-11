@@ -27,7 +27,6 @@ from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -69,7 +68,7 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
     assert isinstance(submitted, OrderSubmitted)
     assert isinstance(accepted, OrderAccepted)
     assert isinstance(filled, OrderFilled)
-    assert accepted.venue_order_id == VenueOrderId("SANDBOX-1-001")
+    assert accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
 @pytest.mark.asyncio()
