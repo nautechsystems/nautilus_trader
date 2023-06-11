@@ -723,6 +723,10 @@ cdef class BacktestEngine:
         Reset the backtest engine.
 
         All stateful fields are reset to their initial value.
+
+        Note: instruments and data are not dropped/reset, this can be done through a
+        separate call to `.clear_data()` if desired.
+
         """
         self._log.debug(f"Resetting...")
 
@@ -784,8 +788,8 @@ cdef class BacktestEngine:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
 
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
+        Calling this method multiple times has the same effect as calling it once (it is idempotent).
+        Once called, it cannot be reversed, and no other methods should be called on this instance.
 
         """
         self.clear_data()
