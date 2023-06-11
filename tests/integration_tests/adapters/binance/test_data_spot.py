@@ -20,8 +20,8 @@ import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -71,6 +71,7 @@ class TestBinanceSpotDataClient:
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.provider = BinanceSpotInstrumentProvider(
@@ -87,7 +88,7 @@ class TestBinanceSpotDataClient:
             logger=self.logger,
         )
 
-        self.data_client = BinanceSpotDataClient(
+        self.data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,

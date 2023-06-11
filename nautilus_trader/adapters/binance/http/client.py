@@ -25,6 +25,7 @@ from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
@@ -32,9 +33,19 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 class BinanceHttpClient:
     """
     Provides a `Binance` asynchronous HTTP client.
-    """
 
-    BASE_URL = "https://api.binance.com"  # Default Spot/Margin
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    key : str
+        The Binance API key for requests.
+    secret : str
+        The Binance API secret for signed requests.
+    base_url : str, optional
+    """
 
     def __init__(
         self,
@@ -42,16 +53,14 @@ class BinanceHttpClient:
         logger: Logger,
         key: str,
         secret: str,
-        base_url: Optional[str] = None,
-        timeout: Optional[int] = None,
-        show_limit_usage: bool = False,
+        base_url: str,
     ):
-        self._clock = clock
-        self._key = key
-        self._secret = secret
-        self._base_url = base_url or self.BASE_URL
-        self._show_limit_usage = show_limit_usage
-        self._proxies = None
+        self._clock: LiveClock = clock
+        self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
+        self._key: str = key
+
+        self._base_url: str = base_url
+        self._secret: str = secret
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
@@ -59,19 +68,40 @@ class BinanceHttpClient:
         }
         self._client = HttpClient()
 
-        if timeout is not None:
-            self._headers["timeout"] = timeout
-
     @property
     def base_url(self) -> str:
+        """
+        Return the base URL being used by the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._base_url
 
     @property
     def api_key(self) -> str:
+        """
+        Return the Binance API key being used by the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._key
 
     @property
     def headers(self):
+        """
+        Return the headers being used by the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._headers
 
     def _prepare_params(self, params: dict[str, Any]) -> str:
