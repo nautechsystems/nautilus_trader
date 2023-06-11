@@ -185,16 +185,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 includeExpired=True,
             ),
         )
-        # It's okay to return all futures contract as not many
-        # details = [
-        #     d
-        #     for d in details
-        #     if (min_expiry <= pd.Timestamp(d.contract.lastTradeDateOrContractMonth) <= max_expiry)
-        # ]
-        # self._log.info(
-        #     f"Received {len(details)} Future Contracts for "
-        #     f"{underlying.symbol}.{underlying.exchange} with expiry between {min_expiry=} and {max_expiry=}",
-        # )
         self._log.debug(f"Got {details=}")
         return details
 
