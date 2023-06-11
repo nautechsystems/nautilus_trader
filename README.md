@@ -265,6 +265,10 @@ You can launch the backtest example container by running:
     docker pull ghcr.io/nautechsystems/jupyterlab:develop
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
 
+Then open your browser at the following address:
+
+    http://127.0.0.1:8888/lab
+
 | :warning: WARNING |
 | :---------------- |
 
