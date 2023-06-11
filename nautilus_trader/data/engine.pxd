@@ -29,6 +29,7 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -132,7 +133,8 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_data(self, Data data)
     cpdef void _handle_instrument(self, Instrument instrument)
-    cpdef void _handle_order_book_data(self, Data data)
+    cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
+    cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void _handle_ticker(self, Ticker ticker)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)

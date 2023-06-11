@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Optional
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -80,15 +79,12 @@ class MarketMaker(Strategy):
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)
 
-    def on_order_book_delta(
-        self,
-        delta: Union[OrderBookDelta, OrderBookDeltas],
-    ) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         if not self._book:
             self.log.error("No book being maintained.")
             return
 
-        self._book.apply(delta)
+        self._book.apply_deltas(deltas)
         bid_price = self._book.best_bid_price()
         ask_price = self._book.best_ask_price()
         if bid_price and ask_price:
