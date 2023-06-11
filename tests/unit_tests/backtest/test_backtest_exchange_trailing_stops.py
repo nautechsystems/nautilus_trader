@@ -264,14 +264,10 @@ class TestSimulatedExchange:
         expected_trigger: Price,
     ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
+        quote = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -340,14 +336,10 @@ class TestSimulatedExchange:
         expected_trigger: Price,
     ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
+        quote = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -384,14 +376,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -409,14 +397,10 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.000"),
             ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -439,14 +423,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -464,26 +444,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("14.000"),
             ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.500"),
             ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -544,14 +516,10 @@ class TestSimulatedExchange:
         expected_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
+        quote = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -660,14 +628,10 @@ class TestSimulatedExchange:
         expected_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
+        quote = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -706,14 +670,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -733,26 +693,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.000"),
             ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.500"),
             ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -764,14 +716,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -791,26 +739,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("14.000"),
             ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.500"),
             ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -822,14 +762,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -849,26 +785,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.000"),
             ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.500"),
             ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -880,14 +808,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -907,26 +831,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("14.000"),
             ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.500"),
             ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -938,14 +854,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -977,26 +889,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.000"),
             ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.500"),
             ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -1008,14 +912,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1047,26 +947,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("14.000"),
             ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.500"),
             ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -1078,14 +970,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1105,26 +993,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.000"),
             ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("12.500"),
             ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -1136,14 +1016,10 @@ class TestSimulatedExchange:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.000"),
             ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1163,26 +1039,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("14.000"),
             ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
+        tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("13.500"),
             ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
         )
         self.exchange.process_quote_tick(tick)
 
