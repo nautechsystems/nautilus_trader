@@ -28,26 +28,25 @@ jobs:
 
       # Rust setup (ensures latest stable)
       - name: Set up Rust tool-chain (Liux/Windows)
-        if: runner.os == 'Linux'
+        # if: runner.os == 'Linux'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Set up Rust tool-chain (macOS)
-        if: runner.os == 'macOS'
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-
-      - name: Set up Rust tool-chain (Liux/Windows)
-        if: runner.os == 'Windows'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: 1.69.0 # Issues on Windows with toolchain version 1.70.0
-          override: true
-          components: rustfmt, clippy
+      # - name: Set up Rust tool-chain (macOS)
+      #   if: runner.os == 'macOS'
+      #   uses: actions-rs/toolchain@v1
+      #   with:
+      #     toolchain: stable
+      #     components: rustfmt, clippy
+      #
+      # - name: Set up Rust tool-chain (Liux/Windows)
+      #   if: runner.os == 'Windows'
+      #   uses: actions-rust-lang/setup-rust-toolchain@v1
+      #   with:
+      #     toolchain: 1.69.0 # Issues on Windows with toolchain version 1.70.0
+      #     components: rustfmt, clippy
 
       # Python setup
       - name: Set up Python environment
