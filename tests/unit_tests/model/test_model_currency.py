@@ -175,7 +175,7 @@ class TestCurrency:
         # Arrange, Act
         another_aud = Currency(
             code="AUD",
-            precision=8,
+            precision=8,  # <-- Different precision
             iso4217=0,
             name="AUD",
             currency_type=CurrencyType.CRYPTO,
@@ -185,6 +185,24 @@ class TestCurrency:
         result = Currency.from_str("AUD")
 
         assert result.precision == 2  # Correct precision from built-in currency
+        assert result.currency_type == CurrencyType.FIAT
+
+    def test_from_internal_map_when_unknown(self):
+        # Arrange, Act
+        result = Currency.from_internal_map("SOME_CURRENCY")
+
+        # Assert
+        assert result is None
+
+    def test_from_internal_map_when_exists(self):
+        # Arrange, Act
+        result = Currency.from_internal_map("AUD")
+
+        # Assert
+        assert result.code == "AUD"
+        assert result.precision == 2
+        assert result.iso4217 == 36
+        assert result.name == "Australian dollar"
         assert result.currency_type == CurrencyType.FIAT
 
     def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
