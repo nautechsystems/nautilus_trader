@@ -353,8 +353,8 @@ cdef class Component:
         """
         Start the component.
 
-        While executing `on_start()`, any exception will be logged and reraised.
-        The component will remain in a ``STARTING`` state.
+        While executing `on_start()` any exception will be logged and reraised, then the component
+        will remain in a ``STARTING`` state.
 
         Warnings
         --------
@@ -384,8 +384,8 @@ cdef class Component:
         """
         Stop the component.
 
-        While executing `on_stop()`, any exception will be logged and reraised.
-        The component will remain in a ``STOPPING`` state.
+        While executing `on_stop()` any exception will be logged and reraised, then the component
+        will remain in a ``STOPPING`` state.
 
         Warnings
         --------
@@ -415,8 +415,8 @@ cdef class Component:
         """
         Resume the component.
 
-        While executing `on_resume()`, any exception will be logged and reraised.
-        The component will remain in a ``RESUMING`` state.
+        While executing `on_resume()` any exception will be logged and reraised, then the component
+        will remain in a ``RESUMING`` state.
 
         Warnings
         --------
@@ -448,8 +448,8 @@ cdef class Component:
 
         All stateful fields are reset to their initial value.
 
-        While executing `on_reset()`, any exception will be logged and reraised.
-        The component will remain in a ``RESETTING`` state.
+        While executing `on_reset()` any exception will be logged and reraised, then the component
+        will remain in a ``RESETTING`` state.
 
         Warnings
         --------
@@ -479,8 +479,8 @@ cdef class Component:
         """
         Dispose of the component.
 
-        While executing `on_dispose()`, any exception will be logged and reraised.
-        The component will remain in a ``DISPOSING`` state.
+        While executing `on_dispose()` any exception will be logged and reraised, then the component
+        will remain in a ``DISPOSING`` state.
 
         Warnings
         --------
@@ -510,8 +510,8 @@ cdef class Component:
         """
         Degrade the component.
 
-        While executing `on_degrade()`, any exception will be logged and reraised.
-        The component will remain in a ``DEGRADING`` state.
+        While executing `on_degrade()` any exception will be logged and reraised, then the component
+        will remain in a ``DEGRADING`` state.
 
         Warnings
         --------
@@ -541,11 +541,11 @@ cdef class Component:
         """
         Fault the component.
 
-        This method is idempotent and irreversible. No other methods should be
-        called after faulting.
+        Calling this method multiple times has the same effect as calling it once (it is idempotent).
+        Once called, it cannot be reversed, and no other methods should be called on this instance.
 
-        While executing `on_fault()`, any exception will be logged and reraised.
-        The component will remain in a ``FAULTING`` state.
+        While executing `on_fault()` any exception will be logged and reraised, then the component
+        will remain in a ``FAULTING`` state.
 
         Warnings
         --------
