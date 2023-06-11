@@ -24,13 +24,19 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use crate::enums::{LogColor, LogLevel};
 use crate::logging::Logger;
 
-/// Logger is not C FFI safe, so we box and pass it as an opaque pointer.
-/// This works because Logger fields don't need to be accessed, only functions
-/// are called.
+/// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`Logger`].
+///
+/// This struct wraps `Logger` in a way that makes it compatible with C function
+/// calls, enabling interaction with `Logger` in a C environment.
+///
+/// It implements the `Deref` trait, allowing instances of `Logger_API` to be
+/// dereferenced to `Logger`, providing access to `Logger`'s methods without
+/// having to manually access the underlying `Logger` instance.
 #[repr(C)]
-pub struct CLogger(Box<Logger>);
+#[allow(non_camel_case_types)]
+pub struct Logger_API(Box<Logger>);
 
-impl Deref for CLogger {
+impl Deref for Logger_API {
     type Target = Logger;
 
     fn deref(&self) -> &Self::Target {
@@ -38,7 +44,7 @@ impl Deref for CLogger {
     }
 }
 
-impl DerefMut for CLogger {
+impl DerefMut for Logger_API {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -64,8 +70,8 @@ pub unsafe extern "C" fn logger_new(
     file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
     is_bypassed: u8,
-) -> CLogger {
-    CLogger(Box::new(Logger::new(
+) -> Logger_API {
+    Logger_API(Box::new(Logger::new(
         TraderId::new(&cstr_to_string(trader_id_ptr)),
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
@@ -84,27 +90,27 @@ pub unsafe extern "C" fn logger_new(
 }
 
 #[no_mangle]
-pub extern "C" fn logger_drop(logger: CLogger) {
+pub extern "C" fn logger_drop(logger: Logger_API) {
     drop(logger); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn logger_get_trader_id_cstr(logger: &CLogger) -> *const c_char {
+pub extern "C" fn logger_get_trader_id_cstr(logger: &Logger_API) -> *const c_char {
     str_to_cstr(&logger.trader_id.to_string())
 }
 
 #[no_mangle]
-pub extern "C" fn logger_get_machine_id_cstr(logger: &CLogger) -> *const c_char {
+pub extern "C" fn logger_get_machine_id_cstr(logger: &Logger_API) -> *const c_char {
     str_to_cstr(&logger.machine_id)
 }
 
 #[no_mangle]
-pub extern "C" fn logger_get_instance_id(logger: &CLogger) -> UUID4 {
+pub extern "C" fn logger_get_instance_id(logger: &Logger_API) -> UUID4 {
     logger.instance_id.clone()
 }
 
 #[no_mangle]
-pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
+pub extern "C" fn logger_is_bypassed(logger: &Logger_API) -> u8 {
     logger.is_bypassed as u8
 }
 
@@ -116,7 +122,7 @@ pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
 /// - Assumes `message_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
-    logger: &mut CLogger,
+    logger: &mut Logger_API,
     timestamp_ns: u64,
     level: LogLevel,
     color: LogColor,

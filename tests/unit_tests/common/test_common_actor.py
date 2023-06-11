@@ -373,7 +373,7 @@ class TestActor:
         )
 
         # Act
-        actor.on_order_book_delta(TestDataStubs.order_book_snapshot())
+        actor.on_order_book_deltas(TestDataStubs.order_book_snapshot())
 
         # Assert
         assert True  # Exception not raised

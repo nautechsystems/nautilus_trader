@@ -5,9 +5,13 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Removed `OrderBookSnapshot` (redundant as can be represented as an initial CLEAR followed by deltas)
 - Removed `OrderBookData` (redundant)
-- Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional cals on inverse instruments)
+- Renamed `Actor.handle_order_book_delta` to `handle_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
+- Renamed `Actor.on_order_book_delta` to `on_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
+- Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional calcs on inverse instruments)
 - Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
 - Renamed core `LogMessage` to `LogEvent` to more clearly distinguish between the `message` field and the event struct itself (aligns with [vector](https://vector.dev/docs/about/under-the-hood/architecture/data-model/log/) language)
+- Renamed core `LogEvent.timestamp_ns` to `LogEvent.timestamp` (affects field name for JSON format)
+- Renamed core `LogEvent.msg` to `LogEvent.message` (affects field name for JSON format)
 
 ### Enhancements
 - Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z
@@ -17,6 +21,7 @@ Released on TBD (UTC).
 - Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
 - Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
 - Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
+- Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behaviour)
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
 - Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)

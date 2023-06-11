@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Union
+from typing import Any
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -25,7 +25,6 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
@@ -169,21 +168,18 @@ class EMACrossTWAP(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
 
-    def on_order_book_delta(
-        self,
-        data: Union[OrderBookDelta, OrderBookDeltas],
-    ) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives order data.
+        Actions to be performed when the strategy is running and receives order book deltas.
 
         Parameters
         ----------
-        data : OrderBookDelta, OrderBookDeltas
-            The order book data received.
+        deltas : OrderBookDeltas
+            The order book deltas received.
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(data), LogColor.CYAN)
+        # self.log.info(repr(deltas), LogColor.CYAN)
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """

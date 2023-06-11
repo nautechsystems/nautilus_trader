@@ -85,6 +85,8 @@ cdef class SimulatedExchange:
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
     """If orders with GTD time in force will be supported by the venue.\n\n:returns: `bool`"""
+    cdef readonly bint use_random_ids
+    """If venue order and position IDs will be randomly generated UUID4s.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments

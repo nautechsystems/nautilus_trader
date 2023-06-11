@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 from typing import Optional
 
 
@@ -97,8 +98,8 @@ cdef class OrderMatchingEngine:
     ----------
     instrument : Instrument
         The market instrument for the matching engine.
-    product_id : int
-        The product ID for the instrument.
+    raw_id : uint32_t
+        The raw integer ID for the instrument.
     fill_model : FillModel
         The fill model for the matching engine.
     book_type : BookType
@@ -120,6 +121,8 @@ cdef class OrderMatchingEngine:
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_random_ids : bool, default False
+        If venue order and position IDs will be randomly generated UUID4s.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
     """
@@ -127,7 +130,7 @@ cdef class OrderMatchingEngine:
     def __init__(
         self,
         Instrument instrument not None,
-        int product_id,
+        uint32_t raw_id,
         FillModel fill_model not None,
         BookType book_type,
         OmsType oms_type,
@@ -138,6 +141,7 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_random_ids = False,
         # auction_match_algo = default_auction_match
     ):
         self._clock = clock
@@ -150,7 +154,7 @@ cdef class OrderMatchingEngine:
 
         self.venue = instrument.id.venue
         self.instrument = instrument
-        self.product_id = product_id
+        self.raw_id = raw_id
         self.book_type = book_type
         self.oms_type = oms_type
         self.market_status = MarketStatus.OPEN
@@ -158,6 +162,7 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
+        self._use_random_ids = use_random_ids
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._book = OrderBook(
@@ -199,7 +204,7 @@ cdef class OrderMatchingEngine:
             f"{type(self).__name__}("
             f"venue={self.venue.value}, "
             f"instrument_id={self.instrument.id.value}, "
-            f"product_id={self.product_id})"
+            f"raw_id={self.raw_id})"
         )
 
     cpdef void reset(self):
@@ -1730,20 +1735,27 @@ cdef class OrderMatchingEngine:
 
     cdef PositionId _generate_venue_position_id(self):
         self._position_count += 1
-        return PositionId(
-            f"{self.venue.to_str()}-{self.product_id}-{self._position_count:03d}")
+        if self._use_random_ids:
+            return PositionId(str(uuid.uuid4()))
+        else:
+            return PositionId(f"{self.venue.to_str()}-{self.raw_id}-{self._position_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self):
         self._order_count += 1
-        return VenueOrderId(
-            f"{self.venue.to_str()}-{self.product_id}-{self._order_count:03d}")
+        if self._use_random_ids:
+            return VenueOrderId(str(uuid.uuid4()))
+        else:
+            return VenueOrderId(f"{self.venue.to_str()}-{self.raw_id}-{self._order_count:03d}")
 
     cdef TradeId _generate_trade_id(self):
         self._execution_count += 1
         return TradeId(self._generate_trade_id_str())
 
     cdef str _generate_trade_id_str(self):
-        return f"{self.venue.to_str()}-{self.product_id}-{self._execution_count:03d}"
+        if self._use_random_ids:
+            return str(uuid.uuid4())
+        else:
+            return f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}"
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 

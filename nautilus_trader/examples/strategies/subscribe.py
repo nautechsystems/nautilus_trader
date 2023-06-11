@@ -16,10 +16,10 @@
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
@@ -102,12 +102,12 @@ class SubscribeStrategy(Strategy):
             )
             self.subscribe_bars(bar_type)
 
-    def on_order_book_delta(self, data: Data) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         if not self.book:
             self.log.error("No book being maintained.")
             return
 
-        self.book.apply(data)
+        self.book.apply_deltas(deltas)
         self.log.info(str(self.book))
 
     def on_order_book(self, order_book: OrderBook) -> None:

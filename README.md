@@ -18,7 +18,7 @@
 | `Linux (x86_64)`   | 1.70.0+ | 3.9+   |
 | `macOS (x86_64)`   | 1.70.0+ | 3.9+   |
 | `macOS (arm64)`    | 1.70.0+ | 3.9+   |
-| `Windows (x86_64)` | 1.69.0+ | 3.9+   |
+| `Windows (x86_64)` | 1.69.0  | 3.9+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -264,6 +264,10 @@ You can launch the backtest example container by running:
 
     docker pull ghcr.io/nautechsystems/jupyterlab:develop
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+
+Then open your browser at the following address:
+
+    http://127.0.0.1:8888/lab
 
 | :warning: WARNING |
 | :---------------- |

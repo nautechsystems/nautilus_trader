@@ -183,6 +183,13 @@ cdef class Currency:
         return self._mem.precision
 
     @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=False):
+        cdef Currency existing = Currency.from_internal_map_c(currency.code)
+        if existing is not None and not overwrite:
+            return  # Already exists in internal map
+        currency_register(currency_clone(&currency._mem))
+
+    @staticmethod
     cdef Currency from_internal_map_c(str code):
         cdef const char* code_ptr = pystr_to_cstr(code)
         if not currency_exists(code_ptr):
@@ -211,11 +218,20 @@ cdef class Currency:
         return currency
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=False):
-        cdef Currency existing = Currency.from_internal_map_c(currency.code)
-        if existing is not None and not overwrite:
-            return  # Already exists in internal map
-        currency_register(currency_clone(&currency._mem))
+    cdef bint is_fiat_c(str code):
+        cdef Currency currency = Currency.from_internal_map_c(code)
+        if currency is None:
+            return False
+
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.FIAT
+
+    @staticmethod
+    cdef bint is_crypto_c(str code):
+        cdef Currency currency = Currency.from_internal_map_c(code)
+        if currency is None:
+            return False
+
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def register(Currency currency, bint overwrite=False):
@@ -237,6 +253,25 @@ cdef class Currency:
         return Currency.register_c(currency, overwrite)
 
     @staticmethod
+    def from_internal_map(str code):
+        """
+        Return the currency with the given `code` from the built-in internal map (if found).
+
+        Parameters
+        ----------
+        code : str
+            The code of the currency.
+
+        Returns
+        -------
+        Currency or ``None``
+
+        """
+        Condition.not_none(code, "code")
+
+        return Currency.from_internal_map_c(code)
+
+    @staticmethod
     def from_str(str code, bint strict=False):
         """
         Parse a currency from the given string (if found).
@@ -256,22 +291,6 @@ cdef class Currency:
 
         """
         return Currency.from_str_c(code, strict)
-
-    @staticmethod
-    cdef bint is_fiat_c(str code):
-        cdef Currency currency = Currency.from_internal_map_c(code)
-        if currency is None:
-            return False
-
-        return <CurrencyType>currency._mem.currency_type == CurrencyType.FIAT
-
-    @staticmethod
-    cdef bint is_crypto_c(str code):
-        cdef Currency currency = Currency.from_internal_map_c(code)
-        if currency is None:
-            return False
-
-        return <CurrencyType>currency._mem.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def is_fiat(str code):

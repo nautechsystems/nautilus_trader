@@ -14,11 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -118,16 +117,13 @@ class OrderBookImbalance(Strategy):
             book_type=book_type,
         )
 
-    def on_order_book_delta(
-        self,
-        data: Union[OrderBookDelta, OrderBookDeltas],
-    ) -> None:
-        """Actions to be performed when a delta is received."""
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """Actions to be performed when order book deltas are received."""
         if not self._book:
             self.log.error("No book being maintained.")
             return
 
-        self._book.apply(data)
+        self._book.apply_deltas(deltas)
         if self._book.spread():
             self.check_trigger()
 

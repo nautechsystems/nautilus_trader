@@ -101,6 +101,8 @@ cdef class SimulatedExchange:
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_random_ids : bool, default False
+        If venue order and position IDs will be randomly generated UUID4s.
 
     Raises
     ------
@@ -140,6 +142,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_random_ids = False,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -177,6 +180,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
+        self.use_random_ids = use_random_ids
         self.fill_model = fill_model
         self.latency_model = latency_model
 
@@ -280,6 +284,8 @@ cdef class SimulatedExchange:
         """
         Add the given instrument to the venue.
 
+        A random and unique 32-bit unsigned integer raw ID will be generated.
+
         Parameters
         ----------
         instrument : Instrument
@@ -289,16 +295,12 @@ cdef class SimulatedExchange:
         ------
         ValueError
             If `instrument.id.venue` is not equal to the venue ID.
-        KeyError
-            If `instrument` is already contained within the venue.
-            This is to enforce correct internal identifier indexing.
         InvalidConfiguration
             If `instrument` is invalid for this venue.
 
         """
         Condition.not_none(instrument, "instrument")
         Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
-        Condition.not_in(instrument.id, self.instruments, "instrument.id", "self.instruments")
 
         # Validate instrument
         if isinstance(instrument, (CryptoPerpetual, CryptoFuture)):
@@ -311,9 +313,9 @@ cdef class SimulatedExchange:
 
         self.instruments[instrument.id] = instrument
 
-        matching_engine = OrderMatchingEngine(
+        cdef OrderMatchingEngine matching_engine = OrderMatchingEngine(
             instrument=instrument,
-            product_id=len(self.instruments),
+            raw_id=len(self.instruments),
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
@@ -324,11 +326,12 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
+            use_random_ids=self.use_random_ids,
         )
 
         self._matching_engines[instrument.id] = matching_engine
 
-        self._log.info(f"Loaded instrument {instrument.id}.")
+        self._log.info(f"Added instrument {instrument.id} and created matching engine.")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

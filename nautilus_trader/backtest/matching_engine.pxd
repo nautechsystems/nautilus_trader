@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FillModel
@@ -77,14 +78,15 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
+    cdef bint _use_random_ids
     cdef dict _account_ids
 
     cdef readonly Venue venue
     """The venue for the matching engine.\n\n:returns: `Venue`"""
     cdef readonly Instrument instrument
     """The instrument for the matching engine.\n\n:returns: `Instrument`"""
-    cdef readonly int product_id
-    """The instruments product ID for the exchange.\n\n:returns: `int`"""
+    cdef readonly uint32_t raw_id
+    """The instruments raw integer ID for the exchange.\n\n:returns: `int`"""
     cdef readonly BookType book_type
     """The order book type for the matching engine.\n\n:returns: `BookType`"""
     cdef readonly OmsType oms_type

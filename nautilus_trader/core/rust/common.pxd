@@ -124,9 +124,6 @@ cdef extern from "../includes/common.h":
     # It implements the `Deref` trait, allowing instances of `TestClock_API` to be
     # dereferenced to `TestClock`, providing access to `TestClock`'s methods without
     # having to manually access the underlying `TestClock` instance.
-    #
-    # # Note
-    # This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
     cdef struct TestClock_API:
         TestClock *_0;
 
@@ -139,16 +136,18 @@ cdef extern from "../includes/common.h":
     # dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
     # having to manually access the underlying `LiveClock` instance. This includes
     # both mutable and immutable access.
-    #
-    # # Note
-    # This struct uses `#[allow(non_camel_case_types)]` to adhere to C naming conventions.
     cdef struct LiveClock_API:
         LiveClock *_0;
 
-    # Logger is not C FFI safe, so we box and pass it as an opaque pointer.
-    # This works because Logger fields don't need to be accessed, only functions
-    # are called.
-    cdef struct CLogger:
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`Logger`].
+    #
+    # This struct wraps `Logger` in a way that makes it compatible with C function
+    # calls, enabling interaction with `Logger` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `Logger_API` to be
+    # dereferenced to `Logger`, providing access to `Logger`'s methods without
+    # having to manually access the underlying `Logger` instance.
+    cdef struct Logger_API:
         Logger_t *_0;
 
     # Represents a time event occurring at the event timestamp.
@@ -281,27 +280,27 @@ cdef extern from "../includes/common.h":
     # - Assumes `trader_id_ptr` is a valid C string pointer.
     # - Assumes `machine_id_ptr` is a valid C string pointer.
     # - Assumes `instance_id_ptr` is a valid C string pointer.
-    CLogger logger_new(const char *trader_id_ptr,
-                       const char *machine_id_ptr,
-                       const char *instance_id_ptr,
-                       LogLevel level_stdout,
-                       LogLevel level_file,
-                       uint8_t file_logging,
-                       const char *directory_ptr,
-                       const char *file_name_ptr,
-                       const char *file_format_ptr,
-                       const char *component_levels_ptr,
-                       uint8_t is_bypassed);
+    Logger_API logger_new(const char *trader_id_ptr,
+                          const char *machine_id_ptr,
+                          const char *instance_id_ptr,
+                          LogLevel level_stdout,
+                          LogLevel level_file,
+                          uint8_t file_logging,
+                          const char *directory_ptr,
+                          const char *file_name_ptr,
+                          const char *file_format_ptr,
+                          const char *component_levels_ptr,
+                          uint8_t is_bypassed);
 
-    void logger_drop(CLogger logger);
+    void logger_drop(Logger_API logger);
 
-    const char *logger_get_trader_id_cstr(const CLogger *logger);
+    const char *logger_get_trader_id_cstr(const Logger_API *logger);
 
-    const char *logger_get_machine_id_cstr(const CLogger *logger);
+    const char *logger_get_machine_id_cstr(const Logger_API *logger);
 
-    UUID4_t logger_get_instance_id(const CLogger *logger);
+    UUID4_t logger_get_instance_id(const Logger_API *logger);
 
-    uint8_t logger_is_bypassed(const CLogger *logger);
+    uint8_t logger_is_bypassed(const Logger_API *logger);
 
     # Create a new log event.
     #
@@ -309,7 +308,7 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `component_ptr` is a valid C string pointer.
     # - Assumes `message_ptr` is a valid C string pointer.
-    void logger_log(CLogger *logger,
+    void logger_log(Logger_API *logger,
                     uint64_t timestamp_ns,
                     LogLevel level,
                     LogColor color,
@@ -320,8 +319,8 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    TimeEvent_t time_event_new(const char *name,
+    # - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+    TimeEvent_t time_event_new(const char *name_ptr,
                                UUID4_t event_id,
                                uint64_t ts_event,
                                uint64_t ts_init);
