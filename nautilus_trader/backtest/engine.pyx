@@ -981,8 +981,24 @@ cdef class BacktestEngine:
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()
+                ###################################################################################
+                open_orders = self._kernel.cache.orders_open(venue=exchange.id)
+                for order in open_orders:
+                    if order.is_emulated:
+                        # Order should be loaded in the emulator already
+                        continue
+                    matching_engine = exchange.get_machine_engine(order.instrument_id)
+                    if matching_engine is None:
+                        self._log.error(
+                            f"No matching engine for {order.instrument_id} to process {order}.",
+                        )
+                        continue
+                    matching_engine.process_order(order, order.account_id)
+                ###################################################################################
+
             # Common kernel start-up sequence
             asyncio.run(self._kernel.start())
+
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
             self._log_pre_run()
