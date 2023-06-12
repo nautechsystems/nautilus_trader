@@ -38,7 +38,7 @@ docs:
 
 .PHONY: format
 format:
-	(cd nautilus_core && cargo fmt)
+	(cd nautilus_core && cargo +nightly fmt)
 
 .PHONY: pre-commit
 pre-commit: format
