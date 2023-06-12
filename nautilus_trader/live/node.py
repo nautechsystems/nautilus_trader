@@ -42,9 +42,9 @@ class TradingNode:
     ----------
     config : TradingNodeConfig, optional
         The configuration for the instance.
-    loop : asyncio.AbstractEventLoop
+    loop : asyncio.AbstractEventLoop, optional
         The event loop for the node.
-        If ``None`` then will get the running event loop.
+        If ``None`` then will get the running event loop internally.
     """
 
     def __init__(
@@ -57,13 +57,11 @@ class TradingNode:
         PyCondition.not_none(config, "config")
         PyCondition.type(config, TradingNodeConfig, "config")
 
-        # Configuration
         self._config: TradingNodeConfig = config
 
-        # Setup loop
+        # Determine loop
         loop = loop or asyncio.get_event_loop()
 
-        # Build core system kernel
         self.kernel = NautilusKernel(
             name=type(self).__name__,
             config=config,
