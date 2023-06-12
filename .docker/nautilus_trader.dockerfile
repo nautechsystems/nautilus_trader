@@ -16,8 +16,7 @@ WORKDIR $PYSETUP_PATH
 FROM base as builder
 
 # Install build deps
-RUN apt-get update && apt-get install -y curl clang git pkg-config libssl-dev
-ENV OPENSSL_LIB_DIR=/usr/lib/ssl
+RUN apt-get update && apt-get install -y curl clang git libssl-dev make pkg-config
 
 # Install Rust stable
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
