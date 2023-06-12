@@ -115,7 +115,7 @@ class BinanceWebSocketClient:
             ws_url += f"&listenKey={key}"
 
         self._log.info(f"Connecting to {ws_url}")
-        self._client = await WebSocketClient.connect_url(
+        self._client = await WebSocketClient.connect(
             url=ws_url,
             handler=self._handler,
             heartbeat=60,
@@ -136,7 +136,7 @@ class BinanceWebSocketClient:
             self._log.error("Cannot send websocket message, not connected.")
             return
 
-        await self._client.send_bytes(data)
+        await self._client.send(data)
 
     async def disconnect(self) -> None:
         """
@@ -147,7 +147,7 @@ class BinanceWebSocketClient:
             return
 
         self._log.info("Closing...")
-        await self._client.close()
+        await self._client.disconnect()
         self._log.info("Closed.")
 
     def _add_stream(self, stream: str) -> None:
