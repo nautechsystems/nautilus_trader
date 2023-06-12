@@ -39,6 +39,7 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
@@ -238,6 +239,21 @@ cdef class Cache(CacheFacade):
             self._orders = self._database.load_orders()
         else:
             self._orders = {}
+
+        # Assign position IDs to contingent orders
+        cdef Order order
+        cdef Order contingent_order
+        for order in self._orders.values():
+            if order.contingency_type == ContingencyType.OTO:
+                for client_order_id in order.linked_order_ids or []:
+                    contingent_order = self.cache.order(client_order_id)
+                    if contingent_order is None:
+                        self._log.error(f"Contingency order {repr(client_order_id)} not found.")
+                        continue
+                    # Assign the parents position ID
+                    if contingent_order.position_id is None:
+                        self._log.info(f"Assigned {repr(order.position_id)} to {repr(client_order_id)}.")
+                        contingent_order.position_id = order.position_id
 
         cdef int count = len(self._orders)
         self._log.info(
