@@ -987,7 +987,7 @@ cdef class BacktestEngine:
                     if order.is_emulated:
                         # Order should be loaded in the emulator already
                         continue
-                    matching_engine = exchange.get_machine_engine(order.instrument_id)
+                    matching_engine = exchange.get_matching_engine(order.instrument_id)
                     if matching_engine is None:
                         self._log.error(
                             f"No matching engine for {order.instrument_id} to process {order}.",
