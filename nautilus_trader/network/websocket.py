@@ -89,16 +89,26 @@ class WebSocketClient:
         """
         return self._client is not None and self._client.is_connected
 
-    async def connect(self) -> None:
+    async def connect(self, url: Optional[str] = None) -> None:
         """
         Connect the client to the server.
+
+        Parameters
+        ----------
+        url : str, optional
+            The URL path override.
+
         """
-        self._log.info(f"Connecting to {self._url}")
+        url = url or self._url
+        self._log.info(f"Connecting to {url}")
+
+        # TODO: Raise exception on connection failure and log error
         self._client = await RustWebSocketClient.connect(
-            url=self._url,
+            url=url,
             handler=self._handler,
             heartbeat=self._heartbeat,
         )
+
         self._log.info("Connected.")
 
     async def disconnect(self) -> None:
