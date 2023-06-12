@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use nautilus_core::correctness;
-use nautilus_core::datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs};
-use nautilus_core::time::{duration_since_unix_epoch, UnixNanos};
-use pyo3::prelude::*;
-use pyo3::AsPyPointer;
+use nautilus_core::{
+    correctness,
+    datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs},
+    time::{duration_since_unix_epoch, UnixNanos},
+};
+use pyo3::{prelude::*, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 

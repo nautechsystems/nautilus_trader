@@ -124,8 +124,9 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use futures::stream::iter;
+
+    use super::*;
 
     struct OrdComparator;
     impl<S> Compare<PeekElementBatchStream<S, i32>> for OrdComparator

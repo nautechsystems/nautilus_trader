@@ -13,8 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::thread;
-use std::time::{Duration, Instant};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 /// Repeatedly evaluates a condition with a delay until it becomes true or a timeout occurs.
 ///

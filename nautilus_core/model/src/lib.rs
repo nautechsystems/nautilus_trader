@@ -17,8 +17,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use pyo3::prelude::*;
-use pyo3::{PyResult, Python};
+use pyo3::{prelude::*, PyResult, Python};
 
 pub mod currencies;
 pub mod data;

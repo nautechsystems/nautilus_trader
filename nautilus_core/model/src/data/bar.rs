@@ -13,19 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use thiserror::Error;
 
-use crate::enums::{AggregationSource, BarAggregation, PriceType};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use crate::{
+    enums::{AggregationSource, BarAggregation, PriceType},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -214,9 +217,10 @@ impl Display for Bar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::BarAggregation;
-    use crate::identifiers::symbol::Symbol;
-    use crate::identifiers::venue::Venue;
+    use crate::{
+        enums::BarAggregation,
+        identifiers::{symbol::Symbol, venue::Venue},
+    };
 
     #[test]
     fn test_bar_spec_equality() {

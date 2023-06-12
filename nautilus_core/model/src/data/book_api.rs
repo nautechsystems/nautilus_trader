@@ -13,19 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    hash::{Hash, Hasher},
+};
 
-use nautilus_core::string::str_to_cstr;
-use nautilus_core::time::UnixNanos;
-
-use crate::enums::{BookAction, OrderSide};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use nautilus_core::{string::str_to_cstr, time::UnixNanos};
 
 use super::book::{BookOrder, OrderBookDelta};
+use crate::{
+    enums::{BookAction, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[no_mangle]
 pub extern "C" fn book_order_from_raw(

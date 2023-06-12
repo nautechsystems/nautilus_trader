@@ -13,20 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
-use std::ops::{Deref, DerefMut};
+use std::{
+    ffi::c_char,
+    ops::{Deref, DerefMut},
+};
 
-use nautilus_core::cvec::CVec;
-use nautilus_core::string::str_to_cstr;
-
-use crate::data::book::{BookOrder, OrderBookDelta};
-use crate::data::tick::{QuoteTick, TradeTick};
-use crate::enums::BookType;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use nautilus_core::{cvec::CVec, string::str_to_cstr};
 
 use super::book::OrderBook;
+use crate::{
+    data::{
+        book::{BookOrder, OrderBookDelta},
+        tick::{QuoteTick, TradeTick},
+    },
+    enums::BookType,
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
 ///

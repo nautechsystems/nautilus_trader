@@ -13,16 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
-use std::ops::{Deref, DerefMut};
+use std::{
+    ffi::c_char,
+    ops::{Deref, DerefMut},
+};
 
-use nautilus_core::parsing::optional_bytes_to_json;
-use nautilus_core::string::{cstr_to_string, optional_cstr_to_string, str_to_cstr};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{
+    parsing::optional_bytes_to_json,
+    string::{cstr_to_string, optional_cstr_to_string, str_to_cstr},
+    uuid::UUID4,
+};
 use nautilus_model::identifiers::trader_id::TraderId;
 
-use crate::enums::{LogColor, LogLevel};
-use crate::logging::Logger;
+use crate::{
+    enums::{LogColor, LogLevel},
+    logging::Logger,
+};
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`Logger`].
 ///

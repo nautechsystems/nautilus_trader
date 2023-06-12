@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use tabled::settings::Style;
-use tabled::{Table, Tabled};
+use tabled::{settings::Style, Table, Tabled};
 use thiserror::Error;
 
-use crate::data::book::{BookOrder, OrderBookDelta};
-use crate::data::tick::{QuoteTick, TradeTick};
-use crate::enums::{BookAction, BookType, OrderSide};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::orderbook::ladder::Ladder;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
-
-use super::ladder::BookPrice;
-use super::level::Level;
+use super::{ladder::BookPrice, level::Level};
+use crate::{
+    data::{
+        book::{BookOrder, OrderBookDelta},
+        tick::{QuoteTick, TradeTick},
+    },
+    enums::{BookAction, BookType, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    orderbook::ladder::Ladder,
+    types::{price::Price, quantity::Quantity},
+};
 
 pub struct OrderBook {
     bids: Ladder,
@@ -441,12 +441,12 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-    use crate::data::book::BookOrder;
-    use crate::enums::{AggressorSide, OrderSide};
-    use crate::identifiers::instrument_id::InstrumentId;
-    use crate::identifiers::trade_id::TradeId;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
+    use crate::{
+        data::book::BookOrder,
+        enums::{AggressorSide, OrderSide},
+        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        types::{price::Price, quantity::Quantity},
+    };
 
     fn create_stub_book(book_type: BookType) -> OrderBook {
         let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();

@@ -17,8 +17,7 @@ mod implementations;
 
 use std::collections::HashMap;
 
-use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
 

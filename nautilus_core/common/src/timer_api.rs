@@ -15,8 +15,10 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{
+    string::{cstr_to_string, str_to_cstr},
+    uuid::UUID4,
+};
 
 use crate::timer::TimeEvent;
 

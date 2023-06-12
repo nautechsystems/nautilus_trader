@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::prelude::*;
-
 use nautilus_model::{
     data::{
         bar::Bar,
@@ -22,6 +20,7 @@ use nautilus_model::{
     },
     enums::PriceType,
 };
+use pyo3::prelude::*;
 
 use crate::Indicator;
 
