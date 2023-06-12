@@ -13,19 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
-use std::ops::{Deref, DerefMut};
+use std::{
+    ffi::c_char,
+    ops::{Deref, DerefMut},
+};
 
-use nautilus_core::cvec::CVec;
-use nautilus_core::string::cstr_to_string;
-use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
-use pyo3::types::{PyList, PyString};
-use pyo3::{ffi, AsPyPointer};
+use nautilus_core::{cvec::CVec, string::cstr_to_string, time::UnixNanos};
+use pyo3::{
+    ffi,
+    prelude::*,
+    types::{PyList, PyString},
+    AsPyPointer,
+};
 
-use crate::clock::Clock;
-use crate::clock::{LiveClock, TestClock};
-use crate::timer::{TimeEvent, TimeEventHandler};
+use crate::{
+    clock::{Clock, LiveClock, TestClock},
+    timer::{TimeEvent, TimeEventHandler},
+};
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
 ///

@@ -15,9 +15,10 @@
 
 use std::cmp::Ordering;
 
-use crate::data::book::BookOrder;
-use crate::orderbook::book::BookIntegrityError;
-use crate::orderbook::ladder::BookPrice;
+use crate::{
+    data::book::BookOrder,
+    orderbook::{book::BookIntegrityError, ladder::BookPrice},
+};
 
 #[derive(Clone, Debug, Eq)]
 pub struct Level {
@@ -154,12 +155,12 @@ impl Ord for Level {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::data::book::BookOrder;
-    use crate::enums::OrderSide;
-    use crate::orderbook::ladder::BookPrice;
-    use crate::orderbook::level::Level;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
+    use crate::{
+        data::book::BookOrder,
+        enums::OrderSide,
+        orderbook::{ladder::BookPrice, level::Level},
+        types::{price::Price, quantity::Quantity},
+    };
 
     #[test]
     fn test_comparisons_bid_side() {

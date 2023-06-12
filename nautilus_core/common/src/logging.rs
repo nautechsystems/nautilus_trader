@@ -13,22 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::fmt;
-use std::fs::{create_dir_all, File};
-use std::io::{Stderr, Stdout};
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 use std::{
-    io::{self, BufWriter, Write},
+    collections::HashMap,
+    fmt,
+    fs::{create_dir_all, File},
+    io::{self, BufWriter, Stderr, Stdout, Write},
+    path::{Path, PathBuf},
+    sync::mpsc::{channel, Receiver, SendError, Sender},
     thread,
 };
 
-use chrono::prelude::*;
-use chrono::Utc;
-use nautilus_core::datetime::unix_nanos_to_iso8601;
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
+use chrono::{prelude::*, Utc};
+use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -437,14 +433,13 @@ impl Logger {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use tempfile::tempdir;
 
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
-
-    use crate::testing::wait_until;
+    use tempfile::tempdir;
 
     use super::*;
+    use crate::testing::wait_until;
 
     fn create_logger() -> Logger {
         Logger::new(

@@ -15,9 +15,7 @@
 
 //! Defines enumerations for the trading domain model.
 
-use std::ffi::c_char;
-use std::fmt::Debug;
-use std::str::FromStr;
+use std::{ffi::c_char, fmt::Debug, str::FromStr};
 
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;

@@ -13,19 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-use crate::identifiers::symbol::Symbol;
-use crate::identifiers::venue::Venue;
+use crate::identifiers::{symbol::Symbol, venue::Venue};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Default)]

@@ -13,19 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::io;
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
-use pyo3::prelude::*;
-use pyo3::{PyObject, Python};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio::task;
-use tokio_tungstenite::tls::tcp_tls;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::stream::Mode;
-use tokio_tungstenite::MaybeTlsStream;
+use pyo3::{prelude::*, PyObject, Python};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::Mutex,
+    task,
+};
+use tokio_tungstenite::{
+    tls::tcp_tls,
+    tungstenite::{client::IntoClientRequest, stream::Mode},
+    MaybeTlsStream,
+};
 use tracing::debug;
 
 #[pyclass]

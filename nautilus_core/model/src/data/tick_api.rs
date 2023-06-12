@@ -17,15 +17,14 @@ use std::ffi::c_char;
 
 use nautilus_core::{string::str_to_cstr, time::UnixNanos};
 
+use super::{
+    tick::{QuoteTick, TradeTick},
+    Data,
+};
 use crate::{
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},
-};
-
-use super::{
-    tick::{QuoteTick, TradeTick},
-    Data,
 };
 
 #[no_mangle]

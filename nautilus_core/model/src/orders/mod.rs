@@ -17,31 +17,26 @@
 
 pub mod limit;
 
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use thiserror::Error;
 
-use crate::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-    TriggerType,
+use crate::{
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
+    },
+    events::order::{
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
+        OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
+    },
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
+        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    types::{fixed::fixed_i64_to_f64, price::Price, quantity::Quantity},
 };
-use crate::events::order::{
-    OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
-    OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
-    OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
-};
-use crate::identifiers::account_id::AccountId;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::order_list_id::OrderListId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::trader_id::TraderId;
-use crate::identifiers::venue_order_id::VenueOrderId;
-use crate::types::fixed::fixed_i64_to_f64;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
 
 #[derive(Error, Debug)]
 pub enum OrderError {
@@ -528,10 +523,12 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::enums::{OrderSide, OrderStatus, PositionSide};
-    use crate::events::order::{
-        OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderInitializedBuilder,
-        OrderSubmittedBuilder,
+    use crate::{
+        enums::{OrderSide, OrderStatus, PositionSide},
+        events::order::{
+            OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderInitializedBuilder,
+            OrderSubmittedBuilder,
+        },
     };
 
     #[test]

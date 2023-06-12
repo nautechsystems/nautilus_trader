@@ -13,21 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::io;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{io, sync::Arc, time::Duration};
 
-use futures_util::stream::SplitSink;
-use futures_util::{SinkExt, StreamExt};
-use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use pyo3::{PyObject, Python};
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio::task;
-use tokio::time::sleep;
-use tokio_tungstenite::tungstenite::{Error, Message};
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use futures_util::{stream::SplitSink, SinkExt, StreamExt};
+use pyo3::{prelude::*, types::PyBytes, PyObject, Python};
+use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{Error, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 use tracing::debug;
 
 /// WebSocketClient connects to a websocket server to read and send messages.

@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp;
-use std::fmt::{Display, Formatter};
+use std::{
+    cmp,
+    fmt::{Display, Formatter},
+};
 
-use nautilus_core::correctness;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{correctness, time::UnixNanos};
 use pyo3::prelude::*;
 
-use crate::enums::{AggressorSide, PriceType};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::trade_id::TradeId;
-use crate::types::fixed::FIXED_PRECISION;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use crate::{
+    enums::{AggressorSide, PriceType},
+    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
+};
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
@@ -160,12 +160,12 @@ mod tests {
 
     use rstest::rstest;
 
-    use crate::data::tick::{QuoteTick, TradeTick};
-    use crate::enums::{AggressorSide, PriceType};
-    use crate::identifiers::instrument_id::InstrumentId;
-    use crate::identifiers::trade_id::TradeId;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
+    use crate::{
+        data::tick::{QuoteTick, TradeTick},
+        enums::{AggressorSide, PriceType},
+        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        types::{price::Price, quantity::Quantity},
+    };
 
     #[test]
     fn test_quote_tick_to_string() {

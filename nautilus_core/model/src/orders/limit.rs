@@ -15,6 +15,7 @@
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
+use super::Order;
 use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{
@@ -23,8 +24,6 @@ use crate::{
     },
     types::{price::Price, quantity::Quantity},
 };
-
-use super::Order;
 
 pub trait LimitOrder {
     #[must_use]

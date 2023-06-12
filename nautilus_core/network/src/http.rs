@@ -242,13 +242,18 @@ impl HttpClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::convert::Infallible;
-    use std::net::{SocketAddr, TcpListener};
+    use std::{
+        convert::Infallible,
+        net::{SocketAddr, TcpListener},
+    };
 
-    use hyper::service::{make_service_fn, service_fn};
-    use hyper::{Body, Method, Request, Response, Server, StatusCode};
+    use hyper::{
+        service::{make_service_fn, service_fn},
+        Body, Method, Request, Response, Server, StatusCode,
+    };
     use tokio::sync::oneshot;
+
+    use super::*;
 
     async fn handle(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         match (req.method(), req.uri().path()) {

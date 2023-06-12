@@ -15,8 +15,7 @@
 
 use std::ffi::{c_char, CStr, CString};
 
-use pyo3::types::PyString;
-use pyo3::{ffi, FromPyPointer, Python};
+use pyo3::{ffi, types::PyString, FromPyPointer, Python};
 
 /// Returns an owned string from a valid Python object pointer.
 ///

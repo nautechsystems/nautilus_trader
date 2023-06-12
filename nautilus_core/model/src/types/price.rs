@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::str::FromStr;
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
+    str::FromStr,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::parsing::precision_from_str;
+use nautilus_core::{correctness, parsing::precision_from_str};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
-
 use super::fixed::FIXED_SCALAR;
+use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
@@ -288,8 +288,9 @@ pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::str::FromStr;
+
+    use super::*;
 
     #[test]
     fn test_price_new() {
