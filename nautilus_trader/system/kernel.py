@@ -698,33 +698,34 @@ class NautilusKernel:
         self._data_engine.connect()
         self._exec_engine.connect()
 
-        # Await engine connection and initialization
-        self._log.info(
-            f"Awaiting engine connections and initializations "
-            f"({self._config.timeout_connection}s timeout)...",
-            color=LogColor.BLUE,
-        )
-        if not await self._await_engines_connected():
-            self._log.warning(
-                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
-                f"\nStatus"
-                f"\n------"
-                f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
-                f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}",
+        if self._loop is not None:
+            # Await engine connection and initialization
+            self._log.info(
+                f"Awaiting engine connections and initializations "
+                f"({self._config.timeout_connection}s timeout)...",
+                color=LogColor.BLUE,
             )
-            return
+            if not await self._await_engines_connected():
+                self._log.warning(
+                    f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}",
+                )
+                return
 
-        # Await execution state reconciliation
-        self._log.info(
-            f"Awaiting execution state reconciliation "
-            f"({self._config.timeout_reconciliation}s timeout)...",
-            color=LogColor.BLUE,
-        )
-        if not await self._exec_engine.reconcile_state(
-            timeout_secs=self._config.timeout_reconciliation,
-        ):
-            self._log.error("Execution state could not be reconciled.")
-            return
+            # Await execution state reconciliation
+            self._log.info(
+                f"Awaiting execution state reconciliation "
+                f"({self._config.timeout_reconciliation}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._exec_engine.reconcile_state(
+                timeout_secs=self._config.timeout_reconciliation,
+            ):
+                self._log.error("Execution state could not be reconciled.")
+                return
 
         if self._exec_engine.reconciliation:
             self._log.info("State reconciled.", color=LogColor.GREEN)
@@ -735,19 +736,21 @@ class NautilusKernel:
         self._portfolio.initialize_orders()
         self._portfolio.initialize_positions()
 
-        # Await portfolio initialization
-        self._log.info(
-            "Awaiting portfolio initialization " f"({self._config.timeout_portfolio}s timeout)...",
-            color=LogColor.BLUE,
-        )
-        if not await self._await_portfolio_initialized():
-            self._log.warning(
-                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
-                f"\nStatus"
-                f"\n------"
-                f"\nPortfolio.initialized == {self._portfolio.initialized}",
+        if self._loop is not None:
+            # Await portfolio initialization
+            self._log.info(
+                "Awaiting portfolio initialization "
+                f"({self._config.timeout_portfolio}s timeout)...",
+                color=LogColor.BLUE,
             )
-            return
+            if not await self._await_portfolio_initialized():
+                self._log.warning(
+                    f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nPortfolio.initialized == {self._portfolio.initialized}",
+                )
+                return
         self._log.info("Portfolio initialized.", color=LogColor.GREEN)
 
         # Start trader and strategies
