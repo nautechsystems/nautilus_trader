@@ -205,6 +205,7 @@ class SocketClient:
     async def reconnect(self) -> None:
         """
         Reconnect the client to the server.
+
         """
         await self.connect()
         await self.post_reconnection()
@@ -212,9 +213,10 @@ class SocketClient:
     async def disconnect(self) -> None:
         """
         Disconnect the client from the server.
+
         """
         if not self.is_connected:
-            self._log.error("Cannot disconnect websocket, not connected.")
+            self._log.error("Cannot disconnect socket, not connected.")
             return
         assert self._client is not None  # Type checking
 
@@ -238,7 +240,7 @@ class SocketClient:
 
         """
         if not self.is_connected:
-            self._log.error("Cannot send websocket message, not connected.")
+            self._log.error("Cannot send message, not connected.")
             return
         assert self._client is not None  # Type checking
 
