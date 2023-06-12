@@ -53,7 +53,7 @@ pub struct WebSocketClient {
 }
 
 impl WebSocketClient {
-    pub async fn connect(
+    pub async fn connect_url(
         url: &str,
         handler: PyObject,
         heartbeat: Option<u64>,
@@ -121,7 +121,7 @@ impl WebSocketClient {
         })
     }
 
-    pub async fn send(&self, data: Vec<u8>) {
+    pub async fn send_bytes(&self, data: Vec<u8>) {
         let mut write_half = self.write_mutex.lock().await;
         write_half.send(Message::Binary(data)).await.unwrap();
     }
@@ -178,25 +178,21 @@ impl Drop for WebSocketClient {
 #[pymethods]
 impl WebSocketClient {
     #[staticmethod]
-    fn connect_url(
+    fn connect(
         url: String,
         handler: PyObject,
         heartbeat: Option<u64>,
         py: Python<'_>,
     ) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Ok(WebSocketClient::connect(&url, handler, heartbeat)
+            Ok(WebSocketClient::connect_url(&url, handler, heartbeat)
                 .await
                 .unwrap())
         })
     }
 
     /// Send bytes data to the connection.
-    fn send_bytes<'py>(
-        slf: PyRef<'_, Self>,
-        data: Vec<u8>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
+    fn send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let write_half = slf.write_mutex.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             debug!("websocket: Sending message");
@@ -215,7 +211,7 @@ impl WebSocketClient {
     /// #Safety
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
-    fn close<'py>(mut slf: PyRefMut<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    fn disconnect<'py>(mut slf: PyRefMut<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
         debug!("websocket: Closing connection");
 
         if !slf.read_task.is_finished() {
@@ -249,6 +245,7 @@ impl WebSocketClient {
     /// shutdown or will receive a `Close` frame which will finish it. There
     /// might be some delay between the connection being closed and the client
     /// detecting.
+    #[getter]
     fn is_connected(slf: PyRef<'_, Self>) -> bool {
         slf.connection_is_alive()
     }
@@ -338,7 +335,7 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let mut client = WebSocketClient::connect(
+        let mut client = WebSocketClient::connect_url(
             &format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
             None,
@@ -351,7 +348,7 @@ counter = Counter()",
 
         // Send messages that increment the count
         for _ in 0..N {
-            client.send(b"ping".to_vec()).await;
+            client.send_bytes(b"ping".to_vec()).await;
         }
 
         sleep(Duration::from_secs(1)).await;
