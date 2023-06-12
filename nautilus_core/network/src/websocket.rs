@@ -149,8 +149,8 @@ impl WebSocketClient {
         debug!("websocket: Closed connection");
     }
 
-    // Checks if the client is still connected
-    pub fn connection_is_alive(&self) -> bool {
+    /// Checks if the client is still connected.
+    pub fn is_alive(&self) -> bool {
         !self.read_task.is_finished()
     }
 }
@@ -242,7 +242,7 @@ impl WebSocketClient {
     /// detecting.
     #[getter]
     fn is_connected(slf: PyRef<'_, Self>) -> bool {
-        slf.connection_is_alive()
+        slf.is_alive()
     }
 }
 
@@ -339,7 +339,7 @@ counter = Counter()",
         .unwrap();
 
         // Check that websocket read task is running
-        assert!(client.connection_is_alive());
+        assert!(client.is_alive());
 
         // Send messages that increment the count
         for _ in 0..N {

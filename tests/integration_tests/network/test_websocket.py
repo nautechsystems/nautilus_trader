@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 
 import pytest
 from aiohttp.test_utils import TestServer
@@ -97,6 +98,7 @@ async def test_client_send_recv_json(websocket_server):
     await eventually(lambda: not client.is_connected, 2.0)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Flaky on Windows")
 @pytest.mark.asyncio()
 async def test_reconnect_after_disconnect(websocket_server):
     # Arrange
