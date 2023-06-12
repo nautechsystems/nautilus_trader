@@ -247,7 +247,7 @@ cdef class Cache(CacheFacade):
         for order in self._orders.values():
             if order.contingency_type == ContingencyType.OTO:
                 for client_order_id in order.linked_order_ids or []:
-                    contingent_order = self.cache.order(client_order_id)
+                    contingent_order = self._orders.get(client_order_id)
                     if contingent_order is None:
                         self._log.error(f"Contingency order {repr(client_order_id)} not found.")
                         continue
