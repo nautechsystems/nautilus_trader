@@ -104,7 +104,10 @@ class TestTradingNodeConfiguration:
         )
 
         # Act
-        node = TradingNode(config=config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
 
         # Assert
         assert node is not None
@@ -115,7 +118,10 @@ class TestTradingNodeConfiguration:
             logging=LoggingConfig(bypass_logging=True),
             cache_database=CacheDatabaseConfig(type="in-memory"),
         )
-        node = TradingNode(config=config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
 
         # Assert
         assert node is not None
@@ -123,7 +129,10 @@ class TestTradingNodeConfiguration:
     def test_node_config_from_raw(self):
         # Arrange, Act
         config = TradingNodeConfig.parse(RAW_CONFIG)
-        node = TradingNode(config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
 
         # Assert
         assert node.trader.id.value == "Test-111"
@@ -135,7 +144,10 @@ class TestTradingNodeConfiguration:
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
-        node = TradingNode(config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
         node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
         node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
         node.build()
@@ -157,7 +169,10 @@ class TestTradingNodeConfiguration:
             timeout_disconnection=5.0,
             timeout_post_stop=2.0,
         )
-        node = TradingNode(config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
         node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
         node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
 
@@ -189,7 +204,10 @@ class TestTradingNodeConfiguration:
         config = TradingNodeConfig.parse(RAW_CONFIG)
 
         # Act
-        node = TradingNode(config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
         assert len(node.kernel.instance_id.value) == 36
 
 
@@ -197,13 +215,17 @@ class TestTradingNodeOperation:
     def test_get_event_loop_returns_a_loop(self):
         # Arrange
         config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-        node = TradingNode(config=config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
 
         # Act
         loop = node.get_event_loop()
 
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
+        assert loop == node.kernel.loop
 
     def test_build_called_twice_raises_runtime_error(self):
         # Arrange, # Act
@@ -226,7 +248,10 @@ class TestTradingNodeOperation:
                     "BINANCE": BinanceExecClientConfig(),
                 },
             )
-            node = TradingNode(config=config)
+            node = TradingNode(
+                config=config,
+                loop=asyncio.get_event_loop(),
+            )
             await node.run_async()
 
     @pytest.mark.asyncio()
@@ -246,7 +271,10 @@ class TestTradingNodeOperation:
             timeout_disconnection=1.0,  # Short timeout for testing
             timeout_post_stop=1.0,  # Short timeout for testing
         )
-        node = TradingNode(config=config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
 
         node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
         node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
@@ -279,7 +307,10 @@ class TestTradingNodeOperation:
             timeout_disconnection=1.0,  # Short timeout for testing
             timeout_post_stop=1.0,  # Short timeout for testing
         )
-        node = TradingNode(config=config)
+        node = TradingNode(
+            config=config,
+            loop=asyncio.get_event_loop(),
+        )
 
         node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
         node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
