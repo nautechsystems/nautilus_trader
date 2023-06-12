@@ -68,9 +68,9 @@ async def closing_socket_server():
         yield addr
 
 
-@pytest_asyncio.fixture()
+@pytest_asyncio.fixture(name="websocket_server")
 @pytest.mark.asyncio()
-async def websocket_server(event_loop):
+async def fixture_websocket_server(event_loop):
     async def handler(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
