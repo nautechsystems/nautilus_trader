@@ -28,6 +28,14 @@ build: nautilus_trader
 build-debug: nautilus_trader
 	BUILD_MODE=debug poetry run python build.py
 
+.PHONY: build-wheel
+build-wheel: nautilus_trader
+	BUILD_MODE=release poetry build --format wheel
+
+.PHONY: build-wheel-debug
+build-wheel-debug: nautilus_trader
+	BUILD_MODE=debug poetry build --format wheel
+
 .PHONY: clean
 clean:
 	git clean -fxd
