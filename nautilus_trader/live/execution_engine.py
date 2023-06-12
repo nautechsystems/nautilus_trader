@@ -118,7 +118,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._evt_queue: Queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.reconciliation: bool = config.reconciliation
+        self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
@@ -136,6 +136,18 @@ class LiveExecutionEngine(ExecutionEngine):
             endpoint="ExecEngine.reconcile_mass_status",
             handler=self.reconcile_mass_status,
         )
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        Return whether the reconciliation process will be run on start.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
 
     def connect(self) -> None:
         """
