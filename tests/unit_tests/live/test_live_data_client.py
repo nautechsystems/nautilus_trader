@@ -41,6 +41,8 @@ class TestLiveDataClientTests:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
+        asyncio.set_event_loop(self.loop)
+
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -83,6 +85,7 @@ class TestLiveMarketDataClientTests:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
+        asyncio.set_event_loop(self.loop)
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
