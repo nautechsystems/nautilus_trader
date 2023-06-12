@@ -14,15 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from collections.abc import Collection
 from typing import Callable, TypeVar
 
 
 T = TypeVar("T")
-
-
-def sets_are_equal(set1: Collection[T], set2: Collection[T]) -> bool:
-    return len(set1) == len(set2) and all(x in set1 for x in set2)
 
 
 async def eventually(condition: Callable, timeout: float = 2.0) -> None:
