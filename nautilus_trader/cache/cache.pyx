@@ -243,6 +243,7 @@ cdef class Cache(CacheFacade):
         # Assign position IDs to contingent orders
         cdef Order order
         cdef Order contingent_order
+        cdef ClientOrderId client_order_id
         for order in self._orders.values():
             if order.contingency_type == ContingencyType.OTO:
                 for client_order_id in order.linked_order_ids or []:
