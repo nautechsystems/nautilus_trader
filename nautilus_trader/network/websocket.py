@@ -13,12 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Optional
+import asyncio
+from typing import Any, Callable, Optional
+
+import msgspec
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient as RustWebSocketClient
+from nautilus_trader.network.error import MaxRetriesExceeded
 
 
 class WebSocketClient:
@@ -59,11 +63,75 @@ class WebSocketClient:
         self._clock: LiveClock = clock
         self._log: LoggerAdapter = LoggerAdapter(name or type(self).__name__, logger=logger)
         self._url: str = url
+        self._last_url: Optional[str] = None
 
-        self._handler = handler
-        self._heartbeat = heartbeat
-        self._max_retries = max_retries
+        self._handler: Callable[[bytes], None] = handler
+        self._heartbeat: Optional[int] = heartbeat
+        self._max_retries: int = max_retries
+        self._check_interval: float = 1.0
+        self._check_task: Optional[asyncio.Task] = None
         self._client: Optional[WebSocketClient] = None
+
+        self._connection_retry_count = 0
+
+    async def post_connection(self) -> None:
+        """
+        Actions to be performed post connection.
+
+        """
+        # Override to implement additional connection related behaviour
+        # (sending other messages etc.).
+
+    async def post_reconnection(self) -> None:
+        """
+        Actions to be performed post reconnection.
+
+        """
+        # Override to implement additional reconnection related behaviour
+        # (resubscribing etc.).
+
+    async def post_disconnection(self) -> None:
+        """
+        Actions to be performed post disconnection.
+
+        """
+        # Override to implement additional disconnection related behaviour
+        # (canceling ping tasks etc.).
+
+    async def _check_connection(self):
+        self._log.info(
+            f"Scheduled auto-reconnects (max_retries={self._max_retries} with exponential backoff).",
+        )
+        try:
+            while True:
+                await asyncio.sleep(self._check_interval)
+                if self.is_connected:
+                    continue
+
+                self._log.warning(
+                    f"Reconnecting {self._connection_retry_count=}, {self._max_retries=} ...",
+                )
+                if self._max_retries == 0:
+                    raise MaxRetriesExceeded("disconnected with no retries configured")
+                if self._connection_retry_count > self._max_retries:
+                    raise MaxRetriesExceeded(f"max retries of {self._max_retries} exceeded.")
+                await self._reconnect_backoff()
+                self._connection_retry_count += 1
+                self._log.debug(
+                    f"Attempting reconnect ({self._connection_retry_count}/{self._max_retries}).",
+                )
+
+                await self.reconnect()
+                self._connection_retry_count = 0
+        except asyncio.CancelledError:
+            self._log.debug("`_check_connection` task was canceled.")
+
+    async def _reconnect_backoff(self) -> None:
+        if self._connection_retry_count == 0:
+            return  # Immediately attempt first reconnect
+        backoff = 1.5**self._connection_retry_count
+        self._log.debug(f"Exponential backoff: sleeping for {backoff}")
+        await asyncio.sleep(backoff)
 
     @property
     def url(self) -> Optional[str]:
@@ -100,6 +168,7 @@ class WebSocketClient:
 
         """
         url = url or self._url
+        self._last_url = url
         self._log.info(f"Connecting to {url}")
 
         # TODO: Raise exception on connection failure and log error
@@ -110,6 +179,16 @@ class WebSocketClient:
         )
 
         self._log.info("Connected.")
+        await self.post_connection()
+        if self._check_task is None:
+            self._check_task = asyncio.create_task(self._check_connection())
+
+    async def reconnect(self) -> None:
+        """
+        Reconnect the client to the server.
+        """
+        await self.connect(self._last_url)
+        await self.post_reconnection()
 
     async def disconnect(self) -> None:
         """
@@ -120,9 +199,14 @@ class WebSocketClient:
             return
         assert self._client is not None  # Type checking
 
-        self._log.info("Closing...")
+        self._log.info("Disconnecting...")
+        if self._check_task is not None:
+            self._check_task.cancel()
+            self._check_task = None
+
         await self._client.disconnect()
-        self._log.info("Closed.")
+        self._log.info("Disconnected.")
+        await self.post_disconnection()
 
     async def send(self, data: bytes) -> None:
         """
@@ -140,3 +224,20 @@ class WebSocketClient:
         assert self._client is not None  # Type checking
 
         await self._client.send(data)
+
+    async def send_json(self, message: dict[str, Any]) -> None:
+        """
+        Send the given `message` as JSON format bytes to the server.
+
+        Parameters
+        ----------
+        message : dict[str, Any]
+            The message to send.
+
+        """
+        if not self.is_connected:
+            self._log.error("Cannot send websocket message, not connected.")
+            return
+        assert self._client is not None  # Type checking
+
+        await self._client.send(msgspec.json.encode(message))
