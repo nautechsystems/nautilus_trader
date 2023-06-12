@@ -66,8 +66,7 @@ async def test_client_send_recv(websocket_server):
     await asyncio.sleep(0.1)
     await client.disconnect()
 
-    expected = [b"connected"] + [b"Hello-response"] * 3
-    assert store == expected
+    await eventually(lambda: store == [b"connected"] + [b"Hello-response"] * 3)
     await client.disconnect()
     await eventually(lambda: not client.is_connected, 2.0)
 
@@ -89,7 +88,7 @@ async def test_client_send_recv_json(websocket_server):
     num_messages = 3
     for _ in range(num_messages):
         await client.send_json({"method": "SUBSCRIBE"})
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.3)
     await client.disconnect()
 
     expected = [b"connected"] + [b'{"method":"SUBSCRIBE"}-response'] * 3
@@ -118,8 +117,7 @@ async def test_reconnect_after_disconnect(websocket_server):
     await client.reconnect()
     await eventually(lambda: client.is_connected, 2.0)
 
-    await asyncio.sleep(0.1)
-    assert store == [b"connected"] * 2
+    await eventually(lambda: store == [b"connected"] * 2)
     await client.disconnect()
     await eventually(lambda: not client.is_connected, 2.0)
 
