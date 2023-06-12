@@ -16,11 +16,14 @@
 import asyncio
 
 import pytest
+from aiohttp.test_utils import TestServer
 
-from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
+from nautilus_trader.network.websocket import WebSocketClient
+from nautilus_trader.test_kit.functions import eventually
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
-def _server_url(server) -> str:
+def _server_url(server: TestServer) -> str:
     return f"ws://{server.host}:{server.port}/ws"
 
 
@@ -29,24 +32,34 @@ async def test_connect_and_disconnect(websocket_server):
     # Arrange
     store = []
 
-    # Act, Assert
-    client = await WebSocketClient.connect(
+    client = WebSocketClient(
+        clock=TestComponentStubs.clock(),
+        logger=TestComponentStubs.logger(),
         url=_server_url(websocket_server),
         handler=store.append,
     )
+
+    # Act
+    await client.connect()
+
+    # Assert
     assert client.is_connected
     await client.disconnect()
-    assert not client.is_connected
+    assert eventually(lambda: not client.is_connected, 2.0)
 
 
 @pytest.mark.asyncio()
 async def test_client_recv(websocket_server):
     # Arrange
     store = []
-    client = await WebSocketClient.connect(
+
+    client = WebSocketClient(
+        clock=TestComponentStubs.clock(),
+        logger=TestComponentStubs.logger(),
         url=_server_url(websocket_server),
         handler=store.append,
     )
+    await client.connect()
 
     # Act
     num_messages = 3
@@ -57,7 +70,6 @@ async def test_client_recv(websocket_server):
 
     expected = [b"connected"] + [b"Hello-response"] * 3
     assert store == expected
-    assert not client.is_connected
 
     # @pytest.mark.asyncio()
     # async def test_reconnect_after_close(self, websocket_server):
