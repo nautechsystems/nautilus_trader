@@ -50,3 +50,8 @@ class MarketDataKind(Enum):
     ALL = "ALL"
     BEST = "BEST"
     DISPLAY = "DISPLAY"
+
+
+class MethodType(Enum):
+    GET = "GET"
+    POST = "POST"

@@ -18,6 +18,13 @@ from functools import lru_cache
 from typing import Optional, Union
 
 import pandas as pd
+from betfair_parser.spec.betting.enums import PersistenceType
+from betfair_parser.spec.betting.orders import PlaceInstruction
+from betfair_parser.spec.betting.orders import ReplaceInstruction
+from betfair_parser.spec.betting.orders import _PlaceOrdersParams
+from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
+from betfair_parser.spec.common import CustomerOrderRef
+from betfair_parser.spec.common import OrderType
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
@@ -42,7 +49,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import order_type_from_str
-from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -59,7 +66,10 @@ from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
 
 
-def make_custom_order_ref(client_order_id: ClientOrderId, strategy_id: StrategyId) -> str:
+def make_custom_order_ref(
+    client_order_id: ClientOrderId,
+    strategy_id: StrategyId,
+) -> CustomerOrderRef:
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
@@ -69,17 +79,21 @@ def _make_limit_order(order: LimitOrder):
 
     if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
-            "orderType": "LIMIT_ON_CLOSE",
-            "limitOnCloseOrder": {"price": price, "liability": size},
+            "order_type": OrderType.LIMIT_ON_CLOSE,
+            "limit_on_close_order": {"price": price, "liability": size},
         }
     elif order.time_in_force in (TimeInForce.GTC, TimeInForce.IOC, TimeInForce.FOK):
         parsed = {
-            "orderType": "LIMIT",
-            "limitOrder": {"price": price, "size": size, "persistenceType": "PERSIST"},
+            "order_type": OrderType.LIMIT,
+            "limit_order": {
+                "price": price,
+                "size": size,
+                "persistence_type": PersistenceType.PERSIST,
+            },
         }
         if order.time_in_force in N2B_TIME_IN_FORCE:
-            parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]  # type: ignore
-            parsed["limitOrder"]["persistenceType"] = "LAPSE"  # type: ignore
+            parsed["limit_order"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]
+            parsed["limit_order"]["persistenceType"] = PersistenceType.LAPSE
         return parsed
     else:
         raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
@@ -88,8 +102,8 @@ def _make_limit_order(order: LimitOrder):
 def _make_market_order(order: MarketOrder):
     if order.time_in_force == TimeInForce.AT_THE_OPEN:
         return {
-            "orderType": "MARKET_ON_CLOSE",
-            "marketOnCloseOrder": {
+            "order_type": OrderType.MARKET_ON_CLOSE,
+            "market_on_close_order": {
                 "liability": str(order.quantity.as_double()),
             },
         }
@@ -110,7 +124,7 @@ def _make_market_order(order: MarketOrder):
         limit_order = _make_limit_order(order=limit_order)
         # We transform the size of a limit order inside `_make_limit_order` but for a market order we want to just use
         # the size as is.
-        limit_order["limitOrder"]["size"] = order.quantity.as_double()
+        limit_order["limit_order"]["size"] = order.quantity.as_double()
         return limit_order
     else:
         raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
@@ -125,54 +139,58 @@ def make_order(order: Union[LimitOrder, MarketOrder]):
         raise TypeError(f"Unknown order type: {type(order)}")
 
 
-def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument) -> dict:
+def order_submit_to_place_order_params(
+    command: SubmitOrder,
+    instrument: BettingInstrument,
+) -> _PlaceOrdersParams:
     """
     Convert a SubmitOrder command into the data required by BetfairClient.
     """
     order = make_order(command.order)
 
-    place_order = {
-        "market_id": instrument.market_id,
-        # Used to de-dupe orders on betfair server side
-        "customer_ref": command.id.value.replace("-", ""),
-        "customer_strategy_ref": command.strategy_id.value[:15],
-        "instructions": [
-            {
+    params = _PlaceOrdersParams(
+        market_id=instrument.market_id,
+        customer_ref=command.id.value.replace(
+            "-",
+            "",
+        ),  # Used to de-dupe orders on betfair server side
+        customer_strategy_ref=command.strategy_id.value[:15],
+        instructions=[
+            PlaceInstruction(
                 **order,
-                "selectionId": instrument.selection_id,
-                "side": N2B_SIDE[command.order.side],
-                "handicap": instrument.selection_handicap,
+                selection_id=instrument.selection_id,
+                side=N2B_SIDE[command.order.side],
+                handicap=instrument.selection_handicap,
                 # Remove the strategy name from customer_order_ref; it has a limited size and don't control what
                 # length the strategy might be or what characters users might append
-                "customerOrderRef": make_custom_order_ref(
+                customer_order_ref=make_custom_order_ref(
                     client_order_id=command.order.client_order_id,
                     strategy_id=command.strategy_id,
                 ),
-            },
+            ),
         ],
-    }
-    return place_order
+    )
+    return params
 
 
-def order_update_to_betfair(
+def order_update_to_replace_order_params(
     command: ModifyOrder,
     venue_order_id: VenueOrderId,
-    side: OrderSide,
     instrument: BettingInstrument,
-):
+) -> _ReplaceOrdersParams:
     """
     Convert an ModifyOrder command into the data required by BetfairClient.
     """
-    return {
-        "market_id": instrument.market_id,
-        "customer_ref": command.id.value.replace("-", ""),
-        "instructions": [
-            {
-                "betId": venue_order_id.value,
-                "newPrice": command.price.as_double(),
-            },
+    return _ReplaceOrdersParams(
+        market_id=instrument.market_id,
+        customer_ref=command.id.value.replace("-", ""),
+        instructions=[
+            ReplaceInstruction(
+                bet_id=venue_order_id.value,
+                new_price=command.price.as_double(),
+            ),
         ],
-    }
+    )
 
 
 def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):

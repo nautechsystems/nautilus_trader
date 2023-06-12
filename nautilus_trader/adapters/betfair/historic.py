@@ -17,7 +17,7 @@ from typing import Optional
 
 import msgspec
 from betfair_parser.spec.streaming import MCM
-from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -55,7 +55,7 @@ def make_betfair_reader(
     parser = BetfairParser()
 
     def parse_line(line):
-        yield from parser.parse(STREAM_DECODER.decode(line))
+        yield from parser.parse(stream_decode.decode(line))
 
     return TextReader(
         # Use the standard `on_market_update` betfair parser that the adapter uses

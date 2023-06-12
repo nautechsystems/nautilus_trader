@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
-from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -34,14 +34,14 @@ from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import Ticker
-from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClose
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -49,7 +49,6 @@ from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -59,7 +58,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 INSTRUMENTS = []
-pytestmark = pytest.mark.skip(reason="Repair order book parsing")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -77,7 +75,7 @@ def instrument_list(mock_load_markets_metadata):
     # Load instruments
     market_ids = BetfairDataProvider.market_ids()
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
-    mock_load_markets_metadata.return_value = [c for c in catalog if c.marketId in market_ids]
+    mock_load_markets_metadata.return_value = [c for c in catalog if c.market_id in market_ids]
     t = loop.create_task(
         instrument_provider.load_all_async(market_filter={"market_id": market_ids}),
     )
@@ -89,14 +87,17 @@ def instrument_list(mock_load_markets_metadata):
 
 
 @pytest.mark.asyncio()
+@pytest.mark.skip(reason="busted mocks")
 @patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
 @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
-@patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
+@patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
 async def test_connect(_1, _2, _3, data_client, instrument):
-    # Arrange, Act
+    # Arrange
+
+    # Act
     data_client.connect()
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)  # _connect uses multiple awaits, multiple sleeps required.
+    for _ in range(5):
+        await asyncio.sleep(0)  # _connect uses multiple awaits, multiple sleeps required.
 
     # Assert
     assert data_client.is_connected
@@ -151,10 +152,11 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
     orderbook_calls = [
         call.args[0] for call in mock_calls if isinstance(call.args[0], OrderBookDeltas)
     ]
-    result = {
-        float(order[0]) for ob_snap in orderbook_calls for order in ob_snap.bids + ob_snap.asks
+    set_result = {
+        delta.order.price.as_double() for deltas in orderbook_calls for delta in deltas.deltas
     }
-    expected = {
+    set_expected = {
+        0.0,
         1.8,
         2.72,
         2.54,
@@ -166,7 +168,7 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
         46.0,
         980.0,
     }
-    assert result == expected
+    assert set_result == set_expected
 
 
 def test_market_sub_image_no_market_def(data_client, mock_data_engine_process):
@@ -183,9 +185,10 @@ def test_market_sub_image_no_market_def(data_client, mock_data_engine_process):
     expected = Counter(
         {
             "InstrumentStatusUpdate": 270,
-            "OrderBookDeltas": 274,
+            "OrderBookSnapshot": 270,
             "BetfairTicker": 170,
             "InstrumentClose": 22,
+            "OrderBookDeltas": 4,
         },
     )
     assert result == expected
@@ -233,7 +236,9 @@ def test_market_update_md(data_client, mock_data_engine_process):
 def test_market_update_live_image(data_client, mock_data_engine_process):
     data_client.on_market_update(BetfairStreaming.mcm_live_IMAGE())
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = ["OrderBookDeltas"] + ["TradeTick"] * 13 + ["OrderBookDeltas"] + ["TradeTick"] * 17
+    expected = (
+        ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
+    )
     assert result == expected
 
 
@@ -249,8 +254,8 @@ def test_market_bsp(data_client, mock_data_engine_process):
     # Arrange
     update = BetfairStreaming.mcm_BSP()
     provider = data_client.instrument_provider
-    for mc in STREAM_DECODER.decode(update[0]).mc:
-        market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
+    for mc in stream_decode(update[0]).mc:
+        market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
         instruments = make_instruments(market=market_def, currency="GBP")
         provider.add_bulk(instruments)
 
@@ -264,9 +269,10 @@ def test_market_bsp(data_client, mock_data_engine_process):
     expected = {
         "TradeTick": 95,
         "InstrumentStatusUpdate": 9,
+        "OrderBookSnapshot": 8,
         "BetfairTicker": 8,
         "GenericData": 8,
-        "OrderBookDeltas": 10,
+        "OrderBookDeltas": 2,
         "InstrumentClose": 1,
     }
     assert result == expected
@@ -291,23 +297,28 @@ def test_orderbook_repr(data_client, mock_data_engine_process):
     # Assert
     ob_snap = mock_data_engine_process.call_args_list[14][0][0]
     ob = create_betfair_order_book(InstrumentId(Symbol("1"), BETFAIR_VENUE))
-    ob.apply(ob_snap)
+    ob.apply_snapshot(ob_snap)
     assert ob.best_ask_price() == 1.71
     assert ob.best_bid_price() == 1.70
 
 
 def test_orderbook_updates(data_client):
     # Arrange
-    order_books = {}
+    order_books: dict[InstrumentId, OrderBook] = {}
     parser = BetfairParser()
 
     # Act
     for raw_update in BetfairStreaming.market_updates():
-        line = STREAM_DECODER.decode(raw_update)
+        line = stream_decode(raw_update)
         for update in parser.parse(mcm=line):
             if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                 continue
-            if isinstance(update, OrderBookDeltas):
+            if isinstance(update, OrderBookDeltas) and update.is_snapshot:
+                order_books[update.instrument_id] = create_betfair_order_book(
+                    instrument_id=update.instrument_id,
+                )
+                order_books[update.instrument_id].apply_snapshot(update)
+            elif isinstance(update, OrderBookDeltas):
                 order_books[update.instrument_id].apply_deltas(update)
             elif isinstance(update, TradeTick):
                 pass
@@ -519,10 +530,8 @@ def test_bsp_deltas_apply(data_client, instrument):
     book.apply(deltas)
 
     # Assert
-    expected_ask = Price(0.001, 7)
-    expected_ask.add(BookOrder(0.001, 55.81, OrderSide.SELL, "0.00100"))
-    assert book.best_ask_price() == expected_ask
+    expected_ask = BookOrder(0.001, 55.81, OrderSide.SELL, "0.00100")
+    assert book.best_ask_level() == expected_ask
 
-    expected_bid = Price(0.990099, 7)
-    expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
-    assert book.best_bid_price() == expected_bid
+    expected_bid = BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010")
+    assert book.best_bid_level() == expected_bid

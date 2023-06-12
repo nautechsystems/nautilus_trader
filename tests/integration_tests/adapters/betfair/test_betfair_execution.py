@@ -22,11 +22,13 @@ from unittest.mock import patch
 import msgspec
 import pytest
 from betfair_parser.spec.streaming import OCM
-from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming import stream_decode
 from betfair_parser.spec.streaming.ocm import MatchedOrder
 
+from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
+from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -37,13 +39,13 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCanceled
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderPendingUpdate
-from nautilus_trader.model.events import OrderRejected
-from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderPendingUpdate
+from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -73,7 +75,7 @@ async def _setup_order_state(
     Ready the engine to test a message from betfair, setting orders into the correct state
     """
     if isinstance(order_change_message, bytes):
-        order_change_message = STREAM_DECODER.decode(order_change_message)
+        order_change_message = stream_decode(order_change_message)
     for oc in order_change_message.oc:
         for orc in oc.orc:
             for order_update in orc.uo:
@@ -219,9 +221,9 @@ def test_order(instrument, strategy_id):
 
 
 @pytest.mark.asyncio()
-async def test_submit_order_success(betfair_client, strategy, test_order):
+async def test_submit_order_success(exec_client: BetfairDataClient, strategy, test_order):
     # Arrange
-    mock_betfair_request(betfair_client, BetfairResponses.betting_place_order_success())
+    mock_betfair_request(exec_client._client, BetfairResponses.betting_place_order_success())
 
     # Act
     strategy.submit_order(test_order)
@@ -235,9 +237,14 @@ async def test_submit_order_success(betfair_client, strategy, test_order):
 
 
 @pytest.mark.asyncio()
-async def test_submit_order_error(betfair_client, strategy, test_order, messages):
+async def test_submit_order_error(
+    exec_client: BetfairExecutionClient,
+    strategy,
+    test_order,
+    messages,
+):
     # Arrange
-    mock_betfair_request(betfair_client, BetfairResponses.betting_place_order_error())
+    mock_betfair_request(exec_client._client, BetfairResponses.betting_place_order_error())
 
     # Act
     strategy.submit_order(test_order)
@@ -247,12 +254,13 @@ async def test_submit_order_error(betfair_client, strategy, test_order, messages
     _, submitted, rejected = test_order.events
     assert isinstance(submitted, OrderSubmitted)
     assert isinstance(rejected, OrderRejected)
-    assert rejected.reason == "PERMISSION_DENIED: ERROR_IN_ORDER"
+    expecter_error = "PERMISSION_DENIED (Business rules do not allow order to be placed. You are either attempting to place the order using a Delayed Application Key or from a restricted jurisdiction (i.e. USA))"  # noqa
+    assert rejected.reason == expecter_error
 
 
 @pytest.mark.asyncio()
 async def test_modify_order_success(
-    betfair_client,
+    exec_client: BetfairDataClient,
     strategy,
     venue_order_id,
     accept_order,
@@ -260,7 +268,7 @@ async def test_modify_order_success(
     events,
 ):
     # Arrange
-    mock_betfair_request(betfair_client, BetfairResponses.betting_replace_orders_success())
+    mock_betfair_request(exec_client._client, BetfairResponses.betting_replace_orders_success())
     await accept_order(test_order, venue_order_id=venue_order_id)
 
     # Act
@@ -275,7 +283,11 @@ async def test_modify_order_success(
 
 
 @pytest.mark.asyncio()
-async def test_modify_order_error_order_doesnt_exist(betfair_client, exec_client, test_order):
+async def test_modify_order_error_order_doesnt_exist(
+    exec_engine: BetfairDataClient,
+    exec_client,
+    test_order,
+):
     # Arrange
     command = TestCommandStubs.modify_order_command(
         order=test_order,
@@ -300,7 +312,7 @@ async def test_modify_order_error_order_doesnt_exist(betfair_client, exec_client
 
 @pytest.mark.asyncio()
 async def test_modify_order_error_no_venue_id(
-    betfair_client,
+    betfair_client: BetfairHttpClient,
     exec_client,
     strategy_id,
     submit_order,
@@ -331,7 +343,7 @@ async def test_modify_order_error_no_venue_id(
 
 @pytest.mark.asyncio()
 async def test_cancel_order_success(
-    betfair_client,
+    betfair_client: BetfairHttpClient,
     exec_client,
     accept_order,
     test_order,
@@ -365,7 +377,7 @@ async def test_cancel_order_success(
 
 @pytest.mark.asyncio()
 async def test_cancel_order_fail(
-    betfair_client,
+    betfair_client: BetfairHttpClient,
     exec_client,
     venue_order_id,
     strategy_id,
@@ -444,7 +456,7 @@ async def test_check_account_currency(exec_client):
 async def test_order_stream_full_image(exec_client, setup_order_state, events):
     # Arrange
     raw = BetfairStreaming.ocm_FULL_IMAGE()
-    ocm = STREAM_DECODER.decode(raw)
+    ocm = stream_decode(raw)
     await setup_order_state(ocm, include_fills=True)
     exec_client._check_order_update = MagicMock()
 
@@ -719,7 +731,7 @@ async def test_betfair_order_cancelled_no_timestamp(
     cancel_events,
 ):
     # Arrange
-    update = STREAM_DECODER.decode(BetfairStreaming.ocm_error_fill())
+    update = stream_decode(BetfairStreaming.ocm_error_fill())
     await setup_order_state(update)
     clock.set_time(1)
 

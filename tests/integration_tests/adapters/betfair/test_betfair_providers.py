@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 
 import msgspec
 import pytest
@@ -35,9 +36,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-pytestmark = pytest.mark.skip(reason="Repair order book parsing")
-
-
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBetfairInstrumentProvider:
     def setup(self):
         # Fixture Setup
@@ -78,7 +77,7 @@ class TestBetfairInstrumentProvider:
             for m in parse_market_catalog(
                 BetfairResponses.betting_list_market_catalogue()["result"],
             )
-            if m.event_type.name == "Basketball"
+            if m.eventType.name == "Basketball"
         ]
 
         # Act
@@ -116,7 +115,7 @@ class TestBetfairInstrumentProvider:
         kw = {
             "market_id": "1.180678317",
             "selection_id": "11313157",
-            "handicap": 0.0,
+            "handicap": "0.0",
         }
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument.market_id == "1.180678317"
@@ -136,8 +135,8 @@ class TestBetfairInstrumentProvider:
         update = msgspec.json.decode(raw, type=MCM)
 
         mc: MarketChange = update.mc[0]
-        market_def = mc.market_definition
-        market_def = msgspec.structs.replace(market_def, market_id=mc.id)
+        market_def = mc.marketDefinition
+        market_def = msgspec.structs.replace(market_def, marketId=mc.id)
         instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 

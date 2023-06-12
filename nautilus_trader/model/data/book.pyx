@@ -16,8 +16,6 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-import uuid
-
 import msgspec
 
 from nautilus_trader.core.correctness cimport Condition
@@ -36,12 +34,9 @@ from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport book_action_from_str
 from nautilus_trader.model.enums_c cimport book_action_to_str
-from nautilus_trader.model.enums_c cimport book_type_from_str
-from nautilus_trader.model.enums_c cimport book_type_to_str
 from nautilus_trader.model.enums_c cimport order_side_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.objects cimport Price
@@ -226,7 +221,7 @@ cdef class OrderBookDelta(Data):
         The instrument ID for the book.
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
-    order : Order
+    order : BookOrder
         The order to apply.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.

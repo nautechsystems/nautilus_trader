@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
 from enum import Enum
 from typing import Optional
 
@@ -22,18 +21,13 @@ import pyarrow as pa
 # fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.serialization.arrow.implementations.order_book import deserialize as deserialize_orderbook
-from nautilus_trader.serialization.arrow.implementations.order_book import serialize as serialize_orderbook
-from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
-from nautilus_trader.serialization.arrow.serializer import register_parquet
-from nautilus_trader.serialization.base import register_serializable_object
 
 
 # fmt: on
@@ -204,30 +198,30 @@ class BetfairStartingPrice(Data):
 
 
 # Register serialization/parquet BetfairTicker
-register_serializable_object(BetfairTicker, BetfairTicker.to_dict, BetfairTicker.from_dict)
-register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
-
-# Register serialization/parquet BetfairStartingPrice
-register_serializable_object(
-    BetfairStartingPrice,
-    BetfairStartingPrice.to_dict,
-    BetfairStartingPrice.from_dict,
-)
-register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
+# register_serializable_object(BetfairTicker, BetfairTicker.to_dict, BetfairTicker.from_dict)
+# register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
+#
+# # Register serialization/parquet BetfairStartingPrice
+# register_serializable_object(
+#     BetfairStartingPrice,
+#     BetfairStartingPrice.to_dict,
+#     BetfairStartingPrice.from_dict,
+# )
+# register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
 
 # Register serialization/parquet BSPOrderBookDeltas
-BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDelta])
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
-
-register_serializable_object(
-    BSPOrderBookDeltas,
-    BSPOrderBookDeltas.to_dict,
-    BSPOrderBookDeltas.from_dict,
-)
-register_parquet(
-    cls=BSPOrderBookDeltas,
-    serializer=serialize_orderbook,
-    deserializer=deserialize_orderbook,
-    schema=BSP_ORDERBOOK_SCHEMA,
-    chunk=True,
-)
+# BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDelta])
+# BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
+#
+# register_serializable_object(
+#     BSPOrderBookDeltas,
+#     BSPOrderBookDeltas.to_dict,
+#     BSPOrderBookDeltas.from_dict,
+# )
+# register_parquet(
+#     cls=BSPOrderBookDeltas,
+#     serializer=serialize_orderbook,
+#     deserializer=deserialize_orderbook,
+#     schema=BSP_ORDERBOOK_SCHEMA,
+#     chunk=True,
+# )

@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
@@ -77,7 +77,7 @@ class TestBetfairFactory:
             base_currency="AUD",
         )
 
-        with patch.object(BetfairClient, "ssl_context", return_value=True):
+        with patch.object(BetfairHttpClient, "ssl_context", return_value=True):
             data_client = BetfairLiveDataClientFactory.create(
                 loop=asyncio.get_event_loop(),
                 name=BETFAIR_VENUE.value,

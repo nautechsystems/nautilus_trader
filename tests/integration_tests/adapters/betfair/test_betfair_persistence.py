@@ -12,9 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import fsspec
-import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -25,10 +23,7 @@ from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
-
-
-pytestmark = pytest.mark.skip(reason="Repair order book parsing")
+from tests.integration_tests.adapters.betfair.test_kit import RESOURCES_PATH
 
 
 class TestBetfairPersistence:
@@ -102,7 +97,7 @@ class TestBetfairPersistence:
     def test_bsp_deltas(self):
         # Arrange
         rf = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA_DIR}/betfair/1.206064380.bz2", compression="infer"),
+            open_file=fsspec.open(f"{RESOURCES_PATH}/1.206064380.bz2", compression="infer"),
             block_size=None,
         )
 

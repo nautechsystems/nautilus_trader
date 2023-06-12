@@ -18,7 +18,7 @@ from typing import Callable, Optional
 
 import msgspec
 
-from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.socket import SocketClient
@@ -39,7 +39,7 @@ class BetfairStreamClient(SocketClient):
 
     def __init__(
         self,
-        client: BetfairClient,
+        client: BetfairHttpClient,
         logger_adapter: LoggerAdapter,
         message_handler,
         loop: Optional[asyncio.AbstractEventLoop] = None,
@@ -86,7 +86,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
     def __init__(
         self,
-        client: BetfairClient,
+        client: BetfairHttpClient,
         logger: Logger,
         message_handler,
         partition_matched_by_strategy_ref: bool = True,
@@ -123,7 +123,9 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     Provides a `Betfair` market stream client.
     """
 
-    def __init__(self, client: BetfairClient, logger: Logger, message_handler: Callable, **kwargs):
+    def __init__(
+        self, client: BetfairHttpClient, logger: Logger, message_handler: Callable, **kwargs
+    ):
         self.subscription_message = None
         super().__init__(
             client=client,
