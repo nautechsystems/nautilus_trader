@@ -218,7 +218,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         # Connect WebSocket client
-        self._ws_client.subscribe(key=self._listen_key)
+        await self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
 
     async def _update_account_state(self) -> None:
