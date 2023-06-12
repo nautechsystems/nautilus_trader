@@ -174,6 +174,22 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
+    def connect(self) -> None:
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        self._log.info("Connecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+    def disconnect(self) -> None:
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        self._log.info("Disconnecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+# --REGISTRATION ----------------------------------------------------------------------------------
+
     def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
         """
         Register the given data catalog with the engine.
@@ -188,8 +204,6 @@ cdef class DataEngine(Component):
 
         self._catalog = catalog
         self._use_rust = use_rust
-
-# --REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client):
         """

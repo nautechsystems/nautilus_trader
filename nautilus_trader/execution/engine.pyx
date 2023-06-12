@@ -59,6 +59,11 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport ExecutionReport
+from nautilus_trader.execution.reports cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport PositionStatusReport
+from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OmsType
@@ -158,7 +163,20 @@ cdef class ExecutionEngine(Component):
         self._msgbus.register(endpoint="ExecEngine.process", handler=self.process)
 
     @property
-    def registered_clients(self):
+    def reconciliation(self) -> bool:
+        """
+        Return whether the reconciliation process will be run on start.
+
+        Returns
+        -------
+        bool
+
+        """
+        # Temporary to push down common logic, the `LiveExecutionEngine` will override this
+        return False
+
+    @property
+    def registered_clients(self) -> list[ClientId]:
         """
         Return the execution clients registered with the engine.
 
@@ -170,16 +188,30 @@ cdef class ExecutionEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self):
+    def default_client(self) -> Optional[ClientId]:
         """
         Return the default execution client registered with the engine.
 
         Returns
         -------
-        Optional[ClientId]
+        ClientId or ``None``
 
         """
         return self._default_client.id if self._default_client is not None else None
+
+    def connect(self) -> None:
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        self._log.info("Connecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+    def disconnect(self) -> None:
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        self._log.info("Disconnecting all clients...")
+        # Implement actual client connections for a live/sandbox context
 
     cpdef int position_id_count(self, StrategyId strategy_id):
         """
@@ -431,6 +463,59 @@ cdef class ExecutionEngine(Component):
             del self._routing_map[client.venue]
 
         self._log.info(f"Deregistered {client}.")
+
+    # -- RECONCILIATION -------------------------------------------------------------------------------
+
+    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
+        """
+        Reconcile the internal execution state with all execution clients (external state).
+
+        Parameters
+        ----------
+        timeout_secs : double, default 10.0
+            The timeout (seconds) for reconciliation to complete.
+
+        Returns
+        -------
+        bool
+            True if states reconcile within timeout, else False.
+
+        Raises
+        ------
+        ValueError
+            If `timeout_secs` is not positive (> 0).
+
+        """
+        return True  # Should be overridden for live execution engines
+
+    def reconcile_report(self, report: ExecutionReport) -> bool:
+        """
+        Check the given execution report.
+
+        Parameters
+        ----------
+        report : ExecutionReport
+            The execution report to check.
+
+        Returns
+        -------
+        bool
+            True if reconciliation successful, else False.
+
+        """
+        return True  # Should be overridden for live execution engines
+
+    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
+        """
+        Reconcile the given execution mass status report.
+
+        Parameters
+        ----------
+        report : ExecutionMassStatus
+            The execution mass status report to reconcile.
+
+        """
+        # Should be overridden for live execution enginesj
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 

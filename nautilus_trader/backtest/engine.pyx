@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import pickle
 from decimal import Decimal
 from typing import Optional, Union
@@ -959,11 +960,8 @@ cdef class BacktestEngine:
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()
-            self._kernel.data_engine.start()
-            self._kernel.risk_engine.start()
-            self._kernel.exec_engine.start()
-            self._kernel.emulator.start()
-            self._kernel.trader.start()
+            # Common kernel start-up sequence
+            asyncio.run(self._kernel.start())
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
             self._log_pre_run()

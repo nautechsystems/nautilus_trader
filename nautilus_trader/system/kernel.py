@@ -20,6 +20,7 @@ import signal
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from typing import Callable, Optional
 
 import msgspec
@@ -31,6 +32,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
@@ -110,21 +112,23 @@ class NautilusKernel:
         config: NautilusKernelConfig,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
-    ):
+    ) -> None:
         PyCondition.valid_string(name, "name")
         PyCondition.type(config, NautilusKernelConfig, "config")
 
-        self._config = config
-        self._environment = config.environment
-        self._load_state = config.load_state
-        self._save_state = config.save_state
+        self._config: NautilusKernelConfig = config
+        self._environment: Environment = config.environment
+        self._load_state: bool = config.load_state
+        self._save_state: bool = config.save_state
 
         # Identifiers
-        self._name = name
-        self._trader_id = TraderId(config.trader_id)
-        self._machine_id = socket.gethostname()
-        self._instance_id = UUID4(config.instance_id) if config.instance_id is not None else UUID4()
-        self._ts_created = time.time_ns()
+        self._name: str = name
+        self._trader_id: TraderId = TraderId(config.trader_id)
+        self._machine_id: str = socket.gethostname()
+        self._instance_id: UUID4 = (
+            UUID4(config.instance_id) if config.instance_id is not None else UUID4()
+        )
+        self._ts_created: int = time.time_ns()
 
         # Components
         if self._environment == Environment.BACKTEST:
@@ -140,7 +144,7 @@ class NautilusKernel:
 
         # Setup the logger with a `LiveClock` initially,
         # which is later swapped out for a `TestClock` in the `BacktestEngine`.
-        self._logger = Logger(
+        self._logger: Logger = Logger(
             clock=self._clock if isinstance(self._clock, LiveClock) else LiveClock(),
             trader_id=self._trader_id,
             machine_id=self._machine_id,
@@ -158,7 +162,7 @@ class NautilusKernel:
         )
 
         # Setup logging
-        self._log = LoggerAdapter(
+        self._log: LoggerAdapter = LoggerAdapter(
             component_name=name,
             logger=self._logger,
         )
@@ -681,6 +685,110 @@ class NautilusKernel:
 
         """
         return self._catalog
+
+    async def start(self) -> None:
+        self._log.info("STARTING...")
+
+        # Start system
+        self._data_engine.start()
+        self._risk_engine.start()
+        self._exec_engine.start()
+
+        # Connect all clients
+        self._data_engine.connect()
+        self._exec_engine.connect()
+
+        # Await engine connection and initialization
+        self._log.info(
+            f"Awaiting engine connections and initializations "
+            f"({self._config.timeout_connection}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._await_engines_connected():
+            self._log.warning(
+                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
+                f"\nStatus"
+                f"\n------"
+                f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
+                f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}",
+            )
+            return
+
+        # Await execution state reconciliation
+        self._log.info(
+            f"Awaiting execution state reconciliation "
+            f"({self._config.timeout_reconciliation}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._exec_engine.reconcile_state(
+            timeout_secs=self._config.timeout_reconciliation,
+        ):
+            self._log.error("Execution state could not be reconciled.")
+            return
+
+        if self._exec_engine.reconciliation:
+            self._log.info("State reconciled.", color=LogColor.GREEN)
+
+        self._emulator.start()
+
+        # Initialize portfolio
+        self._portfolio.initialize_orders()
+        self._portfolio.initialize_positions()
+
+        # Await portfolio initialization
+        self._log.info(
+            "Awaiting portfolio initialization " f"({self._config.timeout_portfolio}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._await_portfolio_initialized():
+            self._log.warning(
+                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
+                f"\nStatus"
+                f"\n------"
+                f"\nPortfolio.initialized == {self._portfolio.initialized}",
+            )
+            return
+        self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+
+        # Start trader and strategies
+        self._trader.start()
+
+    async def _await_engines_connected(self) -> bool:
+        # - The data engine clients will be set connected when all
+        # instruments are received and updated with the data engine.
+        # - The execution engine clients will be set connected when all
+        # accounts are updated and the current order and position status is
+        # reconciled.
+        # Thus any delay here will be due to blocking network I/O.
+        seconds = self._config.timeout_connection
+        timeout: timedelta = self.clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self.clock.utc_now() >= timeout:
+                return False
+            if not self._data_engine.check_connected():
+                continue
+            if not self._exec_engine.check_connected():
+                continue
+            break
+
+        return True  # Engines connected
+
+    async def _await_portfolio_initialized(self) -> bool:
+        # - The portfolio will be set initialized when all margin and unrealized
+        # PnL calculations are completed (maybe waiting on first quotes).
+        # Thus any delay here will be due to blocking network I/O.
+        seconds = self._config.timeout_portfolio
+        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self._clock.utc_now() >= timeout:
+                return False
+            if not self._portfolio.initialized:
+                continue
+            break
+
+        return True  # Portfolio initialized
 
     def dispose(self) -> None:
         """
