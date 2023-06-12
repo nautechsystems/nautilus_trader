@@ -15,7 +15,7 @@
 
 use std::{io, sync::Arc};
 
-use pyo3::{prelude::*, PyObject, Python};
+use pyo3::{prelude::*, types::PyBytes, PyObject, Python};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -33,10 +33,16 @@ use tracing::debug;
 pub struct SocketClient {
     read_task: task::JoinHandle<io::Result<()>>,
     inner: Arc<Mutex<MaybeTlsStream<TcpStream>>>,
+    suffix: Box<[u8]>,
 }
 
 impl SocketClient {
-    pub async fn connect(url: &str, handler: PyObject, mode: Mode) -> io::Result<Self> {
+    pub async fn connect_url(
+        url: &str,
+        handler: PyObject,
+        mode: Mode,
+        suffix: Vec<u8>,
+    ) -> io::Result<Self> {
         debug!("socket: Connecting to server");
         let stream = TcpStream::connect(url).await?;
 
@@ -47,9 +53,12 @@ impl SocketClient {
         ));
         let reader = inner.clone();
 
+        let suffix_slice = suffix.clone().into_boxed_slice();
+
         // Keep receiving messages from socket pass them as arguments to handler
         let read_task = task::spawn(async move {
             let mut buf = Vec::new();
+
             loop {
                 let mut locked_reader = reader.lock().await;
                 let bytes = locked_reader.read_buf(&mut buf).await?;
@@ -61,13 +70,16 @@ impl SocketClient {
                 if bytes == 0 {
                     break;
                 } else {
-                    // while received data has a line break
-                    // drain and write it to the stream
-                    while let Some((i, _)) =
-                        &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
+                    // While received data has a line break,
+                    // drain and write it to the stream.
+                    while let Some((i, _)) = &buf
+                        .windows(2)
+                        .enumerate()
+                        .find(|(_, pair)| pair.eq(&suffix))
                     {
-                        debug!("socket: Found line ending");
-                        let data = buf.drain(0..i + 2);
+                        let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
+                        data.truncate(data.len() - suffix.len());
+
                         Python::with_gil(|py| handler.call1(py, (data.as_slice(),))).unwrap();
                     }
                 }
@@ -75,10 +87,14 @@ impl SocketClient {
             Ok(())
         });
 
-        Ok(Self { read_task, inner })
+        Ok(Self {
+            read_task,
+            inner,
+            suffix: suffix_slice,
+        })
     }
 
-    /// Shutdown read task and the connection
+    /// Shutdown read task and the connection.
     ///
     /// The client must be explicitly shutdown before dropping otherwise
     /// the connection might still be alive for some time before terminating.
@@ -94,8 +110,10 @@ impl SocketClient {
     pub async fn send_bytes(&mut self, data: &[u8]) {
         let mut writer = self.inner.lock().await;
         writer.write_all(data).await.unwrap();
+        writer.write_all(&self.suffix).await.unwrap();
     }
 
+    /// Checks if the client is still connected.
     #[inline]
     pub fn is_alive(&self) -> bool {
         !self.read_task.is_finished()
@@ -105,11 +123,20 @@ impl SocketClient {
 #[pymethods]
 impl SocketClient {
     #[staticmethod]
-    fn connect_url(url: String, handler: PyObject, ssl: bool, py: Python<'_>) -> PyResult<&PyAny> {
+    fn connect(
+        url: String,
+        handler: PyObject,
+        ssl: bool,
+        suffix: Py<PyBytes>,
+        py: Python<'_>,
+    ) -> PyResult<&PyAny> {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
+        let suffix = suffix.as_ref(py).as_bytes().to_vec();
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Ok(Self::connect(&url, handler, mode).await.unwrap())
+            Ok(Self::connect_url(&url, handler, mode, suffix)
+                .await
+                .unwrap())
         })
     }
 
@@ -122,7 +149,7 @@ impl SocketClient {
         })
     }
 
-    /// Closing the client aborts the reading task and shuts down the connection
+    /// Closing the client aborts the reading task and shuts down the connection.
     ///
     /// # Safety
     ///
@@ -251,10 +278,11 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let mut client = SocketClient::connect(
+        let mut client = SocketClient::connect_url(
             &format!("127.0.0.1:{}", server.port),
             handler.clone(),
             Mode::Plain,
+            b"\r\n".to_vec(),
         )
         .await
         .unwrap();
@@ -264,7 +292,7 @@ counter = Counter()",
 
         // Send messages that increment the count
         for _ in 0..N {
-            client.send_bytes(b"ping\r\n".as_slice()).await;
+            client.send_bytes(b"ping".as_slice()).await;
         }
 
         sleep(Duration::from_secs(1)).await;

@@ -14,36 +14,35 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
-import msgspec
-
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient as RustWebSocketClient
+from nautilus_trader.core.nautilus_pyo3.network import SocketClient as RustSocketClient
 from nautilus_trader.network.error import MaxRetriesExceeded
 
 
-class WebSocketClient:
+class SocketClient:
     """
-    Provides a base class for asynchronous WebSocket clients.
+    Provides a base class for asynchronous raw socket clients.
 
-    The client is capable of automatic heartbeating and reconnects (with max retries).
+    The client is capable of reconnects (with max retries).
 
     Parameters
     ----------
-    clock : LiveClock
-        The clock for the client.
     logger : Logger
         The logger for the client.
-    url : str
-        The URL for the client connection.
+    host : str
+        The server host for client connection.
+    port : int
+        The server port for client connection.
     handler : Callable[[bytes], None]
         The callback handler for message events.
-    heartbeat : int, optional
-        The heartbeat interval (seconds), if `None` then no heartbeats will be sent to the server,
-        however the client will respond to ping frames with pongs.
+    ssl : bool
+        If the client will use an SSL connection.
+    suffix : bytes, optional
+        The message suffix, line feed delimiter on which to split messages.
+        If ``None`` then will use a standard CRLF suffix.
     max_retries : int, default 6
         The maximum number of times the client will auto-reconnect before raising an exception.
     name : str, optional
@@ -52,25 +51,26 @@ class WebSocketClient:
 
     def __init__(
         self,
-        clock: LiveClock,
         logger: Logger,
-        url: str,
+        host: str,
+        port: int,
         handler: Callable[[bytes], None],
-        heartbeat: Optional[int] = None,
+        ssl: bool = True,
+        suffix: Optional[bytes] = None,
         max_retries: int = 6,
         name: Optional[str] = None,
     ) -> None:
-        self._clock: LiveClock = clock
         self._log: LoggerAdapter = LoggerAdapter(name or type(self).__name__, logger=logger)
-        self._url: str = url
-        self._last_url: Optional[str] = None
+        self._host: str = host
+        self._port: int = port
+        self._ssl: bool = ssl
+        self._suffix: bytes = suffix or b"\r\n"
 
         self._handler: Callable[[bytes], None] = handler
-        self._heartbeat: Optional[int] = heartbeat
         self._max_retries: int = max_retries
         self._check_interval: float = 1.0
         self._check_task: Optional[asyncio.Task] = None
-        self._client: Optional[RustWebSocketClient] = None
+        self._client: Optional[RustSocketClient] = None
 
         self._connection_retry_count = 0
 
@@ -134,16 +134,40 @@ class WebSocketClient:
         await asyncio.sleep(backoff)
 
     @property
-    def url(self) -> str:
+    def host(self) -> str:
         """
-        Return the server URL being used by the client.
+        Return the server host being used by the client.
 
         Returns
         -------
         str
 
         """
-        return self._url
+        return self._host
+
+    @property
+    def port(self) -> int:
+        """
+        Return the server port being used by the client.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._port
+
+    @property
+    def ssl(self) -> bool:
+        """
+        Return whether the client is using SSL.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._ssl
 
     @property
     def is_connected(self) -> bool:
@@ -157,25 +181,20 @@ class WebSocketClient:
         """
         return self._client is not None and self._client.is_connected
 
-    async def connect(self, url: Optional[str] = None) -> None:
+    async def connect(self) -> None:
         """
         Connect the client to the server.
 
-        Parameters
-        ----------
-        url : str, optional
-            The URL path override.
-
         """
-        url = url or self._url
-        self._last_url = url
+        url = f"{self._host}:{self._port}"
         self._log.info(f"Connecting to {url}")
 
         # TODO: Raise exception on connection failure and log error
-        self._client = await RustWebSocketClient.connect(
+        self._client = await RustSocketClient.connect(
             url=url,
             handler=self._handler,
-            heartbeat=self._heartbeat,
+            ssl=self._ssl,
+            suffix=self._suffix,
         )
 
         self._log.info("Connected.")
@@ -187,7 +206,7 @@ class WebSocketClient:
         """
         Reconnect the client to the server.
         """
-        await self.connect(self._last_url)
+        await self.connect()
         await self.post_reconnection()
 
     async def disconnect(self) -> None:
@@ -224,20 +243,3 @@ class WebSocketClient:
         assert self._client is not None  # Type checking
 
         await self._client.send(data)
-
-    async def send_json(self, message: dict[str, Any]) -> None:
-        """
-        Send the given `message` as JSON format bytes to the server.
-
-        Parameters
-        ----------
-        message : dict[str, Any]
-            The message to send.
-
-        """
-        if not self.is_connected:
-            self._log.error("Cannot send websocket message, not connected.")
-            return
-        assert self._client is not None  # Type checking
-
-        await self._client.send(msgspec.json.encode(message))
