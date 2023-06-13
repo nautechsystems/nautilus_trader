@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod synthetic;
+
 use rust_decimal::Decimal;
 
 use crate::{
