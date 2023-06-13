@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
 - Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
 - Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behaviour)
+- Added `ExecEngineConfig.filter_unclaimed_external_orders` options, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
 - Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)

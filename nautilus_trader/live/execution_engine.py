@@ -544,6 +544,9 @@ class LiveExecutionEngine(ExecutionEngine):
         order: Order = self._cache.order(client_order_id)
         if order is None:
             order = self._generate_external_order(report)
+            if order is None:
+                # External order dropped
+                return True  # No further reconciliation
             # Add to cache without determining any position ID initially
             self._cache.add_order(order, position_id=None)
 
@@ -761,7 +764,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.warning(f"Generated inferred {filled}.")
         return filled
 
-    def _generate_external_order(self, report: OrderStatusReport) -> Order:
+    def _generate_external_order(self, report: OrderStatusReport) -> Optional[Order]:
         self._log.info(
             f"Generating external order {report.client_order_id!r}",
             color=LogColor.BLUE,
@@ -797,6 +800,15 @@ class LiveExecutionEngine(ExecutionEngine):
             tags = "EXTERNAL"
         else:
             tags = None
+
+        # Check if filtering
+        if self.filter_unclaimed_external_orders:
+            if strategy_id.value == "EXTERNAL":
+                # Experimental: will call this out with a warning log for now
+                self._log.warning(
+                    f"Filtering report for unclaimed EXTERNAL order, {report}.",
+                )
+                return None  # No further reconciliation
 
         initialized = OrderInitialized(
             trader_id=self.trader_id,
