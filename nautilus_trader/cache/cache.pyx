@@ -249,11 +249,11 @@ cdef class Cache(CacheFacade):
                 for client_order_id in order.linked_order_ids or []:
                     contingent_order = self._orders.get(client_order_id)
                     if contingent_order is None:
-                        self._log.error(f"Contingency order {repr(client_order_id)} not found.")
+                        self._log.error(f"Contingency order {client_order_id!r} not found.")
                         continue
                     # Assign the parents position ID
                     if contingent_order.position_id is None:
-                        self._log.info(f"Assigned {repr(order.position_id)} to {repr(client_order_id)}.")
+                        self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
                         contingent_order.position_id = order.position_id
 
         cdef int count = len(self._orders)
