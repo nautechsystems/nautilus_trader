@@ -152,6 +152,7 @@ cdef class ExecutionEngine(Component):
         # Settings
         self.debug: bool = config.debug
         self.allow_cash_positions: bool = config.allow_cash_positions
+        self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
 
         # Counters
         self.command_count: int = 0
