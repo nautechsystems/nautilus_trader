@@ -50,21 +50,21 @@ async def socket_server():
         yield addr
 
 
-@pytest_asyncio.fixture()
-async def closing_socket_server():
+@pytest_asyncio.fixture(name="closing_socket_server")
+async def fixture_closing_socket_server():
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         async def write():
-            while True:
-                writer.write(b"hello\r\n")
-                await asyncio.sleep(0.1)
-                writer.close()
+            writer.write(b"hello\r\n")
+            await asyncio.sleep(0.1)
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
 
-        asyncio.get_event_loop().create_task(write())
+        await write()
 
     server = await asyncio.start_server(handler, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
     async with server:
-        await server.start_serving()
         yield addr
 
 
@@ -105,6 +105,6 @@ async def fixture_websocket_server(event_loop):
 
 
 @pytest.fixture()
-def logger(event_loop):
+def logger():
     clock = LiveClock()
     return Logger(clock=clock)
