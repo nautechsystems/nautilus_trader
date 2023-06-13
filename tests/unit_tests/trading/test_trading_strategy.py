@@ -628,7 +628,7 @@ class TestStrategy:
         ema = ExponentialMovingAverage(10)
         strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_trade_tick(tick)
@@ -652,7 +652,7 @@ class TestStrategy:
         ema = ExponentialMovingAverage(10)
         strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_trade_ticks([tick])

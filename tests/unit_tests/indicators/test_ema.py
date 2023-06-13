@@ -89,14 +89,14 @@ class TestExponentialMovingAverage:
         # Arrange
         indicator = ExponentialMovingAverage(10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00001
+        assert indicator.value == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange

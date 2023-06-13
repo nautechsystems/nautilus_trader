@@ -60,6 +60,7 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -70,7 +71,7 @@ ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
 class TestOrderEmulatorWithSingleOrders:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
@@ -171,21 +172,21 @@ class TestOrderEmulatorWithSingleOrders:
         self.emulator.start()
         self.strategy.start()
 
-    def test_emulator_reset(self):
+    def test_emulator_reset(self) -> None:
         # Arrange
         self.emulator.stop()
 
         # Act, Assert
         self.emulator.reset()
 
-    def test_emulator_dispose(self):
+    def test_emulator_dispose(self) -> None:
         # Arrange
         self.emulator.stop()
 
         # Act, Assert
         self.emulator.dispose()
 
-    def test_create_matching_core_twice_raises_exception(self):
+    def test_create_matching_core_twice_raises_exception(self) -> None:
         # Arrange
         self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
 
@@ -193,51 +194,49 @@ class TestOrderEmulatorWithSingleOrders:
         with pytest.raises(RuntimeError):
             self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
 
-    def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
+    def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self) -> None:
         # Arrange, Act
         subscriptions = self.emulator.subscribed_quotes
 
         # Assert
         assert subscriptions == []
 
-    def test_subscribed_trades_when_nothing_subscribed_returns_empty_list(self):
+    def test_subscribed_trades_when_nothing_subscribed_returns_empty_list(self) -> None:
         # Arrange, Act
         subscriptions = self.emulator.subscribed_trades
 
         # Assert
         assert subscriptions == []
 
-    def test_get_submit_order_commands_when_no_emulations_returns_empty_dict(self):
+    def test_get_submit_order_commands_when_no_emulations_returns_empty_dict(self) -> None:
         # Arrange, Act
         commands = self.emulator.get_submit_order_commands()
 
         # Assert
         assert commands == {}
 
-    def test_get_submit_order_list_commands_when_no_emulations_returns_empty_dict(self):
+    def test_get_submit_order_list_commands_when_no_emulations_returns_empty_dict(self) -> None:
         # Arrange, Act
         commands = self.emulator.get_submit_order_list_commands()
 
         # Assert
         assert commands == {}
 
-    def test_get_matching_core_when_no_emulations_returns_none(self):
+    def test_get_matching_core_when_no_emulations_returns_none(self) -> None:
         # Arrange, Act
         matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
 
         # Assert
         assert matching_core is None
 
-    def test_process_quote_tick_when_no_matching_core_setup_logs_and_does_nothing(self):
+    def test_process_quote_tick_when_no_matching_core_setup_logs_and_does_nothing(self) -> None:
         # Arrange
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
+            bid_size=10.000,
+            ask_size=10.000,
         )
 
         # Act
@@ -246,7 +245,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         assert True  # No exception raised
 
-    def test_process_trade_tick_when_no_matching_core_setup_logs_and_does_nothing(self):
+    def test_process_trade_tick_when_no_matching_core_setup_logs_and_does_nothing(self) -> None:
         # Arrange
         tick = TradeTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -264,7 +263,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         assert True  # No exception raised
 
-    def test_execute_unrecognized_command_logs_and_continues(self):
+    def test_execute_unrecognized_command_logs_and_continues(self) -> None:
         # Arrange
         command = QueryOrder(
             trader_id=TraderId("TRADER-001"),
@@ -279,7 +278,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Act, Assert (no exceptions raised)
         self.emulator.execute(command)
 
-    def test_submit_limit_order_with_emulation_trigger_not_supported_then_cancels(self):
+    def test_submit_limit_order_with_emulation_trigger_not_supported_then_cancels(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -300,7 +299,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert not self.emulator.get_submit_order_commands()
         assert not self.emulator.subscribed_trades
 
-    def test_submit_limit_order_with_instrument_not_found_then_cancels(self):
+    def test_submit_limit_order_with_instrument_not_found_then_cancels(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -363,7 +362,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_quotes == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
 
-    def test_submit_order_with_emulation_trigger_last_subscribes_to_data(self):
+    def test_submit_order_with_emulation_trigger_last_subscribes_to_data(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -384,7 +383,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
 
-    def test_cancel_all_with_emulated_order_cancels_order(self):
+    def test_cancel_all_with_emulated_order_cancels_order(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -402,7 +401,7 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         assert order.is_canceled
 
-    def test_cancel_all_buy_orders_with_emulated_orders_cancels_buy_order(self):
+    def test_cancel_all_buy_orders_with_emulated_orders_cancels_buy_order(self) -> None:
         # Arrange
         order1 = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -430,7 +429,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order1.is_canceled
         assert not order2.is_canceled
 
-    def test_cancel_all_sell_orders_with_emulated_orders_cancels_sell_order(self):
+    def test_cancel_all_sell_orders_with_emulated_orders_cancels_sell_order(self) -> None:
         # Arrange
         order1 = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,

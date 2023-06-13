@@ -53,7 +53,7 @@ class TestPersistenceParsers:
         assert data == {"ts_init": 1624946651943000000}
 
     def test_line_preprocessor_post_process(self):
-        obj = TestDataStubs.trade_tick_5decimal()
+        obj = TestDataStubs.trade_tick()
         data = {"ts_init": pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").value}
         obj = self.line_preprocessor.post_process(obj=obj, state=data)
         assert obj.ts_init == 1624946651943000000
