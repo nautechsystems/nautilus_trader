@@ -66,6 +66,7 @@ from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport oms_type_to_str
@@ -662,9 +663,37 @@ cdef class ExecutionEngine(Component):
         self._log.info(
             f"Setting {order.instrument_id} order quote quantity {order.quantity} to base quantity {base_qty}.",
         )
+        cdef Quantity original_qty = order.quantity
         order.quantity = base_qty
         order.leaves_qty = base_qty
         order.is_quote_quantity = False
+
+        if order.contingency_type != ContingencyType.OTO:
+            return
+
+        # Set base quantity for all OTO contingent orders
+        cdef ClientOrderId client_order_id
+        cdef Order contingent_order
+        for client_order_id in order.linked_order_ids or []:
+            contingent_order = self._cache.order(client_order_id)
+            if contingent_order is None:
+                self._log.error(f"Contingency order {client_order_id!r} not found.")
+                continue
+            if not contingent_order.is_quote_quantity:
+                continue  # Already base quantity
+            if contingent_order.quantity != original_qty:
+                self._log.warning(
+                    f"Contingent order quantity {contingent_order.quantity} "
+                    f"was not equal to the OTO parent original quantity {original_qty} "
+                    f"when setting to base quantity of {base_qty}."
+                )
+            self._log.info(
+                f"Setting {contingent_order.instrument_id} order quote quantity "
+                f"{contingent_order.quantity} to base quantity {base_qty}.",
+            )
+            contingent_order.quantity = base_qty
+            contingent_order.leaves_qty = base_qty
+            contingent_order.is_quote_quantity = False
 
     cpdef void _deny_order(self, Order order, str reason):
         # Generate event
@@ -772,6 +801,8 @@ cdef class ExecutionEngine(Component):
         cdef Quantity base_qty = None
         if not instrument.is_inverse and command.order_list.first.is_quote_quantity:
             for order in command.order_list.orders:
+                if order.is_quote_quantity == False:
+                    continue  # Base quantity already set
                 if order.quantity != quote_qty:
                     last_px = self._last_px_for_conversion(order.instrument_id, order.side)
                     quote_qty = order.quantity
