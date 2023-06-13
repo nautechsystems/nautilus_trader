@@ -89,7 +89,7 @@ class TestVariableIndexDynamicAverage:
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10)
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
@@ -112,16 +112,16 @@ class TestVariableIndexDynamicAverage:
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange, Act
-        self.vida.update_raw(1.00000)
+        self.vida.update_raw(1.0)
 
         # Assert
         assert self.vida.value == 0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange, Act
-        self.vida.update_raw(1.00000)
-        self.vida.update_raw(2.00000)
-        self.vida.update_raw(3.00000)
+        self.vida.update_raw(1.0)
+        self.vida.update_raw(2.0)
+        self.vida.update_raw(3.0)
 
         # Assert
         assert self.vida.value == 0
@@ -129,7 +129,7 @@ class TestVariableIndexDynamicAverage:
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.vida.update_raw(1.00000)
+            self.vida.update_raw(1.0)
 
         # Act
         self.vida.reset()

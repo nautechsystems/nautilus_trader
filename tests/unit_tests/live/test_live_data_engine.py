@@ -356,7 +356,7 @@ class TestLiveDataEngine:
         self.engine.start()
 
         # Act
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         # Act
         self.engine.process(tick)

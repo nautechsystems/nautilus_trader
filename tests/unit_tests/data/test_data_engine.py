@@ -550,7 +550,7 @@ class TestDataEngine:
 
     def test_process_data_places_data_on_queue(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         # Act
         self.data_engine.process(tick)

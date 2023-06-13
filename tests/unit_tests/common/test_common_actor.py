@@ -470,7 +470,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         # Act
         actor.on_trade_tick(tick)
@@ -801,7 +801,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -1178,7 +1178,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
 
         # Act
         actor.handle_trade_tick(tick)
@@ -1199,7 +1199,7 @@ class TestActor:
 
         actor.start()
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
 
         # Act
         actor.handle_trade_tick(tick)

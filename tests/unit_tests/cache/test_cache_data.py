@@ -232,7 +232,7 @@ class TestCache:
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_ticks([tick])
 
@@ -244,7 +244,7 @@ class TestCache:
 
     def test_add_trade_ticks_when_already_ticks_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -328,7 +328,7 @@ class TestCache:
 
     def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -340,7 +340,7 @@ class TestCache:
 
     def test_price_given_last_when_trade_tick_returns_expected_price(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -348,7 +348,7 @@ class TestCache:
         result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
 
         # Assert
-        assert result == Price.from_str("1.00001")
+        assert result == Price.from_str("1.00000")
 
     @pytest.mark.parametrize(
         ("price_type", "expected"),
@@ -404,7 +404,7 @@ class TestCache:
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -417,8 +417,8 @@ class TestCache:
 
     def test_trade_tick_with_one_tick_returns_expected_tick(self):
         # Arrange
-        tick1 = TestDataStubs.trade_tick_5decimal()
-        tick2 = TestDataStubs.trade_tick_5decimal()
+        tick1 = TestDataStubs.trade_tick()
+        tick2 = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick1)
         self.cache.add_trade_tick(tick2)

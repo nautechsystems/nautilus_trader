@@ -266,12 +266,12 @@ class TestSimulatedExchange:
 
     def test_process_trade_tick_updates_market(self) -> None:
         # Arrange
-        tick1 = TestDataStubs.trade_tick_3decimal(
+        tick1 = TestDataStubs.trade_tick(
             instrument_id=USDJPY_SIM.id,
             aggressor_side=AggressorSide.BUYER,
         )
 
-        tick2 = TestDataStubs.trade_tick_3decimal(
+        tick2 = TestDataStubs.trade_tick(
             instrument_id=USDJPY_SIM.id,
             aggressor_side=AggressorSide.SELLER,
         )
@@ -281,8 +281,8 @@ class TestSimulatedExchange:
         self.exchange.process_trade_tick(tick2)
 
         # Assert
-        assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("1.001")
-        assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("1.001")
+        assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("1.00000")
+        assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("1.00000")
 
     @pytest.mark.parametrize(
         "side",
