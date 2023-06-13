@@ -179,7 +179,7 @@ class SocketClient:
         bool
 
         """
-        return self._client is not None and self._client.is_connected
+        return self._client is not None and self._client.is_connected()
 
     async def connect(self) -> None:
         """

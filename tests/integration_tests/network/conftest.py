@@ -54,10 +54,12 @@ async def socket_server():
 async def closing_socket_server():
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         async def write():
-            while True:
-                writer.write(b"hello\r\n")
-                await asyncio.sleep(0.1)
-                writer.close()
+            writer.write(b"hello\r\n")
+            await asyncio.sleep(0.1)
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            logger.info("Server closed")
 
         asyncio.get_event_loop().create_task(write())
 

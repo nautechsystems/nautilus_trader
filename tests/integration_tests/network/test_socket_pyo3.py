@@ -59,11 +59,11 @@ async def test_socket_base_reconnect_on_incomplete_read(closing_socket_server):
         handler=handler,
         ssl=False,
     )
-    # mock_post_conn = mock.patch.object(client, "post_connection")
+
     await client.connect()
     await asyncio.sleep(0.1)
     await eventually(lambda: messages == [b"hello"] * 1)
 
     # Reconnect and receive another message
-    await asyncio.sleep(1)
-    # assert client._connection_retry_count >= 1
+    await asyncio.sleep(3)
+    assert client._connection_retry_count >= 1
