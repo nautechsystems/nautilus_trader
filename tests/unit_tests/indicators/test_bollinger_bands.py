@@ -65,14 +65,14 @@ class TestBollingerBands:
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.middle == 1.0000200000000001
+        assert indicator.middle == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange

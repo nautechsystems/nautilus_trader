@@ -227,7 +227,7 @@ class TestMarketDataClient:
 
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         # Act
         self.client._handle_data_py(tick)

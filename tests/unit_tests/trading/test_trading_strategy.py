@@ -169,9 +169,14 @@ class TestStrategy:
         self.cache.add_instrument(GBPUSD_SIM)
         self.cache.add_instrument(USDJPY_SIM)
 
+        # Prepare market
         self.exchange.process_quote_tick(
-            TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id),
-        )  # Prepare market
+            TestDataStubs.quote_tick(
+                instrument=USDJPY_SIM,
+                bid=90.001,
+                ask=90.002,
+            ),
+        )
 
         self.data_engine.start()
         self.exec_engine.start()
@@ -560,7 +565,7 @@ class TestStrategy:
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
         strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick(AUDUSD_SIM)
 
         # Act
         strategy.handle_quote_tick(tick)
@@ -605,7 +610,7 @@ class TestStrategy:
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
         strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick(AUDUSD_SIM)
 
         # Act
         strategy.handle_quote_ticks([tick])
@@ -628,7 +633,7 @@ class TestStrategy:
         ema = ExponentialMovingAverage(10)
         strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM)
 
         # Act
         strategy.handle_trade_tick(tick)
@@ -652,7 +657,7 @@ class TestStrategy:
         ema = ExponentialMovingAverage(10)
         strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestDataStubs.trade_tick(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick(AUDUSD_SIM)
 
         # Act
         strategy.handle_trade_ticks([tick])

@@ -122,7 +122,7 @@ class TestParquetSerializer:
         "tick",
         [
             TestDataStubs.ticker(),
-            TestDataStubs.quote_tick_5decimal(),
+            TestDataStubs.quote_tick(),
             TestDataStubs.trade_tick(),
         ],
     )

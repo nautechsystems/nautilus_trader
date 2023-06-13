@@ -77,7 +77,7 @@ class TestVariableIndexDynamicAverage:
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10, PriceType.MID)
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
