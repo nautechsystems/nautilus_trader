@@ -34,7 +34,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -48,11 +47,9 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -235,8 +232,8 @@ class TestOrderEmulatorWithSingleOrders:
             instrument=ETHUSDT_PERP_BINANCE,
             bid=5060.0,
             ask=5070.0,
-            bid_size=10.000,
-            ask_size=10.000,
+            bid_size=10.0,
+            ask_size=10.0,
         )
 
         # Act
@@ -247,15 +244,7 @@ class TestOrderEmulatorWithSingleOrders:
 
     def test_process_trade_tick_when_no_matching_core_setup_logs_and_does_nothing(self) -> None:
         # Arrange
-        tick = TradeTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            price=Price.from_str("5010.0"),
-            size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUYER,
-            trade_id=TradeId("123456"),
-            ts_event=0,
-            ts_init=0,
-        )
+        tick: TradeTick = TestDataStubs.trade_tick(ETHUSDT_PERP_BINANCE)
 
         # Act
         self.emulator.on_trade_tick(tick)
@@ -305,7 +294,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=AUDUSD_SIM.make_price(1.00000),
+            price=AUDUSD_SIM.make_price(1.0),
             emulation_trigger=TriggerType.DEFAULT,
         )
 
@@ -480,14 +469,9 @@ class TestOrderEmulatorWithSingleOrders:
 
         self.strategy.submit_order(order)
 
-        tick = TradeTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            price=Price.from_str("5000.0"),
-            size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUYER,
-            trade_id=TradeId("123456"),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.trade_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            price=5000.0,
         )
 
         # Act
@@ -525,14 +509,10 @@ class TestOrderEmulatorWithSingleOrders:
 
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5000),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5000),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5000.0,
+            ask=5000.0,
         )
 
         # Act
@@ -571,14 +551,10 @@ class TestOrderEmulatorWithSingleOrders:
 
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5000),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5000),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5000.0,
+            ask=5000.0,
         )
 
         # Act
@@ -618,14 +594,10 @@ class TestOrderEmulatorWithSingleOrders:
 
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5000),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5000),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5000.0,
+            ask=5000.0,
         )
 
         # Act
@@ -666,14 +638,10 @@ class TestOrderEmulatorWithSingleOrders:
 
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         # Act
@@ -712,14 +680,10 @@ class TestOrderEmulatorWithSingleOrders:
 
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         # Act
@@ -757,14 +721,10 @@ class TestOrderEmulatorWithSingleOrders:
             emulation_trigger=TriggerType.BID_ASK,
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -786,13 +746,13 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5075),
-                ETHUSDT_PERP_BINANCE.make_price(5070),
+                ETHUSDT_PERP_BINANCE.make_price(5075.0),
+                ETHUSDT_PERP_BINANCE.make_price(5070.0),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5055),
-                ETHUSDT_PERP_BINANCE.make_price(5060),
+                ETHUSDT_PERP_BINANCE.make_price(5055.0),
+                ETHUSDT_PERP_BINANCE.make_price(5060.0),
             ],
         ],
     )
@@ -814,26 +774,17 @@ class TestOrderEmulatorWithSingleOrders:
             emulation_trigger=TriggerType.BID_ASK,
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         self.data_engine.process(tick)
 
-        tick = TradeTick(  # <-- extraneous trade tick
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            price=Price.from_str("5010.0"),
-            size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUYER,
-            trade_id=TradeId("123456"),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.trade_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            price=5010.0,
         )
 
         self.data_engine.process(tick)
@@ -841,14 +792,10 @@ class TestOrderEmulatorWithSingleOrders:
         # Act
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5065.0"),
-            ask=Price.from_str("5065.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5065.0,
+            ask=5065.0,
         )
         self.data_engine.process(tick)
 
@@ -885,29 +832,20 @@ class TestOrderEmulatorWithSingleOrders:
             emulation_trigger=TriggerType.BID_ASK,
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
-
         self.data_engine.process(tick)
 
         # Act
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5055.0"),
-            ask=Price.from_str("5075.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5055.0,
+            ask=5075.0,
         )
         self.data_engine.process(tick)
 
@@ -953,16 +891,11 @@ class TestOrderEmulatorWithSingleOrders:
             emulation_trigger=TriggerType.BID_ASK,
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
-
         self.data_engine.process(tick)
 
         # Act
@@ -982,15 +915,15 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5075),
-                ETHUSDT_PERP_BINANCE.make_price(5070),
-                ETHUSDT_PERP_BINANCE.make_price(5070),
+                ETHUSDT_PERP_BINANCE.make_price(5075.0),
+                ETHUSDT_PERP_BINANCE.make_price(5070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5070.0),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5055),
-                ETHUSDT_PERP_BINANCE.make_price(5060),
-                ETHUSDT_PERP_BINANCE.make_price(5060),
+                ETHUSDT_PERP_BINANCE.make_price(5055.0),
+                ETHUSDT_PERP_BINANCE.make_price(5060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5060.0),
             ],
         ],
     )
@@ -1015,14 +948,10 @@ class TestOrderEmulatorWithSingleOrders:
             emulation_trigger=TriggerType.BID_ASK,
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -1030,14 +959,10 @@ class TestOrderEmulatorWithSingleOrders:
         # Act
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5065.0"),
-            ask=Price.from_str("5065.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5065.0,
+            ask=5065.0,
         )
         self.data_engine.process(tick)
 
@@ -1076,14 +1001,10 @@ class TestOrderEmulatorWithSingleOrders:
             emulation_trigger=TriggerType.BID_ASK,
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -1091,14 +1012,10 @@ class TestOrderEmulatorWithSingleOrders:
         # Act
         self.strategy.submit_order(order)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5055.0"),
-            ask=Price.from_str("5075.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5055.0,
+            ask=5075.0,
         )
 
         self.data_engine.process(tick)
@@ -1117,13 +1034,13 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5070),
-                ETHUSDT_PERP_BINANCE.make_price(5070),
+                ETHUSDT_PERP_BINANCE.make_price(5070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5070.0),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5060),
-                ETHUSDT_PERP_BINANCE.make_price(5060),
+                ETHUSDT_PERP_BINANCE.make_price(5060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5060.0),
             ],
         ],
     )
@@ -1134,14 +1051,10 @@ class TestOrderEmulatorWithSingleOrders:
         price,
     ):
         # Arrange
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5060.0"),
-            ask=Price.from_str("5070.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5060.0,
+            ask=5070.0,
         )
 
         self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)

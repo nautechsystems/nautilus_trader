@@ -207,7 +207,7 @@ class TestCache:
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_ticks([tick])
 
@@ -219,7 +219,7 @@ class TestCache:
 
     def test_add_quote_ticks_when_already_ticks_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_tick(tick)
 
@@ -317,7 +317,7 @@ class TestCache:
 
     def test_price_given_last_when_no_trade_ticks_returns_none(self):
         # Act
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_tick(tick)
 
@@ -364,7 +364,11 @@ class TestCache:
         expected,
     ):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick(
+            instrument=AUDUSD_SIM,
+            bid=1.00001,
+            ask=1.00003,
+        )
 
         self.cache.add_quote_tick(tick)
 
@@ -376,7 +380,7 @@ class TestCache:
 
     def test_quote_tick_when_index_out_of_range_returns_none(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_tick(tick)
 
@@ -389,8 +393,8 @@ class TestCache:
 
     def test_quote_tick_with_two_ticks_returns_expected_tick(self):
         # Arrange
-        tick1 = TestDataStubs.quote_tick_5decimal()
-        tick2 = TestDataStubs.quote_tick_5decimal()
+        tick1 = TestDataStubs.quote_tick(ts_init=0)
+        tick2 = TestDataStubs.quote_tick(ts_init=1)
 
         self.cache.add_quote_tick(tick1)
         self.cache.add_quote_tick(tick2)
@@ -400,7 +404,7 @@ class TestCache:
 
         # Assert
         assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 2
-        assert result == tick2
+        assert result.ts_init == 1
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
         # Arrange
