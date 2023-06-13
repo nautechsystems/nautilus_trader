@@ -24,6 +24,8 @@ use crate::{
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
+/// Represents a synthetic instrument with prices derived from component instruments using a
+/// formula.
 #[repr(C)]
 #[derive(Debug)]
 pub struct SyntheticInstrument {
@@ -46,7 +48,7 @@ impl SyntheticInstrument {
         let engine = Engine::new();
         let compiled = engine.compile(&formula)?;
 
-        // Extract variables from the components
+        // Extract variables from the component instruments
         let variables: Vec<String> = components
             .iter()
             .map(|component| component.to_string())
@@ -63,13 +65,15 @@ impl SyntheticInstrument {
         })
     }
 
+    /// Changes the internal derivation formula by recompiling it with a new evaluation engine.
     pub fn change_formula(&mut self, formula: String) -> Result<(), Box<dyn std::error::Error>> {
-        self.formula = formula.clone();
         self.engine = Engine::new();
         self.compiled = self.engine.compile(&formula)?;
+        self.formula = formula;
         Ok(())
     }
 
+    /// Calculates the price of the synthetic instrument based on the given component input values.
     pub fn calculate(
         &self,
         inputs: &HashMap<String, f64>,
@@ -115,10 +119,11 @@ mod tests {
         )
         .unwrap();
 
-        let mut component_prices = HashMap::new();
-        component_prices.insert("BTC.BINANCE".to_string(), 100.0);
-        component_prices.insert("LTC.BINANCE".to_string(), 200.0);
-        let price = synth.calculate(&component_prices).unwrap();
+        let mut inputs = HashMap::new();
+        inputs.insert("BTC.BINANCE".to_string(), 100.0);
+        inputs.insert("LTC.BINANCE".to_string(), 200.0);
+
+        let price = synth.calculate(&inputs).unwrap();
 
         assert_eq!(price.as_f64(), 150.0);
         assert_eq!(synth.formula, formula);
@@ -140,10 +145,11 @@ mod tests {
         let new_formula = "(BTC_BINANCE + LTC_BINANCE) / 4".to_string();
         synth.change_formula(new_formula.clone()).unwrap();
 
-        let mut component_prices = HashMap::new();
-        component_prices.insert("BTC.BINANCE".to_string(), 100.0);
-        component_prices.insert("LTC.BINANCE".to_string(), 200.0);
-        let price = synth.calculate(&component_prices).unwrap();
+        let mut inputs = HashMap::new();
+        inputs.insert("BTC.BINANCE".to_string(), 100.0);
+        inputs.insert("LTC.BINANCE".to_string(), 200.0);
+
+        let price = synth.calculate(&inputs).unwrap();
 
         assert_eq!(price.as_f64(), 75.0);
         assert_eq!(synth.formula, new_formula);
