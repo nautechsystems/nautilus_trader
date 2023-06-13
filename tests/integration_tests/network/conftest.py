@@ -23,9 +23,6 @@ from aiohttp import WSMsgType
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
-
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     async def write():
@@ -59,6 +56,7 @@ async def fixture_closing_socket_server():
             await writer.drain()
             writer.close()
             await writer.wait_closed()
+            # print("Server closed")
 
         await write()
 
@@ -102,9 +100,3 @@ async def fixture_websocket_server(event_loop):
     await app.shutdown()
     await app.cleanup()
     await server.close()
-
-
-@pytest.fixture()
-def logger():
-    clock = LiveClock()
-    return Logger(clock=clock)

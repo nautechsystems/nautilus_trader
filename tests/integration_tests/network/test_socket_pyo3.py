@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pytest
 
 from nautilus_trader.common.enums import LogLevel
