@@ -258,7 +258,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
 
     load_cache: bool = True
     allow_cash_positions: bool = True
-    filter_unclaimed_external_orders: bool = False  # Experimental: retains current behavior
+    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
