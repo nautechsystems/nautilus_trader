@@ -1134,7 +1134,7 @@ cdef class OrderFactory:
         tp_post_only : bool, default False
             If the take-profit order will only provide liquidity (make a market).
         quote_quantity : bool
-            If the order quantity is denominated in the quote currency.
+            If order quantity is denominated in the quote currency.
         emulation_trigger : TriggerType, default ``NO_TRIGGER``
             The emulation trigger type for the entry, as well as the TP and SL bracket orders.
         trigger_instrument_id : InstrumentId, optional
