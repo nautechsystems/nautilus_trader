@@ -436,7 +436,7 @@ cdef class TraderId(ComponentId):
 
 
 # External strategy ID constant
-cdef StrategyId EXTERNAL_STRATEGY = StrategyId("EXTERNAL")
+cdef StrategyId EXTERNAL_STRATEGY_ID = StrategyId("EXTERNAL")
 
 
 cdef class StrategyId(ComponentId):
@@ -494,11 +494,11 @@ cdef class StrategyId(ComponentId):
         bool
 
         """
-        return self == EXTERNAL_STRATEGY
+        return self == EXTERNAL_STRATEGY_ID
 
     @staticmethod
     cdef StrategyId external_c():
-        return EXTERNAL_STRATEGY
+        return EXTERNAL_STRATEGY_ID
 
 
 cdef class ExecAlgorithmId(ComponentId):
@@ -514,10 +514,6 @@ cdef class ExecAlgorithmId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string.
-
-    References
-    ----------
-    https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
     """
 
     def __init__(self, str value not None):
@@ -643,6 +639,28 @@ cdef class ClientOrderId(Identifier):
 
     cdef str to_str(self):
         return cstr_to_pystr(client_order_id_to_cstr(&self._mem))
+
+    cpdef bint is_this_trader(self, TraderId trader_id):
+        """
+        Return whether this client order ID is for the given trader ID instance.
+
+        Will compare the given `trader_id.get_tag()` with this identifier.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader ID to compare with.
+
+        Returns
+        -------
+        bool
+            True if for this instance, else false.
+
+        """
+        cdef list parts = self.to_str().split("-", maxsplit=4)
+        if len(parts) < 4:
+            return False
+        return parts[3] == trader_id.get_tag()
 
 
 cdef class VenueOrderId(Identifier):
