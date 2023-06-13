@@ -38,11 +38,13 @@ class CSVTickDataLoader:
         pd.DataFrame
 
         """
-        return pd.read_csv(
+        df = pd.read_csv(
             file_path,
             index_col="timestamp",
             parse_dates=True,
         )
+        df.index = pd.to_datetime(df.index, format='mixed')
+        return df
 
 
 class CSVBarDataLoader:
@@ -65,11 +67,13 @@ class CSVBarDataLoader:
         pd.DataFrame
 
         """
-        return pd.read_csv(
+        df = pd.read_csv(
             file_path,
             index_col="timestamp",
             parse_dates=True,
         )
+        df.index = pd.to_datetime(df.index, format='mixed')
+        return df
 
 
 def _ts_parser(time_in_secs: str) -> datetime:

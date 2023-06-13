@@ -22,7 +22,7 @@ Functions include awareness/tz checks and conversions, as well as ISO 8601 conve
 import pandas as pd
 import pytz
 
-from cpython.datetime cimport datetime
+cimport cpython.datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport uint64_t
@@ -39,7 +39,7 @@ from nautilus_trader.core.rust.core cimport secs_to_nanos as rust_secs_to_nanos
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
-cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
+cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz=pytz.utc)
 
 
 cpdef uint64_t secs_to_nanos(double secs):
@@ -175,7 +175,7 @@ cpdef unix_nanos_to_dt(uint64_t nanos):
     pd.Timestamp
 
     """
-    return pd.Timestamp(nanos, unit="ns", tz="UTC")
+    return pd.Timestamp(nanos, unit="ns", tz=pytz.utc)
 
 
 cpdef dt_to_unix_nanos(dt: pd.Timestamp):
@@ -224,7 +224,7 @@ cpdef maybe_unix_nanos_to_dt(nanos):
     if nanos is None:
         return None
     else:
-        return pd.Timestamp(nanos, unit="ns", tz="UTC")
+        return pd.Timestamp(nanos, unit="ns", tz=pytz.utc)
 
 
 cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
@@ -366,7 +366,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
     if data.index.tzinfo is None:  # tz-naive
         return data.tz_localize(pytz.utc)
     elif data.index.tzinfo != pytz.utc:
-        return pytz.utc.localize(data.index)
+        return data.tz_convert(None).tz_localize(pytz.utc)
     else:
         return data  # Already UTC
 

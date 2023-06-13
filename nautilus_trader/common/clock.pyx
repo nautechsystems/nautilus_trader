@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import pytz
 from typing import Callable, Optional
 
 import cython
@@ -160,7 +161,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        return pd.Timestamp(self.timestamp_ns(), tz="UTC")
+        return pd.Timestamp(self.timestamp_ns(), tz=pytz.utc)
 
     cpdef datetime local_now(self, tzinfo tz = None):
         """
