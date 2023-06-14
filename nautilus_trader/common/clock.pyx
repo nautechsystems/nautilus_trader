@@ -14,12 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import pytz
 from typing import Callable, Optional
 
 import cython
 import numpy as np
 import pandas as pd
+import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta

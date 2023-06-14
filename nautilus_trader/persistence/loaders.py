@@ -43,7 +43,7 @@ class CSVTickDataLoader:
             index_col="timestamp",
             parse_dates=True,
         )
-        df.index = pd.to_datetime(df.index, format='mixed')
+        df.index = pd.to_datetime(df.index, format="mixed")
         return df
 
 
@@ -72,7 +72,7 @@ class CSVBarDataLoader:
             index_col="timestamp",
             parse_dates=True,
         )
-        df.index = pd.to_datetime(df.index, format='mixed')
+        df.index = pd.to_datetime(df.index, format="mixed")
         return df
 
 
