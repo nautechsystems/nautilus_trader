@@ -18,10 +18,11 @@ from typing import Callable, Optional
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.websocket import WebSocketClient
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
 
 
-class BinanceWebSocketClient(WebSocketClient):
+class BinanceWebSocketClient:
     """
     Provides a `Binance` streaming WebSocket client.
 
@@ -44,16 +45,39 @@ class BinanceWebSocketClient(WebSocketClient):
         base_url: str,
         handler: Callable[[bytes], None],
     ) -> None:
-        super().__init__(
-            clock=clock,
-            logger=logger,
-            url=base_url,
-            handler=handler,
-            name=type(self).__name__,
-        )
+        self._clock = clock
+        self._logger = logger
+        self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
 
+        self._client: Optional[WebSocketClient] = None
+        self._base_url: str = base_url
+        self._handler: Callable[[bytes], None] = handler
         self._streams: list[str] = []
         self._msg_id: int = 0
+
+    @property
+    def url(self) -> str:
+        """
+        Return the server URL being used by the client.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._base_url
+
+    @property
+    def is_connected(self) -> bool:
+        """
+        Return whether the client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._client is not None and self._client.is_alive
 
     @property
     def subscriptions(self) -> list[str]:
@@ -87,11 +111,30 @@ class BinanceWebSocketClient(WebSocketClient):
             raise RuntimeError("no subscriptions for connection.")
 
         # Always connecting combined streams for consistency
-        ws_url = self._url + "/stream?streams=" + "/".join(self._streams)
+        ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)
         if key is not None:
             ws_url += f"&listenKey={key}"
 
-        await super().connect(url=ws_url)
+        self._log.info(f"Connecting to {ws_url}")
+        self._client = await WebSocketClient.connect(
+            url=ws_url,
+            handler=self._handler,
+            heartbeat=60,
+        )
+        self._log.info("Connected.")
+
+    async def disconnect(self) -> None:
+        """
+        Disconnect the client from the server.
+        """
+        if not self.is_connected:
+            self._log.error("Cannot disconnect websocket, not connected.")
+            return
+        assert self._client is not None  # Type checking
+
+        self._log.info("Disconnecting...")
+        await self._client.disconnect()
+        self._log.info("Disconnected.")
 
     def _add_stream(self, stream: str) -> None:
         if stream not in self._streams:

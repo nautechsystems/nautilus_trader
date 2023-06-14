@@ -73,7 +73,7 @@ impl SocketClient {
                     // While received data has a line break,
                     // drain and write it to the stream.
                     while let Some((i, _)) = &buf
-                        .windows(2)
+                        .windows(suffix.len())
                         .enumerate()
                         .find(|(_, pair)| pair.eq(&suffix))
                     {
