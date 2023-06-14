@@ -109,7 +109,7 @@ class TestBinanceSpotAccountHttpAPI:
         # Act
         await self.api.cancel_order(
             symbol="ETHUSDT",
-            order_id="1",
+            order_id=1,
             recv_window="5000",
         )
 
@@ -144,7 +144,7 @@ class TestBinanceSpotAccountHttpAPI:
         # Act
         await self.api.query_order(
             symbol="ETHUSDT",
-            order_id="1",
+            order_id=1,
             recv_window="5000",
         )
 
