@@ -58,7 +58,7 @@ struct WebSocketClientInner {
 }
 
 impl WebSocketClientInner {
-    /// Create an inner websocket client
+    /// Create an inner websocket client.
     pub async fn connect_url(
         url: &str,
         handler: PyObject,
@@ -83,13 +83,13 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Connects with the server creating a tokio-tungstenite websocket stream
+    /// Connects with the server creating a tokio-tungstenite websocket stream.
     #[inline]
     pub async fn connect_with_server(url: &str) -> Result<(MessageWriter, MessageReader), Error> {
         connect_async(url).await.map(|resp| resp.0.split())
     }
 
-    /// Optionally spawn a hearbeat task to periodically ping the server
+    /// Optionally spawn a hearbeat task to periodically ping the server.
     pub fn spawn_heartbeat_task(
         heartbeat: Option<u64>,
         writer: SharedMessageWriter,
@@ -110,7 +110,7 @@ impl WebSocketClientInner {
         })
     }
 
-    /// Keep receiving messages from socket and pass them as arguments to handler
+    /// Keep receiving messages from socket and pass them as arguments to handler.
     pub fn spawn_read_task(mut reader: MessageReader, handler: PyObject) -> task::JoinHandle<()> {
         task::spawn(async move {
             loop {
@@ -234,7 +234,7 @@ pub struct WebSocketClient {
 }
 
 impl WebSocketClient {
-    /// Creates a websocket client
+    /// Creates a websocket client.
     ///
     /// Creates an inner client and controller task to reconnect or disconnect
     /// the client. Also assumes ownership of writer from inner client
@@ -270,7 +270,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Set disconnect mode to true
+    /// Set disconnect mode to true.
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
@@ -306,7 +306,7 @@ impl WebSocketClient {
             loop {
                 sleep(Duration::from_secs(1)).await;
 
-                // check if client needs to disconnect
+                // Check if client needs to disconnect
                 let guard = disconnect_mode.lock().await;
                 disconnect_flag = *guard;
                 drop(guard);
@@ -352,7 +352,7 @@ impl WebSocketClient {
 
 #[pymethods]
 impl WebSocketClient {
-    /// Create a websocket client
+    /// Create a websocket client.
     ///
     /// # Safety
     /// - Throws an Exception if it is unable to make websocket connection
@@ -416,7 +416,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Check if the client is still alive
+    /// Check if the client is still alive.
     ///
     /// Even if the connection is disconnected the client will still be alive
     /// and try to reconnect. Only when reconnect fails the client will

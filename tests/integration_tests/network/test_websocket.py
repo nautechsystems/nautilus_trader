@@ -14,14 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 
+import msgspec
 import pytest
 from aiohttp.test_utils import TestServer
 
-from nautilus_trader.network.websocket import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
 from nautilus_trader.test_kit.functions import eventually
-from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
 def _server_url(server: TestServer) -> str:
@@ -33,32 +32,26 @@ async def test_connect_and_disconnect(websocket_server):
     # Arrange
     store = []
 
-    client = WebSocketClient(
-        clock=TestComponentStubs.clock(),
-        logger=TestComponentStubs.logger(),
+    client = await WebSocketClient.connect(
         url=_server_url(websocket_server),
         handler=store.append,
     )
 
     # Act, Assert
-    await client.connect()
-    await eventually(lambda: client.is_connected, 2.0)
+    await eventually(lambda: client.is_alive)
     await client.disconnect()
-    await eventually(lambda: not client.is_connected, 2.0)
+    await eventually(lambda: not client.is_alive)
 
 
 @pytest.mark.asyncio()
 async def test_client_send_recv(websocket_server):
     # Arrange
     store = []
-    client = WebSocketClient(
-        clock=TestComponentStubs.clock(),
-        logger=TestComponentStubs.logger(),
+    client = await WebSocketClient.connect(
         url=_server_url(websocket_server),
         handler=store.append,
     )
-    await client.connect()
-    await eventually(lambda: client.is_connected, 2.0)
+    await eventually(lambda: client.is_alive)
 
     # Act
     num_messages = 3
@@ -69,93 +62,61 @@ async def test_client_send_recv(websocket_server):
 
     await eventually(lambda: store == [b"connected"] + [b"Hello-response"] * 3)
     await client.disconnect()
-    await eventually(lambda: not client.is_connected, 2.0)
+    await eventually(lambda: not client.is_alive)
 
 
 @pytest.mark.asyncio()
 async def test_client_send_recv_json(websocket_server):
     # Arrange
     store = []
-    client = WebSocketClient(
-        clock=TestComponentStubs.clock(),
-        logger=TestComponentStubs.logger(),
+    client = await WebSocketClient.connect(
         url=_server_url(websocket_server),
         handler=store.append,
     )
-    await client.connect()
-    await eventually(lambda: client.is_connected, 2.0)
+    await eventually(lambda: client.is_alive)
 
     # Act
     num_messages = 3
     for _ in range(num_messages):
-        await client.send_json({"method": "SUBSCRIBE"})
+        await client.send(msgspec.json.encode({"method": "SUBSCRIBE"}))
     await asyncio.sleep(0.3)
     await client.disconnect()
 
     expected = [b"connected"] + [b'{"method":"SUBSCRIBE"}-response'] * 3
     assert store == expected
     await client.disconnect()
-    await eventually(lambda: not client.is_connected, 2.0)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Flaky on Windows")
-@pytest.mark.asyncio()
-async def test_reconnect_after_disconnect(websocket_server):
-    # Arrange
-    store = []
-    client = WebSocketClient(
-        clock=TestComponentStubs.clock(),
-        logger=TestComponentStubs.logger(),
-        url=_server_url(websocket_server),
-        handler=store.append,
-    )
-    await client.connect()
-    await eventually(lambda: client.is_connected, 2.0)
-
-    # Act
-    await client.disconnect()
-    await eventually(lambda: not client.is_connected, 2.0)
-
-    await client.reconnect()
-    await eventually(lambda: client.is_connected, 2.0)
-
-    await eventually(lambda: store == [b"connected"] * 2)
-    await client.disconnect()
-    await eventually(lambda: not client.is_connected, 2.0)
+    await eventually(lambda: not client.is_alive)
 
 
 @pytest.mark.asyncio()
 async def test_reconnect_after_close(websocket_server):
     # Arrange
     store = []
-    client = WebSocketClient(
-        clock=TestComponentStubs.clock(),
-        logger=TestComponentStubs.logger(),
+    client = await WebSocketClient.connect(
         url=_server_url(websocket_server),
         handler=store.append,
     )
-    await client.connect()
-    await eventually(lambda: client.is_connected, 2.0)
+    await eventually(lambda: client.is_alive)
 
     # Act
     await client.send(b"close")
-    await eventually(lambda: not client.is_connected, 2.0)
 
     # Assert
-    assert store == [b"connected"] * 2
+    await eventually(lambda: store == [b"connected"] * 2)
 
 
 # @pytest.mark.asyncio()
 # async def test_exponential_backoff(self, websocket_server):
 #     # Arrange
-#     await self.client.connect(ws_url=self._server_url(websocket_server))
+#     store = []
+#     client = await WebSocketClient.connect(
+#         url=_server_url(websocket_server),
+#         handler=store.append,
+#     )
 #
 #     # Act
 #     for _ in range(2):
 #         await self.client.send(b"close")
 #         await asyncio.sleep(0.1)
-#         await self.client.receive()
-#         await asyncio.sleep(0.1)
-#         await self.client.receive()
 #
-#     assert self.client.connection_retry_count == 2
+#     assert client.connection_retry_count == 2
