@@ -26,12 +26,11 @@ pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
-#[repr(C)]
 #[derive(Debug)]
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
-    pub components: Vec<InstrumentId>,
     pub precision: u8,
+    pub components: Vec<InstrumentId>,
     pub formula: String,
     pub variables: Vec<String>,
     pub compiled: AST,
@@ -41,8 +40,8 @@ pub struct SyntheticInstrument {
 impl SyntheticInstrument {
     pub fn new(
         symbol: Symbol,
-        components: Vec<InstrumentId>,
         precision: u8,
+        components: Vec<InstrumentId>,
         formula: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let engine = Engine::new();
@@ -56,8 +55,8 @@ impl SyntheticInstrument {
 
         Ok(SyntheticInstrument {
             id: InstrumentId::new(symbol, Venue::new(SYNTHETIC_VENUE)),
-            components,
             precision,
+            components,
             formula,
             variables,
             compiled,
@@ -73,29 +72,51 @@ impl SyntheticInstrument {
         Ok(())
     }
 
-    /// Calculates the price of the synthetic instrument based on the given component input values.
-    pub fn calculate(
+    /// Calculates the price of the synthetic instrument based on the given component input values
+    /// provided as a map.
+    pub fn calculate_from_map(
         &self,
         inputs: &HashMap<String, f64>,
     ) -> Result<Price, Box<dyn std::error::Error>> {
-        // Create a new scope for the script evaluation
-        let mut scope = Scope::new();
+        let input_values: Vec<f64> = self
+            .variables
+            .iter()
+            .map(|variable| {
+                if let Some(&value) = inputs.get(variable) {
+                    value
+                } else {
+                    panic!("Missing price for component: {}", variable);
+                }
+            })
+            .collect();
 
-        // Validate and populate the scope with instrument component prices
-        for variable in &self.variables {
-            if let Some(&price) = inputs.get(variable) {
-                scope.push(variable.replace('.', "_"), price);
-            } else {
-                return Err(format!("Missing price for component: {}", variable).into());
-            }
-        }
+        self.calculate(&input_values)
+    }
 
-        // Evaluate the pre-compiled formula
+    /// Calculates the price of the synthetic instrument based on the given component input values
+    /// provided as an array of `f64` values.
+    pub fn calculate(&self, inputs: &[f64]) -> Result<Price, Box<dyn std::error::Error>> {
+        let mut scope = self.create_scope(inputs)?;
         let result: f64 = self
             .engine
             .eval_ast_with_scope(&mut scope, &self.compiled)?;
 
         Ok(Price::new(result, self.precision))
+    }
+
+    // Creates the evaluation scope with input values.
+    fn create_scope(&self, inputs: &[f64]) -> Result<Scope, Box<dyn std::error::Error>> {
+        if inputs.len() != self.variables.len() {
+            return Err("Invalid number of input values".into());
+        }
+
+        let mut scope = Scope::new();
+
+        for (variable, input) in self.variables.iter().zip(inputs) {
+            scope.push(variable.replace('.', "_"), *input);
+        }
+
+        Ok(scope)
     }
 }
 
@@ -107,14 +128,14 @@ mod tests {
     use crate::identifiers::symbol::Symbol;
 
     #[test]
-    fn test_new_synthetic_instrument() {
+    fn test_calculate_from_map() {
         let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
         let formula = "(BTC_BINANCE + LTC_BINANCE) / 2".to_string();
         let synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC"),
-            vec![btc_binance.clone(), ltc_binance],
             2,
+            vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
         )
         .unwrap();
@@ -123,6 +144,26 @@ mod tests {
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
 
+        let price = synth.calculate_from_map(&inputs).unwrap();
+
+        assert_eq!(price.as_f64(), 150.0);
+        assert_eq!(synth.formula, formula);
+    }
+
+    #[test]
+    fn test_calculate() {
+        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
+        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let formula = "(BTC_BINANCE + LTC_BINANCE) / 2.0".to_string();
+        let synth = SyntheticInstrument::new(
+            Symbol::new("BTC-LTC"),
+            2,
+            vec![btc_binance.clone(), ltc_binance],
+            formula.clone(),
+        )
+        .unwrap();
+
+        let inputs = vec![100.0, 200.0];
         let price = synth.calculate(&inputs).unwrap();
 
         assert_eq!(price.as_f64(), 150.0);
@@ -136,8 +177,8 @@ mod tests {
         let formula = "(BTC_BINANCE + LTC_BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC"),
-            vec![btc_binance.clone(), ltc_binance],
             2,
+            vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
         )
         .unwrap();
@@ -149,7 +190,7 @@ mod tests {
         inputs.insert("BTC.BINANCE".to_string(), 100.0);
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
 
-        let price = synth.calculate(&inputs).unwrap();
+        let price = synth.calculate_from_map(&inputs).unwrap();
 
         assert_eq!(price.as_f64(), 75.0);
         assert_eq!(synth.formula, new_formula);

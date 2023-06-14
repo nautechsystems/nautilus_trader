@@ -624,6 +624,12 @@ typedef struct OrderBook OrderBook;
 
 typedef struct String String;
 
+/**
+ * Represents a synthetic instrument with prices derived from component instruments using a
+ * formula.
+ */
+typedef struct SyntheticInstrument SyntheticInstrument;
+
 typedef struct BarSpecification_t {
     uint64_t step;
     uint8_t aggregation;
@@ -798,6 +804,21 @@ typedef struct PositionId_t {
 typedef struct VenueOrderId_t {
     struct Arc_String *value;
 } VenueOrderId_t;
+
+/**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying
+ * [`SyntheticInstrument`].
+ *
+ * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
+ * calls, enabling interaction with `SyntheticInstrument` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
+ * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
+ * having to manually access the underlying instance.
+ */
+typedef struct SyntheticInstrument_API {
+    struct SyntheticInstrument *_0;
+} SyntheticInstrument_API;
 
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
@@ -1599,6 +1620,24 @@ const char *venue_order_id_to_cstr(const struct VenueOrderId_t *venue_order_id);
 uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOrderId_t *rhs);
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
+
+/**
+ * # Safety
+ *
+ * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
+                                                        uint8_t precision,
+                                                        const char *components_ptr,
+                                                        const char *formula_ptr);
+
+void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
+
+uint8_t synthetic_instrument_precision(const struct SyntheticInstrument_API *synth);
+
+struct Price_t synthetic_instrument_calculate(const struct SyntheticInstrument_API *synth,
+                                              CVec inputs_ptr);
 
 struct OrderBook_API orderbook_new(struct InstrumentId_t instrument_id, enum BookType book_type);
 
