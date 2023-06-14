@@ -281,7 +281,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if venue_order_id:
                 binance_order = await self._http_account.query_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 binance_order = await self._http_account.query_order(
@@ -806,7 +806,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if venue_order_id is not None:
                 await self._http_account.cancel_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 await self._http_account.cancel_order(
