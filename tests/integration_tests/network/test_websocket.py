@@ -124,25 +124,25 @@ async def test_reconnect_after_disconnect(websocket_server):
     await eventually(lambda: not client.is_connected, 2.0)
 
 
-# @pytest.mark.asyncio()
-# async def test_reconnect_after_close(websocket_server):
-#     # Arrange
-#     store = []
-#     client = WebSocketClient(
-#         clock=TestComponentStubs.clock(),
-#         logger=TestComponentStubs.logger(),
-#         url=_server_url(websocket_server),
-#         handler=store.append,
-#     )
-#     await client.connect()
-#     await eventually(lambda: client.is_connected, 2.0)
-#
-#     # Act
-#     await client.send(b"close")
-#     await eventually(lambda: not client.is_connected, 2.0)
-#
-#     # Assert
-#     assert store == [b"connected"] * 2
+@pytest.mark.asyncio()
+async def test_reconnect_after_close(websocket_server):
+    # Arrange
+    store = []
+    client = WebSocketClient(
+        clock=TestComponentStubs.clock(),
+        logger=TestComponentStubs.logger(),
+        url=_server_url(websocket_server),
+        handler=store.append,
+    )
+    await client.connect()
+    await eventually(lambda: client.is_connected, 2.0)
+
+    # Act
+    await client.send(b"close")
+    await eventually(lambda: not client.is_connected, 2.0)
+
+    # Assert
+    assert store == [b"connected"] * 2
 
 
 # @pytest.mark.asyncio()
