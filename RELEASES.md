@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Upgraded `pandas` to v2
 - Removed `OrderBookSnapshot` (redundant as can be represented as an initial CLEAR followed by deltas)
 - Removed `OrderBookData` (redundant)
 - Renamed `Actor.handle_order_book_delta` to `handle_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)

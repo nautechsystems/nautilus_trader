@@ -52,9 +52,9 @@ frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
 msgspec = "^0.15.1"
 numpy = "^1.24.3"
-pandas = "^1.5.3"
+pandas = "^2.0.2"
 psutil = "^5.9.5"
-pyarrow = "^12.0.0"
+pyarrow = "^12.0.1"
 pytz = "^2023.3.0"
 toml = "^0.10.2"
 tqdm = "^4.65.0"
@@ -236,11 +236,9 @@ exclude = [
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.isort]
-combine-as-imports = true
 force-single-line = true
 single-line-exclusions = ["typing"]
 lines-after-imports = 2
-split-on-trailing-comma = true
 
 [tool.ruff.mccabe]
 max-complexity = 10
