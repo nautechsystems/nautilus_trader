@@ -1147,6 +1147,14 @@ cdef extern from "../includes/model.h":
 
     const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
 
+    const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
+
+    # # Safety
+    #
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
+                                             const char *formula_ptr);
+
     Price_t synthetic_instrument_calculate(const SyntheticInstrument_API *synth,
                                            const CVec *inputs_ptr);
 

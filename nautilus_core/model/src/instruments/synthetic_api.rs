@@ -21,7 +21,7 @@ use std::{
 
 use nautilus_core::{
     cvec::CVec,
-    parsing::bytes_to_string_vec,
+    parsing::{bytes_to_string_vec, string_vec_to_bytes},
     string::{cstr_to_string, str_to_cstr},
 };
 
@@ -100,6 +100,32 @@ pub extern "C" fn synthetic_instrument_formula_to_cstr(
     synth: &SyntheticInstrument_API,
 ) -> *const c_char {
     str_to_cstr(&synth.formula)
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_components_to_cstr(
+    synth: &SyntheticInstrument_API,
+) -> *const c_char {
+    let components_vec = synth
+        .components
+        .iter()
+        .map(|c| c.to_string())
+        .collect::<Vec<String>>();
+
+    string_vec_to_bytes(components_vec)
+}
+
+/// # Safety
+///
+/// - Assumes `formula_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn synthetic_instrument_change_formula(
+    synth: &mut SyntheticInstrument_API,
+    formula_ptr: *const c_char,
+) {
+    // TODO: There is absolutely no error handling here yet
+    let formula = cstr_to_string(formula_ptr);
+    synth.change_formula(formula).unwrap();
 }
 
 #[no_mangle]

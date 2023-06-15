@@ -43,6 +43,7 @@ def test_synthetic_instrument_initialization() -> None:
     assert synthetic.precision == precision
     assert synthetic.id == InstrumentId.from_str("BTC-ETH.SYNTH")
     assert synthetic.formula == formula
+    assert synthetic.components == components
 
 
 def test_synthetic_instrument_calculate() -> None:
@@ -62,3 +63,28 @@ def test_synthetic_instrument_calculate() -> None:
     assert isinstance(price, Price)
     assert price.precision == synthetic.precision
     assert price == 150.0
+
+
+def test_synthetic_instrument_change_formula() -> None:
+    # Arrange
+    synthetic = SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        precision=8,
+        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+        formula="(BTCUSDT_BINANCE + ETHUSDT_BINANCE) / 2",
+    )
+
+    inputs = [100.0, 200.0]
+    price1 = synthetic.calculate(inputs)
+
+    # Act
+    new_formula = "(BTCUSDT_BINANCE + ETHUSDT_BINANCE) / 4"
+    synthetic.change_formula(new_formula)
+    price2 = synthetic.calculate(inputs)
+
+    # Assert
+    assert price1.precision == synthetic.precision
+    assert price2.precision == synthetic.precision
+    assert price1 == 150.0
+    assert price2 == 75.0
+    assert synthetic.formula == new_formula
