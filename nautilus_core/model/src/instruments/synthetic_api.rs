@@ -19,7 +19,11 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{cvec::CVec, parsing::bytes_to_string_vec, string::cstr_to_string};
+use nautilus_core::{
+    cvec::CVec,
+    parsing::bytes_to_string_vec,
+    string::{cstr_to_string, str_to_cstr},
+};
 
 use super::synthetic::SyntheticInstrument;
 use crate::{
@@ -82,18 +86,30 @@ pub extern "C" fn synthetic_instrument_drop(synth: SyntheticInstrument_API) {
 }
 
 #[no_mangle]
+pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument_API) -> InstrumentId {
+    synth.id.clone()
+}
+
+#[no_mangle]
 pub extern "C" fn synthetic_instrument_precision(synth: &SyntheticInstrument_API) -> u8 {
     synth.precision
 }
 
 #[no_mangle]
+pub extern "C" fn synthetic_instrument_formula_to_cstr(
+    synth: &SyntheticInstrument_API,
+) -> *const c_char {
+    str_to_cstr(&synth.formula)
+}
+
+#[no_mangle]
 pub extern "C" fn synthetic_instrument_calculate(
     synth: &SyntheticInstrument_API,
-    inputs_ptr: CVec,
+    inputs_ptr: &CVec,
 ) -> Price {
-    let CVec { ptr, len, cap } = inputs_ptr;
-    let inputs: Vec<f64> = unsafe { Vec::from_raw_parts(ptr as *mut f64, len, cap) };
+    let CVec { ptr, len, .. } = inputs_ptr;
+    let inputs: &[f64] = unsafe { std::slice::from_raw_parts(*ptr as *mut f64, *len) };
 
     // TODO: There is absolutely no error handling here yet
-    synth.calculate(inputs.as_slice()).unwrap()
+    synth.calculate(inputs).unwrap()
 }

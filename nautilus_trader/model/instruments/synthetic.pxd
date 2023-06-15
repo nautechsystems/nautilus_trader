@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class SyntheticInstrument:
     cdef SyntheticInstrument_API _mem
+
+    cpdef Price calculate(self, list[double] inputs)
