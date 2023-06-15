@@ -1141,9 +1141,14 @@ cdef extern from "../includes/model.h":
 
     void synthetic_instrument_drop(SyntheticInstrument_API synth);
 
+    InstrumentId_t synthetic_instrument_id(const SyntheticInstrument_API *synth);
+
     uint8_t synthetic_instrument_precision(const SyntheticInstrument_API *synth);
 
-    Price_t synthetic_instrument_calculate(const SyntheticInstrument_API *synth, CVec inputs_ptr);
+    const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
+
+    Price_t synthetic_instrument_calculate(const SyntheticInstrument_API *synth,
+                                           const CVec *inputs_ptr);
 
     OrderBook_API orderbook_new(InstrumentId_t instrument_id, BookType book_type);
 

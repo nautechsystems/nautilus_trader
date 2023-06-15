@@ -1634,10 +1634,14 @@ struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
 
 void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
 
+struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
+
 uint8_t synthetic_instrument_precision(const struct SyntheticInstrument_API *synth);
 
+const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
+
 struct Price_t synthetic_instrument_calculate(const struct SyntheticInstrument_API *synth,
-                                              CVec inputs_ptr);
+                                              const CVec *inputs_ptr);
 
 struct OrderBook_API orderbook_new(struct InstrumentId_t instrument_id, enum BookType book_type);
 
