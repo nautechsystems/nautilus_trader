@@ -136,7 +136,8 @@ class VolatilityMarketMaker(Strategy):
         # )  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
-        #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+        #         BinanceFuturesMarkPriceUpdate,
+        #         metadata={"instrument_id": self.instrument.id},
         #     ),
         #     client_id=ClientId("BINANCE"),
         # )
