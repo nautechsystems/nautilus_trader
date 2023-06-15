@@ -26,11 +26,14 @@ from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
 from nautilus_trader.core.rust.model cimport symbol_clone
 from nautilus_trader.core.rust.model cimport synthetic_instrument_calculate
+from nautilus_trader.core.rust.model cimport synthetic_instrument_change_formula
+from nautilus_trader.core.rust.model cimport synthetic_instrument_components_to_cstr
 from nautilus_trader.core.rust.model cimport synthetic_instrument_drop
 from nautilus_trader.core.rust.model cimport synthetic_instrument_formula_to_cstr
 from nautilus_trader.core.rust.model cimport synthetic_instrument_id
 from nautilus_trader.core.rust.model cimport synthetic_instrument_new
 from nautilus_trader.core.rust.model cimport synthetic_instrument_precision
+from nautilus_trader.core.string cimport cstr_to_pybytes
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -85,7 +88,7 @@ cdef class SyntheticInstrument:
             symbol_clone(&symbol._mem),
             precision,
             pybytes_to_cstr(msgspec.json.encode([c.value for c in components])),
-            pystr_to_cstr(formula)
+            pystr_to_cstr(formula),
         )
 
     def __del__(self) -> None:
@@ -117,6 +120,19 @@ cdef class SyntheticInstrument:
         return synthetic_instrument_precision(&self._mem)
 
     @property
+    def components(self) -> list[InstrumentId]:
+        """
+        Return the components of the synthetic instrument.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef bytes components_bytes = cstr_to_pybytes(synthetic_instrument_components_to_cstr(&self._mem))
+        return [InstrumentId.from_str_c(c) for c in msgspec.json.decode(components_bytes)]
+
+    @property
     def formula(self) -> str:
         """
         Return the synthetic instrument derivation formula.
@@ -127,6 +143,20 @@ cdef class SyntheticInstrument:
 
         """
         return cstr_to_pystr(synthetic_instrument_formula_to_cstr(&self._mem))
+
+    cpdef void change_formula(self, str formula):
+        """
+        Change the internal derivation formula by recompiling the internal evaluation engine.
+
+        Parameters
+        ----------
+        formula : str
+            The derivation formula to change to.
+
+        """
+        Condition.valid_string(formula, "formula")
+
+        synthetic_instrument_change_formula(&self._mem, pystr_to_cstr(formula))
 
     cpdef Price calculate(self, list[double] inputs):
         """

@@ -21,4 +21,5 @@ from nautilus_trader.model.objects cimport Price
 cdef class SyntheticInstrument:
     cdef SyntheticInstrument_API _mem
 
+    cpdef void change_formula(self, str formula)
     cpdef Price calculate(self, list[double] inputs)

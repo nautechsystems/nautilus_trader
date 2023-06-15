@@ -1640,6 +1640,16 @@ uint8_t synthetic_instrument_precision(const struct SyntheticInstrument_API *syn
 
 const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
 
+const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
+
+/**
+ * # Safety
+ *
+ * - Assumes `formula_ptr` is a valid C string pointer.
+ */
+void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
+                                         const char *formula_ptr);
+
 struct Price_t synthetic_instrument_calculate(const struct SyntheticInstrument_API *synth,
                                               const CVec *inputs_ptr);
 
