@@ -1,6 +1,24 @@
 # NautilusTrader 1.175.0 Beta
 
-Released on TBD (UTC).
+Released on 16th July 2023 (UTC).
+
+The Betfair adapter is broken for this release pending integration with the new Rust order book.
+We recommend you do not upgrade to this version if you're using the Betfair adapter.
+
+### Enhancements
+- Integrated Interactive Brokers adapter v2 into platform, thanks @rsmb7z
+- Integrated core Rust `OrderBook` into platform
+- Integrated core Rust `OrderBookDelta` data type
+- Added core Rust `HttpClient` based on `hyper`, thanks @twitu
+- Added core Rust `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
+- Added core Rust `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
+- Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
+- Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
+- Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behaviour)
+- Added `ExecEngineConfig.filter_unclaimed_external_orders` options, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
+- Changed `BinanceHttpClient` to use new core HTTP client
+- Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
+- Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)
 
 ### Breaking Changes
 - Upgraded `pandas` to v2
@@ -14,24 +32,10 @@ Released on TBD (UTC).
 - Renamed core `LogEvent.timestamp_ns` to `LogEvent.timestamp` (affects field name for JSON format)
 - Renamed core `LogEvent.msg` to `LogEvent.message` (affects field name for JSON format)
 
-### Enhancements
-- Integrated Interactive Brokers adapter v2 into platform, many thanks @rsmb7z
-- Integrated core `OrderBook` into platform
-- Added core `HttpClient` based on `hyper`, thanks @twitu
-- Added core `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
-- Added core `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
-- Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
-- Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
-- Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behaviour)
-- Added `ExecEngineConfig.filter_unclaimed_external_orders` options, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
-- Changed `BinanceHttpClient` to use new core HTTP client
-- Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
-- Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)
-
 ### Fixes
 - Updated `BinanceAccountType` enum members and associated docs
 - Fixed `BinanceCommonExecutionClient` iteration of `OrderList` orders
-- Fixed heartbeats for Binance websocket clients (new Rust client now responds with `pong` frames)
+- Fixed heartbeats for `BinanceWebSocketClient` (new Rust client now responds with `pong` frames)
 - Fixed Binance adapter typing for `orderId`, `fromId`, `startTime` and `endTime` (all are ints), thanks for reporting @davidsblom
 - Fixed `Currency` equality to be based on the `code` field (avoiding equality issues over FFI), thanks for reporting @Otlk
 - Fixed `BinanceInstrumentProvider` parsing of initial and maintenance margin values
