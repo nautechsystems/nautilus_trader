@@ -14,7 +14,7 @@ proc-macro = true
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
-rhai = "1.14.0"
+evalexpr = "11.0.0"
 
 [build-dependencies]
 cbindgen.workspace = true
