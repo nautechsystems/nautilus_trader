@@ -19,6 +19,7 @@ import msgspec.json
 import pandas as pd
 from betfair_parser.spec.betting.enums import MarketProjection
 from betfair_parser.spec.betting.type_definitions import MarketCatalogue
+from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import decode as bf_decode
 from betfair_parser.spec.common import encode as bf_encode
 from betfair_parser.spec.navigation import FlattenedMarket
@@ -300,7 +301,7 @@ async def load_markets_metadata(
     client: BetfairHttpClient,
     markets: list[FlattenedMarket],
 ) -> list[MarketCatalogue]:
-    all_results = []
+    all_results: list[MarketCatalogue] = []
     for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):
         results = await client.list_market_catalogue(
             market_projection=[
@@ -312,11 +313,11 @@ async def load_markets_metadata(
                 MarketProjection.RUNNER_DESCRIPTION,
                 MarketProjection.MARKET_START_TIME,
             ],
-            filter_={"marketIds": market_id_chunk},
+            filter_=MarketFilter(market_ids=market_id_chunk),
             max_results=len(market_id_chunk),
         )
         all_results.extend(results)
-    return parse_market_catalog(all_results)
+    return all_results
 
 
 def get_market_book(client, market_ids):

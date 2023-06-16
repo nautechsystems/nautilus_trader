@@ -26,6 +26,7 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import EndpointType
 from betfair_parser.spec.common import Request
 from betfair_parser.spec.navigation import flatten_nav_tree
@@ -150,7 +151,7 @@ class BetfairTestStubs:
             }
             kw = {}
             if rpc_method == "SportsAPING/v1.0/listMarketCatalogue":
-                kw = {"filters": kwargs["json"]["params"]["filter"]}
+                kw = {"filter_": request.params.filter}
             if rpc_method in responses:
                 resp = MagicMock(spec=ClientResponse)
                 resp.body = msgspec.json.encode(responses[rpc_method](**kw))
@@ -337,8 +338,9 @@ class BetfairRequests:
 
 class BetfairResponses:
     @staticmethod
-    def load(filename):
-        return msgspec.json.decode((RESOURCES_PATH / "responses" / filename).read_bytes())
+    def load(filename: str):
+        raw = (RESOURCES_PATH / "responses" / filename).read_bytes()
+        return msgspec.json.decode(raw)
 
     @staticmethod
     def account_details():
@@ -405,11 +407,10 @@ class BetfairResponses:
         return BetfairResponses.load("list_current_orders_empty.json")
 
     @staticmethod
-    def betting_list_market_catalogue(filters=None):
+    def betting_list_market_catalogue(filter_: Optional[MarketFilter] = None):
         result = BetfairResponses.load("betting_list_market_catalogue.json")
-        filters = filters or {}
-        if "marketIds" in filters:
-            result = [r for r in result if r["marketId"] in filters["marketIds"]]
+        if filter_:
+            result = [r for r in result if r["marketId"] in filter_.market_ids]
         return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod
