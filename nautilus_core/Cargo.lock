@@ -1821,16 +1821,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-algorithms"
-version = "0.6.0"
-dependencies = [
- "cbindgen",
- "evalexpr",
- "nautilus-core",
- "nautilus-model",
-]
-
-[[package]]
 name = "nautilus-backtest"
 version = "0.6.0"
 dependencies = [
@@ -1888,11 +1878,11 @@ dependencies = [
  "cbindgen",
  "criterion",
  "derive_builder",
+ "evalexpr",
  "iai",
  "lazy_static",
  "nautilus-core",
  "pyo3",
- "rhai",
  "rmp-serde",
  "rstest",
  "rust_decimal",
@@ -2615,32 +2605,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rhai"
-version = "1.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c99b27f6661b4d217b6aa21727c6a0808729266edfc8a8877042d609b1904e"
-dependencies = [
- "ahash 0.8.3",
- "bitflags",
- "instant",
- "num-traits",
- "rhai_codegen",
- "smallvec",
- "smartstring",
-]
-
-[[package]]
-name = "rhai_codegen"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db74e3fdd29d969a0ec1f8e79171a6f0f71d0429293656901db382d248c4c021"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "ring"
 version = "0.16.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2988,17 +2952,6 @@ name = "smallvec"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
-
-[[package]]
-name = "smartstring"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb72c633efbaa2dd666986505016c32c3044395ceaf881518399d2f4127ee29"
-dependencies = [
- "autocfg",
- "static_assertions",
- "version_check",
-]
 
 [[package]]
 name = "snafu"

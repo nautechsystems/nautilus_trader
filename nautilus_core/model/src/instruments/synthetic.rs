@@ -16,7 +16,8 @@
 use std::collections::HashMap;
 
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
-use nautilus_model::{
+
+use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::price::Price,
 };
@@ -74,8 +75,9 @@ impl SyntheticInstrument {
         Ok(())
     }
 
-    /// Calculates the price of the synthetic instrument based on the given component input values
+    /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as a map.
+    #[allow(dead_code)]
     pub fn calculate_from_map(
         &mut self,
         inputs: &HashMap<String, f64>,
@@ -95,7 +97,7 @@ impl SyntheticInstrument {
         self.calculate(&input_values)
     }
 
-    /// Calculates the price of the synthetic instrument based on the given component input values
+    /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
     pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, Box<dyn std::error::Error>> {
         if inputs.len() != self.variables.len() {
@@ -120,9 +122,8 @@ impl SyntheticInstrument {
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
-
     use super::*;
+    use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
 
     #[test]
     fn test_calculate_from_map() {

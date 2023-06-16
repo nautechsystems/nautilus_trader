@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "algorithms",
     "backtest",
     "common",
     "core",

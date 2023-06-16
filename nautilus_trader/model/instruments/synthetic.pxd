@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.rust.algorithms cimport SyntheticInstrument_API
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
 from nautilus_trader.model.objects cimport Price
 
 
