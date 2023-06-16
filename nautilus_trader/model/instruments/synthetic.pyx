@@ -21,18 +21,18 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.algorithms cimport SyntheticInstrument_API
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_calculate
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_change_formula
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_components_to_cstr
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_drop
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_formula_to_cstr
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_id
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_new
-from nautilus_trader.core.rust.algorithms cimport synthetic_instrument_precision
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
 from nautilus_trader.core.rust.model cimport symbol_clone
+from nautilus_trader.core.rust.model cimport synthetic_instrument_calculate
+from nautilus_trader.core.rust.model cimport synthetic_instrument_change_formula
+from nautilus_trader.core.rust.model cimport synthetic_instrument_components_to_cstr
+from nautilus_trader.core.rust.model cimport synthetic_instrument_drop
+from nautilus_trader.core.rust.model cimport synthetic_instrument_formula_to_cstr
+from nautilus_trader.core.rust.model cimport synthetic_instrument_id
+from nautilus_trader.core.rust.model cimport synthetic_instrument_new
+from nautilus_trader.core.rust.model cimport synthetic_instrument_precision
 from nautilus_trader.core.string cimport cstr_to_pybytes
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
