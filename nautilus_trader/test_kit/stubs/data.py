@@ -71,54 +71,44 @@ class TestDataStubs:
 
     @staticmethod
     def quote_tick(
-        instrument: Instrument,
-        bid: Any,
-        ask: Any,
-        bid_size: Optional[Any] = None,
-        ask_size: Optional[Any] = None,
+        instrument: Optional[Instrument] = None,
+        bid: float = 1.0,
+        ask: float = 1.0,
+        bid_size: float = 100_000.0,
+        ask_size: float = 100_000.0,
+        ts_event: int = 0,
+        ts_init: int = 0,
     ) -> QuoteTick:
+        inst: Instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
         return QuoteTick(
-            instrument_id=instrument.id,
-            bid=instrument.make_price(bid),
-            ask=instrument.make_price(ask),
-            bid_size=instrument.make_qty(bid_size or 1_000_000),
-            ask_size=instrument.make_qty(ask_size or 1_000_000),
-            ts_event=0,
-            ts_init=0,
+            instrument_id=inst.id,
+            bid=inst.make_price(bid),
+            ask=inst.make_price(ask),
+            bid_size=inst.make_qty(bid_size),
+            ask_size=inst.make_qty(ask_size),
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
     @staticmethod
-    def quote_tick_3decimal(
-        instrument_id=None,
-        bid=None,
-        ask=None,
-        bid_size=None,
-        ask_size=None,
-    ) -> QuoteTick:
-        return QuoteTick(
-            instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
-            bid=bid or Price.from_str("90.002"),
-            ask=ask or Price.from_str("90.005"),
-            bid_size=bid_size or Quantity.from_int(1_000_000),
-            ask_size=ask_size or Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def quote_tick_5decimal(
-        instrument_id=None,
-        bid=None,
-        ask=None,
-    ) -> QuoteTick:
-        return QuoteTick(
-            instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            bid=bid or Price.from_str("1.00001"),
-            ask=ask or Price.from_str("1.00003"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+    def trade_tick(
+        instrument: Optional[Instrument] = None,
+        price: float = 1.0,
+        quantity: float = 100_000,
+        aggressor_side: AggressorSide = AggressorSide.BUYER,
+        trade_id: str = "123456",
+        ts_event: int = 0,
+        ts_init: int = 0,
+    ) -> TradeTick:
+        inst: Instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        return TradeTick(
+            instrument_id=inst.id,
+            price=inst.make_price(price),
+            size=inst.make_qty(quantity),
+            aggressor_side=aggressor_side,
+            trade_id=TradeId(trade_id),
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
     @staticmethod
@@ -131,40 +121,6 @@ class TestDataStubs:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
         )
         return ticks
-
-    @staticmethod
-    def trade_tick_3decimal(
-        instrument_id=None,
-        price=None,
-        aggressor_side=None,
-        quantity=None,
-    ) -> TradeTick:
-        return TradeTick(
-            instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
-            price=price or Price.from_str("1.001"),
-            size=quantity or Quantity.from_int(100_000),
-            aggressor_side=aggressor_side or AggressorSide.BUYER,
-            trade_id=TradeId("123456"),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def trade_tick_5decimal(
-        instrument_id=None,
-        price=None,
-        aggressor_side=None,
-        quantity=None,
-    ) -> TradeTick:
-        return TradeTick(
-            instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100_000),
-            aggressor_side=aggressor_side or AggressorSide.BUYER,
-            trade_id=TradeId("123456"),
-            ts_event=0,
-            ts_init=0,
-        )
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -267,8 +223,8 @@ class TestDataStubs:
     @staticmethod
     def order(
         side: OrderSide = OrderSide.BUY,
-        price: float = 100,
-        size: float = 10,
+        price: float = 100.0,
+        size: float = 10.0,
     ) -> BookOrder:
         return BookOrder(
             price=Price(price, 2),
@@ -281,10 +237,10 @@ class TestDataStubs:
     def order_book(
         instrument_id: Optional[InstrumentId] = None,
         book_type: BookType = BookType.L2_MBP,
-        bid_price: float = 10,
-        ask_price: float = 15,
-        bid_size: float = 10,
-        ask_size: float = 10,
+        bid_price: float = 10.0,
+        ask_price: float = 15.0,
+        bid_size: float = 10.0,
+        ask_size: float = 10.0,
         bid_levels: int = 3,
         ask_levels: int = 3,
         ts_event: int = 0,
@@ -312,10 +268,10 @@ class TestDataStubs:
     @staticmethod
     def order_book_snapshot(
         instrument_id: Optional[InstrumentId] = None,
-        bid_price: float = 10,
-        ask_price: float = 15,
-        bid_size: float = 10,
-        ask_size: float = 10,
+        bid_price: float = 10.0,
+        ask_price: float = 15.0,
+        bid_size: float = 10.0,
+        ask_size: float = 10.0,
         bid_levels: int = 3,
         ask_levels: int = 3,
         ts_event: int = 0,

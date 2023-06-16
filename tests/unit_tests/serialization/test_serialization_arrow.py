@@ -122,8 +122,8 @@ class TestParquetSerializer:
         "tick",
         [
             TestDataStubs.ticker(),
-            TestDataStubs.quote_tick_5decimal(),
-            TestDataStubs.trade_tick_5decimal(),
+            TestDataStubs.quote_tick(),
+            TestDataStubs.trade_tick(),
         ],
     )
     def test_serialize_and_deserialize_tick(self, tick):

@@ -21,12 +21,20 @@ install-just-deps-all:
 	poetry install --with dev,test,docs --all-extras --no-root
 
 .PHONY: build
-build: nautilus_trader
+build:
 	BUILD_MODE=release poetry run python build.py
 
 .PHONY: build-debug
-build-debug: nautilus_trader
+build-debug:
 	BUILD_MODE=debug poetry run python build.py
+
+.PHONY: build-wheel
+build-wheel:
+	BUILD_MODE=release poetry build --format wheel
+
+.PHONY: build-wheel-debug
+build-wheel-debug:
+	BUILD_MODE=debug poetry build --format wheel
 
 .PHONY: clean
 clean:
@@ -38,7 +46,7 @@ docs:
 
 .PHONY: format
 format:
-	(cd nautilus_core && cargo fmt)
+	(cd nautilus_core && cargo +nightly fmt)
 
 .PHONY: pre-commit
 pre-commit: format

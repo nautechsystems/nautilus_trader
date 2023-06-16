@@ -17,50 +17,18 @@ use std::ffi::c_char;
 
 use nautilus_core::{string::str_to_cstr, time::UnixNanos};
 
+use super::{
+    tick::{QuoteTick, TradeTick},
+    Data,
+};
 use crate::{
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},
 };
 
-use super::{
-    tick::{QuoteTick, TradeTick},
-    Data,
-};
-
-#[no_mangle]
-pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
-    tick.clone()
-}
-
 #[no_mangle]
 pub extern "C" fn quote_tick_new(
-    instrument_id: InstrumentId,
-    bid: Price,
-    ask: Price,
-    bid_size: Quantity,
-    ask_size: Quantity,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> QuoteTick {
-    QuoteTick::new(
-        instrument_id,
-        bid,
-        ask,
-        bid_size,
-        ask_size,
-        ts_event,
-        ts_init,
-    )
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_from_raw(
     instrument_id: InstrumentId,
     bid_price_raw: i64,
     ask_price_raw: i64,
@@ -84,6 +52,16 @@ pub extern "C" fn quote_tick_from_raw(
     )
 }
 
+#[no_mangle]
+pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
+    drop(tick); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
+    tick.clone()
+}
+
 /// Returns a [`QuoteTick`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
@@ -91,17 +69,7 @@ pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_drop(tick: TradeTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
-    tick.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn trade_tick_from_raw(
+pub extern "C" fn trade_tick_new(
     instrument_id: InstrumentId,
     price_raw: i64,
     price_prec: u8,
@@ -121,6 +89,16 @@ pub extern "C" fn trade_tick_from_raw(
         ts_event,
         ts_init,
     )
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_drop(tick: TradeTick) {
+    drop(tick); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
+    tick.clone()
 }
 
 /// Returns a [`TradeTick`] as a C string pointer.

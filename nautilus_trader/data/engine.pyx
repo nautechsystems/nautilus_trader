@@ -174,6 +174,22 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
+    def connect(self) -> None:
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        self._log.info("Connecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+    def disconnect(self) -> None:
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        self._log.info("Disconnecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+# --REGISTRATION ----------------------------------------------------------------------------------
+
     def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
         """
         Register the given data catalog with the engine.
@@ -188,8 +204,6 @@ cdef class DataEngine(Component):
 
         self._catalog = catalog
         self._use_rust = use_rust
-
-# --REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client):
         """
@@ -1219,9 +1233,9 @@ cdef class DataEngine(Component):
         self.data_count += 1
 
         if isinstance(data, OrderBookDelta):
-            self._handle_order_book_data(data)
+            self._handle_order_book_delta(data)
         elif isinstance(data, OrderBookDeltas):
-            self._handle_order_book_data(data)
+            self._handle_order_book_deltas(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)
         elif isinstance(data, QuoteTick):
@@ -1252,12 +1266,24 @@ cdef class DataEngine(Component):
             msg=instrument,
         )
 
-    cpdef void _handle_order_book_data(self, Data data):
+    cpdef void _handle_order_book_delta(self, OrderBookDelta delta):
+        cdef OrderBookDeltas deltas = OrderBookDeltas(
+            instrument_id=delta.instrument_id,
+            deltas=[delta]
+        )
         self._msgbus.publish_c(
             topic=f"data.book.deltas"
-                  f".{data.instrument_id.venue}"
-                  f".{data.instrument_id.symbol}",
-            msg=data,
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
+        )
+
+    cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas):
+        self._msgbus.publish_c(
+            topic=f"data.book.deltas"
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
         )
 
     cpdef void _handle_ticker(self, Ticker ticker):

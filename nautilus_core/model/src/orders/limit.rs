@@ -15,6 +15,7 @@
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
+use super::Order;
 use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{
@@ -23,8 +24,6 @@ use crate::{
     },
     types::{price::Price, quantity::Quantity},
 };
-
-use super::Order;
 
 pub trait LimitOrder {
     #[must_use]
@@ -41,6 +40,7 @@ pub trait LimitOrder {
         expire_time: Option<UnixNanos>,
         post_only: bool,
         reduce_only: bool,
+        quote_quantity: bool,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
@@ -68,6 +68,7 @@ impl LimitOrder for Order {
         expire_time: Option<UnixNanos>,
         post_only: bool,
         reduce_only: bool,
+        quote_quantity: bool,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
@@ -104,6 +105,7 @@ impl LimitOrder for Order {
             liquidity_side: None,
             is_post_only: post_only,
             is_reduce_only: reduce_only,
+            is_quote_quantity: quote_quantity,
             display_qty,
             limit_offset: None,
             trailing_offset: None,

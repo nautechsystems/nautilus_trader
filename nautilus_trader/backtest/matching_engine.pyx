@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 from typing import Optional
 
 
@@ -120,6 +121,8 @@ cdef class OrderMatchingEngine:
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_random_ids : bool, default False
+        If venue order and position IDs will be randomly generated UUID4s.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
     """
@@ -138,6 +141,7 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_random_ids = False,
         # auction_match_algo = default_auction_match
     ):
         self._clock = clock
@@ -158,6 +162,7 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
+        self._use_random_ids = use_random_ids
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._book = OrderBook(
@@ -1730,32 +1735,41 @@ cdef class OrderMatchingEngine:
 
     cdef PositionId _generate_venue_position_id(self):
         self._position_count += 1
-        return PositionId(
-            f"{self.venue.to_str()}-{self.raw_id}-{self._position_count:03d}")
+        if self._use_random_ids:
+            return PositionId(str(uuid.uuid4()))
+        else:
+            return PositionId(f"{self.venue.to_str()}-{self.raw_id}-{self._position_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self):
         self._order_count += 1
-        return VenueOrderId(
-            f"{self.venue.to_str()}-{self.raw_id}-{self._order_count:03d}")
+        if self._use_random_ids:
+            return VenueOrderId(str(uuid.uuid4()))
+        else:
+            return VenueOrderId(f"{self.venue.to_str()}-{self.raw_id}-{self._order_count:03d}")
 
     cdef TradeId _generate_trade_id(self):
         self._execution_count += 1
         return TradeId(self._generate_trade_id_str())
 
     cdef str _generate_trade_id_str(self):
-        return f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}"
+        if self._use_random_ids:
+            return str(uuid.uuid4())
+        else:
+            return f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}"
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void accept_order(self, Order order):
-        self._generate_order_accepted(order)
+        # Check if order already accepted (being added back into the matching engine)
+        if not order.status_c() == OrderStatus.ACCEPTED:
+            self._generate_order_accepted(order)
 
-        if (
-            order.order_type == OrderType.TRAILING_STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            if order.trigger_price is None:
-                self._update_trailing_stop_order(order)
+            if (
+                order.order_type == OrderType.TRAILING_STOP_MARKET
+                or order.order_type == OrderType.TRAILING_STOP_LIMIT
+            ):
+                if order.trigger_price is None:
+                    self._update_trailing_stop_order(order)
 
         self._core.add_order(order)
 

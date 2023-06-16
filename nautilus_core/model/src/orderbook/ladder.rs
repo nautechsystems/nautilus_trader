@@ -13,17 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Display, Formatter};
-
-use crate::data::book::BookOrder;
-use crate::enums::OrderSide;
-use crate::orderbook::level::Level;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap},
+    fmt::{Display, Formatter},
+};
 
 use super::book::BookIntegrityError;
+use crate::{
+    data::book::BookOrder,
+    enums::OrderSide,
+    orderbook::level::Level,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[derive(Copy, Clone, Debug, Eq)]
 pub struct BookPrice {
@@ -213,11 +215,15 @@ impl Ladder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::data::book::BookOrder;
-    use crate::enums::OrderSide;
-    use crate::orderbook::ladder::{BookPrice, Ladder};
-    use crate::types::price::{Price, PRICE_MAX, PRICE_MIN};
-    use crate::types::quantity::Quantity;
+    use crate::{
+        data::book::BookOrder,
+        enums::OrderSide,
+        orderbook::ladder::{BookPrice, Ladder},
+        types::{
+            price::{Price, PRICE_MAX, PRICE_MIN},
+            quantity::Quantity,
+        },
+    };
 
     #[test]
     fn test_book_price_bid_sorting() {

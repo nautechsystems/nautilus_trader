@@ -13,29 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    hash::{Hash, Hasher},
+};
 
-use nautilus_core::string::str_to_cstr;
-
-use crate::enums::{AggregationSource, BarAggregation, PriceType};
-use crate::identifiers::instrument_id::InstrumentId;
+use nautilus_core::{string::str_to_cstr, time::UnixNanos};
 
 use super::bar::{Bar, BarSpecification, BarType};
-
-/// Returns a [`BarSpecification`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
-    str_to_cstr(&bar_spec.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar_spec.hash(&mut h);
-    h.finish()
-}
+use crate::{
+    enums::{AggregationSource, BarAggregation, PriceType},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[no_mangle]
 pub extern "C" fn bar_specification_new(
@@ -51,6 +42,19 @@ pub extern "C" fn bar_specification_new(
         aggregation,
         price_type,
     }
+}
+
+/// Returns a [`BarSpecification`] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
+    str_to_cstr(&bar_spec.to_string())
+}
+
+#[no_mangle]
+pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
+    let mut h = DefaultHasher::new();
+    bar_spec.hash(&mut h);
+    h.finish()
 }
 
 #[no_mangle]
@@ -91,6 +95,11 @@ pub extern "C" fn bar_type_new(
         spec,
         aggregation_source,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_drop(bar_type: BarType) {
+    drop(bar_type); // Memory freed here
 }
 
 #[no_mangle]
@@ -137,14 +146,56 @@ pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_drop(bar_type: BarType) {
-    drop(bar_type); // Memory freed here
+pub extern "C" fn bar_new(
+    bar_type: BarType,
+    open: Price,
+    high: Price,
+    low: Price,
+    close: Price,
+    volume: Quantity,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Bar {
+    Bar {
+        bar_type,
+        open,
+        high,
+        low,
+        close,
+        volume,
+        ts_event,
+        ts_init,
+    }
 }
 
-/// Returns a [`Bar`] as a C string.
 #[no_mangle]
-pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
-    str_to_cstr(&bar.to_string())
+pub extern "C" fn bar_new_from_raw(
+    bar_type: BarType,
+    open: i64,
+    high: i64,
+    low: i64,
+    close: i64,
+    price_prec: u8,
+    volume: u64,
+    size_prec: u8,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Bar {
+    Bar {
+        bar_type,
+        open: Price::from_raw(open, price_prec),
+        high: Price::from_raw(high, price_prec),
+        low: Price::from_raw(low, price_prec),
+        close: Price::from_raw(close, price_prec),
+        volume: Quantity::from_raw(volume, size_prec),
+        ts_event,
+        ts_init,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn bar_drop(bar: Bar) {
+    drop(bar); // Memory freed here
 }
 
 #[no_mangle]
@@ -152,9 +203,10 @@ pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
     bar.clone()
 }
 
+/// Returns a [`Bar`] as a C string.
 #[no_mangle]
-pub extern "C" fn bar_drop(bar: Bar) {
-    drop(bar); // Memory freed here
+pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
+    str_to_cstr(&bar.to_string())
 }
 
 #[no_mangle]

@@ -13,13 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
-use std::rc::Rc;
+use std::{
+    cmp::Ordering,
+    fmt::{Display, Formatter},
+    rc::Rc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::time::{TimedeltaNanos, UnixNanos};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{
+    correctness,
+    time::{TimedeltaNanos, UnixNanos},
+    uuid::UUID4,
+};
 use pyo3::ffi;
 
 #[repr(C)]

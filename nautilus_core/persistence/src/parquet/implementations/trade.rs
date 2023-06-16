@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
-use datafusion::arrow::array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array};
-use datafusion::arrow::datatypes::{DataType, Field, Schema};
-use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
-use nautilus_model::data::tick::TradeTick;
-use nautilus_model::enums::AggressorSide;
+use datafusion::arrow::{
+    array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array},
+    datatypes::{DataType, Field, Schema, SchemaRef},
+    record_batch::RecordBatch,
+};
 use nautilus_model::{
-    identifiers::instrument_id::InstrumentId,
-    identifiers::trade_id::TradeId,
+    data::tick::TradeTick,
+    enums::AggressorSide,
+    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -106,12 +106,14 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) 
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{collections::HashMap, sync::Arc};
+
     use datafusion::arrow::{
         array::{Int64Array, StringArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
-    use std::{collections::HashMap, sync::Arc};
+
+    use super::*;
 
     fn create_metadata() -> HashMap<String, String> {
         let mut metadata = HashMap::new();

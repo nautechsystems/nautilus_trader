@@ -154,10 +154,10 @@ class TestSimulatedExchange:
 
     def test_submit_stop_limit_buy_order_when_marketable_then_fills(self):
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("90.002"),
-            ask=Price.from_str("90.005"),
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=90.002,
+            ask=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -183,10 +183,10 @@ class TestSimulatedExchange:
 
     def test_submit_stop_limit_sell_order_when_marketable_then_fills(self):
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("90.002"),
-            ask=Price.from_str("90.005"),
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=90.002,
+            ask=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -212,10 +212,10 @@ class TestSimulatedExchange:
 
     def test_process_quote_tick_fills_buy_stop_limit_order_passively(self):
         # Arrange: Prepare market
-        tick1 = TestDataStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("90.002"),
-            ask=Price.from_str("90.005"),
+        tick1 = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=90.002,
+            ask=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -252,10 +252,10 @@ class TestSimulatedExchange:
 
     def test_process_quote_tick_fills_sell_stop_limit_order_passively(self):
         # Arrange: Prepare market
-        tick1 = TestDataStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("90.002"),
-            ask=Price.from_str("90.005"),
+        tick1 = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=90.002,
+            ask=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)

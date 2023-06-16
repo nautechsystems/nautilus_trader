@@ -26,6 +26,7 @@ from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -56,7 +57,9 @@ class TestConfigStubs:
         )
 
     @staticmethod
-    def order_book_imbalance(instrument_id=None) -> ImportableStrategyConfig:
+    def order_book_imbalance(
+        instrument_id: Optional[InstrumentId] = None,
+    ) -> ImportableStrategyConfig:
         return ImportableStrategyConfig(
             strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
             config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
@@ -95,10 +98,10 @@ class TestConfigStubs:
     @staticmethod
     def backtest_engine_config(
         log_level="INFO",
-        bypass_logging=True,
-        bypass_risk=False,
-        allow_cash_position=True,
-        persist=False,
+        bypass_logging: bool = True,
+        bypass_risk: bool = False,
+        allow_cash_position: bool = True,
+        persist: bool = False,
         catalog: Optional[ParquetDataCatalog] = None,
         strategies: Optional[list[ImportableStrategyConfig]] = None,
     ) -> BacktestEngineConfig:
@@ -125,7 +128,7 @@ class TestConfigStubs:
     @staticmethod
     def backtest_data_config(
         catalog: ParquetDataCatalog,
-        data_cls=QuoteTick,
+        data_cls: Data = QuoteTick,
         instrument_id: Optional[str] = None,
     ) -> BacktestDataConfig:
         return BacktestDataConfig(

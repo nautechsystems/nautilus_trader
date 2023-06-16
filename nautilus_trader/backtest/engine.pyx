@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import pickle
 from decimal import Decimal
 from typing import Optional, Union
@@ -401,9 +402,7 @@ cdef class BacktestEngine:
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
         use_random_ids : bool, default False
-            If venue order and position IDs will use a random raw ID component.
-            If True will use a random uint32 component, otherwise will be deterministically based on
-            the order in which instruments are added to the exchange.
+            If venue order and position IDs will be randomly generated UUID4s.
 
         Raises
         ------
@@ -790,6 +789,27 @@ cdef class BacktestEngine:
         self._data_len = 0
         self._index = 0
 
+    def clear_actors(self) -> None:
+        """
+        Clear all actors from the engines internal trader.
+
+        """
+        self._trader.clear_actors()
+
+    def clear_strategies(self) -> None:
+        """
+        Clear all trading strategies from the engines internal trader.
+
+        """
+        self._trader.clear_strategies()
+
+    def clear_exec_algorthms(self) -> None:
+        """
+        Clear all execution algorithms from the engines internal trader.
+
+        """
+        self._trader.clear_exec_algorthms()
+
     def dispose(self) -> None:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
@@ -961,11 +981,24 @@ cdef class BacktestEngine:
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()
-            self._kernel.data_engine.start()
-            self._kernel.risk_engine.start()
-            self._kernel.exec_engine.start()
-            self._kernel.emulator.start()
-            self._kernel.trader.start()
+                ###################################################################################
+                open_orders = self._kernel.cache.orders_open(venue=exchange.id)
+                for order in open_orders:
+                    if order.is_emulated:
+                        # Order should be loaded in the emulator already
+                        continue
+                    matching_engine = exchange.get_matching_engine(order.instrument_id)
+                    if matching_engine is None:
+                        self._log.error(
+                            f"No matching engine for {order.instrument_id} to process {order}.",
+                        )
+                        continue
+                    matching_engine.process_order(order, order.account_id)
+                ###################################################################################
+
+            # Common kernel start-up sequence
+            asyncio.run(self._kernel.start())
+
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
             self._log_pre_run()

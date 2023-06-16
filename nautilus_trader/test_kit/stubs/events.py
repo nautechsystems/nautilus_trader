@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
@@ -41,8 +42,11 @@ from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -250,18 +254,18 @@ class TestEventStubs:
 
     @staticmethod
     def order_filled(
-        order,
-        instrument,
-        strategy_id=None,
-        account_id=None,
-        venue_order_id=None,
-        trade_id=None,
-        position_id=None,
-        last_qty=None,
-        last_px=None,
-        liquidity_side=LiquiditySide.TAKER,
-        ts_filled_ns=0,
-        account=None,
+        order: Order,
+        instrument: Instrument,
+        strategy_id: Optional[StrategyId] = None,
+        account_id: Optional[AccountId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+        trade_id: Optional[TradeId] = None,
+        position_id: Optional[PositionId] = None,
+        last_qty: Optional[Quantity] = None,
+        last_px: Optional[Price] = None,
+        liquidity_side: LiquiditySide = LiquiditySide.TAKER,
+        ts_filled_ns: int = 0,
+        account: Optional[Account] = None,
     ) -> OrderFilled:
         if strategy_id is None:
             strategy_id = order.strategy_id
@@ -280,9 +284,11 @@ class TestEventStubs:
         if last_qty is None:
             last_qty = order.quantity
         if account is None:
+            # Causes circular import if moved to the top
             from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
             account = TestExecStubs.cash_account()
+        assert account is not None  # Type checking
 
         commission = account.calculate_commission(
             instrument=instrument,

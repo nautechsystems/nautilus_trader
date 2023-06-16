@@ -23,7 +23,6 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.validation import NonNegativeInt
-from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 
 
@@ -164,16 +163,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
-    timeout_connection : PositiveFloat (seconds)
-        The timeout for all clients to connect and initialize.
-    timeout_reconciliation : PositiveFloat (seconds)
-        The timeout for execution state to reconcile.
-    timeout_portfolio : PositiveFloat (seconds)
-        The timeout for portfolio to initialize margins and unrealized PnLs.
-    timeout_disconnection : PositiveFloat (seconds)
-        The timeout for all engine clients to disconnect.
-    timeout_post_stop : PositiveFloat (seconds)
-        The timeout after stopping the node to await residual events before final shutdown.
     """
 
     environment: Environment = Environment.LIVE
@@ -183,8 +172,3 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
-    timeout_connection: PositiveFloat = 10.0
-    timeout_reconciliation: PositiveFloat = 10.0
-    timeout_portfolio: PositiveFloat = 10.0
-    timeout_disconnection: PositiveFloat = 10.0
-    timeout_post_stop: PositiveFloat = 10.0

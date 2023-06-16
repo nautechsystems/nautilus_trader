@@ -84,15 +84,16 @@ if __name__ == "__main__":
     engine.add_exec_algorithm(exec_algorithm)
 
     count = 0
-    while count <= 3:
-        print(f"Run: {count}")
+    total_runs = 128
+    while count <= total_runs:
+        count += 1
+        print(f"Run: {count}/{total_runs}")
+
         # Run the engine (from start to end of data)
         engine.run()
 
         # For repeated backtest runs make sure to reset the engine
         engine.reset()
-
-        count += 1
 
     # Good practice to dispose of the object
     engine.dispose()

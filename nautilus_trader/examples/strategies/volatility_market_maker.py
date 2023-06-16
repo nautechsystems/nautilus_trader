@@ -23,7 +23,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -136,7 +136,8 @@ class VolatilityMarketMaker(Strategy):
         # )  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
-        #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+        #         BinanceFuturesMarkPriceUpdate,
+        #         metadata={"instrument_id": self.instrument.id},
         #     ),
         #     client_id=ClientId("BINANCE"),
         # )
@@ -182,18 +183,18 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         self.log.info(repr(order_book), LogColor.CYAN)
 
-    def on_order_book_delta(self, delta: OrderBookDelta) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives an order book delta.
+        Actions to be performed when the strategy is running and receives order book deltas.
 
         Parameters
         ----------
-        delta : OrderBookDelta
-            The order book delta received.
+        deltas : OrderBookDeltas
+            The order book deltas received.
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(delta), LogColor.CYAN)
+        self.log.info(repr(deltas), LogColor.CYAN)
 
     def on_ticker(self, ticker: Ticker) -> None:
         """

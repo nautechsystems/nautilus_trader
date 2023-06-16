@@ -23,9 +23,6 @@ from aiohttp import WSMsgType
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
-
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     async def write():
@@ -50,27 +47,28 @@ async def socket_server():
         yield addr
 
 
-@pytest_asyncio.fixture()
-async def closing_socket_server():
+@pytest_asyncio.fixture(name="closing_socket_server")
+async def fixture_closing_socket_server():
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         async def write():
-            while True:
-                writer.write(b"hello\r\n")
-                await asyncio.sleep(0.1)
-                writer.close()
+            writer.write(b"hello\r\n")
+            await asyncio.sleep(0.1)
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            # print("Server closed")
 
-        asyncio.get_event_loop().create_task(write())
+        await write()
 
     server = await asyncio.start_server(handler, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
     async with server:
-        await server.start_serving()
         yield addr
 
 
-@pytest_asyncio.fixture()
+@pytest_asyncio.fixture(name="websocket_server")
 @pytest.mark.asyncio()
-async def websocket_server(event_loop):
+async def fixture_websocket_server(event_loop):
     async def handler(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
@@ -102,9 +100,3 @@ async def websocket_server(event_loop):
     await app.shutdown()
     await app.cleanup()
     await server.close()
-
-
-@pytest.fixture()
-def logger(event_loop):
-    clock = LiveClock()
-    return Logger(clock=clock)

@@ -195,7 +195,7 @@ class TestPortfolio:
 
     def test_update_tick(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal(GBPUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         self.portfolio.update_quote_tick(tick)

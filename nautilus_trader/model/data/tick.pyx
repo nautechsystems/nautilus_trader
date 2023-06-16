@@ -24,13 +24,13 @@ from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_clone
 from nautilus_trader.core.rust.model cimport quote_tick_drop
-from nautilus_trader.core.rust.model cimport quote_tick_from_raw
+from nautilus_trader.core.rust.model cimport quote_tick_new
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_clone
 from nautilus_trader.core.rust.model cimport trade_tick_drop
-from nautilus_trader.core.rust.model cimport trade_tick_from_raw
+from nautilus_trader.core.rust.model cimport trade_tick_new
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -88,7 +88,7 @@ cdef class QuoteTick(Data):
         Condition.equal(bid._mem.precision, ask._mem.precision, "bid.precision", "ask.precision")
         Condition.equal(bid_size._mem.precision, ask_size._mem.precision, "bid_size.precision", "ask_size.precision")
 
-        self._mem = quote_tick_from_raw(
+        self._mem = quote_tick_new(
             instrument_id_clone(&instrument_id._mem),
             bid._mem.raw,
             ask._mem.raw,
@@ -122,7 +122,7 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
-        self._mem = quote_tick_from_raw(
+        self._mem = quote_tick_new(
             instrument_id_new_from_cstr(
                 pystr_to_cstr(state[0]),
             ),
@@ -279,7 +279,7 @@ cdef class QuoteTick(Data):
         uint64_t ts_init,
     ):
         cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
-        tick._mem = quote_tick_from_raw(
+        tick._mem = quote_tick_new(
             instrument_id_clone(&instrument_id._mem),
             raw_bid,
             raw_ask,
@@ -530,7 +530,7 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        self._mem = trade_tick_from_raw(
+        self._mem = trade_tick_new(
             instrument_id_clone(&instrument_id._mem),
             price._mem.raw,
             price._mem.precision,
@@ -560,7 +560,7 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
-        self._mem = trade_tick_from_raw(
+        self._mem = trade_tick_new(
             instrument_id_new_from_cstr(
                 pystr_to_cstr(state[0]),
             ),
@@ -686,7 +686,7 @@ cdef class TradeTick(Data):
         uint64_t ts_init,
     ):
         cdef TradeTick tick = TradeTick.__new__(TradeTick)
-        tick._mem = trade_tick_from_raw(
+        tick._mem = trade_tick_new(
             instrument_id_clone(&instrument_id._mem),
             raw_price,
             price_prec,

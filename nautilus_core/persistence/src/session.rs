@@ -16,22 +16,22 @@
 use std::vec::IntoIter;
 
 use compare::Compare;
-use datafusion::error::Result;
-use datafusion::physical_plan::SendableRecordBatchStream;
-use datafusion::prelude::*;
-use futures::executor::block_on;
-use futures::{Stream, StreamExt};
+use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
+use futures::{executor::block_on, Stream, StreamExt};
 use nautilus_core::cvec::CVec;
-use nautilus_model::data::bar::Bar;
-use nautilus_model::data::book::OrderBookDelta;
-use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use nautilus_model::data::Data;
-use pyo3::prelude::*;
-use pyo3::types::PyCapsule;
+use nautilus_model::data::{
+    bar::Bar,
+    book::OrderBookDelta,
+    tick::{QuoteTick, TradeTick},
+    Data,
+};
+use pyo3::{prelude::*, types::PyCapsule};
 use pyo3_asyncio::tokio::get_runtime;
 
-use crate::kmerge_batch::{KMerge, PeekElementBatchStream};
-use crate::parquet::{DecodeDataFromRecordBatch, ParquetType};
+use crate::{
+    kmerge_batch::{KMerge, PeekElementBatchStream},
+    parquet::{DecodeDataFromRecordBatch, ParquetType},
+};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;

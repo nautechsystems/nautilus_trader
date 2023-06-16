@@ -13,14 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
-use datafusion::arrow::array::{Array, Int64Array, UInt64Array};
-use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-use datafusion::arrow::record_batch::RecordBatch;
-use nautilus_model::data::tick::QuoteTick;
+use datafusion::arrow::{
+    array::{Array, Int64Array, UInt64Array},
+    datatypes::{DataType, Field, Schema, SchemaRef},
+    record_batch::RecordBatch,
+};
 use nautilus_model::{
+    data::tick::QuoteTick,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
@@ -103,9 +104,11 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) 
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use datafusion::arrow::record_batch::RecordBatch;
     use std::{collections::HashMap, sync::Arc};
+
+    use datafusion::arrow::record_batch::RecordBatch;
+
+    use super::*;
 
     fn create_metadata() -> HashMap<String, String> {
         let mut metadata = HashMap::new();

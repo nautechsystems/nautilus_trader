@@ -24,13 +24,13 @@ cdef class Currency:
     cdef uint8_t get_precision(self)
 
     @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=*)
+
+    @staticmethod
     cdef Currency from_internal_map_c(str code)
 
     @staticmethod
     cdef Currency from_str_c(str code, bint strict=*)
-
-    @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=*)
 
     @staticmethod
     cdef bint is_fiat_c(str code)

@@ -13,30 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
-
 use derive_builder::{self, Builder};
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
-use crate::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
+use crate::{
+    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
+        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use crate::identifiers::account_id::AccountId;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::order_list_id::OrderListId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::trader_id::TraderId;
-use crate::identifiers::venue_order_id::VenueOrderId;
-use crate::types::currency::Currency;
-use crate::types::money::Money;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum OrderEvent {
@@ -60,6 +49,7 @@ pub enum OrderEvent {
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Builder, Serialize, Deserialize)]
 #[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderInitialized {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -75,6 +65,7 @@ pub struct OrderInitialized {
     pub expire_time: Option<UnixNanos>,
     pub post_only: bool,
     pub reduce_only: bool,
+    pub quote_quantity: bool,
     pub display_qty: Option<Quantity>,
     pub limit_offset: Option<Price>,
     pub trailing_offset: Option<Price>,
@@ -109,6 +100,7 @@ impl Default for OrderInitialized {
             post_only: Default::default(),
             reduce_only: Default::default(),
             display_qty: Default::default(),
+            quote_quantity: Default::default(),
             limit_offset: Default::default(),
             trailing_offset: Default::default(),
             trailing_offset_type: Default::default(),
@@ -356,54 +348,3 @@ pub struct OrderFilled {
     pub ts_init: UnixNanos,
     pub reconciliation: bool,
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn order_denied_new(
-    trader_id: TraderId,
-    strategy_id: StrategyId,
-    instrument_id: InstrumentId,
-    client_order_id: ClientOrderId,
-    reason_ptr: *const c_char,
-    event_id: UUID4,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> OrderDenied {
-    OrderDenied {
-        trader_id,
-        strategy_id,
-        instrument_id,
-        client_order_id,
-        reason: Box::new(cstr_to_string(reason_ptr)),
-        event_id,
-        ts_event,
-        ts_init,
-    }
-}
-
-/// Frees the memory for the given `account_id` by dropping.
-#[no_mangle]
-pub extern "C" fn order_denied_drop(event: OrderDenied) {
-    drop(event); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn order_denied_clone(event: &OrderDenied) -> OrderDenied {
-    event.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn order_denied_reason_to_cstr(event: &OrderDenied) -> *const c_char {
-    str_to_cstr(&event.reason)
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////

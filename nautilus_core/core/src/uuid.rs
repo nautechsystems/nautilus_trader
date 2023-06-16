@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    str::FromStr,
+    sync::Arc,
+};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;

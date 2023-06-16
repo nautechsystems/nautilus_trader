@@ -15,12 +15,11 @@
 
 pub mod ema;
 
-use nautilus_model::data::bar::Bar;
-use nautilus_model::data::tick::QuoteTick;
-use nautilus_model::data::tick::TradeTick;
-use pyo3::prelude::*;
-use pyo3::types::PyModule;
-use pyo3::Python;
+use nautilus_model::data::{
+    bar::Bar,
+    tick::{QuoteTick, TradeTick},
+};
+use pyo3::{prelude::*, types::PyModule, Python};
 
 /// Loaded as nautilus_pyo3.indicators
 #[pymodule]

@@ -13,19 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    hash::{Hash, Hasher},
+    str::FromStr,
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
+use nautilus_core::{
+    correctness,
+    string::{cstr_to_string, str_to_cstr},
+};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::currencies::CURRENCY_MAP;
-use crate::enums::CurrencyType;
+use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
 #[derive(Clone, Debug, Eq)]
@@ -205,8 +208,10 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::enums::CurrencyType;
-    use crate::types::currency::{currency_eq, Currency};
+    use crate::{
+        enums::CurrencyType,
+        types::currency::{currency_eq, Currency},
+    };
 
     #[test]
     fn test_currency_equality() {

@@ -15,22 +15,24 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{
+    string::{cstr_to_string, str_to_cstr},
+    uuid::UUID4,
+};
 
 use crate::timer::TimeEvent;
 
 /// # Safety
 ///
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn time_event_new(
-    name: *const c_char,
+    name_ptr: *const c_char,
     event_id: UUID4,
     ts_event: u64,
     ts_init: u64,
 ) -> TimeEvent {
-    TimeEvent::new(cstr_to_string(name), event_id, ts_event, ts_init)
+    TimeEvent::new(cstr_to_string(name_ptr), event_id, ts_event, ts_init)
 }
 
 #[no_mangle]

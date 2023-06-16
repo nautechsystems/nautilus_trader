@@ -218,7 +218,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         # Connect WebSocket client
-        self._ws_client.subscribe(key=self._listen_key)
+        await self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
 
     async def _update_account_state(self) -> None:
@@ -281,7 +281,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if venue_order_id:
                 binance_order = await self._http_account.query_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 binance_order = await self._http_account.query_order(
@@ -707,52 +707,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.error("Cannot modify order: not supported by the venue.")
-        # TODO: Below is an experimental WIP (will potentially be removed)
-
-        # order = self._cache.order(command.client_order_id)
-        # if order is None:
-        #     self._log.error(
-        #         f"Cannot modify order: order not found for {repr(command.client_order_id)}",
-        #     )
-        #
-        # self._modifying_orders[order.client_order_id] = order.venue_order_id
-        #
-        # await self._cancel_order_single(
-        #     instrument_id=command.instrument_id,
-        #     client_order_id=command.client_order_id,
-        #     venue_order_id=command.venue_order_id,
-        # )
-        #
-        # try:
-        #     await self._submit_order_method[order.order_type](order)
-        # except BinanceError as e:
-        #     self.generate_order_rejected(
-        #         strategy_id=order.strategy_id,
-        #         instrument_id=order.instrument_id,
-        #         client_order_id=order.client_order_id,
-        #         reason=e.message,
-        #         ts_event=self._clock.timestamp_ns(),
-        #     )
-        #     return
-
-        # now = self._clock.timestamp_ns()
-        # updated = OrderUpdated(
-        #     trader_id=order.trader_id,
-        #     strategy_id=order.strategy_id,
-        #     instrument_id=order.instrument_id,
-        #     client_order_id=order.client_order_id,
-        #     venue_order_id=order.venue_order_id,
-        #     account_id=order.account_id,
-        #     quantity=command.quantity or order.quantity,
-        #     price=command.price,
-        #     trigger_price=command.trigger_price,
-        #     event_id=UUID4(),
-        #     ts_event=now,
-        #     ts_init=now,
-        # )
-        #
-        # order.apply(updated)
-        # self._cache.update_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         await self._cancel_order_single(
@@ -806,7 +760,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if venue_order_id is not None:
                 await self._http_account.cancel_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 await self._http_account.cancel_order(

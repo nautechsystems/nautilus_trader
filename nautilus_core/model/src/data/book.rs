@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
+use std::{
+    fmt::{Display, Formatter},
+    hash::{Hash, Hasher},
+};
 
 use nautilus_core::time::UnixNanos;
 
-use crate::enums::BookAction;
-use crate::enums::OrderSide;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::orderbook::book::BookIntegrityError;
-use crate::orderbook::ladder::BookPrice;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
-
 use super::tick::{QuoteTick, TradeTick};
+use crate::{
+    enums::{BookAction, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    orderbook::{book::BookIntegrityError, ladder::BookPrice},
+    types::{price::Price, quantity::Quantity},
+};
 
 /// Represents an order in a book.
 #[repr(C)]

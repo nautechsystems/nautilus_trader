@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter};
-use std::sync::Arc;
+use std::{
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::str_to_cstr;
+use nautilus_core::{correctness, string::str_to_cstr};
 use pyo3::prelude::*;
 
 #[repr(C)]

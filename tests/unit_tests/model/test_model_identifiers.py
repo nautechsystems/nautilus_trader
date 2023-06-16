@@ -15,7 +15,10 @@
 
 import pickle
 
+import pytest
+
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -263,3 +266,32 @@ class TestExecAlgorithmId:
         assert isinstance(hash(exec_algorithm_id1), int)
         assert str(exec_algorithm_id1) == "VWAP"
         assert repr(exec_algorithm_id1) == "ExecAlgorithmId('VWAP')"
+
+
+@pytest.mark.parametrize(
+    ("client_order_id, trader_id, expected"),
+    [
+        [
+            ClientOrderId("O-20210410-022422-001-001-001"),
+            TraderId("TRADER-001"),
+            True,
+        ],
+        [
+            ClientOrderId("O-20210410-022422-001-001-001"),
+            TraderId("TRADER-000"),  # <-- Different trader ID
+            False,
+        ],
+        [
+            ClientOrderId("O-001"),  # <-- Some custom ID without enough components
+            TraderId("TRADER-001"),
+            False,
+        ],
+    ],
+)
+def test_client_order_id_is_this_trader(
+    client_order_id: ClientOrderId,
+    trader_id: TraderId,
+    expected: bool,
+) -> None:
+    # Arrange, Act, Assert
+    assert client_order_id.is_this_trader(trader_id) == expected

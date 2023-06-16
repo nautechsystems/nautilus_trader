@@ -15,12 +15,41 @@
 
 use std::{
     collections::HashMap,
-    ffi::{c_char, CStr},
+    ffi::{c_char, CStr, CString},
 };
 
 use serde_json::{Result, Value};
 
 use crate::string::cstr_to_string;
+
+/// Convert a C bytes pointer into an owned `Vec<String>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
+    let c_str = CStr::from_ptr(ptr);
+    let bytes = c_str.to_bytes();
+    let json_string = std::str::from_utf8(bytes).unwrap();
+    let parsed_value: serde_json::Value = serde_json::from_str(json_string).unwrap();
+
+    match parsed_value {
+        serde_json::Value::Array(arr) => arr
+            .into_iter()
+            .filter_map(|value| match value {
+                serde_json::Value::String(string_value) => Some(string_value),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+pub fn string_vec_to_bytes(strings: Vec<String>) -> *const c_char {
+    let json_string = serde_json::to_string(&strings).unwrap();
+    let c_string = CString::new(json_string).unwrap();
+    c_string.into_raw()
+}
 
 /// Convert a C bytes pointer into an owned `Option<HashMap<String, Value>>`.
 ///
@@ -97,6 +126,56 @@ mod tests {
         let ptr = json_str.as_ptr() as *const c_char;
         let result = unsafe { optional_bytes_to_json(ptr) };
         assert_eq!(result, Some(HashMap::new()));
+    }
+
+    #[test]
+    fn test_string_vec_to_bytes_valid() {
+        let strings = vec!["value1", "value2", "value3"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<String>>();
+
+        let ptr = string_vec_to_bytes(strings.clone());
+
+        let result = unsafe { bytes_to_string_vec(ptr) };
+        assert_eq!(result, strings);
+    }
+
+    #[test]
+    fn test_string_vec_to_bytes_empty() {
+        let strings = Vec::new();
+        let ptr = string_vec_to_bytes(strings.clone());
+
+        let result = unsafe { bytes_to_string_vec(ptr) };
+        assert_eq!(result, strings);
+    }
+
+    #[test]
+    fn test_bytes_to_string_vec_valid() {
+        let json_str = CString::new(r#"["value1", "value2", "value3"]"#).unwrap();
+        let ptr = json_str.as_ptr() as *const c_char;
+        let result = unsafe { bytes_to_string_vec(ptr) };
+
+        let expected_vec = vec!["value1", "value2", "value3"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<String>>();
+
+        assert_eq!(result, expected_vec);
+    }
+
+    #[test]
+    fn test_bytes_to_string_vec_invalid() {
+        let json_str = CString::new(r#"["value1", 42, "value3"]"#).unwrap();
+        let ptr = json_str.as_ptr() as *const c_char;
+        let result = unsafe { bytes_to_string_vec(ptr) };
+
+        let expected_vec = vec!["value1", "value3"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<String>>();
+
+        assert_eq!(result, expected_vec);
     }
 
     #[test]

@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::types::fixed::f64_to_fixed_i64;
-use nautilus_model::types::fixed::f64_to_fixed_u64;
+use nautilus_model::types::fixed::{f64_to_fixed_i64, f64_to_fixed_u64};
 use rand::Rng;
 
 #[allow(dead_code)]

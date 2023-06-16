@@ -289,12 +289,12 @@ class TestL2OrderBookExchange:
         self.strategy.submit_order(order)
 
         # Act
-        tick = TestDataStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("15"),
-            ask=Price.from_str("16"),
-            bid_size=Quantity.from_int(1_000),
-            ask_size=Quantity.from_int(1_000),
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=15.0,
+            ask=16.0,
+            bid_size=1_000,
+            ask_size=1_000,
         )
         # New tick will be in cross with our order
         self.exchange.process_quote_tick(tick)

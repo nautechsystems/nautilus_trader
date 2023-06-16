@@ -18,7 +18,7 @@
 | `Linux (x86_64)`   | 1.70.0+ | 3.9+   |
 | `macOS (x86_64)`   | 1.70.0+ | 3.9+   |
 | `macOS (arm64)`    | 1.70.0+ | 3.9+   |
-| `Windows (x86_64)` | 1.69.0  | 3.9+   |
+| `Windows (x86_64)` | 1.70.0+ | 3.9+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -258,12 +258,16 @@ Docker containers are built using a base `python:3.10-slim` with the following i
 
 The container images can be pulled as follows:
 
-    docker pull ghcr.io/nautechsystems/<image_variant_tag>
+    docker pull ghcr.io/nautechsystems/<image_variant_tag> --platform linux/amd64
 
 You can launch the backtest example container by running:
 
-    docker pull ghcr.io/nautechsystems/jupyterlab:develop
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop --platform linux/amd64
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+
+Then open your browser at the following address:
+
+    http://127.0.0.1:8888/lab
 
 | :warning: WARNING |
 | :---------------- |

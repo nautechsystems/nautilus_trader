@@ -54,6 +54,7 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -484,24 +485,20 @@ class TestExecAlgorithm:
         )
         exec_algorithm.start()
 
-        tick1 = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5005.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5005.0),
-            bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ts_event=0,
-            ts_init=0,
+        tick1: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5005.0,
+            ask=5005.0,
+            bid_size=10.000,
+            ask_size=10.000,
         )
 
-        tick2 = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5000.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5000.0),
-            bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ts_event=0,
-            ts_init=0,
+        tick2: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5000.0,
+            ask=5000.0,
+            bid_size=10.000,
+            ask_size=10.000,
         )
 
         self.data_engine.process(tick1)

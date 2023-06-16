@@ -13,19 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use thiserror::Error;
 
-use crate::enums::{AggregationSource, BarAggregation, PriceType};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use crate::{
+    enums::{AggregationSource, BarAggregation, PriceType},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -208,63 +211,16 @@ impl Display for Bar {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn bar_new(
-    bar_type: BarType,
-    open: Price,
-    high: Price,
-    low: Price,
-    close: Price,
-    volume: Quantity,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> Bar {
-    Bar {
-        bar_type,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        ts_event,
-        ts_init,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bar_new_from_raw(
-    bar_type: BarType,
-    open: i64,
-    high: i64,
-    low: i64,
-    close: i64,
-    price_prec: u8,
-    volume: u64,
-    size_prec: u8,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> Bar {
-    Bar {
-        bar_type,
-        open: Price::from_raw(open, price_prec),
-        high: Price::from_raw(high, price_prec),
-        low: Price::from_raw(low, price_prec),
-        close: Price::from_raw(close, price_prec),
-        volume: Quantity::from_raw(volume, size_prec),
-        ts_event,
-        ts_init,
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::BarAggregation;
-    use crate::identifiers::symbol::Symbol;
-    use crate::identifiers::venue::Venue;
+    use crate::{
+        enums::BarAggregation,
+        identifiers::{symbol::Symbol, venue::Venue},
+    };
 
     #[test]
     fn test_bar_spec_equality() {

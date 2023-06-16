@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
-use std::str::FromStr;
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+    str::FromStr,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::parsing::precision_from_str;
+use nautilus_core::{correctness, parsing::precision_from_str};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
-
 use super::fixed::FIXED_SCALAR;
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
@@ -289,8 +289,9 @@ pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::str::FromStr;
+
+    use super::*;
 
     #[test]
     fn test_new() {
