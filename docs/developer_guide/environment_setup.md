@@ -8,6 +8,9 @@ For development we recommend using the PyCharm *Professional* edition IDE, as it
 
 [pre-commit](https://pre-commit.com/) is used to automatically run various checks, auto-formatters and linting tools at commit.
 
+NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust should be installed on your system as well
+([installation guide](https://www.rust-lang.org/tools/install)).
+
 ## Setup
 
 The following steps are for UNIX-like systems, and only need to be completed once.
