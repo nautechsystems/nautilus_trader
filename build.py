@@ -69,6 +69,7 @@ else:  # Linux
 # Directories with headers to include
 RUST_INCLUDES = ["nautilus_trader/core/includes"]
 RUST_LIB_PATHS: list[Path] = [
+    TARGET_DIR / f"{RUST_LIB_PFX}nautilus_algorithms.{RUST_STATIC_LIB_EXT}",
     TARGET_DIR / f"{RUST_LIB_PFX}nautilus_backtest.{RUST_STATIC_LIB_EXT}",
     TARGET_DIR / f"{RUST_LIB_PFX}nautilus_common.{RUST_STATIC_LIB_EXT}",
     TARGET_DIR / f"{RUST_LIB_PFX}nautilus_core.{RUST_STATIC_LIB_EXT}",

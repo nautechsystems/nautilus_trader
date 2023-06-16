@@ -24,12 +24,12 @@ use nautilus_core::{
     parsing::{bytes_to_string_vec, string_vec_to_bytes},
     string::{cstr_to_string, str_to_cstr},
 };
-
-use super::synthetic::SyntheticInstrument;
-use crate::{
+use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::price::Price,
 };
+
+use super::synthetic::SyntheticInstrument;
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying
 /// [`SyntheticInstrument`].

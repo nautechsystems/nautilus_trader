@@ -1815,6 +1815,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-algorithms"
+version = "0.6.0"
+dependencies = [
+ "cbindgen",
+ "nautilus-core",
+ "nautilus-model",
+ "rhai",
+]
+
+[[package]]
 name = "nautilus-backtest"
 version = "0.6.0"
 dependencies = [

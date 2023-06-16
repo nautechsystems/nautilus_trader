@@ -15,12 +15,11 @@
 
 use std::collections::HashMap;
 
-use rhai::{Engine, Scope, AST};
-
-use crate::{
+use nautilus_model::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::price::Price,
 };
+use rhai::{Engine, Scope, AST};
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
@@ -124,8 +123,9 @@ impl SyntheticInstrument {
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_model::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
+
     use super::*;
-    use crate::identifiers::symbol::Symbol;
 
     #[test]
     fn test_calculate_from_map() {
