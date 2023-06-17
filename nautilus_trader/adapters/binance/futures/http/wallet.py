@@ -38,6 +38,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#user-commission-rate-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#user-commission-rate-user_data
+
     """
 
     def __init__(
@@ -67,6 +68,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
             Millisecond timestamp of the request.
         recvWindow : str, optional
             The number of milliseconds after timestamp the request is valid.
+
         """
 
         timestamp: str
@@ -87,6 +89,7 @@ class BinanceFuturesWalletHttpAPI:
     ----------
     client : BinanceHttpClient
         The Binance REST API client.
+
     """
 
     def __init__(
@@ -114,7 +117,9 @@ class BinanceFuturesWalletHttpAPI:
         )
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock."""
+        """
+        Create Binance timestamp from internal clock.
+        """
         return str(self._clock.timestamp_ms())
 
     async def query_futures_commission_rate(
@@ -122,7 +127,9 @@ class BinanceFuturesWalletHttpAPI:
         symbol: str,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesCommissionRate:
-        """Get Futures commission rates for a given symbol."""
+        """
+        Get Futures commission rates for a given symbol.
+        """
         rate = await self._endpoint_futures_commission_rate._get(
             parameters=self._endpoint_futures_commission_rate.GetParameters(
                 timestamp=self._timestamp(),

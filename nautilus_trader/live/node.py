@@ -45,6 +45,7 @@ class TradingNode:
     loop : asyncio.AbstractEventLoop, optional
         The event loop for the node.
         If ``None`` then will get the running event loop internally.
+
     """
 
     def __init__(
@@ -275,6 +276,7 @@ class TradingNode:
         After a specified delay the internal `Trader` residual state will be checked.
 
         If save strategy is configured, then strategy states will be saved.
+
         """
         try:
             if self.kernel.loop.is_running():
@@ -289,6 +291,7 @@ class TradingNode:
         Dispose of the trading node.
 
         Gracefully shuts down the executor and event loop.
+
         """
         try:
             timeout = self.kernel.clock.utc_now() + timedelta(
@@ -413,6 +416,7 @@ class TradingNode:
         After a specified delay the internal `Trader` residual state will be checked.
 
         If save strategy is configured, then strategy states will be saved.
+
         """
         self.kernel.log.info("STOPPING...")
 

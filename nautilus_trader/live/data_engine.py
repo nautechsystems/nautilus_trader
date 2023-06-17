@@ -53,6 +53,7 @@ class LiveDataEngine(DataEngine):
     ------
     TypeError
         If `config` is not of type `LiveDataEngineConfig`.
+
     """
 
     _sentinel = None

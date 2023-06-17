@@ -214,8 +214,9 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
     """
     Handle existing data for instrument subclasses.
 
-    Instruments all live in a single file, so merge with existing data.
-    For all other classes, simply return data unchanged.
+    Instruments all live in a single file, so merge with existing data. For all
+    other classes, simply return data unchanged.
+
     """
     if cls not in Instrument.__subclasses__():
         return df
@@ -412,7 +413,8 @@ def read_progress(func, total):
 
 def _validate_dataset(catalog: ParquetDataCatalog, path: str, new_partition_format="%Y%m%d"):
     """
-    Repartition dataset into sorted time chunks (default dates) and drop duplicates.
+    Repartition dataset into sorted time chunks (default dates) and drop
+    duplicates.
     """
     fs = catalog.fs
     dataset = ds.dataset(path, filesystem=fs)

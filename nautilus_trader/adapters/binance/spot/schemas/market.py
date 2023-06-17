@@ -43,7 +43,10 @@ from nautilus_trader.model.objects import Quantity
 
 
 class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
-    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
+    """
+    HTTP response 'inner struct' from `Binance Spot/Margin` GET
+    /api/v3/exchangeInfo.
+    """
 
     symbol: str
     status: str
@@ -82,7 +85,9 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
-    """HTTP response from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
+    """
+    HTTP response from `Binance Spot/Margin` GET /api/v3/exchangeInfo.
+    """
 
     timezone: str
     serverTime: int
@@ -92,7 +97,9 @@ class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
-    """HTTP response from `Binance Spot/Margin` GET /api/v3/avgPrice."""
+    """
+    HTTP response from `Binance Spot/Margin` GET /api/v3/avgPrice.
+    """
 
     mins: int
     price: str
@@ -104,7 +111,10 @@ class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
-    """Websocket message 'inner struct' for 'Binance Spot/Margin Partial Book Depth Streams.'"""
+    """
+    Websocket message 'inner struct' for 'Binance Spot/Margin Partial Book Depth
+    Streams.'.
+    """
 
     lastUpdateId: int
     bids: list[BinanceOrderBookDelta]
@@ -140,7 +150,9 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
 
 
 class BinanceSpotOrderBookPartialDepthMsg(msgspec.Struct):
-    """WebSocket message for 'Binance Spot/Margin' Partial Book Depth Streams."""
+    """
+    WebSocket message for 'Binance Spot/Margin' Partial Book Depth Streams.
+    """
 
     stream: str
     data: BinanceSpotOrderBookPartialDepthData
@@ -162,6 +174,7 @@ class BinanceSpotTradeData(msgspec.Struct):
     - a: Seller order ID
     - T: Trade time
     - m: Is the buyer the market maker?
+
     """
 
     e: str  # Event type

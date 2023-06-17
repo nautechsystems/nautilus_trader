@@ -295,7 +295,9 @@ def _strip_unneeded_symbols() -> None:
 
 
 def build() -> None:
-    """Construct the extensions and distribution."""
+    """
+    Construct the extensions and distribution.
+    """
     _build_rust_libs()
     _copy_rust_dylibs_to_project()
 

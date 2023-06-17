@@ -35,6 +35,7 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#exchange-information
     https://binance-docs.github.io/apidocs/delivery/en/#exchange-information
+
     """
 
     def __init__(
@@ -69,6 +70,7 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
         The Binance REST API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint.
+
     """
 
     def __init__(
@@ -92,5 +94,7 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
         )
 
     async def query_futures_exchange_info(self) -> BinanceFuturesExchangeInfo:
-        """Retrieve Binance Futures exchange information."""
+        """
+        Retrieve Binance Futures exchange information.
+        """
         return await self._endpoint_futures_exchange_info._get()

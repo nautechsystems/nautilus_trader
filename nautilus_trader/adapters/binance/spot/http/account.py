@@ -51,6 +51,7 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#current-open-orders-user_data
     https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
+
     """
 
     def __init__(
@@ -71,8 +72,8 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
 
     class DeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of openOrders SPOT/MARGIN DELETE request.
-        Includes OCO orders.
+        Parameters of openOrders SPOT/MARGIN DELETE request. Includes OCO
+        orders.
 
         Parameters
         ----------
@@ -82,6 +83,7 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
             The symbol of the orders
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -103,6 +105,7 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#new-oco-trade
+
     """
 
     def __init__(
@@ -173,6 +176,7 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
+
         """
 
         symbol: BinanceSymbol
@@ -213,6 +217,7 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-oco-user_data
     https://binance-docs.github.io/apidocs/spot/en/#cancel-oco-trade
+
     """
 
     def __init__(
@@ -234,7 +239,7 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        orderList (OCO) GET endpoint parameters.
+        OrderList (OCO) GET endpoint parameters.
 
         Parameters
         ----------
@@ -249,6 +254,7 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
             Cannot exceed 60000.
 
         NOTE: Either orderListId or origClientOrderId must be provided.
+
         """
 
         timestamp: str
@@ -258,7 +264,7 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
 
     class DeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        orderList (OCO) DELETE endpoint parameters.
+        OrderList (OCO) DELETE endpoint parameters.
 
         Parameters
         ----------
@@ -278,6 +284,7 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
             Cannot exceed 60000.
 
         NOTE: Either orderListId or listClientOrderId must be provided.
+
         """
 
         timestamp: str
@@ -307,6 +314,7 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-all-oco-user_data
+
     """
 
     def __init__(
@@ -349,6 +357,7 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
         Warnings
         --------
         If fromId is specified, neither startTime endTime can be provided.
+
         """
 
         timestamp: str
@@ -373,6 +382,7 @@ class BinanceSpotOpenOrderListHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-open-oco-user_data
+
     """
 
     def __init__(
@@ -401,6 +411,7 @@ class BinanceSpotOpenOrderListHttp(BinanceHttpEndpoint):
             The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -421,6 +432,7 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#account-information-user_data
+
     """
 
     def __init__(
@@ -449,6 +461,7 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
             The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -469,6 +482,7 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#query-current-order-count-usage-trade
+
     """
 
     def __init__(
@@ -497,6 +511,7 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
             The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -520,6 +535,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         The clock for the API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint prefix.
+
     """
 
     def __init__(
@@ -576,7 +592,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceSpotOrderOco:
-        """Send in a new spot OCO order to Binance."""
+        """
+        Send in a new spot OCO order to Binance.
+        """
         if stop_limit_price is not None and stop_limit_time_in_force is None:
             raise RuntimeError(
                 "stopLimitPrice cannot be provided without stopLimitTimeInForce.",
@@ -616,7 +634,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceSpotOrderOco:
-        """Check single spot OCO order information."""
+        """
+        Check single spot OCO order information.
+        """
         if order_list_id is None and orig_client_order_id is None:
             raise RuntimeError(
                 "Either orderListId or origClientOrderId must be provided.",
@@ -635,7 +655,12 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         symbol: str,
         recv_window: Optional[str] = None,
     ) -> bool:
-        """Cancel all active orders on a symbol, including OCO. Returns whether successful."""
+        """
+        Cancel all active orders on a symbol, including OCO.
+
+        Returns whether successful.
+
+        """
         await self._endpoint_spot_open_orders._delete(
             parameters=self._endpoint_spot_open_orders.DeleteParameters(
                 timestamp=self._timestamp(),
@@ -653,7 +678,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceSpotOrderOco:
-        """Delete spot OCO order from Binance."""
+        """
+        Delete spot OCO order from Binance.
+        """
         if order_list_id is None and list_client_order_id is None:
             raise RuntimeError(
                 "Either orderListId or listClientOrderId must be provided.",
@@ -677,7 +704,10 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         limit: Optional[int] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceSpotOrderOco]:
-        """Check all spot OCO orders' information, matching provided filter parameters."""
+        """
+        Check all spot OCO orders' information, matching provided filter
+        parameters.
+        """
         if from_id is not None and (start_time or end_time) is not None:
             raise RuntimeError(
                 "Cannot specify both fromId and a startTime/endTime.",
@@ -697,7 +727,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         self,
         recv_window: Optional[str] = None,
     ) -> list[BinanceSpotOrderOco]:
-        """Check all OPEN spot OCO orders' information."""
+        """
+        Check all OPEN spot OCO orders' information.
+        """
         return await self._endpoint_spot_open_order_list._get(
             parameters=self._endpoint_spot_open_order_list.GetParameters(
                 timestamp=self._timestamp(),
@@ -709,7 +741,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         self,
         recv_window: Optional[str] = None,
     ) -> BinanceSpotAccountInfo:
-        """Check SPOT/MARGIN Binance account information."""
+        """
+        Check SPOT/MARGIN Binance account information.
+        """
         return await self._endpoint_spot_account._get(
             parameters=self._endpoint_spot_account.GetParameters(
                 timestamp=self._timestamp(),
@@ -721,7 +755,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         self,
         recv_window: Optional[str] = None,
     ) -> list[BinanceRateLimit]:
-        """Check SPOT/MARGIN order count/rateLimit."""
+        """
+        Check SPOT/MARGIN order count/rateLimit.
+        """
         return await self._endpoint_spot_order_rate_limit._get(
             parameters=self._endpoint_spot_order_rate_limit.GetParameters(
                 timestamp=self._timestamp(),

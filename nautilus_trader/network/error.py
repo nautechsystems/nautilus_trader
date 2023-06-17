@@ -16,5 +16,6 @@
 
 class MaxRetriesExceeded(ConnectionError):
     """
-    Represents an error where the maximum number of connection retries has been exceeded.
+    Represents an error where the maximum number of connection retries has been
+    exceeded.
     """

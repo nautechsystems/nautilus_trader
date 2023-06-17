@@ -39,6 +39,7 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#exchange-information
+
     """
 
     def __init__(
@@ -69,6 +70,7 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
             The specify list of trading pairs to get exchange info for.
         permissions : BinanceSpotPermissions, optional
             The filter symbols list by supported permissions.
+
         """
 
         symbol: Optional[BinanceSymbol] = None
@@ -90,6 +92,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#current-average-price
+
     """
 
     def __init__(
@@ -116,6 +119,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
         ----------
         symbol : BinanceSymbol
             Specify trading pair to get average price for.
+
         """
 
         symbol: BinanceSymbol = None
@@ -136,6 +140,7 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         The Binance REST API client.
     account_type : BinanceAccountType
         The Binance account type, used to select the endpoint.
+
     """
 
     def __init__(
@@ -162,7 +167,9 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         symbols: Optional[list[str]] = None,
         permissions: Optional[BinanceSpotPermissions] = None,
     ) -> BinanceSpotExchangeInfo:
-        """Check Binance Spot exchange information."""
+        """
+        Check Binance Spot exchange information.
+        """
         if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
         return await self._endpoint_spot_exchange_info._get(
@@ -174,7 +181,9 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         )
 
     async def query_spot_average_price(self, symbol: str) -> BinanceSpotAvgPrice:
-        """Check average price for a provided symbol on the Spot exchange."""
+        """
+        Check average price for a provided symbol on the Spot exchange.
+        """
         return await self._endpoint_spot_average_price._get(
             parameters=self._endpoint_spot_average_price.GetParameters(
                 symbol=BinanceSymbol(symbol),

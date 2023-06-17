@@ -117,6 +117,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The instrument provider.
     ibg_client_id : int
         Client ID used to connect TWS/Gateway.
+
     """
 
     def __init__(
