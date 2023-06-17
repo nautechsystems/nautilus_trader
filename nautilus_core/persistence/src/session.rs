@@ -30,7 +30,10 @@ use pyo3_asyncio::tokio::get_runtime;
 
 use crate::{
     kmerge_batch::{KMerge, PeekElementBatchStream},
-    parquet::{DecodeDataFromRecordBatch, ParquetType},
+    parquet::{
+        DataStreamingError, DecodeDataFromRecordBatch, EncodeDataToRecordBatch, NautilusDataType,
+        WriteStream,
+    },
 };
 
 #[derive(Debug, Default)]
@@ -70,6 +73,15 @@ impl DataBackendSession {
             batch_streams: Vec::default(),
             chunk_size,
         }
+    }
+
+    pub fn write_data<T: EncodeDataToRecordBatch>(
+        data: &[T],
+        stream: &mut dyn WriteStream,
+    ) -> Result<(), DataStreamingError> {
+        let record_batch = T::encode_batch(data);
+        stream.write(&record_batch)?;
+        Ok(())
     }
 
     // Query a file for all it's records. the caller must specify `T` to indicate
@@ -199,32 +211,32 @@ impl DataBackendSession {
         mut slf: PyRefMut<'_, Self>,
         table_name: &str,
         file_path: &str,
-        parquet_type: ParquetType,
+        data_type: NautilusDataType,
     ) {
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        match parquet_type {
-            ParquetType::OrderBookDelta => {
+        match data_type {
+            NautilusDataType::OrderBookDelta => {
                 match block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
                 {
                     Ok(_) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
-            ParquetType::QuoteTick => {
+            NautilusDataType::QuoteTick => {
                 match block_on(slf.add_file_default_query::<QuoteTick>(table_name, file_path)) {
                     Ok(_) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
-            ParquetType::TradeTick => {
+            NautilusDataType::TradeTick => {
                 match block_on(slf.add_file_default_query::<TradeTick>(table_name, file_path)) {
                     Ok(_) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
-            ParquetType::Bar => {
+            NautilusDataType::Bar => {
                 match block_on(slf.add_file_default_query::<Bar>(table_name, file_path)) {
                     Ok(_) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
@@ -238,13 +250,13 @@ impl DataBackendSession {
         table_name: &str,
         file_path: &str,
         sql_query: &str,
-        parquet_type: ParquetType,
+        data_type: NautilusDataType,
     ) {
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        match parquet_type {
-            ParquetType::OrderBookDelta => {
+        match data_type {
+            NautilusDataType::OrderBookDelta => {
                 match block_on(
                     slf.add_file_with_custom_query::<OrderBookDelta>(
                         table_name, file_path, sql_query,
@@ -254,7 +266,7 @@ impl DataBackendSession {
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
-            ParquetType::QuoteTick => {
+            NautilusDataType::QuoteTick => {
                 match block_on(
                     slf.add_file_with_custom_query::<QuoteTick>(table_name, file_path, sql_query),
                 ) {
@@ -262,7 +274,7 @@ impl DataBackendSession {
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
-            ParquetType::TradeTick => {
+            NautilusDataType::TradeTick => {
                 match block_on(
                     slf.add_file_with_custom_query::<TradeTick>(table_name, file_path, sql_query),
                 ) {
@@ -270,7 +282,7 @@ impl DataBackendSession {
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
-            ParquetType::Bar => {
+            NautilusDataType::Bar => {
                 match block_on(
                     slf.add_file_with_custom_query::<Bar>(table_name, file_path, sql_query),
                 ) {
