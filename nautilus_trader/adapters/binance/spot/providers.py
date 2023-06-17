@@ -246,13 +246,13 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             lot_size = Quantity.from_str(step_size)
 
             PyCondition.in_range(
-                float(lot_size_filter.maxQty),
+                Decimal(lot_size_filter.maxQty),
                 QUANTITY_MIN,
                 QUANTITY_MAX,
                 "maxQty",
             )
             PyCondition.in_range(
-                float(lot_size_filter.minQty),
+                Decimal(lot_size_filter.minQty),
                 QUANTITY_MIN,
                 QUANTITY_MAX,
                 "minQty",

@@ -81,7 +81,7 @@ config = TradingNodeConfig(
         "BINANCE": {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
+            "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
             "base_url_http": None,  # Override with custom endpoint
             "base_url_ws": None,  # Override with custom endpoint
             "us": False,  # If client is for Binance US
@@ -91,7 +91,7 @@ config = TradingNodeConfig(
         "BINANCE": {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
+            "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
             "base_url_http": None,  # Override with custom endpoint
             "base_url_ws": None,  # Override with custom endpoint
             "us": False,  # If client is for Binance US
@@ -142,10 +142,10 @@ credentials are valid and have trading permissions.
 All the Binance account types will be supported for live trading. Set the `account_type`
 using the `BinanceAccountType` enum. The account type options are:
 - `SPOT`
-- `MARGIN_CROSS` (Margin shared between open positions.)
-- `MARGIN_ISOLATED` (Margin assigned to a single position.)
-- `FUTURES_USDT` (USDT or BUSD stablecoins as collateral)
-- `FUTURES_COIN` (other cryptocurrency as collateral)
+- `MARGIN` (Margin shared between open positions.)
+- `ISOLATED_MARGIN` (Margin assigned to a single position.)
+- `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
+- `COIN_FUTURE` (other cryptocurrency as collateral)
 
 ### Base URL overrides
 It's possible to override the default base URLs for both HTTP Rest and
@@ -168,7 +168,7 @@ config = TradingNodeConfig(
         "BINANCE": {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
-            "account_type": "spot",  # {spot, margin, futures_usdt}
+            "account_type": "spot",  # {spot, margin, usdt_future}
             "testnet": True,  # If client uses the testnet
         },
     },
@@ -176,7 +176,7 @@ config = TradingNodeConfig(
         "BINANCE": {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
-            "account_type": "spot",  # {spot, margin, futures_usdt}
+            "account_type": "spot",  # {spot, margin, usdt_future}
             "testnet": True,  # If client uses the testnet
         },
     },

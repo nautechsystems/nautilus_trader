@@ -20,7 +20,7 @@ import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
@@ -176,7 +176,7 @@ async def test_on_quote_tick_update_nans(data_client, instrument):
     expected = QuoteTick.from_dict(
         {
             "type": "QuoteTick",
-            "instrument_id": "AAPL.AMEX",
+            "instrument_id": "AAPL.NASDAQ",
             "bid": "0.00",
             "ask": "0.00",
             "bid_size": "44600",

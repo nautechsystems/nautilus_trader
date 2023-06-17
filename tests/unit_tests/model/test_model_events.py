@@ -25,24 +25,24 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.account import AccountState
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderCancelRejected
-from nautilus_trader.model.events.order import OrderDenied
-from nautilus_trader.model.events.order import OrderExpired
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderModifyRejected
-from nautilus_trader.model.events.order import OrderPendingCancel
-from nautilus_trader.model.events.order import OrderPendingUpdate
-from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -62,6 +62,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -151,8 +152,10 @@ class TestModelEvents:
             time_in_force=TimeInForce.DAY,
             post_only=True,
             reduce_only=True,
+            quote_quantity=False,
             options={"price": "15200.10"},
             emulation_trigger=TriggerType.BID_ASK,
+            trigger_instrument_id=TestIdStubs.usdjpy_id(),
             contingency_type=ContingencyType.OTO,
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-2020872378424")],
@@ -169,27 +172,29 @@ class TestModelEvents:
         assert OrderInitialized.from_dict(OrderInitialized.to_dict(event)) == event
         assert (
             str(event)
-            == f"OrderInitialized(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, options={{'price': '15200.10'}}, emulation_trigger=BID_ASK, contingency_type=OTO, order_list_id=1, linked_order_ids=['O-2020872378424'], parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=ENTRY)"  # noqa
+            == f"OrderInitialized(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, quote_quantity=False, options={{'price': '15200.10'}}, emulation_trigger=BID_ASK, trigger_instrument_id=USD/JPY.SIM, contingency_type=OTO, order_list_id=1, linked_order_ids=['O-2020872378424'], parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=ENTRY)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, options={{'price': '15200.10'}}, emulation_trigger=BID_ASK, contingency_type=OTO, order_list_id=1, linked_order_ids=['O-2020872378424'], parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=ENTRY, event_id={uuid}, ts_init=0)"  # noqa
+            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, quote_quantity=False, options={{'price': '15200.10'}}, emulation_trigger=BID_ASK, trigger_instrument_id=USD/JPY.SIM, contingency_type=OTO, order_list_id=1, linked_order_ids=['O-2020872378424'], parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=ENTRY, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_denied_event_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = UUID4()
+        reason = "Exceeded MAX_ORDER_SUBMIT_RATE"
         event = OrderDenied(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            reason="Exceeded MAX_ORDER_SUBMIT_RATE",
+            reason=reason,
             event_id=uuid,
             ts_init=0,
         )
 
         # Act, Assert
+        assert event.reason == reason
         assert OrderDenied.from_dict(OrderDenied.to_dict(event)) == event
         assert (
             str(event)

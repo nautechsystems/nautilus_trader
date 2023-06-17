@@ -142,7 +142,7 @@ cdef class CashAccount(Account):
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -161,7 +161,7 @@ cdef class CashAccount(Account):
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -181,7 +181,7 @@ cdef class CashAccount(Account):
         cdef double notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         ).as_f64_c()
 
         cdef double commission
@@ -194,7 +194,7 @@ cdef class CashAccount(Account):
                 f"invalid LiquiditySide, was {liquidity_side_to_str(liquidity_side)}"
             )
 
-        if instrument.is_inverse and not inverse_as_quote:
+        if instrument.is_inverse and not use_quote_for_inverse:
             return Money(commission, instrument.base_currency)
         else:
             return Money(commission, instrument.quote_currency)
@@ -205,7 +205,7 @@ cdef class CashAccount(Account):
         OrderSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the locked balance.
@@ -223,7 +223,7 @@ cdef class CashAccount(Account):
             The order quantity.
         price : Price
             The order price.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -244,7 +244,7 @@ cdef class CashAccount(Account):
             notional = instrument.notional_value(
                 quantity=quantity,
                 price=price,
-                inverse_as_quote=inverse_as_quote,
+                use_quote_for_inverse=use_quote_for_inverse,
             ).as_f64_c()
         elif side == OrderSide.SELL:
             if base_currency is not None:
@@ -259,7 +259,7 @@ cdef class CashAccount(Account):
         locked += (notional * float(instrument.taker_fee) * 2.0)
 
         # Handle inverse
-        if instrument.is_inverse and not inverse_as_quote:
+        if instrument.is_inverse and not use_quote_for_inverse:
             return Money(locked, base_currency)
 
         if side == OrderSide.BUY:

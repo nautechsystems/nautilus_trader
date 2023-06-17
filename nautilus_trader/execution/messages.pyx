@@ -545,7 +545,7 @@ cdef class CancelOrder(TradingCommand):
         ClientId client_id = None,
     ):
         if client_id is None:
-            client_id = ClientId(instrument_id.venue.to_str())
+            client_id = ClientId(instrument_id.venue.value)
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -796,7 +796,7 @@ cdef class QueryOrder(TradingCommand):
         ClientId client_id = None,
     ):
         if client_id is None:
-            client_id = ClientId(instrument_id.venue.to_str())
+            client_id = ClientId(instrument_id.venue.value)
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,

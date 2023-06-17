@@ -85,7 +85,7 @@ cdef class Quantity:
     ----------
     value : integer, float, string, Decimal
         The value of the quantity.
-    precision : uint8
+    precision : uint8_t
         The precision for the quantity. Use a precision of 0 for whole numbers
         (no fractional units).
 
@@ -233,7 +233,7 @@ cdef class Quantity:
 
         Returns
         -------
-        uint8
+        uint8_t
 
         """
         return self._mem.precision
@@ -296,6 +296,12 @@ cdef class Quantity:
         return Quantity.raw_to_f64_c(raw)
 
     @staticmethod
+    cdef Quantity from_mem_c(Quantity_t mem):
+        cdef Quantity quantity = Quantity.__new__(Quantity)
+        quantity._mem = mem
+        return quantity
+
+    @staticmethod
     cdef Quantity from_raw_c(uint64_t raw, uint8_t precision):
         cdef Quantity quantity = Quantity.__new__(Quantity)
         quantity._mem = quantity_from_raw(raw, precision)
@@ -344,7 +350,7 @@ cdef class Quantity:
         """
         Return a quantity with a value of zero.
 
-        precision : uint8, default 0
+        precision : uint8_t, default 0
             The precision for the quantity.
 
         Returns
@@ -471,7 +477,7 @@ cdef class Price:
     ----------
     value : integer, float, string or Decimal
         The value of the price.
-    precision : uint8
+    precision : uint8_t
         The precision for the price. Use a precision of 0 for whole numbers
         (no fractional units).
 
@@ -492,7 +498,7 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9,f"invalid `precision` greater than max 9, was {precision}")
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
         if value > PRICE_MAX:
             raise ValueError(
                 f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
@@ -619,7 +625,7 @@ cdef class Price:
 
         Returns
         -------
-        uint8
+        uint8_t
 
         """
         return self._mem.precision
@@ -662,6 +668,12 @@ cdef class Price:
 
     cdef void sub_assign(self, Price other):
         self._mem.raw -= other._mem.raw
+
+    @staticmethod
+    cdef Price from_mem_c(Price_t mem):
+        cdef Price price = Price.__new__(Price)
+        price._mem = mem
+        return price
 
     @staticmethod
     def from_raw(int64_t raw, uint8_t precision):

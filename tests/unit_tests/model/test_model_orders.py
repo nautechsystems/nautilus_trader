@@ -31,10 +31,10 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.order import OrderDenied
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
@@ -52,7 +52,7 @@ from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders import StopLimitOrder
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -301,6 +301,8 @@ class TestOrders:
         assert order.is_aggressive
         assert not order.is_sell
         assert not order.is_contingency
+        assert not order.is_primary
+        assert not order.is_spawned
         assert not order.is_passive
         assert not order.is_parent_order
         assert not order.is_child_order
@@ -390,7 +392,8 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "time_in_force": "GTC",
-            "reduce_only": False,
+            "is_reduce_only": False,
+            "is_quote_quantity": False,
             "filled_qty": "0",
             "avg_px": "0.0",
             "slippage": "0.0",
@@ -414,6 +417,7 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
         )
 
         # Assert
@@ -427,14 +431,16 @@ class TestOrders:
         assert not order.is_open
         assert not order.is_aggressive
         assert not order.is_closed
+        assert order.is_primary
+        assert not order.is_spawned
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, exec_algorithm_id=TWAP, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, exec_algorithm_id=TWAP, tags=None)"  # noqa
         )
 
     def test_limit_order_to_dict(self):
@@ -475,8 +481,10 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "display_qty": "20000",
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -555,7 +563,9 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
+            quote_quantity=True,
             emulation_trigger=TriggerType.BID_ASK,
+            trigger_instrument_id=TestIdStubs.usdjpy_id(),
         )
 
         # Act
@@ -584,7 +594,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
+            "is_quote_quantity": True,
             "emulation_trigger": "BID_ASK",
+            "trigger_instrument_id": "USD/JPY.SIM",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -671,8 +683,10 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "display_qty": None,
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -746,7 +760,8 @@ class TestOrders:
             "price": "None",
             "time_in_force": "GTD",
             "expire_time_ns": 3600000000000,
-            "reduce_only": False,
+            "is_reduce_only": False,
+            "is_quote_quantity": False,
             "filled_qty": "0",
             "avg_px": "0.0",
             "slippage": "0.0",
@@ -830,7 +845,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -884,6 +901,7 @@ class TestOrders:
             Price.from_str("1.10010"),
             trigger_type=TriggerType.MARK_PRICE,
             emulation_trigger=TriggerType.LAST_TRADE,
+            trigger_instrument_id=TestIdStubs.usdjpy_id(),
             tags="STOP_LOSS",
         )
 
@@ -918,8 +936,10 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "display_qty": None,
             "emulation_trigger": "LAST_TRADE",
+            "trigger_instrument_id": "USD/JPY.SIM",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1033,7 +1053,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1083,7 +1105,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1200,8 +1224,10 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "display_qty": None,
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1254,8 +1280,10 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
+            "is_quote_quantity": False,
             "display_qty": None,
             "emulation_trigger": "NO_TRIGGER",
+            "trigger_instrument_id": None,
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,

@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.network.socket import SocketClient
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
@@ -58,7 +59,7 @@ async def test_socket_base_reconnect_on_incomplete_read(closing_socket_server, e
         port=port,
         loop=event_loop,
         handler=handler,
-        logger=TestComponentStubs.logger(level="DEBUG"),
+        logger=TestComponentStubs.logger(level=LogLevel.DEBUG),
         ssl=False,
     )
     # mock_post_conn = mock.patch.object(client, "post_connection")

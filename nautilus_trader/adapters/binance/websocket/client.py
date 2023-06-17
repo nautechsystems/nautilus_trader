@@ -13,58 +13,100 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.websocket import WebSocketClient
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
 
 
-class BinanceWebSocketClient(WebSocketClient):
+class BinanceWebSocketClient:
     """
     Provides a `Binance` streaming WebSocket client.
+
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    base_url : str
+        The base URL for the WebSocket connection.
+    handler : Callable[[bytes], None]
+        The callback handler for message events.
     """
 
     def __init__(
         self,
-        loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        handler: Callable[[bytes], None],
         base_url: str,
+        handler: Callable[[bytes], None],
     ) -> None:
-        super().__init__(
-            loop=loop,
-            logger=logger,
-            handler=handler,
-            max_retry_connection=6,
-        )
+        self._clock = clock
+        self._logger = logger
+        self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
 
+        self._client: Optional[WebSocketClient] = None
         self._base_url: str = base_url
-
-        self._clock: LiveClock = clock
+        self._handler: Callable[[bytes], None] = handler
         self._streams: list[str] = []
+        self._msg_id: int = 0
 
     @property
-    def base_url(self) -> Optional[str]:
+    def url(self) -> str:
+        """
+        Return the server URL being used by the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._base_url
 
     @property
+    def is_connected(self) -> bool:
+        """
+        Return whether the client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._client is not None and self._client.is_alive
+
+    @property
     def subscriptions(self) -> list[str]:
+        """
+        Return the current active subscriptions for the client.
+
+        Returns
+        -------
+        str
+
+        """
         return self._streams.copy()
 
     @property
     def has_subscriptions(self) -> bool:
+        """
+        Return whether the client has subscriptions.
+
+        Returns
+        -------
+        bool
+
+        """
         return bool(self._streams)
 
-    async def connect(
-        self,
-        key: Optional[str] = None,
-        start: bool = True,
-        **ws_kwargs: dict[str, Any],
-    ) -> None:
+    async def connect(self, key: Optional[str] = None) -> None:
+        """
+        Connect the client to the server.
+        """
         if not self._streams:
             raise RuntimeError("no subscriptions for connection.")
 
@@ -74,13 +116,31 @@ class BinanceWebSocketClient(WebSocketClient):
             ws_url += f"&listenKey={key}"
 
         self._log.info(f"Connecting to {ws_url}")
-        await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
+        self._client = await WebSocketClient.connect(
+            url=ws_url,
+            handler=self._handler,
+            heartbeat=60,
+        )
+        self._log.info("Connected.")
+
+    async def disconnect(self) -> None:
+        """
+        Disconnect the client from the server.
+        """
+        if not self.is_connected:
+            self._log.error("Cannot disconnect websocket, not connected.")
+            return
+        assert self._client is not None  # Type checking
+
+        self._log.info("Disconnecting...")
+        await self._client.disconnect()
+        self._log.info("Disconnected.")
 
     def _add_stream(self, stream: str) -> None:
         if stream not in self._streams:
             self._streams.append(stream)
 
-    def subscribe(self, key: str) -> None:
+    async def subscribe(self, key: str) -> None:
         """
         Subscribe to the user data stream.
 
@@ -91,6 +151,13 @@ class BinanceWebSocketClient(WebSocketClient):
 
         """
         self._add_stream(key)
+        # self._msg_id += 1
+        # message = {
+        #     "method": "SUBSCRIBE",
+        #     "params": [key],
+        #     "id": self._msg_id,
+        # }
+        # await self.send(msgspec.json.encode(message))
 
     def subscribe_agg_trades(self, symbol: str) -> None:
         """

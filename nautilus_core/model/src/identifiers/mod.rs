@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+#[macro_use]
+mod macros;
+
 pub mod account_id;
 pub mod client_id;
 pub mod client_order_id;
@@ -27,3 +34,31 @@ pub mod trade_id;
 pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
+
+impl_from_str_for_identifier!(account_id::AccountId);
+impl_from_str_for_identifier!(client_id::ClientId);
+impl_from_str_for_identifier!(client_order_id::ClientOrderId);
+impl_from_str_for_identifier!(component_id::ComponentId);
+impl_from_str_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
+impl_from_str_for_identifier!(order_list_id::OrderListId);
+impl_from_str_for_identifier!(position_id::PositionId);
+impl_from_str_for_identifier!(strategy_id::StrategyId);
+impl_from_str_for_identifier!(symbol::Symbol);
+impl_from_str_for_identifier!(trade_id::TradeId);
+impl_from_str_for_identifier!(trader_id::TraderId);
+impl_from_str_for_identifier!(venue::Venue);
+impl_from_str_for_identifier!(venue_order_id::VenueOrderId);
+
+impl_serialization_for_identifier!(account_id::AccountId);
+impl_serialization_for_identifier!(client_id::ClientId);
+impl_serialization_for_identifier!(client_order_id::ClientOrderId);
+impl_serialization_for_identifier!(component_id::ComponentId);
+impl_serialization_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
+impl_serialization_for_identifier!(order_list_id::OrderListId);
+impl_serialization_for_identifier!(position_id::PositionId);
+impl_serialization_for_identifier!(strategy_id::StrategyId);
+impl_serialization_for_identifier!(symbol::Symbol);
+impl_serialization_for_identifier!(trade_id::TradeId);
+impl_serialization_for_identifier!(trader_id::TraderId);
+impl_serialization_for_identifier!(venue::Venue);
+impl_serialization_for_identifier!(venue_order_id::VenueOrderId);

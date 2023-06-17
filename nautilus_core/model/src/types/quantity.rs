@@ -13,23 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign};
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+    str::FromStr,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::parsing::precision_from_str;
-
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+use nautilus_core::{correctness, parsing::precision_from_str};
+use pyo3::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::fixed::FIXED_SCALAR;
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
-#[derive(Eq, Clone, Default)]
+#[derive(Copy, Clone, Eq, Default)]
+#[pyclass]
 pub struct Quantity {
     pub raw: u64,
     pub precision: u8,
@@ -49,6 +53,11 @@ impl Quantity {
     #[must_use]
     pub fn from_raw(raw: u64, precision: u8) -> Self {
         Self { raw, precision }
+    }
+
+    #[must_use]
+    pub fn zero(precision: u8) -> Self {
+        Self { raw: 0, precision }
     }
 
     #[must_use]
@@ -73,14 +82,21 @@ impl From<&Quantity> for f64 {
     }
 }
 
+impl FromStr for Quantity {
+    type Err = String;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let float_from_input = input
+            .parse::<f64>()
+            .map_err(|err| format!("Cannot parse `input` string '{}' as f64: {}", input, err))?;
+
+        Ok(Self::new(float_from_input, precision_from_str(input)))
+    }
+}
+
 impl From<&str> for Quantity {
     fn from(input: &str) -> Self {
-        let float_from_input = input.parse::<f64>();
-        let float_res = match float_from_input {
-            Ok(number) => number,
-            Err(err) => panic!("cannot parse `input` string '{input}' as f64, {err}"),
-        };
-        Self::new(float_res, precision_from_str(input))
+        input.parse().unwrap_or_else(|err| panic!("{}", err))
     }
 }
 
@@ -210,6 +226,26 @@ impl Display for Quantity {
     }
 }
 
+impl Serialize for Quantity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+
+impl<'de> Deserialize<'de> for Quantity {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let qty_str: &str = Deserialize::deserialize(_deserializer)?;
+        let qty: Quantity = qty_str.into();
+        Ok(qty)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -253,16 +289,25 @@ pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::Quantity;
+    use std::str::FromStr;
+
+    use super::*;
 
     #[test]
-    fn test_qty_new() {
+    fn test_new() {
         let qty = Quantity::new(0.00812, 8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_zero() {
+        let qty = Quantity::zero(8);
+        assert_eq!(qty.raw, 0);
+        assert_eq!(qty.precision, 8);
     }
 
     #[test]
@@ -300,12 +345,27 @@ mod tests {
 
     #[test]
     fn test_qty_new_from_str() {
-        let qty = Quantity::from("0.00812000");
+        let qty = Quantity::from_str("0.00812000").unwrap();
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn test_quantity_from_str_valid_input() {
+        let input = "1000.25";
+        let expected_quantity = Quantity::new(1000.25, precision_from_str(input));
+        let result = Quantity::from_str(input).unwrap();
+        assert_eq!(result, expected_quantity);
+    }
+
+    #[test]
+    fn test_quantity_from_str_invalid_input() {
+        let input = "invalid";
+        let result = Quantity::from_str(input);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -375,7 +435,7 @@ mod tests {
     fn test_qty_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
-        let qty = Quantity::from(input_string);
+        let qty = Quantity::from_str(input_string).unwrap();
         let mut res = String::new();
         write!(&mut res, "{qty}").unwrap();
         assert_eq!(res, input_string);

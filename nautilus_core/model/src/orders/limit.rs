@@ -13,21 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::rc::Rc;
-
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
+use super::Order;
 use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
-    events::order::OrderIdentifiers,
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, order_list_id::OrderListId,
         strategy_id::StrategyId, trader_id::TraderId,
     },
     types::{price::Price, quantity::Quantity},
 };
-
-use super::Order;
 
 pub trait LimitOrder {
     #[must_use]
@@ -44,6 +40,7 @@ pub trait LimitOrder {
         expire_time: Option<UnixNanos>,
         post_only: bool,
         reduce_only: bool,
+        quote_quantity: bool,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
@@ -71,6 +68,7 @@ impl LimitOrder for Order {
         expire_time: Option<UnixNanos>,
         post_only: bool,
         reduce_only: bool,
+        quote_quantity: bool,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
@@ -81,12 +79,6 @@ impl LimitOrder for Order {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
-        let metadata = OrderIdentifiers {
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-        };
         Self {
             events: Vec::new(),
             venue_order_ids: Vec::new(),
@@ -94,14 +86,17 @@ impl LimitOrder for Order {
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
-            ids: Rc::new(metadata),
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
             venue_order_id: None,
             position_id: None,
             account_id: None,
             last_trade_id: None,
             side: order_side,
             order_type: OrderType::Limit,
-            quantity: quantity.clone(),
+            quantity,
             price: Some(price),
             trigger_price: None,
             trigger_type: None,
@@ -110,6 +105,7 @@ impl LimitOrder for Order {
             liquidity_side: None,
             is_post_only: post_only,
             is_reduce_only: reduce_only,
+            is_quote_quantity: quote_quantity,
             display_qty,
             limit_offset: None,
             trailing_offset: None,

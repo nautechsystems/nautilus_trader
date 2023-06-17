@@ -22,7 +22,7 @@ from typing import Optional
 import msgspec
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
-from betfair_parser.spec.api.navigation import Navigation
+from betfair_parser.spec.navigation import Navigation
 
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.client.enums import MarketSort

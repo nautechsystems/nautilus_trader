@@ -13,11 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.mem cimport PyMem_Free
-from cpython.mem cimport PyMem_Malloc
-from cpython.pycapsule cimport PyCapsule_Destructor
-from cpython.pycapsule cimport PyCapsule_GetPointer
-from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -29,13 +24,13 @@ from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_clone
 from nautilus_trader.core.rust.model cimport quote_tick_drop
-from nautilus_trader.core.rust.model cimport quote_tick_from_raw
+from nautilus_trader.core.rust.model cimport quote_tick_new
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_clone
 from nautilus_trader.core.rust.model cimport trade_tick_drop
-from nautilus_trader.core.rust.model cimport trade_tick_from_raw
+from nautilus_trader.core.rust.model cimport trade_tick_new
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -47,12 +42,6 @@ from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-
-cdef void capsule_destructor(object capsule):
-    cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
-    PyMem_Free(cvec[0].ptr) # de-allocate buffer
-    PyMem_Free(cvec) # de-allocate cvec
 
 
 cdef class QuoteTick(Data):
@@ -98,9 +87,8 @@ cdef class QuoteTick(Data):
     ):
         Condition.equal(bid._mem.precision, ask._mem.precision, "bid.precision", "ask.precision")
         Condition.equal(bid_size._mem.precision, ask_size._mem.precision, "bid_size.precision", "ask_size.precision")
-        super().__init__(ts_event, ts_init)
 
-        self._mem = quote_tick_from_raw(
+        self._mem = quote_tick_new(
             instrument_id_clone(&instrument_id._mem),
             bid._mem.raw,
             ask._mem.raw,
@@ -134,9 +122,7 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[9]
-        self.ts_init = state[10]
-        self._mem = quote_tick_from_raw(
+        self._mem = quote_tick_new(
             instrument_id_new_from_cstr(
                 pystr_to_cstr(state[0]),
             ),
@@ -174,7 +160,7 @@ cdef class QuoteTick(Data):
 
         Returns
         -------
-        Price
+        InstrumentId
 
         """
         return InstrumentId.from_mem_c(self._mem.instrument_id)
@@ -227,6 +213,30 @@ cdef class QuoteTick(Data):
         """
         return Quantity.from_raw_c(self._mem.ask_size.raw, self._mem.ask_size.precision)
 
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
     @staticmethod
     cdef QuoteTick from_dict_c(dict values):
         Condition.not_none(values, "values")
@@ -269,9 +279,7 @@ cdef class QuoteTick(Data):
         uint64_t ts_init,
     ):
         cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
-        tick.ts_event = ts_event
-        tick.ts_init = ts_init
-        tick._mem = quote_tick_from_raw(
+        tick._mem = quote_tick_new(
             instrument_id_clone(&instrument_id._mem),
             raw_bid,
             raw_ask,
@@ -284,16 +292,12 @@ cdef class QuoteTick(Data):
             ts_event,
             ts_init,
         )
-
         return tick
 
     @staticmethod
     cdef QuoteTick from_mem_c(QuoteTick_t mem):
         cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
         quote_tick._mem = quote_tick_clone(&mem)
-        quote_tick.ts_event = mem.ts_event
-        quote_tick.ts_init = mem.ts_init
-
         return quote_tick
 
     # Safety: Do NOT deallocate the capsule here
@@ -526,9 +530,7 @@ cdef class TradeTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(ts_event, ts_init)
-
-        self._mem = trade_tick_from_raw(
+        self._mem = trade_tick_new(
             instrument_id_clone(&instrument_id._mem),
             price._mem.raw,
             price._mem.precision,
@@ -558,9 +560,7 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[7]
-        self.ts_init = state[8]
-        self._mem = trade_tick_from_raw(
+        self._mem = trade_tick_new(
             instrument_id_new_from_cstr(
                 pystr_to_cstr(state[0]),
             ),
@@ -596,7 +596,7 @@ cdef class TradeTick(Data):
 
         Returns
         -------
-        Price
+        InstrumentId
 
         """
         return InstrumentId.from_mem_c(self._mem.instrument_id)
@@ -649,6 +649,30 @@ cdef class TradeTick(Data):
         """
         return <AggressorSide>self._mem.aggressor_side
 
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
     @staticmethod
     cdef TradeTick from_raw_c(
         InstrumentId instrument_id,
@@ -662,7 +686,7 @@ cdef class TradeTick(Data):
         uint64_t ts_init,
     ):
         cdef TradeTick tick = TradeTick.__new__(TradeTick)
-        tick._mem = trade_tick_from_raw(
+        tick._mem = trade_tick_new(
             instrument_id_clone(&instrument_id._mem),
             raw_price,
             price_prec,
@@ -673,19 +697,12 @@ cdef class TradeTick(Data):
             ts_event,
             ts_init,
         )
-        tick.ts_event = ts_event
-        tick.ts_init = ts_init
-
         return tick
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem):
         cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
         trade_tick._mem = trade_tick_clone(&mem)
-
-        trade_tick.ts_event = mem.ts_event
-        trade_tick.ts_init = mem.ts_init
-
         return trade_tick
 
     # Safety: Do NOT deallocate the capsule here
@@ -705,7 +722,7 @@ cdef class TradeTick(Data):
     @staticmethod
     cdef inline trade_tick_list_to_capsule(list items):
 
-        # create a C struct buffer
+        # Create a C struct buffer
         cdef uint64_t len_ = len(items)
         cdef TradeTick_t * data = <TradeTick_t *> PyMem_Malloc(len_ * sizeof(TradeTick_t))
         cdef uint64_t i
@@ -714,13 +731,13 @@ cdef class TradeTick(Data):
         if not data:
             raise MemoryError()
 
-        # create CVec
+        # Create CVec
         cdef CVec* cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
 
-        # create PyCapsule
+        # Create PyCapsule
         return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
 
     @staticmethod

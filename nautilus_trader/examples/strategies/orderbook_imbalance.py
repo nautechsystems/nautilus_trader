@@ -14,14 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -114,18 +112,18 @@ class OrderBookImbalance(Strategy):
             self.subscribe_order_book_deltas(self.instrument.id, book_type)
         if self.config.subscribe_ticker:
             self.subscribe_ticker(self.instrument.id)
-        self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
+        self._book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
 
-    def on_order_book_delta(
-        self,
-        data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
-    ) -> None:
-        """Actions to be performed when a delta is received."""
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """Actions to be performed when order book deltas are received."""
         if not self._book:
             self.log.error("No book being maintained.")
             return
 
-        self._book.apply(data)
+        self._book.apply_deltas(deltas)
         if self._book.spread():
             self.check_trigger()
 
@@ -164,8 +162,8 @@ class OrderBookImbalance(Strategy):
             self.log.error("No instrument loaded.")
             return
 
-        bid_size = self._book.best_bid_qty()
-        ask_size = self._book.best_ask_qty()
+        bid_size = self._book.best_bid_size()
+        ask_size = self._book.best_ask_size()
         if not (bid_size and ask_size):
             return
 

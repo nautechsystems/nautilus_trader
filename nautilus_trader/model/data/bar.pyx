@@ -700,7 +700,6 @@ cdef class Bar(Data):
         Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
         Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
         Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
-        super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
             bar_type_clone(&bar_type._mem),
@@ -755,8 +754,6 @@ cdef class Bar(Data):
             state[12],
             state[13],
         )
-        self.ts_event = state[12]
-        self.ts_init = state[13]
 
     def __del__(self) -> None:
         if self._mem.bar_type.instrument_id.symbol.value != NULL:
@@ -877,6 +874,30 @@ cdef class Bar(Data):
 
         """
         return Quantity.from_raw_c(self._mem.volume.raw, self._mem.volume.precision)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
 
     @staticmethod
     def from_dict(dict values) -> Bar:

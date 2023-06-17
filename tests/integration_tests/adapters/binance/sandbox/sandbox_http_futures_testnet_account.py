@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import os
 
 import pytest
@@ -27,43 +26,42 @@ from nautilus_trader.common.logging import Logger
 
 @pytest.mark.asyncio()
 async def test_binance_spot_account_http_client():
-    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=BinanceAccountType.USDT_FUTURE,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
+        is_testnet=True,
     )
-    await client.connect()
 
     http_account = BinanceFuturesAccountHttpAPI(
         client=client,
-        account_type=BinanceAccountType.FUTURES_USDT,
+        clock=clock,
+        account_type=BinanceAccountType.USDT_FUTURE,
     )
 
-    info = await http_account.account()
-    print(info)
-    trades = await http_account.get_account_trades(symbol="ETHUSDT")
+    await http_account.query_futures_hedge_mode()
+
+    # trades = await http_account.get_account_trades(symbol="ETHUSDT")
 
     ############################################################################
     # NEW ORDER
     ############################################################################
-    # response = await account.new_order_futures(
+    # await http_account.new_order(
     #     symbol="ETHUSDT",
-    #     side="SELL",
-    #     type="LIMIT",
+    #     side=BinanceOrderSide.BUY,
+    #     order_type=BinanceOrderType.LIMIT,
     #     quantity="0.01",
-    #     time_in_force="GTC",
-    #     price="3000",
+    #     time_in_force=BinanceTimeInForce.GTC,
+    #     price="1000",
     #     # iceberg_qty="0.005",
     #     # stop_price="3200",
     #     # working_type="CONTRACT_PRICE",
     #     # new_client_order_id="O-20211120-021300-001-001-1",
-    #     recv_window=5000,
+    #     recv_window="5000",
     # )
 
     ############################################################################
@@ -93,6 +91,4 @@ async def test_binance_spot_account_http_client():
     #     recv_window=5000,
     # )
 
-    print(trades)
-
-    await client.disconnect()
+    # print(trades)

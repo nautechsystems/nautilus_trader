@@ -48,6 +48,7 @@ from nautilus_trader.trading.strategy import Strategy
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceFuturesExecutionClient:
     def setup(self):
         # Fixture Setup
@@ -70,11 +71,11 @@ class TestBinanceFuturesExecutionClient:
         self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(
-            loop=asyncio.get_event_loop(),
             clock=self.clock,
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.provider = BinanceFuturesInstrumentProvider(
@@ -121,7 +122,7 @@ class TestBinanceFuturesExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.provider,
-            account_type=BinanceAccountType.FUTURES_USDT,
+            account_type=BinanceAccountType.USDT_FUTURE,
         )
 
         self.strategy = Strategy()

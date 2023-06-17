@@ -38,24 +38,24 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.account import AccountState
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderCancelRejected
-from nautilus_trader.model.events.order import OrderDenied
-from nautilus_trader.model.events.order import OrderExpired
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderModifyRejected
-from nautilus_trader.model.events.order import OrderPendingCancel
-from nautilus_trader.model.events.order import OrderPendingUpdate
-from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -685,8 +685,10 @@ class TestMsgPackSerializer:
             TimeInForce.FOK,
             post_only=False,
             reduce_only=True,
+            quote_quantity=False,
             options={},
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=ContingencyType.OTO,
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
@@ -724,8 +726,10 @@ class TestMsgPackSerializer:
             TimeInForce.DAY,
             post_only=True,
             reduce_only=False,
+            quote_quantity=True,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=ContingencyType.OTO,
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
@@ -763,8 +767,10 @@ class TestMsgPackSerializer:
             TimeInForce.DAY,
             post_only=False,
             reduce_only=True,
+            quote_quantity=False,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=ContingencyType.OTO,
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
@@ -804,8 +810,10 @@ class TestMsgPackSerializer:
             TimeInForce.DAY,
             post_only=True,
             reduce_only=True,
+            quote_quantity=False,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=ContingencyType.OTO,
             order_list_id=OrderListId("1"),
             linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],

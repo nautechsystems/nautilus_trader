@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from typing import Optional
 
 import msgspec
@@ -35,9 +36,9 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -261,13 +262,13 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
             The trading pair.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
-        fromId : str, optional
+        fromId : int, optional
             Trade id to fetch from. Default gets most recent trades
         """
 
         symbol: BinanceSymbol
         limit: Optional[int] = None
-        fromId: Optional[str] = None
+        fromId: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = BinanceMethodType.GET
@@ -318,19 +319,19 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
             The trading pair.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
-        fromId : str, optional
+        fromId : int, optional
             Trade id to fetch from INCLUSIVE.
-        startTime : str, optional
+        startTime : int, optional
             Timestamp in ms to get aggregate trades from INCLUSIVE.
-        endTime : str, optional
+        endTime : int, optional
             Timestamp in ms to get aggregate trades until INCLUSIVE.
         """
 
         symbol: BinanceSymbol
         limit: Optional[int] = None
-        fromId: Optional[str] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
+        fromId: Optional[int] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
         method_type = BinanceMethodType.GET
@@ -382,17 +383,17 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
             The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
-        startTime : str, optional
+        startTime : int, optional
             Timestamp in ms to get klines from INCLUSIVE.
-        endTime : str, optional
+        endTime : int, optional
             Timestamp in ms to get klines until INCLUSIVE.
         """
 
         symbol: BinanceSymbol
         interval: BinanceKlineInterval
         limit: Optional[int] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceKline]:
         method_type = BinanceMethodType.GET
@@ -609,9 +610,9 @@ class BinanceMarketHttpAPI:
 
         if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -657,7 +658,7 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: Optional[int] = None,
-    ) -> OrderBookSnapshot:
+    ) -> OrderBookDeltas:
         """Request snapshot of order book depth."""
         depth = await self.query_depth(instrument_id.symbol.value, limit)
         return depth.parse_to_order_book_snapshot(
@@ -698,9 +699,9 @@ class BinanceMarketHttpAPI:
         self,
         symbol: str,
         limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        from_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        from_id: Optional[int] = None,
     ) -> list[BinanceAggTrade]:
         """Query aggregated trades for symbol."""
         return await self._endpoint_agg_trades._get(
@@ -718,9 +719,9 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: int = 1000,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        from_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        from_id: Optional[int] = None,
     ) -> list[TradeTick]:
         """
         Request TradeTicks from Binance aggregated trades.
@@ -740,10 +741,10 @@ class BinanceMarketHttpAPI:
         last_id = 0
         interval_limited = False
 
-        def _calculate_next_end_time(start_time: str, end_time: str):
-            next_interval = int(start_time) + max_interval
-            interval_limited = next_interval < int(end_time)
-            next_end_time = str(next_interval) if interval_limited is True else end_time
+        def _calculate_next_end_time(start_time: int, end_time: int) -> tuple[int, bool]:
+            next_interval = start_time + max_interval
+            interval_limited = next_interval < end_time
+            next_end_time = next_interval if interval_limited is True else end_time
             return next_end_time, interval_limited
 
         if start_time is not None and end_time is not None:
@@ -779,7 +780,7 @@ class BinanceMarketHttpAPI:
             else:
                 last = response[-1]
                 last_id = last.a
-                next_start_time = str(last.T)
+                next_start_time = last.T
                 next_end_time, interval_limited = _calculate_next_end_time(
                     next_start_time,
                     end_time,
@@ -792,7 +793,7 @@ class BinanceMarketHttpAPI:
         self,
         symbol: str,
         limit: Optional[int] = None,
-        from_id: Optional[str] = None,
+        from_id: Optional[int] = None,
     ) -> list[BinanceTrade]:
         """Query historical trades for symbol."""
         return await self._endpoint_historical_trades._get(
@@ -808,7 +809,7 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: Optional[int] = None,
-        from_id: Optional[str] = None,
+        from_id: Optional[int] = None,
     ) -> list[TradeTick]:
         """Request historical TradeTicks from Binance."""
         historical_trades = await self.query_historical_trades(
@@ -829,8 +830,8 @@ class BinanceMarketHttpAPI:
         symbol: str,
         interval: BinanceKlineInterval,
         limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> list[BinanceKline]:
         """Query klines for a symbol over an interval."""
         return await self._endpoint_klines._get(
@@ -849,19 +850,39 @@ class BinanceMarketHttpAPI:
         ts_init: int,
         interval: BinanceKlineInterval,
         limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> list[BinanceBar]:
         """Request Binance Bars from Klines."""
-        klines = await self.query_klines(
-            symbol=bar_type.instrument_id.symbol.value,
-            interval=interval,
-            limit=limit,
-            start_time=start_time,
-            end_time=end_time,
-        )
-        bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines]
-        return bars
+        end_time_ms = int(end_time) if end_time is not None else sys.maxsize
+        all_bars: list[BinanceBar] = []
+        while True:
+            klines = await self.query_klines(
+                symbol=bar_type.instrument_id.symbol.value,
+                interval=interval,
+                limit=limit,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            bars: list[BinanceBar] = [
+                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
+            ]
+            all_bars.extend(bars)
+
+            # Update the start_time to fetch the next set of bars
+            if klines:
+                next_start_time = klines[-1].open_time + 1
+            else:
+                # Handle the case when klines is empty
+                break
+
+            # No more bars to fetch
+            if (limit and len(klines) < limit) or next_start_time >= end_time_ms:
+                break
+
+            start_time = next_start_time
+
+        return all_bars
 
     async def query_ticker_24hr(
         self,

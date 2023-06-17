@@ -32,18 +32,19 @@ cdef class Identifier:
 cdef class Symbol(Identifier):
     cdef Symbol_t _mem
 
+    @staticmethod
+    cdef Symbol from_mem_c(Symbol_t* mem)
+
 
 cdef class Venue(Identifier):
     cdef Venue_t _mem
 
+    @staticmethod
+    cdef Venue from_mem_c(Venue_t* mem)
+
 
 cdef class InstrumentId(Identifier):
     cdef InstrumentId_t _mem
-
-    cdef readonly Symbol symbol
-    """The instrument ticker symbol.\n\n:returns: `Symbol`"""
-    cdef readonly Venue venue
-    """The instrument trading venue.\n\n:returns: `Venue`"""
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem)
@@ -67,6 +68,7 @@ cdef class TraderId(ComponentId):
 cdef class StrategyId(ComponentId):
     cpdef str get_tag(self)
     cpdef bint is_external(self)
+
     @staticmethod
     cdef StrategyId external_c()
 
@@ -84,6 +86,8 @@ cdef class AccountId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     cdef ClientOrderId_t _mem
+
+    cpdef bint is_this_trader(self, TraderId trader_id)
 
 
 cdef class VenueOrderId(Identifier):

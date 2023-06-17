@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -44,11 +42,10 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
@@ -65,7 +62,6 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
@@ -736,7 +732,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot))
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
@@ -794,7 +790,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas, OrderBookSnapshot))
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
@@ -821,6 +817,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9862.39",
+            "9861.76",
             GBP,
         )

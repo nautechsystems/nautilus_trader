@@ -59,9 +59,18 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport ExecutionReport
+from nautilus_trader.execution.reports cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport PositionStatusReport
+from nautilus_trader.execution.reports cimport TradeReport
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport oms_type_to_str
+from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -78,6 +87,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -143,6 +153,7 @@ cdef class ExecutionEngine(Component):
         # Settings
         self.debug: bool = config.debug
         self.allow_cash_positions: bool = config.allow_cash_positions
+        self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
 
         # Counters
         self.command_count: int = 0
@@ -154,7 +165,20 @@ cdef class ExecutionEngine(Component):
         self._msgbus.register(endpoint="ExecEngine.process", handler=self.process)
 
     @property
-    def registered_clients(self):
+    def reconciliation(self) -> bool:
+        """
+        Return whether the reconciliation process will be run on start.
+
+        Returns
+        -------
+        bool
+
+        """
+        # Temporary to push down common logic, the `LiveExecutionEngine` will override this
+        return False
+
+    @property
+    def registered_clients(self) -> list[ClientId]:
         """
         Return the execution clients registered with the engine.
 
@@ -166,16 +190,30 @@ cdef class ExecutionEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def default_client(self):
+    def default_client(self) -> Optional[ClientId]:
         """
         Return the default execution client registered with the engine.
 
         Returns
         -------
-        Optional[ClientId]
+        ClientId or ``None``
 
         """
         return self._default_client.id if self._default_client is not None else None
+
+    def connect(self) -> None:
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        self._log.info("Connecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+    def disconnect(self) -> None:
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        self._log.info("Disconnecting all clients...")
+        # Implement actual client connections for a live/sandbox context
 
     cpdef int position_id_count(self, StrategyId strategy_id):
         """
@@ -428,6 +466,59 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Deregistered {client}.")
 
+    # -- RECONCILIATION -------------------------------------------------------------------------------
+
+    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
+        """
+        Reconcile the internal execution state with all execution clients (external state).
+
+        Parameters
+        ----------
+        timeout_secs : double, default 10.0
+            The timeout (seconds) for reconciliation to complete.
+
+        Returns
+        -------
+        bool
+            True if states reconcile within timeout, else False.
+
+        Raises
+        ------
+        ValueError
+            If `timeout_secs` is not positive (> 0).
+
+        """
+        return True  # Should be overridden for live execution engines
+
+    def reconcile_report(self, report: ExecutionReport) -> bool:
+        """
+        Check the given execution report.
+
+        Parameters
+        ----------
+        report : ExecutionReport
+            The execution report to check.
+
+        Returns
+        -------
+        bool
+            True if reconciliation successful, else False.
+
+        """
+        return True  # Should be overridden for live execution engines
+
+    def reconcile_mass_status(self, report: ExecutionMassStatus) -> None:
+        """
+        Reconcile the given execution mass status report.
+
+        Parameters
+        ----------
+        report : ExecutionMassStatus
+            The execution mass status report to reconcile.
+
+        """
+        # Should be overridden for live execution enginesj
+
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self):
@@ -556,6 +647,73 @@ cdef class ExecutionEngine(Component):
             self._pos_id_generator.set_count(strategy_id, count)
             self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
 
+    cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side):
+        cdef Price last_px = None
+        cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
+        cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
+        if last_quote is not None:
+            last_px = last_quote.ask if order_side == OrderSide.BUY else last_quote.bid
+        else:
+            if last_trade is not None:
+                last_px = last_trade.price
+
+        return last_px
+
+    cpdef void _set_order_base_qty(self, Order order, Quantity base_qty):
+        self._log.info(
+            f"Setting {order.instrument_id} order quote quantity {order.quantity} to base quantity {base_qty}.",
+        )
+        cdef Quantity original_qty = order.quantity
+        order.quantity = base_qty
+        order.leaves_qty = base_qty
+        order.is_quote_quantity = False
+
+        if order.contingency_type != ContingencyType.OTO:
+            return
+
+        # Set base quantity for all OTO contingent orders
+        cdef ClientOrderId client_order_id
+        cdef Order contingent_order
+        for client_order_id in order.linked_order_ids or []:
+            contingent_order = self._cache.order(client_order_id)
+            if contingent_order is None:
+                self._log.error(f"Contingency order {client_order_id!r} not found.")
+                continue
+            if not contingent_order.is_quote_quantity:
+                continue  # Already base quantity
+            if contingent_order.quantity != original_qty:
+                self._log.warning(
+                    f"Contingent order quantity {contingent_order.quantity} "
+                    f"was not equal to the OTO parent original quantity {original_qty} "
+                    f"when setting to base quantity of {base_qty}."
+                )
+            self._log.info(
+                f"Setting {contingent_order.instrument_id} order quote quantity "
+                f"{contingent_order.quantity} to base quantity {base_qty}.",
+            )
+            contingent_order.quantity = base_qty
+            contingent_order.leaves_qty = base_qty
+            contingent_order.is_quote_quantity = False
+
+    cpdef void _deny_order(self, Order order, str reason):
+        # Generate event
+        cdef OrderDenied denied = OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(denied)
+
+        self._cache.update_order(order)
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=denied,
+        )
+
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void _execute_command(self, TradingCommand command):
@@ -595,9 +753,29 @@ cdef class ExecutionEngine(Component):
             )
 
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
-        if not self._cache.order_exists(command.order.client_order_id):
+        cdef Order order = command.order
+        if not self._cache.order_exists(order.client_order_id):
             # Cache order
-            self._cache.add_order(command.order, command.position_id)
+            self._cache.add_order(order, command.position_id)
+
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle submit order: "
+                f"no instrument found for {order.instrument_id}, {command}."
+            )
+            return
+
+        # Check if converting quote quantity
+        cdef Price last_px = None
+        cdef Quantity base_qty = None
+        if not instrument.is_inverse and order.is_quote_quantity:
+            last_px = self._last_px_for_conversion(order.instrument_id, order.side)
+            if last_px is None:
+                self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
+                return  # Denied
+            base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
+            self._set_order_base_qty(order, base_qty)
 
         # Send to execution client
         client.submit_order(command)
@@ -608,6 +786,32 @@ cdef class ExecutionEngine(Component):
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, position_id=None)
+
+        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot handle submit order list: "
+                f"no instrument found for {command.instrument_id}, {command}."
+            )
+            return
+
+        # Check if converting quote quantity
+        cdef Price last_px = None
+        cdef Quantity quote_qty = None
+        cdef Quantity base_qty = None
+        if not instrument.is_inverse and command.order_list.first.is_quote_quantity:
+            for order in command.order_list.orders:
+                if order.is_quote_quantity == False:
+                    continue  # Base quantity already set
+                if order.quantity != quote_qty:
+                    last_px = self._last_px_for_conversion(order.instrument_id, order.side)
+                    quote_qty = order.quantity
+                if last_px is None:
+                    for order in command.order_list.orders:
+                        self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
+                    return  # Denied
+                base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
+                self._set_order_base_qty(order, base_qty)
 
         # Send to execution client
         client.submit_order_list(command)
@@ -882,6 +1086,14 @@ cdef class ExecutionEngine(Component):
 
             # Close original position
             self._update_position(instrument, position, fill_split1, oms_type)
+
+        # Guard against flipping a position with a zero fill size
+        if difference._mem.raw == 0:
+            self._log.warning(
+                "Zero fill size during position flip calculation, this could be caused by"
+                "a mismatch between instrument `size_precision` and a quantity `size_precision`."
+            )
+            return
 
         cdef PositionId position_id_flip = fill.position_id
         if oms_type == OmsType.HEDGING and fill.position_id.is_virtual_c():

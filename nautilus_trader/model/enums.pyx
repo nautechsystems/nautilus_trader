@@ -24,7 +24,6 @@ from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
-from nautilus_trader.core.rust.model import DepthType
 from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.core.rust.model import MarketStatus
@@ -60,8 +59,6 @@ from nautilus_trader.model.enums_c import contingency_type_from_str
 from nautilus_trader.model.enums_c import contingency_type_to_str
 from nautilus_trader.model.enums_c import currency_type_from_str
 from nautilus_trader.model.enums_c import currency_type_to_str
-from nautilus_trader.model.enums_c import depth_type_from_str
-from nautilus_trader.model.enums_c import depth_type_to_str
 from nautilus_trader.model.enums_c import instrument_close_type_from_str
 from nautilus_trader.model.enums_c import instrument_close_type_to_str
 from nautilus_trader.model.enums_c import liquidity_side_from_str
@@ -103,7 +100,6 @@ __all__ = [
     "BookType",
     "ContingencyType",
     "CurrencyType",
-    "DepthType",
     "InstrumentCloseType",
     "LiquiditySide",
     "MarketStatus",
@@ -138,8 +134,6 @@ __all__ = [
     "contingency_type_from_str",
     "currency_type_to_str",
     "currency_type_from_str",
-    "depth_type_to_str",
-    "depth_type_from_str",
     "instrument_close_type_to_str",
     "instrument_close_type_from_str",
     "liquidity_side_to_str",

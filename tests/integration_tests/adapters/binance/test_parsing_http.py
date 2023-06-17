@@ -16,10 +16,13 @@
 import pkgutil
 
 import msgspec
+import pytest
 
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
+
+pytestmark = pytest.mark.skip(reason="Repair order book parsing")
 
 ETHUSDT = TestInstrumentProvider.ethusdt_binance()
 

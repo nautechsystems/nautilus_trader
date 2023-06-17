@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import pickle
 from decimal import Decimal
 from typing import Optional, Union
@@ -67,7 +68,8 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.book cimport ORDER_BOOK_DATA
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
@@ -359,6 +361,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
+        use_random_ids: bool = False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -398,6 +401,8 @@ cdef class BacktestEngine:
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
+        use_random_ids : bool, default False
+            If venue order and position IDs will be randomly generated UUID4s.
 
         Raises
         ------
@@ -443,6 +448,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
+            use_random_ids=use_random_ids,
         )
 
         self._venues[venue] = exchange
@@ -722,6 +728,10 @@ cdef class BacktestEngine:
         Reset the backtest engine.
 
         All stateful fields are reset to their initial value.
+
+        Note: instruments and data are not dropped/reset, this can be done through a
+        separate call to `.clear_data()` if desired.
+
         """
         self._log.debug(f"Resetting...")
 
@@ -779,12 +789,33 @@ cdef class BacktestEngine:
         self._data_len = 0
         self._index = 0
 
+    def clear_actors(self) -> None:
+        """
+        Clear all actors from the engines internal trader.
+
+        """
+        self._trader.clear_actors()
+
+    def clear_strategies(self) -> None:
+        """
+        Clear all trading strategies from the engines internal trader.
+
+        """
+        self._trader.clear_strategies()
+
+    def clear_exec_algorthms(self) -> None:
+        """
+        Clear all execution algorithms from the engines internal trader.
+
+        """
+        self._trader.clear_exec_algorthms()
+
     def dispose(self) -> None:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
 
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
+        Calling this method multiple times has the same effect as calling it once (it is idempotent).
+        Once called, it cannot be reversed, and no other methods should be called on this instance.
 
         """
         self.clear_data()
@@ -950,11 +981,24 @@ cdef class BacktestEngine:
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()
-            self._kernel.data_engine.start()
-            self._kernel.risk_engine.start()
-            self._kernel.exec_engine.start()
-            self._kernel.emulator.start()
-            self._kernel.trader.start()
+                ###################################################################################
+                open_orders = self._kernel.cache.orders_open(venue=exchange.id)
+                for order in open_orders:
+                    if order.is_emulated:
+                        # Order should be loaded in the emulator already
+                        continue
+                    matching_engine = exchange.get_matching_engine(order.instrument_id)
+                    if matching_engine is None:
+                        self._log.error(
+                            f"No matching engine for {order.instrument_id} to process {order}.",
+                        )
+                        continue
+                    matching_engine.process_order(order, order.account_id)
+                ###################################################################################
+
+            # Common kernel start-up sequence
+            asyncio.run(self._kernel.start())
+
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
             self._log_pre_run()
@@ -988,8 +1032,10 @@ cdef class BacktestEngine:
                     raw_handlers_count = raw_handlers.len
 
                 # Process data through venue
-                if isinstance(data, ORDER_BOOK_DATA):
-                    self._venues[data.instrument_id.venue].process_order_book(data)
+                if isinstance(data, OrderBookDelta):
+                    self._venues[data.instrument_id.venue].process_order_book_delta(data)
+                elif isinstance(data, OrderBookDeltas):
+                    self._venues[data.instrument_id.venue].process_order_book_deltas(data)
                 elif isinstance(data, QuoteTick):
                     self._venues[data.instrument_id.venue].process_quote_tick(data)
                 elif isinstance(data, TradeTick):
@@ -1259,7 +1305,7 @@ cdef class BacktestEngine:
             self._kernel.data_engine.register_client(client)
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
-        cdef ClientId client_id = ClientId(venue.to_str())
+        cdef ClientId client_id = ClientId(venue.value)
         if client_id not in self._kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,

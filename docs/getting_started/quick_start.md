@@ -67,11 +67,11 @@ registering indicators to receive certain data types, however in this example we
 from typing import Optional
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
@@ -219,7 +219,7 @@ adding the `QuoteTick`(s) for our EUR/USD instrument:
 
 ```python
 from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 
 data = BacktestDataConfig(
     catalog_path=str(catalog.path),

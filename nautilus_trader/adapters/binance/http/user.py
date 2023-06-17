@@ -147,16 +147,16 @@ class BinanceUserDataHttpAPI:
         if account_type == BinanceAccountType.SPOT:
             self.base_endpoint = "/api/v3/"
             listen_key_url = self.base_endpoint + "userDataStream"
-        elif account_type == BinanceAccountType.MARGIN_CROSS:
+        elif account_type == BinanceAccountType.MARGIN:
             self.base_endpoint = "/sapi/v1/"
             listen_key_url = self.base_endpoint + "userDataStream"
-        elif account_type == BinanceAccountType.MARGIN_ISOLATED:
+        elif account_type == BinanceAccountType.ISOLATED_MARGIN:
             self.base_endpoint = "/sapi/v1/"
             listen_key_url = self.base_endpoint + "userDataStream/isolated"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
             listen_key_url = self.base_endpoint + "listenKey"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
             listen_key_url = self.base_endpoint + "listenKey"
         else:

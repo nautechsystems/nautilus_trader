@@ -44,9 +44,9 @@ cdef class Ticker(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(ts_event, ts_init)
-
         self.instrument_id = instrument_id
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __eq__(self, Ticker other) -> bool:
         return self.instrument_id == other.instrument_id

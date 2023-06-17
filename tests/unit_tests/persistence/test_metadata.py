@@ -32,8 +32,8 @@ class TestPersistenceBatching:
         # Arrange
         audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("OANDA"))
         gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD", Venue("OANDA"))
-        audusd_trade = TestDataStubs.trade_tick_3decimal(instrument_id=audusd.id)
-        gbpusd_trade = TestDataStubs.trade_tick_3decimal(instrument_id=gbpusd.id)
+        audusd_trade = TestDataStubs.trade_tick(instrument=audusd)
+        gbpusd_trade = TestDataStubs.trade_tick(instrument=gbpusd)
 
         # Act
         write_objects(self.catalog, [audusd_trade, gbpusd_trade])

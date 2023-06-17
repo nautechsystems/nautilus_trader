@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::prelude::*;
-
 use nautilus_model::{
     data::{
         bar::Bar,
@@ -22,11 +20,13 @@ use nautilus_model::{
     },
     enums::PriceType,
 };
+use pyo3::prelude::*;
 
 use crate::Indicator;
 
-#[pyclass]
+#[repr(C)]
 #[derive(Debug)]
+#[pyclass]
 pub struct ExponentialMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
@@ -37,39 +37,11 @@ pub struct ExponentialMovingAverage {
     _is_initialized: bool,
 }
 
-#[pymethods]
-impl ExponentialMovingAverage {
-    #[new]
-    #[must_use]
-    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        Self {
-            period,
-            price_type: price_type.unwrap_or(PriceType::Last),
-            alpha: 2.0 / (period as f64 + 1.0),
-            value: 0.0,
-            count: 0,
-            _has_inputs: false,
-            _is_initialized: false,
-        }
-    }
-
-    pub fn update_raw(&mut self, value: f64) {
-        if !self._has_inputs {
-            self._has_inputs = true;
-            self.value = value;
-        }
-
-        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
-        self.count += 1;
-
-        // Initialization logic
-        if !self._is_initialized && self.count >= self.period {
-            self._is_initialized = true;
-        }
-    }
-}
-
 impl Indicator for ExponentialMovingAverage {
+    fn name(&self) -> String {
+        stringify!(ExponentialMovingAverage).to_string()
+    }
+
     fn has_inputs(&self) -> bool {
         self._has_inputs
     }
@@ -95,6 +67,75 @@ impl Indicator for ExponentialMovingAverage {
         self.count = 0;
         self._has_inputs = false;
         self._is_initialized = false;
+    }
+}
+
+#[pymethods]
+impl ExponentialMovingAverage {
+    #[must_use]
+    #[new]
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        Self {
+            period,
+            price_type: price_type.unwrap_or(PriceType::Last),
+            alpha: 2.0 / (period as f64 + 1.0),
+            value: 0.0,
+            count: 0,
+            _has_inputs: false,
+            _is_initialized: false,
+        }
+    }
+
+    #[getter]
+    #[pyo3(name = "name")]
+    #[must_use]
+    pub fn name_py(&self) -> String {
+        self.name()
+    }
+
+    #[pyo3(name = "has_inputs")]
+    fn has_inputs_py(&self) -> bool {
+        self.has_inputs()
+    }
+
+    #[pyo3(name = "is_initialized")]
+    fn is_initialized(&self) -> bool {
+        self._is_initialized
+    }
+
+    #[pyo3(name = "handle_quote_tick")]
+    fn handle_quote_tick_py(&mut self, tick: &QuoteTick) {
+        self.update_raw(tick.extract_price(self.price_type).into())
+    }
+
+    #[pyo3(name = "handle_trade_tick")]
+    fn handle_trade_tick_py(&mut self, tick: &TradeTick) {
+        self.update_raw((&tick.price).into())
+    }
+
+    #[pyo3(name = "handle_bar")]
+    fn handle_bar_py(&mut self, bar: &Bar) {
+        self.update_raw((&bar.close).into())
+    }
+
+    #[pyo3(name = "reset")]
+    fn reset_py(&mut self) {
+        self.reset()
+    }
+
+    pub fn update_raw(&mut self, value: f64) {
+        if !self._has_inputs {
+            self._has_inputs = true;
+            self.value = value;
+        }
+
+        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
+        self.count += 1;
+
+        // Initialization logic
+        if !self._is_initialized && self.count >= self.period {
+            self._is_initialized = true;
+        }
     }
 }
 

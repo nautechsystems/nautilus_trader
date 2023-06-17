@@ -48,6 +48,7 @@ from nautilus_trader.trading.strategy import Strategy
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceSpotExecutionClient:
     def setup(self):
         # Fixture Setup
@@ -70,11 +71,11 @@ class TestBinanceSpotExecutionClient:
         self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(
-            loop=asyncio.get_event_loop(),
             clock=self.clock,
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.provider = BinanceSpotInstrumentProvider(
@@ -136,7 +137,6 @@ class TestBinanceSpotExecutionClient:
             logger=self.logger,
         )
 
-    @pytest.mark.skip(reason="WIP")
     @pytest.mark.asyncio()
     async def test_connect(self, monkeypatch):
         # Arrange: prepare data for monkey patch

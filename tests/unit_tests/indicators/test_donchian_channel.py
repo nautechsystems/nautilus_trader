@@ -63,27 +63,27 @@ class TestDonchianChannel:
         # Arrange
         indicator = DonchianChannel(10)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.middle == 1.0000200000000001
+        assert indicator.middle == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = DonchianChannel(10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.middle == 1.00001
+        assert indicator.middle == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange

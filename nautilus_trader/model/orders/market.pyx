@@ -75,6 +75,8 @@ cdef class MarketOrder(Order):
         The order time in force.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool, default False
+        If the order quantity is denominated in the quote currency.
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
@@ -119,6 +121,7 @@ cdef class MarketOrder(Order):
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
+        bint quote_quantity = False,
         ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
@@ -143,8 +146,10 @@ cdef class MarketOrder(Order):
             time_in_force=time_in_force,
             post_only=False,
             reduce_only=reduce_only,
+            quote_quantity=quote_quantity,
             options={},
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
@@ -207,7 +212,8 @@ cdef class MarketOrder(Order):
             "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": time_in_force_to_str(self.time_in_force),
-            "reduce_only": self.is_reduce_only,
+            "is_reduce_only": self.is_reduce_only,
+            "is_quote_quantity": self.is_quote_quantity,
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
@@ -256,6 +262,7 @@ cdef class MarketOrder(Order):
             quantity=init.quantity,
             time_in_force=init.time_in_force,
             reduce_only=init.reduce_only,
+            quote_quantity=init.quote_quantity,
             init_id=init.id,
             ts_init=init.ts_init,
             contingency_type=init.contingency_type,
@@ -300,6 +307,7 @@ cdef class MarketOrder(Order):
             quantity=order.quantity,
             time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
             reduce_only=order.is_reduce_only,
+            quote_quantity=order.is_quote_quantity,
             init_id=UUID4(),
             ts_init=ts_init,
             contingency_type=order.contingency_type,

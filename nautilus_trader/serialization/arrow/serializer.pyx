@@ -88,8 +88,7 @@ def register_parquet(
     table : type, optional
         An optional table override for `cls`. Used if `cls` is going to be
         transformed and stored in a table other than
-        its own. (for example, `OrderBookSnapshots` are stored as
-        `OrderBookDeltas`, so we use `table=OrderBookDeltas`).
+        its own.
 
     """
     Condition.type_or_none(serializer, Callable, "serializer")

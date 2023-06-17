@@ -14,9 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import platform
-
-import pytest
 
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -57,10 +54,6 @@ class TestBacktestLoaders:
         assert instrument.quote_currency.code == "JPY"
 
 
-@pytest.mark.skipif(
-    platform.system() == "Windows",
-    reason="Windows does not support `pyarrow`",
-)
 class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act

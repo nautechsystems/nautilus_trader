@@ -20,15 +20,13 @@ import pytest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook import L2OrderBook
-from nautilus_trader.model.orderbook import OrderBookSnapshot
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -209,7 +207,7 @@ class TestCache:
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_ticks([tick])
 
@@ -221,7 +219,7 @@ class TestCache:
 
     def test_add_quote_ticks_when_already_ticks_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_tick(tick)
 
@@ -234,7 +232,7 @@ class TestCache:
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_ticks([tick])
 
@@ -246,7 +244,7 @@ class TestCache:
 
     def test_add_trade_ticks_when_already_ticks_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -301,21 +299,7 @@ class TestCache:
 
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
-        snapshot = OrderBookSnapshot(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bids=[[1550.15, 0.51], [1580.00, 1.20]],
-            asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event=0,
-            ts_init=0,
-        )
-
-        order_book = L2OrderBook(
-            instrument_id=ETHUSDT_BINANCE.id,
-            price_precision=2,
-            size_precision=8,
-        )
-        order_book.apply_snapshot(snapshot)
-
+        order_book = TestDataStubs.order_book(ETHUSDT_BINANCE.id)
         self.cache.add_order_book(order_book)
 
         # Act
@@ -333,7 +317,7 @@ class TestCache:
 
     def test_price_given_last_when_no_trade_ticks_returns_none(self):
         # Act
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_tick(tick)
 
@@ -344,7 +328,7 @@ class TestCache:
 
     def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -356,7 +340,7 @@ class TestCache:
 
     def test_price_given_last_when_trade_tick_returns_expected_price(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -364,7 +348,7 @@ class TestCache:
         result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
 
         # Assert
-        assert result == Price.from_str("1.00001")
+        assert result == Price.from_str("1.00000")
 
     @pytest.mark.parametrize(
         ("price_type", "expected"),
@@ -380,7 +364,11 @@ class TestCache:
         expected,
     ):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick(
+            instrument=AUDUSD_SIM,
+            bid=1.00001,
+            ask=1.00003,
+        )
 
         self.cache.add_quote_tick(tick)
 
@@ -392,7 +380,7 @@ class TestCache:
 
     def test_quote_tick_when_index_out_of_range_returns_none(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         self.cache.add_quote_tick(tick)
 
@@ -405,8 +393,8 @@ class TestCache:
 
     def test_quote_tick_with_two_ticks_returns_expected_tick(self):
         # Arrange
-        tick1 = TestDataStubs.quote_tick_5decimal()
-        tick2 = TestDataStubs.quote_tick_5decimal()
+        tick1 = TestDataStubs.quote_tick(ts_init=0)
+        tick2 = TestDataStubs.quote_tick(ts_init=1)
 
         self.cache.add_quote_tick(tick1)
         self.cache.add_quote_tick(tick2)
@@ -416,11 +404,11 @@ class TestCache:
 
         # Assert
         assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 2
-        assert result == tick2
+        assert result.ts_init == 1
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
         # Arrange
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick)
 
@@ -433,8 +421,8 @@ class TestCache:
 
     def test_trade_tick_with_one_tick_returns_expected_tick(self):
         # Arrange
-        tick1 = TestDataStubs.trade_tick_5decimal()
-        tick2 = TestDataStubs.trade_tick_5decimal()
+        tick1 = TestDataStubs.trade_tick()
+        tick2 = TestDataStubs.trade_tick()
 
         self.cache.add_trade_tick(tick1)
         self.cache.add_trade_tick(tick2)

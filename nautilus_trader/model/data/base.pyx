@@ -95,9 +95,32 @@ cdef class GenericData(Data):
         DataType data_type not None,
         Data data not None,
     ):
-        super().__init__(data.ts_event, data.ts_init)
         self.data_type = data_type
         self.data = data
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(data_type={self.data_type}, data={self.data})"
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self.data.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self.data.ts_init

@@ -30,7 +30,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        args: ["-L", "ot,zar,warmup"]
+        args: ["-L", "ot,zar"]
 
   ##############################################################################
   #  Rust formatting and linting
@@ -60,7 +60,7 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v2.4.0
+    rev: v2.5.1
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
@@ -75,8 +75,8 @@ repos:
         args: ["--config", "pyproject.toml"]
         exclude: "docs/_pygments/monokai.py"
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.269
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.272
     hooks:
       - id: ruff
         args: ["--fix"]

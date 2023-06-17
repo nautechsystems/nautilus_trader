@@ -32,24 +32,10 @@ cdef class StatusUpdate(Data):
     """
     The base class for all status updates.
 
-    Parameters
-    ----------
-    ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the status update event occurred.
-    ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
-
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
-
-    def __init__(
-        self,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ):
-        super().__init__(ts_event, ts_init)
 
 
 cdef class VenueStatusUpdate(StatusUpdate):
@@ -75,9 +61,10 @@ cdef class VenueStatusUpdate(StatusUpdate):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(ts_event, ts_init)
         self.venue = venue
         self.status = status
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __eq__(self, VenueStatusUpdate other) -> bool:
         return VenueStatusUpdate.to_dict_c(self) == VenueStatusUpdate.to_dict_c(other)
@@ -166,9 +153,10 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
         self.status = status
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __eq__(self, InstrumentStatusUpdate other) -> bool:
         return InstrumentStatusUpdate.to_dict_c(self) == InstrumentStatusUpdate.to_dict_c(other)
@@ -260,10 +248,11 @@ cdef class InstrumentClose(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
         self.close_price = close_price
         self.close_type = close_type
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __eq__(self, InstrumentClose other) -> bool:
         return InstrumentClose.to_dict_c(self) == InstrumentClose.to_dict_c(other)

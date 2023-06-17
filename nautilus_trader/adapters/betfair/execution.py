@@ -66,8 +66,8 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.events.account import AccountState
-from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId

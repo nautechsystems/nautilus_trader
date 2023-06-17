@@ -26,12 +26,15 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
@@ -50,6 +53,8 @@ cdef class ExecutionEngine(Component):
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly bint allow_cash_positions
     """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
+    cdef readonly bint filter_unclaimed_external_orders
+    """If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.\n\n:returns `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
@@ -81,6 +86,9 @@ cdef class ExecutionEngine(Component):
 # -- INTERNAL -------------------------------------------------------------------------------------
 
     cpdef void _set_position_id_counts(self)
+    cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side)
+    cpdef void _set_order_base_qty(self, Order order, Quantity base_qty)
+    cpdef void _deny_order(self, Order order, str reason)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

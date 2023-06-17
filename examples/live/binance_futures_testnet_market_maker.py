@@ -54,7 +54,7 @@ config_node = TradingNodeConfig(
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
             api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
-            account_type=BinanceAccountType.FUTURES_USDT,
+            account_type=BinanceAccountType.USDT_FUTURE,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
@@ -66,7 +66,7 @@ config_node = TradingNodeConfig(
         "BINANCE": BinanceExecClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
             api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
-            account_type=BinanceAccountType.FUTURES_USDT,
+            account_type=BinanceAccountType.USDT_FUTURE,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
@@ -74,7 +74,7 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
-    timeout_connection=10.0,
+    timeout_connection=20.0,
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,

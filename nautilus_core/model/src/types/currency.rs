@@ -13,19 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    hash::{Hash, Hasher},
+    str::FromStr,
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::{
+    correctness,
+    string::{cstr_to_string, str_to_cstr},
+};
+use pyo3::prelude::*;
+use serde::{Deserialize, Serialize, Serializer};
 
-use crate::enums::CurrencyType;
+use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
-#[derive(Eq, PartialEq, Clone, Hash, Debug)]
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[derive(Clone, Debug, Eq)]
+#[pyclass]
 pub struct Currency {
     pub code: Box<Arc<String>>,
     pub precision: u8,
@@ -57,12 +64,63 @@ impl Currency {
     }
 }
 
+impl PartialEq for Currency {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code
+    }
+}
+
+impl Hash for Currency {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.code.hash(state);
+    }
+}
+
+impl FromStr for Currency {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        CURRENCY_MAP
+            .lock()
+            .unwrap()
+            .get(s)
+            .cloned()
+            .ok_or_else(|| format!("Unknown currency: {}", s))
+    }
+}
+
+impl From<&str> for Currency {
+    fn from(input: &str) -> Self {
+        input.parse().unwrap_or_else(|err| panic!("{}", err))
+    }
+}
+
+impl Serialize for Currency {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.code.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Currency {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let currency_str: &str = Deserialize::deserialize(deserializer)?;
+        Currency::from_str(currency_str).map_err(serde::de::Error::custom)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 /// Returns a [`Currency`] from pointers and primitives.
 ///
 /// # Safety
+///
 /// - Assumes `code_ptr` is a valid C string pointer.
 /// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
@@ -94,22 +152,22 @@ pub extern "C" fn currency_drop(currency: Currency) {
 
 #[no_mangle]
 pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(format!("{currency:?}").as_str())
+    str_to_cstr(format!("{currency:?}").as_str())
 }
 
 #[no_mangle]
 pub extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(&currency.code)
+    str_to_cstr(&currency.code)
 }
 
 #[no_mangle]
 pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(&currency.name)
+    str_to_cstr(&currency.name)
 }
 
 #[no_mangle]
 pub extern "C" fn currency_eq(lhs: &Currency, rhs: &Currency) -> u8 {
-    u8::from(lhs == rhs)
+    u8::from(lhs.code == rhs.code)
 }
 
 #[no_mangle]
@@ -119,18 +177,50 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
     h.finish()
 }
 
+#[no_mangle]
+pub extern "C" fn currency_register(currency: Currency) {
+    CURRENCY_MAP
+        .lock()
+        .unwrap()
+        .insert(currency.code.to_string(), currency);
+}
+
+/// # Safety
+///
+/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
+    let code = cstr_to_string(code_ptr);
+    u8::from(CURRENCY_MAP.lock().unwrap().contains_key(&code))
+}
+
+/// # Safety
+///
+/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
+    let code = cstr_to_string(code_ptr);
+    Currency::from_str(&code).unwrap()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::enums::CurrencyType;
-    use crate::types::currency::{currency_eq, Currency};
+    use crate::{
+        enums::CurrencyType,
+        types::currency::{currency_eq, Currency},
+    };
 
     #[test]
     fn test_currency_equality() {
         let currency1 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         let currency2 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
+        let currency3 = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
+        assert_eq!(currency1, currency2);
+        assert_ne!(currency1, currency3);
+        assert_eq!(currency_eq(&currency1, &currency2), 1);
         assert_ne!(currency_eq(&currency1, &currency2), 0);
     }
 

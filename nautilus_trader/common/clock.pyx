@@ -19,6 +19,7 @@ from typing import Callable, Optional
 import cython
 import numpy as np
 import pandas as pd
+import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
@@ -160,7 +161,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        return pd.Timestamp(self.timestamp_ns(), tz="UTC")
+        return pd.Timestamp(self.timestamp_ns(), tz=pytz.utc)
 
     cpdef datetime local_now(self, tzinfo tz = None):
         """

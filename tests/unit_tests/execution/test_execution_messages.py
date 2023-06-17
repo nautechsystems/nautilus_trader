@@ -136,8 +136,6 @@ class TestCommands:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        print(str(command))
-        print(repr(command))
         # Act, Assert
         assert not command.has_emulated_order
         assert SubmitOrderList.from_dict(SubmitOrderList.to_dict(command)) == command
@@ -171,8 +169,6 @@ class TestCommands:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        print(str(command))
-        print(repr(command))
         # Act, Assert
         assert SubmitOrderList.from_dict(SubmitOrderList.to_dict(command)) == command
         assert (
