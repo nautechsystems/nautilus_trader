@@ -674,6 +674,24 @@ files = [
 ]
 
 [[package]]
+name = "docformatter"
+version = "1.7.2"
+description = "Formats docstrings to follow PEP 257"
+optional = false
+python-versions = ">=3.7,<4.0"
+files = [
+    {file = "docformatter-1.7.2-py3-none-any.whl", hash = "sha256:b59a4a07bdf0b474db6b6a9a0bbe123896676d86cd708552a2a6d6c2578ab6a4"},
+    {file = "docformatter-1.7.2.tar.gz", hash = "sha256:c20c53b27581a3c9ae9f1d951d4801ff8e6d2afd8c8ff489aae31877e31f0573"},
+]
+
+[package.dependencies]
+charset_normalizer = ">=3.0.0,<4.0.0"
+untokenize = ">=0.1.1,<0.2.0"
+
+[package.extras]
+tomli = ["tomli (>=2.0.0,<3.0.0)"]
+
+[[package]]
 name = "docker"
 version = "6.1.3"
 description = "A Python library for the Docker Engine API."
@@ -2720,6 +2738,16 @@ files = [
 ]
 
 [[package]]
+name = "untokenize"
+version = "0.1.1"
+description = "Transforms tokens into original source code (while preserving whitespace)."
+optional = false
+python-versions = "*"
+files = [
+    {file = "untokenize-0.1.1.tar.gz", hash = "sha256:3865dbbbb8efb4bb5eaa72f1be7f3e0be00ea8b7f125c69cbd1f5fda926f37a2"},
+]
+
+[[package]]
 name = "urllib3"
 version = "2.0.3"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -2941,4 +2969,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "0c6681aa98bd926e31203c9bfcb1029e9015c2c25ab4d25aa95ee416b553acd4"
+content-hash = "55262cb918fbd02495d17a670096d0a50e55066c71fc70afb6100a8e337aa3df"

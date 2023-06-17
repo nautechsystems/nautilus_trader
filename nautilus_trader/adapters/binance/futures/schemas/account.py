@@ -38,7 +38,8 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
+    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account
+    (HMAC SHA256).
     """
 
     asset: str  # asset name
@@ -113,7 +114,8 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     """
-    HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC SHA256).
+    HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC
+    SHA256).
     """
 
     entryPrice: str
@@ -155,7 +157,8 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesDualSidePosition(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Futures` GET /fapi/v1/positionSide/dual (HMAC SHA256).
+    HTTP response from `Binance Futures` GET /fapi/v1/positionSide/dual (HMAC
+    SHA256).
     """
 
     dualSidePosition: bool

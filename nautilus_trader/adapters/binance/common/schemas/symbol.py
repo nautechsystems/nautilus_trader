@@ -25,7 +25,9 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
 
 class BinanceSymbol(str):
-    """Binance compatible symbol."""
+    """
+    Binance compatible symbol.
+    """
 
     def __new__(cls, symbol: Optional[str]):
         if symbol is not None:
@@ -49,7 +51,9 @@ class BinanceSymbol(str):
 
 
 class BinanceSymbols(str):
-    """Binance compatible list of symbols."""
+    """
+    Binance compatible list of symbols.
+    """
 
     def __new__(cls, symbols: Optional[list[str]]):
         if symbols is not None:

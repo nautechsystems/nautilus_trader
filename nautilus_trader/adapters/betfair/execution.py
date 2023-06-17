@@ -103,6 +103,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         The market filter.
     instrument_provider : BetfairInstrumentProvider
         The instrument provider.
+
     """
 
     def __init__(
@@ -176,7 +177,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         await self._client.disconnect()
 
     async def watch_stream(self) -> None:
-        """Ensure socket stream is connected"""
+        """
+        Ensure socket stream is connected.
+        """
         while not self.stream.is_stopping:
             if not self.stream.is_connected:
                 await self.stream.connect()
@@ -606,7 +609,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def check_account_currency(self) -> None:
         """
-        Check account currency against BetfairClient
+        Check account currency against BetfairClient.
         """
         self._log.debug("Checking account currency")
         PyCondition.not_none(self.base_currency, "self.base_currency")
@@ -624,7 +627,9 @@ class BetfairExecutionClient(LiveExecutionClient):
     # -- ORDER STREAM API -------------------------------------------------------------------------
 
     def handle_order_stream_update(self, raw: bytes) -> None:
-        """Handle an update from the order stream socket"""
+        """
+        Handle an update from the order stream socket.
+        """
         update = STREAM_DECODER.decode(raw)
         if isinstance(update, OCM):
             self.create_task(self._handle_order_stream_update(update))
@@ -691,7 +696,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         """
-        Ensure we have a client_order_id, instrument and order for this venue order update
+        Ensure we have a client_order_id, instrument and order for this venue
+        order update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = await self.wait_for_order(
@@ -709,7 +715,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _handle_stream_executable_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         """
-        Handle update containing "E" (executable) order update
+        Handle update containing "E" (executable) order update.
         """
         venue_order_id = VenueOrderId(unmatched_order.id)
         client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
@@ -792,7 +798,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         unmatched_order: UnmatchedOrder,
     ) -> None:
         """
-        Handle "EC" (execution complete) order updates
+        Handle "EC" (execution complete) order updates.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
@@ -873,6 +879,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         As a precaution, wait up to `timeout_seconds` for the betId to be added
         to `self.order_id_to_client_order_id`.
+
         """
         assert isinstance(venue_order_id, VenueOrderId)
         start = self._clock.timestamp_ns()

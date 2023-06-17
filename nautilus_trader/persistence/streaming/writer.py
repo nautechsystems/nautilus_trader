@@ -51,6 +51,7 @@ class StreamingFeatherWriter:
         The flush interval (milliseconds) for writing chunks.
     replace : bool, default False
         If existing files at the given `path` should be replaced.
+
     """
 
     def __init__(
@@ -171,7 +172,8 @@ class StreamingFeatherWriter:
 
     def check_flush(self) -> None:
         """
-        Flush all stream writers if current time greater than the next flush interval.
+        Flush all stream writers if current time greater than the next flush
+        interval.
         """
         now = datetime.datetime.now()
         if now - self._last_flush > self.flush_interval_ms:
@@ -212,6 +214,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
     Returns
     -------
     SignalData
+
     """
 
     class SignalData(Data):

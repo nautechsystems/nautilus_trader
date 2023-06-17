@@ -16,5 +16,6 @@
 
 class InvalidConfiguration(RuntimeError):
     """
-    Raised when there is a violation of a configuration condition, making it invalid.
+    Raised when there is a violation of a configuration condition, making it
+    invalid.
     """

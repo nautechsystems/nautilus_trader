@@ -47,6 +47,7 @@ class SocketClient:
         The maximum number of times the client will auto-reconnect before raising an exception.
     name : str, optional
         The custom name for the client (used for logging).
+
     """
 
     def __init__(
@@ -77,7 +78,6 @@ class SocketClient:
     async def post_connection(self) -> None:
         """
         Actions to be performed post connection.
-
         """
         # Override to implement additional connection related behaviour
         # (sending other messages etc.).
@@ -85,7 +85,6 @@ class SocketClient:
     async def post_reconnection(self) -> None:
         """
         Actions to be performed post reconnection.
-
         """
         # Override to implement additional reconnection related behaviour
         # (resubscribing etc.).
@@ -93,7 +92,6 @@ class SocketClient:
     async def post_disconnection(self) -> None:
         """
         Actions to be performed post disconnection.
-
         """
         # Override to implement additional disconnection related behaviour
         # (canceling ping tasks etc.).
@@ -184,7 +182,6 @@ class SocketClient:
     async def connect(self) -> None:
         """
         Connect the client to the server.
-
         """
         url = f"{self._host}:{self._port}"
         self._log.info(f"Connecting to {url}")
@@ -205,7 +202,6 @@ class SocketClient:
     async def reconnect(self) -> None:
         """
         Reconnect the client to the server.
-
         """
         await self.connect()
         await self.post_reconnection()
@@ -213,7 +209,6 @@ class SocketClient:
     async def disconnect(self) -> None:
         """
         Disconnect the client from the server.
-
         """
         if not self.is_connected:
             self._log.error("Cannot disconnect socket, not connected.")

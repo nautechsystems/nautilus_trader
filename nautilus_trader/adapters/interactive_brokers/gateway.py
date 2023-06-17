@@ -42,7 +42,7 @@ class ContainerStatus(IntEnum):
 
 class InteractiveBrokersGateway:
     """
-    A class to manage starting an Interactive Brokers Gateway docker container
+    A class to manage starting an Interactive Brokers Gateway docker container.
     """
 
     IMAGE = "ghcr.io/unusualalpha/ib-gateway:stable"

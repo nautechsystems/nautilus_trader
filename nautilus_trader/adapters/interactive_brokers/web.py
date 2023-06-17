@@ -22,7 +22,7 @@ from lxml.html import fromstring
 
 class ProductClass(enum.Enum):
     """
-    Interactive Brokers Web ProductClass
+    Interactive Brokers Web ProductClass.
     """
 
     ETFS = "ETF"
@@ -34,7 +34,7 @@ class ProductClass(enum.Enum):
 
 class Exchange(enum.Enum):
     """
-    Interactive Brokers Exchange
+    Interactive Brokers Exchange.
     """
 
     AEB = "aeb"
@@ -123,7 +123,7 @@ class Exchange(enum.Enum):
 
 class Product(namedtuple("Product", "ib_symbol, description, native_symbol, currency")):
     """
-    Interactive Brokers Web Product
+    Interactive Brokers Web Product.
     """
 
 

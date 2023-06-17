@@ -63,14 +63,12 @@ class PortfolioAnalyzer:
     def deregister_statistic(self, statistic: PortfolioStatistic) -> None:
         """
         Deregister a statistic from the analyzer.
-
         """
         self._statistics.pop(statistic.name, None)
 
     def deregister_statistics(self) -> None:
         """
         Deregister all statistics from the analyzer.
-
         """
         self._statistics.clear()
 
@@ -79,6 +77,7 @@ class PortfolioAnalyzer:
         Reset the analyzer.
 
         All stateful fields are reset to their initial value.
+
         """
         self._account_balances_starting = {}
         self._account_balances = {}
@@ -343,7 +342,8 @@ class PortfolioAnalyzer:
         unrealized_pnl: Optional[Money] = None,
     ) -> dict[str, float]:
         """
-        Return the 'PnL' (profit and loss) performance statistics, optionally includes the unrealized PnL.
+        Return the 'PnL' (profit and loss) performance statistics, optionally
+        includes the unrealized PnL.
 
         Money objects are converted to floats.
 

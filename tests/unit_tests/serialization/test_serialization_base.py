@@ -22,7 +22,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 class TestObject:
     """
-    Represents some generic user object which implements serialization value dicts.
+    Represents some generic user object which implements serialization value
+    dicts.
     """
 
     def __init__(self, value):

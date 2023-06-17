@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Defines tradable asset/contract instruments with specific properties dependent
 on the asset class and asset type.

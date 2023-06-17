@@ -52,7 +52,9 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 def _reset():
-    """Cleanup resources before each test run"""
+    """
+    Cleanup resources before each test run.
+    """
     os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
     catalog = ParquetDataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)

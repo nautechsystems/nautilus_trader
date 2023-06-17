@@ -330,7 +330,8 @@ class TestInstrumentProvider:
     @staticmethod
     def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
         """
-        Return a default FX currency pair instrument from the given symbol and venue.
+        Return a default FX currency pair instrument from the given symbol and
+        venue.
 
         Parameters
         ----------
@@ -509,12 +510,14 @@ class TestInstrumentProvider:
 
 class TestDataProvider:
     """
-    Provides an API to load data from either the 'test/' directory or the projects GitHub repo.
+    Provides an API to load data from either the 'test/' directory or the
+    projects GitHub repo.
 
     Parameters
     ----------
     branch : str
         The NautilusTrader GitHub branch for the path.
+
     """
 
     def __init__(self, branch="develop") -> None:
