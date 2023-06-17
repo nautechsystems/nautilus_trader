@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 import pytest
 from betfair_parser.exceptions import AccountAPINGException
 from betfair_parser.spec.accounts.enums import Wallet
@@ -31,10 +29,12 @@ from betfair_parser.spec.betting.orders import ListClearedOrders
 from betfair_parser.spec.betting.orders import ListCurrentOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
+from betfair_parser.spec.betting.orders import _CancelOrdersParams
 from betfair_parser.spec.betting.orders import _ListClearedOrdersParams
 from betfair_parser.spec.betting.orders import _ListCurrentOrdersParams
 from betfair_parser.spec.betting.orders import _PlaceOrdersParams
 from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
+from betfair_parser.spec.betting.type_definitions import CancelInstruction
 from betfair_parser.spec.betting.type_definitions import PlaceInstruction
 from betfair_parser.spec.betting.type_definitions import ReplaceInstruction
 from betfair_parser.spec.common import OrderType
@@ -44,14 +44,11 @@ from betfair_parser.spec.identity import Login
 from betfair_parser.spec.identity import _LoginParams
 from betfair_parser.spec.navigation import Menu
 
-from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
@@ -64,45 +61,36 @@ from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
-from tests.integration_tests.adapters.betfair.test_kit import mock_client_request
+from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
-class TestBetfairHttpClient:
-    def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.clock = LiveClock()
-        self.logger = Logger(clock=self.clock, bypass=True)
-        self.client = BetfairHttpClient(
-            username="username",
-            password="password",
-            app_key="app_key",
-            loop=self.loop,
-            logger=self.logger,
-        )
-        self.client.session_token = "xxxsessionToken="
+@pytest.mark.asyncio()
+async def test_connect(betfair_client):
+    # Arrange
+    betfair_client.session_token = None
+    mock_betfair_request(betfair_client, BetfairResponses.login_success())
 
-    @pytest.mark.asyncio()
-    async def test_connect(self):
-        self.client.session_token = None
-        with mock_client_request(response=BetfairResponses.login()) as mock_request:
-            await self.client.connect()
-            assert self.client.headers["X-Authentication"]
+    # Act
+    await betfair_client.connect()
+    assert betfair_client.headers["X-Authentication"]
 
-        _, request = mock_request.call_args[0]
-        assert request == Login(
-            jsonrpc="2.0",
-            id=1,
-            method="login",
-            params=_LoginParams(username="username", password="password"),
-        )
+    # Assert
+    _, request = betfair_client._request.call_args[0]
+    expected = Login(
+        jsonrpc="2.0",
+        id=1,
+        method="login",
+        params=_LoginParams(username="", password=""),
+    )
+    assert request == expected
 
-    @pytest.mark.asyncio()
-    async def test_exception_handling(self):
-        with mock_client_request(response=BetfairResponses.account_funds_error()):
-            with pytest.raises(AccountAPINGException) as e:
-                await self.client.get_account_funds(wallet="not a real walltet")
-            result = e.value.response
+
+@pytest.mark.asyncio()
+async def test_exception_handling(betfair_client):
+    mock_betfair_request(betfair_client, response=BetfairResponses.account_funds_error())
+    with pytest.raises(AccountAPINGException) as e:
+        await betfair_client.get_account_funds(wallet="not a real walltet")
+        result = e.value.response
         expected = Response(
             jsonrpc="2.0",
             id=1,
@@ -111,367 +99,364 @@ class TestBetfairHttpClient:
         )
         assert result == expected
 
-    @pytest.mark.asyncio()
-    async def test_list_navigation(self):
-        with mock_client_request(
-            response=BetfairResponses.navigation_list_navigation_response(),
-        ) as mock_request:
-            nav = await self.client.list_navigation()
-            assert len(nav.children) == 28
 
-        _, request = mock_request.call_args[0]
-        assert request == Menu(jsonrpc="2.0", id=0, method="", params={})
+@pytest.mark.asyncio()
+async def test_list_navigation(betfair_client):
+    mock_betfair_request(betfair_client, BetfairResponses.navigation_list_navigation_response())
+    nav = await betfair_client.list_navigation()
+    assert len(nav.children) == 28
 
-    @pytest.mark.asyncio()
-    async def test_list_market_catalogue(self):
-        market_filter = {
-            "eventTypeIds": ["7"],
-            "marketBettingTypes": ["ODDS"],
-        }
-        with mock_client_request(
-            response=BetfairResponses.betting_list_market_catalogue(),
-        ) as mock_request:
-            catalogue = await self.client.list_market_catalogue(filter_=market_filter)
-            assert catalogue
-        _, request = mock_request.call_args[0]
-        expected = ListMarketCatalogue(
-            jsonrpc="2.0",
-            id=1,
-            method="SportsAPING/v1.0/listMarketCatalogue",
-            params=_ListMarketCatalogueParams(
-                filter={"eventTypeIds": ["7"], "marketBettingTypes": ["ODDS"]},
-                market_projection=None,
-                sort=None,
-                max_results=1000,
-                locale=None,
-            ),
-        )
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_get_account_details(self):
-        with mock_client_request(response=BetfairResponses.account_details()) as mock_request:
-            account = await self.client.get_account_details()
-
-        assert account.points_balance == 10
-        _, request = mock_request.call_args[0]
-        expected = GetAccountDetails(jsonrpc="2.0", id=1, method="", params={})
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_get_account_funds(self):
-        with mock_client_request(
-            response=BetfairResponses.account_funds_no_exposure(),
-        ) as mock_request:
-            response = await self.client.get_account_funds()
-        _, request = mock_request.call_args[0]
-        assert request == GetAccountFunds(
-            jsonrpc="2.0",
-            id=1,
-            method="AccountAPING/v1.0/getAccountFunds",
-            params=_GetAccountFundsParams(wallet=None),
-        )
-        assert response == AccountFundsResponse(
-            available_to_bet_balance=1000.0,
-            exposure=0.0,
-            retained_commission=0.0,
-            exposure_limit=-15000.0,
-            discount_rate=0.0,
-            points_balance=10,
-            wallet=Wallet.UK,
-        )
-
-    @pytest.mark.asyncio()
-    async def test_place_orders(self):
-        instrument = TestInstrumentProvider.betting_instrument()
-        limit_order = TestExecStubs.limit_order(
-            instrument_id=instrument.id,
-            order_side=OrderSide.BUY,
-            price=betfair_float_to_price(2.0),
-            quantity=betfair_float_to_quantity(10),
-        )
-        command = TestCommandStubs.submit_order_command(order=limit_order)
-        place_orders = order_submit_to_place_order_params(command=command, instrument=instrument)
-        with mock_client_request(
-            response=BetfairResponses.betting_place_order_success(),
-        ) as mock_request:
-            await self.client.place_orders(place_orders)
-
-        _, request = mock_request.call_args[0]
-        expected = PlaceOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="",
-            params=_PlaceOrdersParams(
-                market_id="1.179082386",
-                instructions=[
-                    PlaceInstruction(
-                        order_type=OrderType.LIMIT,
-                        selection_id="50214",
-                        handicap=None,
-                        side="BACK",
-                        limit_order={
-                            "price": 2.0,
-                            "size": 10.0,
-                            "persistence_type": PersistenceType.PERSIST,
-                        },
-                        limit_on_close_order=None,
-                        market_on_close_order=None,
-                        customer_order_ref="O-20210410-022422-001",
-                    ),
-                ],
-                customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
-                market_version=None,
-                customer_strategy_ref="S-001",
-                async_=False,
-            ),
-        )
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_place_orders_handicap(self):
-        instrument = TestInstrumentProvider.betting_instrument_handicap()
-        limit_order = TestExecStubs.limit_order(
-            instrument_id=instrument.id,
-            order_side=OrderSide.BUY,
-            price=betfair_float_to_price(2.0),
-            quantity=betfair_float_to_quantity(10.0),
-        )
-        command = TestCommandStubs.submit_order_command(order=limit_order)
-        place_orders = order_submit_to_place_order_params(command=command, instrument=instrument)
-        with mock_client_request(
-            response=BetfairResponses.betting_place_order_success(),
-        ) as mock_request:
-            await self.client.place_orders(place_orders)
-
-        _, request = mock_request.call_args[0]
-        expected = PlaceOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="",
-            params=_PlaceOrdersParams(
-                market_id="1.186249896",
-                instructions=[
-                    PlaceInstruction(
-                        order_type=OrderType.LIMIT,
-                        selection_id="5304641",
-                        handicap="-5.5",
-                        side="BACK",
-                        limit_order={
-                            "price": 2.0,
-                            "size": 10.0,
-                            "persistence_type": PersistenceType.PERSIST,
-                        },
-                        limit_on_close_order=None,
-                        market_on_close_order=None,
-                        customer_order_ref="O-20210410-022422-001",
-                    ),
-                ],
-                customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
-                market_version=None,
-                customer_strategy_ref="S-001",
-                async_=False,
-            ),
-        )
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_place_orders_market_on_close(self):
-        instrument = TestInstrumentProvider.betting_instrument()
-        market_on_close_order = TestExecStubs.market_order(
-            order_side=OrderSide.BUY,
-            time_in_force=TimeInForce.AT_THE_OPEN,
-            quantity=betfair_float_to_quantity(10.0),
-        )
-        submit_order_command = SubmitOrder(
-            trader_id=TestIdStubs.trader_id(),
-            strategy_id=TestIdStubs.strategy_id(),
-            position_id=PositionId("1"),
-            order=market_on_close_order,
-            command_id=UUID4("be7dffa0-46f2-fce5-d820-c7634d022ca1"),
-            ts_init=0,
-        )
-        place_orders = order_submit_to_place_order_params(
-            command=submit_order_command,
-            instrument=instrument,
-        )
-        with mock_client_request(
-            response=BetfairResponses.betting_place_order_success(),
-        ) as mock_request:
-            resp = await self.client.place_orders(place_orders)
-            assert resp
-
-        _, request = mock_request.call_args[0]
-        expected = PlaceOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="",
-            params=_PlaceOrdersParams(
-                market_id="1.179082386",
-                instructions=[
-                    PlaceInstruction(
-                        order_type=OrderType.MARKET_ON_CLOSE,
-                        selection_id="50214",
-                        handicap=None,
-                        side="BACK",
-                        limit_order=None,
-                        limit_on_close_order=None,
-                        market_on_close_order={"liability": "10.0"},
-                        customer_order_ref="O-20210410-022422-001",
-                    ),
-                ],
-                customer_ref="be7dffa046f2fce5d820c7634d022ca1",
-                market_version=None,
-                customer_strategy_ref="S-001",
-                async_=False,
-            ),
-        )
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_replace_orders_single(self):
-        instrument = TestInstrumentProvider.betting_instrument()
-        update_order_command = TestCommandStubs.modify_order_command(
-            instrument_id=instrument.id,
-            client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
-            price=betfair_float_to_price(2.0),
-        )
-        replace_order = order_update_to_replace_order_params(
-            command=update_order_command,
-            venue_order_id=VenueOrderId("240718603398"),
-            instrument=instrument,
-        )
-        with mock_client_request(
-            response=BetfairResponses.betting_replace_orders_success(),
-        ) as mock_request:
-            resp = await self.client.replace_orders(replace_order)
-            assert resp
-
-        _, request = mock_request.call_args[0]
-        expected = ReplaceOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="",
-            params=_ReplaceOrdersParams(
-                market_id="1.179082386",
-                instructions=[ReplaceInstruction(bet_id="240718603398", new_price=2.0)],
-                customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
-                market_version=None,
-                async_=False,
-            ),
-        )
-        assert request == expected
-
-    # @pytest.mark.asyncio()
-    # async def test_replace_orders_multi(self):
-    #     instrument = TestInstrumentProvider.betting_instrument()
-    #     update_order_command = TestCommandStubs.modify_order_command(
-    #         instrument_id=instrument.id,
-    #         price=betfair_float_to_price(2.0),
-    #         client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
-    #     )
-    #     replace_order = order_update_to_replace_order_params(
-    #         command=update_order_command,
-    #         venue_order_id=VenueOrderId("240718603398"),
-    #         instrument=instrument,
-    #     )
-    #     with mock_client_request(
-    #         response=BetfairResponses.betting_replace_orders_success_multi(),
-    #     ) as mock_request:
-    #         resp = await self.client.replace_orders(replace_order)
-    #         assert len(resp["oc"][0]["orc"][0]["uo"]) == 2
-    #
-    #     expected = BetfairRequests.betting_replace_order()
-    #     _, request = mock_request.call_args[0]
-    #     assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_cancel_orders(self):
-        instrument = TestInstrumentProvider.betting_instrument()
-        cancel_command = TestCommandStubs.cancel_order_command(
-            venue_order_id=VenueOrderId("228302937743"),
-        )
-        cancel_order_params = order_cancel_to_cancel_order_params(
-            command=cancel_command,
-            instrument=instrument,
-        )
-        with mock_client_request(
-            response=BetfairResponses.betting_cancel_orders_success(),
-        ) as mock_request:
-            resp = await self.client.cancel_orders(cancel_order_params)
-            assert resp
-
-        _, request = mock_request.call_args[0]
-        expected = CancelOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="",
-            params={
-                "market_id": "1.179082386",
-                "customer_ref": "038990c619d2b5c837a6fe91f9b7b9ed",
-                "instructions": [{"betId": "228302937743"}],
-            },
-        )
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_list_current_orders(self):
-        with mock_client_request(response=BetfairResponses.list_current_orders()) as mock_request:
-            current_orders = await self.client.list_current_orders()
-            assert len(current_orders) == 4
-
-        _, request = mock_request.call_args[0]
-        expected = ListCurrentOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="SportsAPING/v1.0/listCurrentOrders",
-            params=_ListCurrentOrdersParams(
-                bet_ids=None,
-                market_ids=None,
-                order_projection=None,
-                customer_order_refs=None,
-                customer_strategy_refs=None,
-                date_range=None,
-                order_by=None,
-                sort_dir=None,
-                from_record=0,
-                record_count=None,
-                include_item_description=None,
-            ),
-        )
-        assert request == expected
-
-    @pytest.mark.asyncio()
-    async def test_list_cleared_orders(self):
-        with mock_client_request(response=BetfairResponses.list_cleared_orders()) as mock_request:
-            cleared_orders = await self.client.list_cleared_orders(bet_status=BetStatus.SETTLED)
-            assert len(cleared_orders) == 14
-
-        _, request = mock_request.call_args[0]
-        expected = ListClearedOrders(
-            jsonrpc="2.0",
-            id=1,
-            method="SportsAPING/v1.0/listClearedOrders",
-            params=_ListClearedOrdersParams(
-                bet_status=BetStatus.SETTLED,
-                event_type_ids=None,
-                event_ids=None,
-                market_ids=None,
-                runner_ids=None,
-                bet_ids=None,
-                customer_order_refs=None,
-                customer_strategy_refs=None,
-                side=None,
-                settled_date_range=None,
-                group_by=None,
-                include_item_description=None,
-                locale=None,
-                from_record=0,
-                record_count=None,
-            ),
-        )
-        assert request == expected
+    _, request = betfair_client._request.call_args[0]
+    assert request == Menu(jsonrpc="2.0", id=0, method="", params={})
 
 
-class TestBetfairHttpClientSpec:
-    pass
+@pytest.mark.asyncio()
+async def test_list_market_catalogue(betfair_client):
+    market_filter = {
+        "eventTypeIds": ["7"],
+        "marketBettingTypes": ["ODDS"],
+    }
+    mock_betfair_request(betfair_client, BetfairResponses.betting_list_market_catalogue())
+    catalogue = await betfair_client.list_market_catalogue(filter_=market_filter)
+    assert catalogue
+    _, request = betfair_client._request.call_args[0]
+    expected = ListMarketCatalogue(
+        jsonrpc="2.0",
+        id=1,
+        method="SportsAPING/v1.0/listMarketCatalogue",
+        params=_ListMarketCatalogueParams(
+            filter={"eventTypeIds": ["7"], "marketBettingTypes": ["ODDS"]},
+            market_projection=None,
+            sort=None,
+            max_results=1000,
+            locale=None,
+        ),
+    )
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_get_account_details(betfair_client):
+    mock_betfair_request(betfair_client, response=BetfairResponses.account_details())
+    account = await betfair_client.get_account_details()
+
+    assert account.points_balance == 10
+    _, request = betfair_client._request.call_args[0]
+    expected = GetAccountDetails(jsonrpc="2.0", id=1, method="", params={})
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_get_account_funds(betfair_client):
+    mock_betfair_request(betfair_client, BetfairResponses.account_funds_no_exposure())
+    response = await betfair_client.get_account_funds()
+    _, request = betfair_client._request.call_args[0]
+    assert request == GetAccountFunds(
+        jsonrpc="2.0",
+        id=1,
+        method="AccountAPING/v1.0/getAccountFunds",
+        params=_GetAccountFundsParams(wallet=None),
+    )
+    assert response == AccountFundsResponse(
+        available_to_bet_balance=1000.0,
+        exposure=0.0,
+        retained_commission=0.0,
+        exposure_limit=-15000.0,
+        discount_rate=0.0,
+        points_balance=10,
+        wallet=Wallet.UK,
+    )
+
+
+@pytest.mark.asyncio()
+async def test_place_orders(betfair_client):
+    instrument = TestInstrumentProvider.betting_instrument()
+    limit_order = TestExecStubs.limit_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        price=betfair_float_to_price(2.0),
+        quantity=betfair_float_to_quantity(10),
+    )
+    command = TestCommandStubs.submit_order_command(order=limit_order)
+    place_orders = order_submit_to_place_order_params(command=command, instrument=instrument)
+    mock_betfair_request(betfair_client, BetfairResponses.betting_place_order_success())
+
+    await betfair_client.place_orders(place_orders)
+
+    _, request = betfair_client._request.call_args[0]
+    expected = PlaceOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="",
+        params=_PlaceOrdersParams(
+            market_id="1.179082386",
+            instructions=[
+                PlaceInstruction(
+                    order_type=OrderType.LIMIT,
+                    selection_id="50214",
+                    handicap=None,
+                    side="BACK",
+                    limit_order={
+                        "price": 2.0,
+                        "size": 10.0,
+                        "persistence_type": PersistenceType.PERSIST,
+                    },
+                    limit_on_close_order=None,
+                    market_on_close_order=None,
+                    customer_order_ref="O-20210410-022422-001",
+                ),
+            ],
+            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            market_version=None,
+            customer_strategy_ref="S-001",
+            async_=False,
+        ),
+    )
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_place_orders_handicap(betfair_client):
+    instrument = TestInstrumentProvider.betting_instrument_handicap()
+    limit_order = TestExecStubs.limit_order(
+        instrument_id=instrument.id,
+        order_side=OrderSide.BUY,
+        price=betfair_float_to_price(2.0),
+        quantity=betfair_float_to_quantity(10.0),
+    )
+    command = TestCommandStubs.submit_order_command(order=limit_order)
+    place_orders = order_submit_to_place_order_params(command=command, instrument=instrument)
+    mock_betfair_request(betfair_client, BetfairResponses.betting_place_order_success())
+
+    await betfair_client.place_orders(place_orders)
+
+    _, request = betfair_client._request.call_args[0]
+    expected = PlaceOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="",
+        params=_PlaceOrdersParams(
+            market_id="1.186249896",
+            instructions=[
+                PlaceInstruction(
+                    order_type=OrderType.LIMIT,
+                    selection_id="5304641",
+                    handicap="-5.5",
+                    side="BACK",
+                    limit_order={
+                        "price": 2.0,
+                        "size": 10.0,
+                        "persistence_type": PersistenceType.PERSIST,
+                    },
+                    limit_on_close_order=None,
+                    market_on_close_order=None,
+                    customer_order_ref="O-20210410-022422-001",
+                ),
+            ],
+            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            market_version=None,
+            customer_strategy_ref="S-001",
+            async_=False,
+        ),
+    )
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_place_orders_market_on_close(betfair_client):
+    instrument = TestInstrumentProvider.betting_instrument()
+    market_on_close_order = TestExecStubs.market_order(
+        order_side=OrderSide.BUY,
+        time_in_force=TimeInForce.AT_THE_OPEN,
+        quantity=betfair_float_to_quantity(10.0),
+    )
+    submit_order_command = SubmitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        position_id=PositionId("1"),
+        order=market_on_close_order,
+        command_id=UUID4("be7dffa0-46f2-fce5-d820-c7634d022ca1"),
+        ts_init=0,
+    )
+    place_orders = order_submit_to_place_order_params(
+        command=submit_order_command,
+        instrument=instrument,
+    )
+    mock_betfair_request(betfair_client, BetfairResponses.betting_place_order_success())
+
+    resp = await betfair_client.place_orders(place_orders)
+    assert resp
+
+    _, request = betfair_client._request.call_args[0]
+    expected = PlaceOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="",
+        params=_PlaceOrdersParams(
+            market_id="1.179082386",
+            instructions=[
+                PlaceInstruction(
+                    order_type=OrderType.MARKET_ON_CLOSE,
+                    selection_id="50214",
+                    handicap=None,
+                    side="BACK",
+                    limit_order=None,
+                    limit_on_close_order=None,
+                    market_on_close_order={"liability": "10.0"},
+                    customer_order_ref="O-20210410-022422-001",
+                ),
+            ],
+            customer_ref="be7dffa046f2fce5d820c7634d022ca1",
+            market_version=None,
+            customer_strategy_ref="S-001",
+            async_=False,
+        ),
+    )
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_replace_orders_single(betfair_client):
+    instrument = TestInstrumentProvider.betting_instrument()
+    update_order_command = TestCommandStubs.modify_order_command(
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
+        price=betfair_float_to_price(2.0),
+    )
+    replace_order = order_update_to_replace_order_params(
+        command=update_order_command,
+        venue_order_id=VenueOrderId("240718603398"),
+        instrument=instrument,
+    )
+    mock_betfair_request(betfair_client, BetfairResponses.betting_replace_orders_success())
+
+    resp = await betfair_client.replace_orders(replace_order)
+    assert resp
+
+    _, request = betfair_client._request.call_args[0]
+    expected = ReplaceOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="",
+        params=_ReplaceOrdersParams(
+            market_id="1.179082386",
+            instructions=[ReplaceInstruction(bet_id="240718603398", new_price=2.0)],
+            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            market_version=None,
+            async_=False,
+        ),
+    )
+    assert request == expected
+
+
+# @pytest.mark.asyncio()
+# async def test_replace_orders_multi():
+#     instrument = TestInstrumentProvider.betting_instrument()
+#     update_order_command = TestCommandStubs.modify_order_command(
+#         instrument_id=instrument.id,
+#         price=betfair_float_to_price(2.0),
+#         client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
+#     )
+#     replace_order = order_update_to_replace_order_params(
+#         command=update_order_command,
+#         venue_order_id=VenueOrderId("240718603398"),
+#         instrument=instrument,
+#     )
+#     with mock_client_request(
+#         response=BetfairResponses.betting_replace_orders_success_multi(),
+#
+#         resp = await betfair_client.replace_orders(replace_order)
+#         assert len(resp["oc"][0]["orc"][0]["uo"]) == 2
+#
+#     expected = BetfairRequests.betting_replace_order()
+#     _, request = betfair_client._request.call_args[0]
+#     assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_cancel_orders(betfair_client):
+    instrument = TestInstrumentProvider.betting_instrument()
+    cancel_command = TestCommandStubs.cancel_order_command(
+        venue_order_id=VenueOrderId("228302937743"),
+    )
+    cancel_order_params = order_cancel_to_cancel_order_params(
+        command=cancel_command,
+        instrument=instrument,
+    )
+    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
+
+    resp = await betfair_client.cancel_orders(cancel_order_params)
+    assert resp
+
+    _, request = betfair_client._request.call_args[0]
+    expected = CancelOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="",
+        params=_CancelOrdersParams(
+            market_id="1.179082386",
+            customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
+            instructions=[CancelInstruction(bet_id="228302937743")],
+        ),
+    )
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_list_current_orders(betfair_client):
+    mock_betfair_request(betfair_client, response=BetfairResponses.list_current_orders())
+    current_orders = await betfair_client.list_current_orders()
+    assert len(current_orders) == 4
+
+    _, request = betfair_client._request.call_args[0]
+    expected = ListCurrentOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="SportsAPING/v1.0/listCurrentOrders",
+        params=_ListCurrentOrdersParams(
+            bet_ids=None,
+            market_ids=None,
+            order_projection=None,
+            customer_order_refs=None,
+            customer_strategy_refs=None,
+            date_range=None,
+            order_by=None,
+            sort_dir=None,
+            from_record=0,
+            record_count=None,
+            include_item_description=None,
+        ),
+    )
+    assert request == expected
+
+
+@pytest.mark.asyncio()
+async def test_list_cleared_orders(betfair_client):
+    mock_betfair_request(betfair_client, response=BetfairResponses.list_cleared_orders())
+    cleared_orders = await betfair_client.list_cleared_orders(bet_status=BetStatus.SETTLED)
+    assert len(cleared_orders) == 14
+
+    _, request = betfair_client._request.call_args[0]
+    expected = ListClearedOrders(
+        jsonrpc="2.0",
+        id=1,
+        method="SportsAPING/v1.0/listClearedOrders",
+        params=_ListClearedOrdersParams(
+            bet_status=BetStatus.SETTLED,
+            event_type_ids=None,
+            event_ids=None,
+            market_ids=None,
+            runner_ids=None,
+            bet_ids=None,
+            customer_order_refs=None,
+            customer_strategy_refs=None,
+            side=None,
+            settled_date_range=None,
+            group_by=None,
+            include_item_description=None,
+            locale=None,
+            from_record=0,
+            record_count=None,
+        ),
+    )
+    assert request == expected

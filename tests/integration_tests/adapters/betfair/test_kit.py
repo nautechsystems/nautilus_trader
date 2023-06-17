@@ -14,13 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import bz2
-import contextlib
 import gzip
 import pathlib
 from asyncio import Future
 from typing import Optional, Union
 from unittest.mock import MagicMock
-from unittest.mock import patch
 
 import msgspec
 import numpy as np
@@ -107,6 +105,7 @@ class BetfairTestStubs:
             assert method  # required to stop mocks from breaking
             rpc_method = request.method
             responses = {
+                "login": BetfairResponses.login_success,
                 "AccountAPING/v1.0/getAccountDetails": BetfairResponses.account_details,
                 "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
                 "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
@@ -359,8 +358,12 @@ class BetfairResponses:
         return BetfairResponses.load("cert_login.json")
 
     @staticmethod
-    def login():
-        return BetfairResponses.load("login.json")
+    def login_success():
+        return BetfairResponses.load("login_success.json")
+
+    @staticmethod
+    def login_failure():
+        return BetfairResponses.load("login_failure.json")
 
     @staticmethod
     def list_cleared_orders():
@@ -767,17 +770,3 @@ class BetfairDataProvider:
     @staticmethod
     def badly_formatted_log():
         return open(RESOURCES_PATH / "badly_formatted.txt", "rb").read()
-
-
-@contextlib.contextmanager
-def mock_client_request(response):
-    """
-    Patch BetfairHttpClient.request with a correctly formatted `response`.
-    """
-    mock_response = MagicMock(ClientResponse)
-    mock_response.body = msgspec.json.encode(response)
-    with patch(
-        "nautilus_trader.adapters.betfair.client.BetfairHttpClient._request",
-        return_value=mock_response,
-    ) as mock_request:
-        yield mock_request
