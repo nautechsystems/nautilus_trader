@@ -46,6 +46,11 @@ N2B_TIME_IN_FORCE = {
     TimeInForce.FOK: BetfairTimeInForce.FILL_OR_KILL,
 }
 
+N2B_PERSISTENCE = {
+    TimeInForce.GTC: PersistenceType.PERSIST,
+    TimeInForce.DAY: PersistenceType.MARKET_ON_CLOSE,
+}
+
 B2N_MARKET_STREAM_SIDE = {
     "atb": OrderSide.SELL,  # Available to Back / Sell order
     "batb": OrderSide.SELL,  # Best available to Back / Sell order

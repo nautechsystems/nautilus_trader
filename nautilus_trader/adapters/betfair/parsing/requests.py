@@ -15,7 +15,7 @@
 
 import datetime
 from functools import lru_cache
-from typing import Optional, Union
+from typing import Optional
 
 import pandas as pd
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -28,6 +28,9 @@ from betfair_parser.spec.betting.orders import _PlaceOrdersParams
 from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
 from betfair_parser.spec.betting.type_definitions import CancelInstruction
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
+from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
+from betfair_parser.spec.betting.type_definitions import LimitOrder
+from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
 from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
@@ -40,6 +43,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
+from nautilus_trader.adapters.betfair.common import N2B_PERSISTENCE
 from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -54,7 +58,7 @@ from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TimeInForce as NautilusTimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -68,81 +72,141 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import LimitOrder
-from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import LimitOrder as NautilusLimitOrder
+from nautilus_trader.model.orders import MarketOrder as NautilusMarketOrder
 
 
 def make_custom_order_ref(
     client_order_id: ClientOrderId,
     strategy_id: StrategyId,
 ) -> CustomerOrderRef:
+    """
+    Remove the strategy name from customer_order_ref; it has a limited size and
+    don't control what length the strategy might be or what characters users
+    might append.
+    """
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
-def _make_limit_order(order: LimitOrder):
-    price = order.price.as_double()
-    size = order.quantity.as_double()
+def nautilus_limit_to_place_instructions(
+    command: SubmitOrder,
+    instrument: BettingInstrument,
+) -> PlaceInstruction:
+    assert isinstance(command.order, NautilusLimitOrder)
+    instructions = PlaceInstruction(
+        order_type=OrderType.LIMIT,
+        selection_id=instrument.selection_id,
+        handicap=instrument.selection_handicap,
+        side=N2B_SIDE[command.order.side],
+        limit_order=LimitOrder(
+            price=command.order.price.as_double(),
+            size=command.order.quantity.as_double(),
+            persistence_type=N2B_PERSISTENCE.get(
+                command.order.time_in_force,
+                PersistenceType.LAPSE,
+            ),
+            time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
+        ),
+        customer_order_ref=make_custom_order_ref(
+            client_order_id=command.order.client_order_id,
+            strategy_id=command.strategy_id,
+        ),
+    )
+    return instructions
 
-    if order.time_in_force == TimeInForce.AT_THE_OPEN:
-        return {
-            "order_type": OrderType.LIMIT_ON_CLOSE,
-            "limit_on_close_order": {"price": price, "liability": size},
-        }
-    elif order.time_in_force in (TimeInForce.GTC, TimeInForce.IOC, TimeInForce.FOK):
-        parsed = {
-            "order_type": OrderType.LIMIT,
-            "limit_order": {
-                "price": price,
-                "size": size,
-                "persistence_type": PersistenceType.PERSIST,
-            },
-        }
-        if order.time_in_force in N2B_TIME_IN_FORCE:
-            parsed["limit_order"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]
-            parsed["limit_order"]["persistenceType"] = PersistenceType.LAPSE
-        return parsed
+
+def nautilus_limit_on_close_to_place_instructions(
+    command: SubmitOrder,
+    instrument: BettingInstrument,
+) -> PlaceInstruction:
+    assert isinstance(command.order, NautilusLimitOrder)
+    instructions = PlaceInstruction(
+        order_type=OrderType.LIMIT_ON_CLOSE,
+        selection_id=instrument.selection_id,
+        handicap=instrument.selection_handicap,
+        side=N2B_SIDE[command.order.side],
+        limit_on_close_order=LimitOnCloseOrder(
+            price=command.order.price.as_double(),
+            liability=command.order.quantity.as_double(),
+        ),
+        customer_order_ref=make_custom_order_ref(
+            client_order_id=command.order.client_order_id,
+            strategy_id=command.strategy_id,
+        ),
+    )
+    return instructions
+
+
+def nautilus_market_to_place_instructions(
+    command: SubmitOrder,
+    instrument: BettingInstrument,
+) -> PlaceInstruction:
+    assert isinstance(command.order, NautilusMarketOrder)
+    instructions = PlaceInstruction(
+        order_type=OrderType.LIMIT,
+        selection_id=instrument.selection_id,
+        handicap=instrument.selection_handicap,
+        side=N2B_SIDE[command.order.side],
+        limit_order=LimitOrder(
+            price=MIN_BET_PRICE if command.order.side == OrderSide.BUY else MAX_BET_PRICE,
+            size=command.order.quantity.as_double(),
+            persistence_type=N2B_PERSISTENCE.get(
+                command.order.time_in_force,
+                PersistenceType.LAPSE,
+            ),
+            time_in_force=N2B_TIME_IN_FORCE.get(command.order.time_in_force),
+        ),
+        customer_order_ref=make_custom_order_ref(
+            client_order_id=command.order.client_order_id,
+            strategy_id=command.strategy_id,
+        ),
+    )
+    return instructions
+
+
+def nautilus_market_on_close_to_place_instructions(
+    command: SubmitOrder,
+    instrument: BettingInstrument,
+) -> PlaceInstruction:
+    assert isinstance(command.order, NautilusMarketOrder)
+    instructions = PlaceInstruction(
+        order_type=OrderType.MARKET_ON_CLOSE,
+        selection_id=instrument.selection_id,
+        handicap=instrument.selection_handicap,
+        side=N2B_SIDE[command.order.side],
+        market_on_close_order=MarketOnCloseOrder(
+            liability=command.order.quantity.as_double(),
+        ),
+        customer_order_ref=make_custom_order_ref(
+            client_order_id=command.order.client_order_id,
+            strategy_id=command.strategy_id,
+        ),
+    )
+    return instructions
+
+
+def nautilus_order_to_place_instructions(
+    command: SubmitOrder,
+    instrument: BettingInstrument,
+) -> PlaceInstruction:
+    if isinstance(command.order, NautilusLimitOrder):
+        if command.order.time_in_force == NautilusTimeInForce.AT_THE_OPEN:
+            return nautilus_limit_on_close_to_place_instructions(
+                command=command,
+                instrument=instrument,
+            )
+        else:
+            return nautilus_limit_to_place_instructions(command=command, instrument=instrument)
+    elif isinstance(command.order, NautilusMarketOrder):
+        if command.order.time_in_force == NautilusTimeInForce.AT_THE_OPEN:
+            return nautilus_market_on_close_to_place_instructions(
+                command=command,
+                instrument=instrument,
+            )
+        else:
+            return nautilus_market_to_place_instructions(command=command, instrument=instrument)
     else:
-        raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
-
-
-def _make_market_order(order: MarketOrder):
-    if order.time_in_force == TimeInForce.AT_THE_OPEN:
-        return {
-            "order_type": OrderType.MARKET_ON_CLOSE,
-            "market_on_close_order": {
-                "liability": str(order.quantity.as_double()),
-            },
-        }
-    elif order.time_in_force == TimeInForce.GTC:
-        # Betfair doesn't really support market orders, return a limit order with min/max price
-        limit_order = LimitOrder(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            order_side=order.side,
-            quantity=order.quantity,
-            price=MIN_BET_PRICE if order.side == OrderSide.BUY else MAX_BET_PRICE,
-            time_in_force=TimeInForce.FOK,
-            init_id=order.init_id,
-            ts_init=order.ts_init,
-        )
-        limit_order = _make_limit_order(order=limit_order)
-        # We transform the size of a limit order inside `_make_limit_order` but for a market order we want to just use
-        # the size as is.
-        limit_order["limit_order"]["size"] = order.quantity.as_double()
-        return limit_order
-    else:
-        raise ValueError("Betfair only supports time_in_force of `GTC` or `AT_THE_OPEN`")
-
-
-def make_order(order: Union[LimitOrder, MarketOrder]):
-    if isinstance(order, LimitOrder):
-        return _make_limit_order(order=order)
-    elif isinstance(order, MarketOrder):
-        return _make_market_order(order=order)
-    else:
-        raise TypeError(f"Unknown order type: {type(order)}")
+        raise TypeError(f"Unknown order type: {type(command.order)}")
 
 
 def order_submit_to_place_order_params(
@@ -152,8 +216,6 @@ def order_submit_to_place_order_params(
     """
     Convert a SubmitOrder command into the data required by BetfairClient.
     """
-    order = make_order(command.order)
-
     params = _PlaceOrdersParams(
         market_id=instrument.market_id,
         customer_ref=command.id.value.replace(
@@ -161,20 +223,7 @@ def order_submit_to_place_order_params(
             "",
         ),  # Used to de-dupe orders on betfair server side
         customer_strategy_ref=command.strategy_id.value[:15],
-        instructions=[
-            PlaceInstruction(
-                **order,
-                selection_id=instrument.selection_id,
-                side=N2B_SIDE[command.order.side],
-                handicap=instrument.selection_handicap,
-                # Remove the strategy name from customer_order_ref; it has a limited size and don't control what
-                # length the strategy might be or what characters users might append
-                customer_order_ref=make_custom_order_ref(
-                    client_order_id=command.order.client_order_id,
-                    strategy_id=command.strategy_id,
-                ),
-            ),
-        ],
+        instructions=[nautilus_order_to_place_instructions(command, instrument)],
     )
     return params
 
@@ -341,5 +390,7 @@ def determine_order_status(order: CurrentOrderSummary) -> OrderStatus:
     elif order.status == BetfairOrderStatus.EXECUTABLE:
         if order.size_matched == 0.0:
             return OrderStatus.ACCEPTED
-        elif order.size_atched > 0.0:
+        elif order.size_matched > 0.0:
             return OrderStatus.PARTIALLY_FILLED
+    else:
+        raise ValueError(f"Unknown order status {order.status=}")

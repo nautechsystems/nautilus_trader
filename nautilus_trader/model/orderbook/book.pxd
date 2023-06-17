@@ -23,8 +23,6 @@ from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orders.base cimport Order
 
 

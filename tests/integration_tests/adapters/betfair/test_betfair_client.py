@@ -35,6 +35,8 @@ from betfair_parser.spec.betting.orders import _ListCurrentOrdersParams
 from betfair_parser.spec.betting.orders import _PlaceOrdersParams
 from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
 from betfair_parser.spec.betting.type_definitions import CancelInstruction
+from betfair_parser.spec.betting.type_definitions import LimitOrder
+from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
 from betfair_parser.spec.betting.type_definitions import PlaceInstruction
 from betfair_parser.spec.betting.type_definitions import ReplaceInstruction
 from betfair_parser.spec.common import OrderType
@@ -102,7 +104,7 @@ async def test_exception_handling(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_list_navigation(betfair_client):
-    mock_betfair_request(betfair_client, BetfairResponses.navigation_list_navigation_response())
+    mock_betfair_request(betfair_client, BetfairResponses.navigation_list_navigation())
     nav = await betfair_client.list_navigation()
     assert len(nav.children) == 28
 
@@ -196,11 +198,11 @@ async def test_place_orders(betfair_client):
                     selection_id="50214",
                     handicap=None,
                     side="BACK",
-                    limit_order={
-                        "price": 2.0,
-                        "size": 10.0,
-                        "persistence_type": PersistenceType.PERSIST,
-                    },
+                    limit_order=LimitOrder(
+                        price=2.0,
+                        size=10.0,
+                        persistence_type=PersistenceType.PERSIST,
+                    ),
                     limit_on_close_order=None,
                     market_on_close_order=None,
                     customer_order_ref="O-20210410-022422-001",
@@ -243,11 +245,11 @@ async def test_place_orders_handicap(betfair_client):
                     selection_id="5304641",
                     handicap="-5.5",
                     side="BACK",
-                    limit_order={
-                        "price": 2.0,
-                        "size": 10.0,
-                        "persistence_type": PersistenceType.PERSIST,
-                    },
+                    limit_order=LimitOrder(
+                        price=2.0,
+                        size=10.0,
+                        persistence_type=PersistenceType.PERSIST,
+                    ),
                     limit_on_close_order=None,
                     market_on_close_order=None,
                     customer_order_ref="O-20210410-022422-001",
@@ -302,7 +304,7 @@ async def test_place_orders_market_on_close(betfair_client):
                     side="BACK",
                     limit_order=None,
                     limit_on_close_order=None,
-                    market_on_close_order={"liability": "10.0"},
+                    market_on_close_order=MarketOnCloseOrder(liability=10.0),
                     customer_order_ref="O-20210410-022422-001",
                 ),
             ],

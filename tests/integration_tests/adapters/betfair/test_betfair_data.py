@@ -27,6 +27,7 @@ from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
@@ -87,12 +88,11 @@ def instrument_list(mock_load_markets_metadata):
 
 
 @pytest.mark.asyncio()
-@pytest.mark.skip(reason="busted mocks")
-@patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
-@patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
-@patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
-async def test_connect(_1, _2, _3, data_client, instrument):
+async def test_connect(mocker, data_client, instrument):
     # Arrange
+    mocker.patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
+    mocker.patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
+    mocker.patch("nautilus_trader.adapters.betfair.client.BetfairHttpClient.connect")
 
     # Act
     data_client.connect()
@@ -171,6 +171,7 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
     assert set_result == set_expected
 
 
+@pytest.mark.skip(reason="Removed bdatl/bdatb levels - no longer used")
 def test_market_sub_image_no_market_def(data_client, mock_data_engine_process):
     # Arrange
     raw = BetfairStreaming.mcm_SUB_IMAGE_no_market_def()
@@ -194,6 +195,7 @@ def test_market_sub_image_no_market_def(data_client, mock_data_engine_process):
     assert result == expected
 
 
+@pytest.mark.skip(reason="Removed bdatl/bdatb levels - no longer used")
 def test_market_resub_delta(data_client, mock_data_engine_process):
     # Arrange
     raw = BetfairStreaming.mcm_RESUB_DELTA()
@@ -223,7 +225,7 @@ def test_market_update(data_client, mock_data_engine_process):
     book_deltas = mock_data_engine_process.call_args_list[0].args[0]
     assert isinstance(book_deltas, OrderBookDeltas)
     assert {d.action for d in book_deltas.deltas} == {BookAction.UPDATE, BookAction.DELETE}
-    assert book_deltas.deltas[0].order.price == 4.7
+    assert book_deltas.deltas[0].order.price == betfair_float_to_price(4.7)
 
 
 def test_market_update_md(data_client, mock_data_engine_process):
@@ -236,9 +238,7 @@ def test_market_update_md(data_client, mock_data_engine_process):
 def test_market_update_live_image(data_client, mock_data_engine_process):
     data_client.on_market_update(BetfairStreaming.mcm_live_IMAGE())
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = (
-        ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
-    )
+    expected = ["OrderBookDeltas"] + ["TradeTick"] * 13 + ["OrderBookDeltas"] + ["TradeTick"] * 17
     assert result == expected
 
 
@@ -249,7 +249,6 @@ def test_market_update_live_update(data_client, mock_data_engine_process):
     assert result == expected
 
 
-@patch("nautilus_trader.adapters.betfair.parsing.streaming.STRICT_MARKET_DATA_HANDLING", "")
 def test_market_bsp(data_client, mock_data_engine_process):
     # Arrange
     update = BetfairStreaming.mcm_BSP()
@@ -268,11 +267,10 @@ def test_market_bsp(data_client, mock_data_engine_process):
     result = Counter([type(args).__name__ for args in mock_call_args])
     expected = {
         "TradeTick": 95,
+        "OrderBookDeltas": 11,
         "InstrumentStatusUpdate": 9,
-        "OrderBookSnapshot": 8,
         "BetfairTicker": 8,
         "GenericData": 8,
-        "OrderBookDeltas": 2,
         "InstrumentClose": 1,
     }
     assert result == expected

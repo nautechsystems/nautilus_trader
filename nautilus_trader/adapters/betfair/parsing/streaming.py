@@ -102,8 +102,8 @@ def market_change_to_updates(  # noqa: C901
         )
 
     # Handle market data updates
-    book_updates: list[Union[OrderBookDeltas]] = []
-    bsp_book_updates: list[Union[BSPOrderBookDeltas]] = []
+    book_updates: list[OrderBookDeltas] = []
+    bsp_book_updates: list[BSPOrderBookDeltas] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
@@ -179,7 +179,7 @@ def market_definition_to_instrument_status_updates(
                     f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
         status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
+            instrument_id,
             status=status,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -208,7 +208,7 @@ def runner_to_instrument_close(
     ts_event: int,
     ts_init: int,
 ) -> Optional[InstrumentClose]:
-    instrument_id = betfair_instrument_id(
+    instrument_id: InstrumentId = betfair_instrument_id(
         market_id=market_id,
         selection_id=str(runner.runner_id),
         selection_handicap=parse_handicap(runner.handicap),
@@ -216,7 +216,7 @@ def runner_to_instrument_close(
 
     if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED):
         return InstrumentClose(
-            instrument_id=instrument_id,
+            instrument_id,
             close_price=CLOSE_PRICE_LOSER,
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
@@ -224,7 +224,7 @@ def runner_to_instrument_close(
         )
     elif runner.status in (RunnerStatus.WINNER, RunnerStatus.PLACED):
         return InstrumentClose(
-            instrument_id=instrument_id,
+            instrument_id,
             close_price=CLOSE_PRICE_WINNER,
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
@@ -376,7 +376,7 @@ def runner_change_to_order_book_deltas(
         deltas.append(delta)
 
     # Asks are available to back (atb)
-    for ask in rc.atl:
+    for ask in rc.atb:
         ask_price = betfair_float_to_price(ask.price)
         ask_volume = betfair_float_to_quantity(ask.volume)
         ask_order_id = price_to_order_id(ask_price)
@@ -461,16 +461,16 @@ def _create_bsp_order_book_delta(
     price = betfair_float_to_price(price)
     order_id = price_to_order_id(price)
     return BSPOrderBookDelta(
-        instrument_id=bsp_instrument_id,
-        action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-        order=BookOrder(
+        bsp_instrument_id,
+        BookAction.DELETE if volume == 0 else BookAction.UPDATE,
+        BookOrder(
             price=price,
             size=betfair_float_to_quantity(volume),
             side=B2N_MARKET_STREAM_SIDE[side],
             order_id=order_id,
         ),
-        ts_event=ts_event,
-        ts_init=ts_init,
+        ts_event,
+        ts_init,
     )
 
 
@@ -507,10 +507,7 @@ def runner_change_to_bsp_order_book_deltas(
             ),
         )
 
-    return BSPOrderBookDeltas(
-        instrument_id=bsp_instrument_id,
-        deltas=deltas,
-    )
+    return BSPOrderBookDeltas(bsp_instrument_id, deltas)
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
