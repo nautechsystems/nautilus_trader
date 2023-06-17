@@ -18,6 +18,7 @@ pyo3.workspace = true
 pyo3-asyncio.workspace = true
 rand.workspace = true
 tokio.workspace = true
+thiserror.workspace = true
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 # FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
