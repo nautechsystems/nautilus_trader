@@ -68,7 +68,7 @@ class TestMovingAverageConvergenceDivergence:
         # Arrange
         indicator = MovingAverageConvergenceDivergence(3, 10, price_type=PriceType.MID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -81,7 +81,7 @@ class TestMovingAverageConvergenceDivergence:
         # Arrange
         indicator = MovingAverageConvergenceDivergence(3, 10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Union
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -22,14 +21,12 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
@@ -154,21 +151,18 @@ class EMACross(Strategy):
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
 
-    def on_order_book_delta(
-        self,
-        data: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
-    ) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives order data.
+        Actions to be performed when the strategy is running and receives order book deltas.
 
         Parameters
         ----------
-        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book data received.
+        deltas : OrderBookDeltas
+            The order book deltas received.
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(data), LogColor.CYAN)
+        # self.log.info(repr(deltas), LogColor.CYAN)
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """

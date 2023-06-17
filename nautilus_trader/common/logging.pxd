@@ -19,8 +19,8 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.rust.common cimport CLogger
 from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport Logger_API
 from nautilus_trader.core.rust.common cimport LogLevel
 
 
@@ -35,26 +35,26 @@ cdef str RES
 
 
 cdef class Logger:
-    cdef CLogger _mem
+    cdef Logger_API _mem
     cdef Clock _clock
 
     cpdef void change_clock(self, Clock clock)
     cdef void log(
         self,
-        uint64_t timestamp_ns,
+        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
-        str msg,
+        str message,
         dict annotations=*,
     )
     cdef void _log(
         self,
-        uint64_t timestamp_ns,
+        uint64_t timestamp,
         LogLevel level,
         LogColor color,
         str component,
-        str msg,
+        str message,
         dict annotations,
     )
 
@@ -65,12 +65,12 @@ cdef class LoggerAdapter:
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void info(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void error(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*)
-    cpdef void exception(self, str msg, ex, dict annotations=*)
+    cpdef void debug(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void info(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void warning(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void error(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void critical(self, str message, LogColor color=*, dict annotations=*)
+    cpdef void exception(self, str message, ex, dict annotations=*)
 
 
 cpdef void nautilus_header(LoggerAdapter logger)

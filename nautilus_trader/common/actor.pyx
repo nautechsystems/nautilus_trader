@@ -57,7 +57,7 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -356,7 +356,7 @@ cdef class Actor(Component):
 
     cpdef void on_order_book(self, OrderBook order_book):
         """
-        Actions to be performed when running and receives an order book snapshot.
+        Actions to be performed when running and receives an order book.
 
         Parameters
         ----------
@@ -370,14 +370,14 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_order_book_delta(self, Data data):
+    cpdef void on_order_book_deltas(self, OrderBookDeltas deltas):
         """
-        Actions to be performed when running and receives order book data.
+        Actions to be performed when running and receives order book deltas.
 
         Parameters
         ----------
-        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book data received.
+        deltas : OrderBookDeltas
+            The order book deltas received.
 
         Warnings
         --------
@@ -808,7 +808,7 @@ cdef class Actor(Component):
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
-            handler=self.handle_order_book_delta,
+            handler=self.handle_order_book_deltas,
         )
 
         cdef Subscribe command = Subscribe(
@@ -836,7 +836,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
     ):
         """
-        Subscribe to `OrderBook` snapshots for the given instrument ID.
+        Subscribe to `OrderBook` snapshots at a specified interval, for the given instrument ID.
 
         The `DataEngine` will only maintain one order book for each instrument.
         Because of this - the level, depth and kwargs for the stream will be set
@@ -889,7 +889,7 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookSnapshot, metadata={
+            data_type=DataType(OrderBook, metadata={
                 "instrument_id": instrument_id,
                 "book_type": book_type,
                 "depth": depth,
@@ -1080,7 +1080,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
             handler=self.handle_instrument_status_update,
         )
 
@@ -1244,7 +1244,7 @@ cdef class Actor(Component):
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
-            handler=self.handle_order_book_delta,
+            handler=self.handle_order_book_deltas,
         )
 
         cdef Unsubscribe command = Unsubscribe(
@@ -1264,7 +1264,7 @@ cdef class Actor(Component):
         ClientId client_id = None,
     ):
         """
-        Unsubscribe from order book snapshots for the given instrument ID.
+        Unsubscribe from `OrderBook` snapshots, for the given instrument ID.
 
         The interval must match the previously subscribed interval.
 
@@ -1293,7 +1293,7 @@ cdef class Actor(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBookSnapshot, metadata={
+            data_type=DataType(OrderBook, metadata={
                 "instrument_id": instrument_id,
                 "interval_ms": interval_ms,
             }),
@@ -1482,7 +1482,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.status.{instrument_id.venue.to_str()}.{instrument_id.symbol}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
             handler=self.handle_venue_status_update,
         )
         cdef Unsubscribe command = Unsubscribe(
@@ -1866,34 +1866,34 @@ cdef class Actor(Component):
         for i in range(length):
             self.handle_instrument(instruments[i])
 
-    cpdef void handle_order_book_delta(self, Data data):
+    cpdef void handle_order_book_deltas(self, OrderBookDeltas deltas):
         """
-        Handle the given order book data.
+        Handle the given order book deltas.
 
         Passes to `on_order_book_delta` if state is ``RUNNING``.
 
         Parameters
         ----------
-        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book delta received.
+        deltas : OrderBookDeltas
+            The order book deltas received.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(deltas, "deltas")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_order_book_delta(data)
+                self.on_order_book_deltas(deltas)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(data)}", e)
+                self._log.exception(f"Error on handling {repr(deltas)}", e)
                 raise
 
     cpdef void handle_order_book(self, OrderBook order_book):
         """
-        Handle the given order book snapshot.
+        Handle the given order book.
 
         Passes to `on_order_book` if state is ``RUNNING``.
 

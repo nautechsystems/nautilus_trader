@@ -101,6 +101,8 @@ cdef class SimulatedExchange:
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_random_ids : bool, default False
+        If venue order and position IDs will be randomly generated UUID4s.
 
     Raises
     ------
@@ -140,6 +142,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_random_ids = False,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -177,6 +180,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
+        self.use_random_ids = use_random_ids
         self.fill_model = fill_model
         self.latency_model = latency_model
 
@@ -280,6 +284,8 @@ cdef class SimulatedExchange:
         """
         Add the given instrument to the venue.
 
+        A random and unique 32-bit unsigned integer raw ID will be generated.
+
         Parameters
         ----------
         instrument : Instrument
@@ -289,16 +295,12 @@ cdef class SimulatedExchange:
         ------
         ValueError
             If `instrument.id.venue` is not equal to the venue ID.
-        KeyError
-            If `instrument` is already contained within the venue.
-            This is to enforce correct internal identifier indexing.
         InvalidConfiguration
             If `instrument` is invalid for this venue.
 
         """
         Condition.not_none(instrument, "instrument")
         Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
-        Condition.not_in(instrument.id, self.instruments, "instrument.id", "self.instruments")
 
         # Validate instrument
         if isinstance(instrument, (CryptoPerpetual, CryptoFuture)):
@@ -311,9 +313,9 @@ cdef class SimulatedExchange:
 
         self.instruments[instrument.id] = instrument
 
-        matching_engine = OrderMatchingEngine(
+        cdef OrderMatchingEngine matching_engine = OrderMatchingEngine(
             instrument=instrument,
-            product_id=len(self.instruments),
+            raw_id=len(self.instruments),
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
@@ -324,11 +326,12 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
+            use_random_ids=self.use_random_ids,
         )
 
         self._matching_engines[instrument.id] = matching_engine
 
-        self._log.info(f"Loaded instrument {instrument.id}.")
+        self._log.info(f"Added instrument {instrument.id} and created matching engine.")
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -618,23 +621,41 @@ cdef class SimulatedExchange:
         cdef (uint64_t, uint64_t) key = (ts, self._inflight_counter[ts])
         return key, command
 
-    cpdef void process_order_book(self, Data data):
+    cpdef void process_order_book_delta(self, OrderBookDelta delta):
         """
-        Process the exchanges market for the given order book data.
+        Process the exchanges market for the given order book delta.
 
         Parameters
         ----------
-        data : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book data to process.
+        data : OrderBookDelta
+            The order book delta to process.
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(delta, "delta")
 
-        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(data.instrument_id)
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(delta.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {data.instrument_id}")
+            raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
 
-        matching_engine.process_order_book(data)
+        matching_engine.process_order_book_delta(delta)
+
+    cpdef void process_order_book_deltas(self, OrderBookDeltas deltas):
+        """
+        Process the exchanges market for the given order book deltas.
+
+        Parameters
+        ----------
+        data : OrderBookDeltas
+            The order book deltas to process.
+
+        """
+        Condition.not_none(deltas, "deltas")
+
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(deltas.instrument_id)
+        if matching_engine is None:
+            raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
+
+        matching_engine.process_order_book_deltas(deltas)
 
     cpdef void process_quote_tick(self, QuoteTick tick):
         """

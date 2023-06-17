@@ -18,6 +18,7 @@ const FAILED: &str = "Condition check failed:";
 /// Check string `s` is valid.
 ///
 /// # Panics
+///
 /// - If `s` is empty.
 /// - If `s` is all whitespace.
 /// - If `s` contains a Non-ASCII character.
@@ -34,6 +35,7 @@ pub fn valid_string(s: &str, desc: &str) {
 /// Check string `s` contains pattern `pat`.
 ///
 /// # Panics
+///
 /// - If `s` does not contain `pat`.
 pub fn string_contains(s: &str, pat: &str, desc: &str) {
     if !s.contains(pat) {
@@ -44,6 +46,7 @@ pub fn string_contains(s: &str, pat: &str, desc: &str) {
 /// Check `u8`s are equal.
 ///
 /// # Panics
+///
 /// - If `lhs` is not equal to `rhs`.
 pub fn u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) {
     if lhs != rhs {
@@ -54,6 +57,7 @@ pub fn u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) {
 /// Check `u8` value is in range (inclusive).
 ///
 /// # Panics
+///
 /// - If `value` is not within range [`l`, `r`].
 pub fn u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) {
     if !(value.ge(&l) && value.le(&r)) {
@@ -64,6 +68,7 @@ pub fn u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) {
 /// Check `u64` value is in range (inclusive).
 ///
 /// # Panics
+///
 /// - If `value` is not within range [`l`, `r`].
 pub fn u64_in_range_inclusive(value: u64, l: u64, r: u64, desc: &str) {
     if !(value.ge(&l) && value.le(&r)) {
@@ -74,6 +79,7 @@ pub fn u64_in_range_inclusive(value: u64, l: u64, r: u64, desc: &str) {
 /// Check `i64` value is in range (inclusive).
 ///
 /// # Panics
+///
 /// - If `value` is not within range [`l`, `r`].
 pub fn i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) {
     if !(value.ge(&l) && value.le(&r)) {
@@ -84,6 +90,7 @@ pub fn i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) {
 /// Check `f64` value is in range (inclusive).
 ///
 /// # Panics
+///
 /// - If `value` is not within range [`l`, `r`].
 pub fn f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) {
     if !(value.ge(&l) && value.le(&r)) {
@@ -94,6 +101,7 @@ pub fn f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) {
 /// Check `f64` value is non negative.
 ///
 /// # Panics
+///
 /// - If `value` is negative.
 pub fn f64_non_negative(value: f64, desc: &str) {
     if value < 0.0 {

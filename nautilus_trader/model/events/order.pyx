@@ -22,6 +22,18 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.core cimport uuid4_clone
+from nautilus_trader.core.rust.model cimport client_order_id_clone
+from nautilus_trader.core.rust.model cimport component_id_to_cstr
+from nautilus_trader.core.rust.model cimport instrument_id_clone
+from nautilus_trader.core.rust.model cimport order_denied_new
+from nautilus_trader.core.rust.model cimport order_denied_reason_to_cstr
+from nautilus_trader.core.rust.model cimport strategy_id_new
+from nautilus_trader.core.rust.model cimport trade_id_clone
+from nautilus_trader.core.rust.model cimport trader_id_new
+from nautilus_trader.core.string cimport cstr_to_pybytes
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -139,11 +151,15 @@ cdef class OrderInitialized(OrderEvent):
         If the order will only provide liquidity (make a market).
     reduce_only : bool
         If the order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool
+        If the order quantity is denominated in the quote currency.
     options : dict[str, str]
         The order initialization options. Contains mappings for specific
         order parameters.
     emulation_trigger : EmulationTrigger
         The emulation trigger for the order.
+    trigger_instrument_id : InstrumentId, optional with no default so ``None`` must be passed explicitly
+        The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType
         The order contingency type.
     order_list_id : OrderListId, optional with no default so ``None`` must be passed explicitly
@@ -186,8 +202,10 @@ cdef class OrderInitialized(OrderEvent):
         TimeInForce time_in_force,
         bint post_only,
         bint reduce_only,
+        bint quote_quantity,
         dict options not None,
         TriggerType emulation_trigger,
+        InstrumentId trigger_instrument_id: Optional[InstrumentId],
         ContingencyType contingency_type,
         OrderListId order_list_id: Optional[OrderListId],
         list linked_order_ids: Optional[list[ClientOrderId]],
@@ -221,8 +239,10 @@ cdef class OrderInitialized(OrderEvent):
         self.time_in_force = time_in_force
         self.post_only = post_only
         self.reduce_only = reduce_only
+        self.quote_quantity = quote_quantity
         self.options = options
         self.emulation_trigger = emulation_trigger
+        self.trigger_instrument_id = trigger_instrument_id
         self.contingency_type = contingency_type
         self.order_list_id = order_list_id
         self.linked_order_ids = linked_order_ids
@@ -247,8 +267,10 @@ cdef class OrderInitialized(OrderEvent):
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
+            f"quote_quantity={self.quote_quantity}, "
             f"options={self.options}, "
             f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
+            f"trigger_instrument_id={self.trigger_instrument_id}, "  # Can be None
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
@@ -276,8 +298,10 @@ cdef class OrderInitialized(OrderEvent):
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
+            f"quote_quantity={self.quote_quantity}, "
             f"options={self.options}, "
             f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
+            f"trigger_instrument_id={self.trigger_instrument_id}, "  # Can be None
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
@@ -293,6 +317,7 @@ cdef class OrderInitialized(OrderEvent):
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str trigger_instrument_id = values["trigger_instrument_id"]
         cdef str order_list_id_str = values["order_list_id"]
         cdef str linked_order_ids_str = values["linked_order_ids"]
         cdef str parent_order_id_str = values["parent_order_id"]
@@ -309,8 +334,10 @@ cdef class OrderInitialized(OrderEvent):
             time_in_force=time_in_force_from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
+            quote_quantity=values["quote_quantity"],
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
             emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
+            trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(values["contingency_type"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str is not None else None,
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
@@ -340,8 +367,10 @@ cdef class OrderInitialized(OrderEvent):
             "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
+            "quote_quantity": obj.quote_quantity,
             "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
             "emulation_trigger": trigger_type_to_str(obj.emulation_trigger),
+            "trigger_instrument_id": obj.trigger_instrument_id.to_str() if obj.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(obj.contingency_type),
             "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
@@ -439,7 +468,16 @@ cdef class OrderDenied(OrderEvent):
             reconciliation=False,  # Internal system event
         )
 
-        self.reason = reason
+        self._mem = order_denied_new(
+            trader_id_new(component_id_to_cstr(&trader_id._mem)),
+            strategy_id_new(component_id_to_cstr(&strategy_id._mem)),
+            instrument_id_clone(&instrument_id._mem),
+            client_order_id_clone(&client_order_id._mem),
+            pystr_to_cstr(reason),
+            uuid4_clone(&event_id._mem),
+            ts_init,
+            ts_init,
+        )
 
     def __str__(self) -> str:
         return (
@@ -460,6 +498,18 @@ cdef class OrderDenied(OrderEvent):
             f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
+
+    @property
+    def reason(self) -> str:
+        """
+        Return the reason the order was denied.
+
+        Returns
+        -------
+        str
+
+        """
+        return cstr_to_pystr(order_denied_reason_to_cstr(&self._mem))
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values):
@@ -485,6 +535,7 @@ cdef class OrderDenied(OrderEvent):
             "client_order_id": obj.client_order_id.to_str(),
             "reason": obj.reason,
             "event_id": obj.id.to_str(),
+            "ts_event": obj.ts_init,
             "ts_init": obj.ts_init,
         }
 

@@ -26,8 +26,8 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -51,6 +51,7 @@ class TestLiveDataEngine:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
+        asyncio.set_event_loop(self.loop)
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
@@ -355,7 +356,7 @@ class TestLiveDataEngine:
         self.engine.start()
 
         # Act
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         # Act
         self.engine.process(tick)

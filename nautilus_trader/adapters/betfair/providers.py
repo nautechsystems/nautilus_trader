@@ -18,10 +18,12 @@ from typing import Optional, Union
 
 import msgspec.json
 import pandas as pd
-from betfair_parser.spec.api.markets import MarketCatalog
-from betfair_parser.spec.api.navigation import FlattenedMarket
-from betfair_parser.spec.api.navigation import Navigation
-from betfair_parser.spec.api.navigation import navigation_to_flatten_markets
+from betfair_parser.spec.betting.type_definitions import MarketCatalogue
+from betfair_parser.spec.common import decode as bf_decode
+from betfair_parser.spec.common import encode as bf_encode
+from betfair_parser.spec.navigation import FlattenedMarket
+from betfair_parser.spec.navigation import Navigation
+from betfair_parser.spec.navigation import navigation_to_flatten_markets
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -178,33 +180,33 @@ def _parse_date(s, tz):
 
 
 def market_catalog_to_instruments(
-    market_catalog: MarketCatalog,
+    market_catalog: MarketCatalogue,
     currency: str,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_catalog.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=market_catalog.eventType.id,
-            event_type_name=market_catalog.eventType.name,
-            competition_id=market_catalog.competition_id,
-            competition_name=market_catalog.competition_name,
+            event_type_id=str(market_catalog.event_type.id),
+            event_type_name=market_catalog.event_type.name,
+            competition_id=market_catalog.competition.id if market_catalog.competition else "",
+            competition_name=market_catalog.competition.name if market_catalog.competition else "",
             event_id=market_catalog.event.id,
             event_name=market_catalog.event.name,
-            event_country_code=market_catalog.event.countryCode or "",
-            event_open_date=pd.Timestamp(market_catalog.event.openDate),
-            betting_type=market_catalog.description.bettingType,
-            market_id=market_catalog.marketId,
-            market_name=market_catalog.marketName,
-            market_start_time=pd.Timestamp(market_catalog.marketStartTime),
-            market_type=market_catalog.description.marketType,
+            event_country_code=market_catalog.event.country_code or "",
+            event_open_date=pd.Timestamp(market_catalog.event.open_date),
+            betting_type=market_catalog.description.betting_type.name,
+            market_id=market_catalog.market_id,
+            market_name=market_catalog.market_name,
+            market_start_time=pd.Timestamp(market_catalog.market_start_time),
+            market_type=market_catalog.description.market_type,
             selection_id=str(runner.runner_id),
             selection_name=runner.runner_name,
             selection_handicap=parse_handicap(runner.handicap),
             currency=currency,
             ts_event=time.time_ns(),
             ts_init=time.time_ns(),
-            info=msgspec.json.decode(msgspec.json.encode(market_catalog)),
+            info=msgspec.json.decode(bf_encode(market_catalog).decode()),
         )
         instruments.append(instrument)
     return instruments
@@ -218,22 +220,22 @@ def market_definition_to_instruments(
     for runner in market_definition.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=market_definition.eventTypeId,
+            event_type_id=market_definition.event_type_id,
             event_type_name=market_definition.event_type_name,
-            competition_id=market_definition.competitionId,
-            competition_name=market_definition.competitionName,
-            event_id=market_definition.eventId,
-            event_name=market_definition.eventName,
-            event_country_code=market_definition.countryCode,
-            event_open_date=pd.Timestamp(market_definition.openDate),
-            betting_type=market_definition.bettingType,
-            market_id=market_definition.marketId,
-            market_name=market_definition.marketName,
-            market_start_time=pd.Timestamp(market_definition.marketTime)
-            if market_definition.marketTime
+            competition_id=market_definition.competition_id,
+            competition_name=market_definition.competition_name,
+            event_id=market_definition.event_id,
+            event_name=market_definition.event_name,
+            event_country_code=market_definition.country_code,
+            event_open_date=pd.Timestamp(market_definition.open_date),
+            betting_type=market_definition.betting_type,
+            market_id=market_definition.market_id,
+            market_name=market_definition.market_name,
+            market_start_time=pd.Timestamp(market_definition.market_time)
+            if market_definition.market_time
             else pd.Timestamp(0, tz="UTC"),
-            market_type=market_definition.marketType,
-            selection_id=str(runner.selectionId or runner.id),
+            market_type=market_definition.market_type,
+            selection_id=str(runner.selection_id or runner.id),
             selection_name=runner.name or "",
             selection_handicap=parse_handicap(runner.hc),
             currency=currency,
@@ -246,10 +248,10 @@ def market_definition_to_instruments(
 
 
 def make_instruments(
-    market: Union[MarketCatalog, MarketDefinition],
+    market: Union[MarketCatalogue, MarketDefinition],
     currency: str,
 ) -> list[BettingInstrument]:
-    if isinstance(market, MarketCatalog):
+    if isinstance(market, MarketCatalogue):
         return market_catalog_to_instruments(market, currency)
     elif isinstance(market, MarketDefinition):
         return market_definition_to_instruments(market, currency)
@@ -290,14 +292,15 @@ async def load_markets(
     return markets
 
 
-def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalog]:
-    return msgspec.json.decode(msgspec.json.encode(catalog), type=list[MarketCatalog])
+def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalogue]:
+    raw = msgspec.json.encode(catalog)
+    return bf_decode(raw, type=list[MarketCatalogue])
 
 
 async def load_markets_metadata(
     client: BetfairClient,
     markets: list[FlattenedMarket],
-) -> list[MarketCatalog]:
+) -> list[MarketCatalogue]:
     all_results = []
     for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):
         results = await client.list_market_catalogue(

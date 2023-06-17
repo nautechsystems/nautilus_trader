@@ -158,10 +158,13 @@ def _build_extensions() -> list[Extension]:
 
     if platform.system() == "Windows":
         extra_link_args += [
-            "WS2_32.Lib",
             "AdvAPI32.Lib",
-            "UserEnv.Lib",
             "bcrypt.lib",
+            "Kernel32.lib",
+            "ntdll.lib",
+            "User32.Lib",
+            "UserEnv.Lib",
+            "WS2_32.Lib",
         ]
 
     print("Creating C extension modules...")
@@ -245,10 +248,11 @@ def _get_clang_version() -> str:
             .lstrip("clang version ")
         )
         return output
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()
         raise RuntimeError(
             "You are installing from source which requires the Clang compiler to be installed.\n"
-            f"Error running clang: {e.stderr.decode()}",
+            f"Error running clang: {err_msg}",
         ) from e
 
 
@@ -259,13 +263,14 @@ def _get_rustc_version() -> str:
             check=True,
             capture_output=True,
         )
-        output = result.stdout.decode().lstrip("rustc ")[:-1]
+        output = result.stdout.decode().lstrip("rustc ").strip()
         return output
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()
         raise RuntimeError(
             "You are installing from source which requires the Rust compiler to be installed.\n"
             "Find more information at https://www.rust-lang.org/tools/install\n"
-            f"Error running rustc: {e.stderr.decode()}",
+            f"Error running rustc: {err_msg}",
         ) from e
 
 

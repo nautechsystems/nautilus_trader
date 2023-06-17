@@ -21,6 +21,7 @@ import fsspec
 import msgspec
 
 from nautilus_trader.common import Environment
+from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -249,12 +250,15 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
+    filter_unclaimed_external_orders : bool, default False
+        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = True
+    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
@@ -595,6 +599,16 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If trading strategy state should be saved to the database on stop.
     loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
+    timeout_connection : PositiveFloat (seconds)
+        The timeout for all clients to connect and initialize.
+    timeout_reconciliation : PositiveFloat (seconds)
+        The timeout for execution state to reconcile.
+    timeout_portfolio : PositiveFloat (seconds)
+        The timeout for portfolio to initialize margins and unrealized PnLs.
+    timeout_disconnection : PositiveFloat (seconds)
+        The timeout for all engine clients to disconnect.
+    timeout_post_stop : PositiveFloat (seconds)
+        The timeout after stopping the node to await residual events before final shutdown.
     """
 
     environment: Environment
@@ -614,6 +628,11 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: Optional[LoggingConfig] = None
+    timeout_connection: PositiveFloat = 10.0
+    timeout_reconciliation: PositiveFloat = 10.0
+    timeout_portfolio: PositiveFloat = 10.0
+    timeout_disconnection: PositiveFloat = 10.0
+    timeout_post_stop: PositiveFloat = 10.0
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):

@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::types::fixed::f64_to_fixed_i64;
-use nautilus_model::types::fixed::f64_to_fixed_u64;
+use nautilus_model::types::fixed::{f64_to_fixed_i64, f64_to_fixed_u64};
 use rand::Rng;
 
 #[allow(dead_code)]
@@ -56,8 +55,8 @@ fn random_values_u8(len: u64) -> Vec<u8> {
 #[allow(dead_code)]
 fn date_range(len: u64) -> Vec<u64> {
     let mut vec = Vec::new();
-    let mut start: u64 = 1546304400000000000;
-    let end: u64 = 1577840400000000000;
+    let mut start: u64 = 1_546_304_400_000_000_000;
+    let end: u64 = 1_577_840_400_000_000_000;
     let step = (end - start) / len;
     for _ in 0..len {
         start += step;

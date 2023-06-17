@@ -13,26 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::{correctness, string::str_to_cstr};
+use pyo3::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[derive(Clone, Hash, PartialEq, Eq)]
+#[pyclass]
 pub struct Symbol {
-    pub value: Box<Rc<String>>,
+    pub value: Box<Arc<String>>,
+}
+
+impl Debug for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
 }
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+impl Default for Symbol {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("AUD/USD"))),
+        }
     }
 }
 
@@ -42,7 +57,7 @@ impl Symbol {
         correctness::valid_string(s, "`Symbol` value");
 
         Self {
-            value: Box::new(Rc::new(s.to_string())),
+            value: Box::new(Arc::new(s.to_string())),
         }
     }
 }
@@ -53,6 +68,7 @@ impl Symbol {
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
@@ -73,7 +89,7 @@ pub extern "C" fn symbol_drop(symbol: Symbol) {
 /// Returns a [`Symbol`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
-    string_to_cstr(&symbol.value)
+    str_to_cstr(&symbol.value)
 }
 
 #[no_mangle]

@@ -22,7 +22,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import log_level_from_str
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
@@ -51,10 +51,10 @@ class TestComponentStubs:
         return LiveClock()
 
     @staticmethod
-    def logger(level="INFO") -> Logger:
+    def logger(level: LogLevel = LogLevel.INFO) -> Logger:
         return Logger(
             clock=TestComponentStubs.clock(),
-            level_stdout=log_level_from_str(level),
+            level_stdout=level,
             bypass=True,
         )
 

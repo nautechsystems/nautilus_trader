@@ -27,7 +27,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 
 
 class TestTestClock:
@@ -641,7 +641,7 @@ class TestLiveClockWithThreadTimer:
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        time.sleep(1)
+        time.sleep(1.0)
 
         # Assert
         assert len(self.handler) == 1
@@ -670,7 +670,7 @@ class TestLiveClockWithThreadTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        time.sleep(1)
+        time.sleep(2.0)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -690,7 +690,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(1)
+        time.sleep(2.0)
 
         # Assert
         assert self.clock.timer_names == [name]
@@ -710,7 +710,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(2)
+        time.sleep(2.0)
 
         # Assert
         assert self.clock.timer_names == [name]
@@ -732,7 +732,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=stop_time,
         )
 
-        time.sleep(2)
+        time.sleep(2.0)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -769,7 +769,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(2)
+        time.sleep(2.0)
 
         # Assert
         assert len(self.handler) > 0
@@ -817,7 +817,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(1)
+        time.sleep(1.0)
 
         # Assert
         assert len(self.handler) >= 2
@@ -827,6 +827,7 @@ class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
+        # asyncio.set_event_loop(self.loop)
         self.loop.set_debug(True)
 
         self.handler = []
@@ -836,7 +837,8 @@ class TestLiveClockWithLoopTimer:
     def teardown(self):
         self.clock.cancel_timers()
 
-    def test_timestamp_is_monotonic(self):
+    @pytest.mark.asyncio()
+    async def test_timestamp_is_monotonic(self):
         # Arrange, Act
         result1 = self.clock.timestamp()
         result2 = self.clock.timestamp()
@@ -852,7 +854,8 @@ class TestLiveClockWithLoopTimer:
         assert result3 >= result2
         assert result2 >= result1
 
-    def test_timestamp_ms_is_monotonic(self):
+    @pytest.mark.asyncio()
+    async def test_timestamp_ms_is_monotonic(self):
         # Arrange, Act
         result1 = self.clock.timestamp_ms()
         result2 = self.clock.timestamp_ms()
@@ -868,7 +871,8 @@ class TestLiveClockWithLoopTimer:
         assert result3 >= result2
         assert result2 >= result1
 
-    def test_timestamp_ns_is_monotonic(self):
+    @pytest.mark.asyncio()
+    async def test_timestamp_ns_is_monotonic(self):
         # Arrange, Act
         result1 = self.clock.timestamp_ns()
         result2 = self.clock.timestamp_ns()
@@ -888,12 +892,12 @@ class TestLiveClockWithLoopTimer:
     async def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
-        interval = timedelta(milliseconds=100)
+        interval = timedelta(milliseconds=300)
         alert_time = self.clock.utc_now() + interval
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        await asyncio.sleep(1)
+        await asyncio.sleep(1.0)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -925,7 +929,7 @@ class TestLiveClockWithLoopTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        await asyncio.sleep(1)
+        await asyncio.sleep(1.0)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -946,7 +950,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(1.0)
 
         # Assert
         assert self.clock.timer_names == [name]

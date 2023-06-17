@@ -33,15 +33,14 @@ from nautilus_trader.examples.strategies.signal_strategy import SignalStrategy
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategyConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
@@ -61,9 +60,9 @@ from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs import MyData
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
+from nautilus_trader.test_kit.stubs.data import MyData
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
 
@@ -339,47 +338,20 @@ class TestBacktestEngineData:
         with pytest.raises(InvalidConfiguration):
             engine.add_instrument(ETHUSDT_BINANCE)
 
-    def test_add_order_book_snapshots_adds_to_engine(self):
-        # Arrange
-        self.engine.add_instrument(ETHUSDT_BINANCE)
-
-        snapshot1 = OrderBookSnapshot(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bids=[[1550.15, 0.51], [1580.00, 1.20]],
-            asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event=0,
-            ts_init=0,
-        )
-
-        snapshot2 = OrderBookSnapshot(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bids=[[1551.15, 0.51], [1581.00, 1.20]],
-            asks=[[1553.15, 1.51], [1583.00, 2.20]],
-            ts_event=1_000_000_000,
-            ts_init=1_000_000_000,
-        )
-
-        # Act
-        self.engine.add_data([snapshot2, snapshot1])  # <-- reverse order
-
-        # Assert
-        assert len(self.engine.data) == 2
-        assert self.engine.data[0] == snapshot1
-        assert self.engine.data[1] == snapshot2
-
     def test_add_order_book_deltas_adds_to_engine(self):
         # Arrange
         self.engine.add_instrument(AUDUSD_SIM)
         self.engine.add_instrument(ETHUSDT_BINANCE)
 
-        deltas = [
+        deltas1 = [
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.SELL,
                     price=Price.from_str("13.0"),
                     size=Quantity.from_str("40"),
-                    side=OrderSide.SELL,
+                    order_id=0,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -388,9 +360,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.SELL,
                     price=Price.from_str("12.0"),
                     size=Quantity.from_str("30"),
-                    side=OrderSide.SELL,
+                    order_id=1,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -399,9 +372,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.SELL,
                     price=Price.from_str("11.0"),
                     size=Quantity.from_str("20"),
-                    side=OrderSide.SELL,
+                    order_id=2,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -410,9 +384,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.BUY,
                     price=Price.from_str("10.0"),
                     size=Quantity.from_str("20"),
-                    side=OrderSide.BUY,
+                    order_id=3,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -421,9 +396,10 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.BUY,
                     price=Price.from_str("9.0"),
                     size=Quantity.from_str("30"),
-                    side=OrderSide.BUY,
+                    order_id=4,
                 ),
                 ts_event=0,
                 ts_init=0,
@@ -432,27 +408,51 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 action=BookAction.ADD,
                 order=BookOrder(
+                    side=OrderSide.BUY,
                     price=Price.from_str("0.0"),
                     size=Quantity.from_str("40"),
-                    side=OrderSide.BUY,
+                    order_id=4,
                 ),
                 ts_event=0,
                 ts_init=0,
             ),
         ]
 
+        deltas2 = [
+            OrderBookDelta(
+                instrument_id=AUDUSD_SIM.id,
+                action=BookAction.UPDATE,
+                order=BookOrder(
+                    side=OrderSide.SELL,
+                    price=Price.from_str("13.0"),
+                    size=Quantity.from_str("45"),
+                    order_id=0,
+                ),
+                ts_event=0,
+                ts_init=0,
+            ),
+            OrderBookDelta(
+                instrument_id=AUDUSD_SIM.id,
+                action=BookAction.ADD,
+                order=BookOrder(
+                    side=OrderSide.SELL,
+                    price=Price.from_str("12.5"),
+                    size=Quantity.from_str("35"),
+                    order_id=1,
+                ),
+                ts_event=1000,
+                ts_init=1000,
+            ),
+        ]
+
         operations1 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            deltas=deltas,
-            ts_event=0,
-            ts_init=0,
+            deltas=deltas1,
         )
 
         operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            deltas=deltas,
-            ts_event=1000,
-            ts_init=1000,
+            deltas=deltas2,
         )
 
         # Act

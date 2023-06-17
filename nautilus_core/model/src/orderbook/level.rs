@@ -14,11 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Formatter};
 
-use crate::data::book::BookOrder;
-use crate::orderbook::ladder::BookPrice;
+use crate::{
+    data::book::BookOrder,
+    orderbook::{book::BookIntegrityError, ladder::BookPrice},
+};
 
+#[derive(Clone, Debug, Eq)]
 pub struct Level {
     pub price: BookPrice,
     pub orders: Vec<BookOrder>,
@@ -50,7 +52,7 @@ impl Level {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.orders.len() == 0
+        self.orders.is_empty()
     }
 
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
@@ -75,17 +77,23 @@ impl Level {
                 .orders
                 .iter()
                 .position(|o| o.order_id == order.order_id)
-                .expect("Cannot update order: order not found");
+                .unwrap_or_else(|| {
+                    panic!("{}", &BookIntegrityError::OrderNotFound(order.order_id))
+                });
             self.orders[idx] = order;
         }
     }
 
     pub fn delete(&mut self, order: &BookOrder) {
+        self.remove(order.order_id);
+    }
+
+    pub fn remove(&mut self, order_id: u64) {
         let index = self
             .orders
             .iter()
-            .position(|o| o.order_id == order.order_id)
-            .expect("Cannot delete order: order not found");
+            .position(|o| o.order_id == order_id)
+            .unwrap_or_else(|| panic!("{}", &BookIntegrityError::OrderNotFound(order_id)));
         self.orders.remove(index);
     }
 
@@ -113,8 +121,6 @@ impl PartialEq for Level {
         self.price == other.price
     }
 }
-
-impl Eq for Level {}
 
 impl PartialOrd for Level {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -144,32 +150,20 @@ impl Ord for Level {
     }
 }
 
-impl Debug for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Level(price={})", self.price.value)
-    }
-}
-
-impl Display for Level {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Level(price={})", self.price.value)
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::data::book::BookOrder;
-    use crate::enums::OrderSide;
-    use crate::orderbook::ladder::BookPrice;
-    use crate::orderbook::level::Level;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
+    use crate::{
+        data::book::BookOrder,
+        enums::OrderSide,
+        orderbook::{ladder::BookPrice, level::Level},
+        types::{price::Price, quantity::Quantity},
+    };
 
     #[test]
-    fn test_level_comparisons_bid_side() {
+    fn test_comparisons_bid_side() {
         let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Buy));
         assert_eq!(level0, level0);
@@ -177,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn test_level_comparisons_ask_side() {
+    fn test_comparisons_ask_side() {
         let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Sell));
         let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Sell));
         assert_eq!(level0, level0);
@@ -185,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn test_level_add_one_order() {
+    fn test_add_one_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order = BookOrder::new(
             OrderSide::Buy,
@@ -201,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn test_level_add_multiple_orders() {
+    fn test_add_multiple_orders() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -224,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn test_level_update_order() {
+    fn test_update_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -247,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn test_level_update_order_with_zero_size_deletes() {
+    fn test_update_order_with_zero_size() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order1 = BookOrder::new(
             OrderSide::Buy,
@@ -267,5 +261,91 @@ mod tests {
         assert_eq!(level.len(), 0);
         assert_eq!(level.volume(), 0.0);
         assert_eq!(level.exposure(), 0.0);
+    }
+
+    #[test]
+    fn test_delete_order() {
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
+        let order1_id = 0;
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(1.00, 2),
+            Quantity::new(10.0, 0),
+            order1_id,
+        );
+        let order2_id = 0;
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(1.00, 2),
+            Quantity::new(20.0, 0),
+            order2_id,
+        );
+
+        level.add(order1);
+        level.add(order2);
+        level.delete(&order1);
+        assert_eq!(level.len(), 1);
+        assert_eq!(level.orders.first().unwrap().order_id, order2_id);
+        assert_eq!(level.volume(), 20.0);
+        assert_eq!(level.exposure(), 20.0);
+    }
+
+    #[test]
+    fn test_remove_order() {
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
+        let order1_id = 0;
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(1.00, 2),
+            Quantity::new(10.0, 0),
+            order1_id,
+        );
+        let order2_id = 1;
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(1.00, 2),
+            Quantity::new(20.0, 0),
+            order2_id,
+        );
+
+        level.add(order1);
+        level.add(order2);
+        level.remove(order2_id);
+        assert_eq!(level.len(), 1);
+        assert_eq!(level.orders.first().unwrap().order_id, order1_id);
+        assert_eq!(level.volume(), 10.0);
+        assert_eq!(level.exposure(), 10.0);
+    }
+
+    #[test]
+    fn test_add_bulk_orders() {
+        let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
+        let order1_id = 0;
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(10.0, 0),
+            order1_id,
+        );
+        let order2_id = 1;
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(20.0, 0),
+            order2_id,
+        );
+
+        let orders = vec![order1, order2];
+        level.add_bulk(orders);
+        assert_eq!(level.len(), 2);
+        assert_eq!(level.volume(), 30.0);
+        assert_eq!(level.exposure(), 60.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid book operation: order ID 1 not found")]
+    fn test_remove_nonexistent_order() {
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
+        level.remove(1);
     }
 }

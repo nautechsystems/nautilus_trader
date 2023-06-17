@@ -333,12 +333,12 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
         ----------
         timestamp : str
             The millisecond timestamp of the request.
-        fromId : str, optional
+        fromId : int, optional
             The order ID for the request.
             If included, request will return orders from this orderId INCLUSIVE.
-        startTime : str, optional
+        startTime : int, optional
             The start time (UNIX milliseconds) filter for the request.
-        endTime : str, optional
+        endTime : int, optional
             The end time (UNIX milliseconds) filter for the request.
         limit : int, optional
             The limit for the response.
@@ -352,9 +352,9 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        fromId: Optional[str] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
+        fromId: Optional[int] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
         limit: Optional[int] = None
         recvWindow: Optional[str] = None
 
@@ -536,7 +536,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
         if not account_type.is_spot_or_margin:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not SPOT, MARGIN or ISOLATED_MARGIN, was {account_type}",  # pragma: no cover
             )
 
         # Create endpoints
@@ -671,9 +671,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_spot_all_oco(
         self,
-        from_id: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        from_id: Optional[int] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceSpotOrderOco]:

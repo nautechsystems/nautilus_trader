@@ -13,30 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::Deref;
-use std::rc::Rc;
-use std::str::FromStr;
-
 use derive_builder::{self, Builder};
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 
-use crate::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType,
+use crate::{
+    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
+        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use crate::identifiers::account_id::AccountId;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::order_list_id::OrderListId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::trader_id::TraderId;
-use crate::identifiers::venue_order_id::VenueOrderId;
-use crate::types::currency::Currency;
-use crate::types::money::Money;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum OrderEvent {
@@ -58,31 +47,14 @@ pub enum OrderEvent {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder, Serialize, Deserialize)]
 #[builder(default)]
-pub struct OrderIdentifiers {
+#[serde(tag = "type")]
+pub struct OrderInitialized {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-}
-
-impl Default for OrderIdentifiers {
-    fn default() -> Self {
-        Self {
-            trader_id: TraderId::new("TRADER-001"),
-            strategy_id: StrategyId::new("S-001"),
-            instrument_id: InstrumentId::from_str("AUD/USD.SIM").unwrap(),
-            client_order_id: ClientOrderId::new("O-123456789"),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
-#[builder(default)]
-pub struct OrderInitialized {
-    pub ids: Rc<OrderIdentifiers>,
     pub order_side: OrderSide,
     pub order_type: OrderType,
     pub quantity: Quantity,
@@ -93,6 +65,7 @@ pub struct OrderInitialized {
     pub expire_time: Option<UnixNanos>,
     pub post_only: bool,
     pub reduce_only: bool,
+    pub quote_quantity: bool,
     pub display_qty: Option<Quantity>,
     pub limit_offset: Option<Price>,
     pub trailing_offset: Option<Price>,
@@ -112,7 +85,10 @@ pub struct OrderInitialized {
 impl Default for OrderInitialized {
     fn default() -> Self {
         Self {
-            ids: Default::default(),
+            trader_id: TraderId::default(),
+            strategy_id: StrategyId::default(),
+            instrument_id: InstrumentId::default(),
+            client_order_id: ClientOrderId::default(),
             order_side: OrderSide::Buy,
             order_type: OrderType::Market,
             quantity: Quantity::new(100_000.0, 0),
@@ -124,6 +100,7 @@ impl Default for OrderInitialized {
             post_only: Default::default(),
             reduce_only: Default::default(),
             display_qty: Default::default(),
+            quote_quantity: Default::default(),
             limit_offset: Default::default(),
             trailing_offset: Default::default(),
             trailing_offset_type: Default::default(),
@@ -142,20 +119,29 @@ impl Default for OrderInitialized {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderDenied {
-    pub ids: Rc<OrderIdentifiers>,
-    pub reason: String,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
+    pub reason: Box<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderSubmitted {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub account_id: AccountId,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
@@ -163,9 +149,14 @@ pub struct OrderSubmitted {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderAccepted {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub event_id: UUID4,
@@ -175,9 +166,14 @@ pub struct OrderAccepted {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderRejected {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub reason: String,
@@ -188,9 +184,14 @@ pub struct OrderRejected {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderCanceled {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub event_id: UUID4,
@@ -200,9 +201,14 @@ pub struct OrderCanceled {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderExpired {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub event_id: UUID4,
@@ -212,9 +218,14 @@ pub struct OrderExpired {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderTriggered {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub event_id: UUID4,
@@ -224,9 +235,14 @@ pub struct OrderTriggered {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderPendingUpdate {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: AccountId,
     pub event_id: UUID4,
@@ -236,9 +252,14 @@ pub struct OrderPendingUpdate {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderPendingCancel {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: AccountId,
     pub event_id: UUID4,
@@ -248,12 +269,17 @@ pub struct OrderPendingCancel {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderModifyRejected {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: String,
+    pub reason: Box<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -261,12 +287,17 @@ pub struct OrderModifyRejected {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderCancelRejected {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: String,
+    pub reason: Box<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -274,9 +305,14 @@ pub struct OrderCancelRejected {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
 pub struct OrderUpdated {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
     pub quantity: Quantity,
@@ -289,9 +325,13 @@ pub struct OrderUpdated {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[serde(tag = "type")]
 pub struct OrderFilled {
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub trade_id: TradeId,
@@ -308,30 +348,3 @@ pub struct OrderFilled {
     pub ts_init: UnixNanos,
     pub reconciliation: bool,
 }
-
-macro_rules! impl_derefs_for_order {
-    ($struct: ident) => {
-        impl Deref for $struct {
-            type Target = OrderIdentifiers;
-
-            fn deref(&self) -> &Self::Target {
-                &self.ids
-            }
-        }
-    };
-}
-
-impl_derefs_for_order!(OrderTriggered);
-impl_derefs_for_order!(OrderPendingUpdate);
-impl_derefs_for_order!(OrderExpired);
-impl_derefs_for_order!(OrderCanceled);
-impl_derefs_for_order!(OrderRejected);
-impl_derefs_for_order!(OrderAccepted);
-impl_derefs_for_order!(OrderSubmitted);
-impl_derefs_for_order!(OrderDenied);
-impl_derefs_for_order!(OrderInitialized);
-impl_derefs_for_order!(OrderPendingCancel);
-impl_derefs_for_order!(OrderModifyRejected);
-impl_derefs_for_order!(OrderCancelRejected);
-impl_derefs_for_order!(OrderUpdated);
-impl_derefs_for_order!(OrderFilled);

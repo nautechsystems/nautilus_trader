@@ -15,8 +15,7 @@
 
 extern crate cbindgen;
 
-use std::env;
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {

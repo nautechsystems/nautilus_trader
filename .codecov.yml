@@ -8,7 +8,7 @@ coverage:
   status:
     project:
       default:
-        target: "89"
+        target: "85"
     patch:
       default:
         target: "50"

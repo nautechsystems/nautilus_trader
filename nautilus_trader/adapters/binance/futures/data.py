@@ -31,12 +31,11 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -61,10 +60,10 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The logger for the client.
     instrument_provider : InstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
@@ -79,13 +78,13 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
-        base_url_ws: Optional[str] = None,
+        base_url_ws: str,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         use_agg_trade_ticks: bool = False,
     ):
         PyCondition.true(
             account_type.is_futures,
-            "account_type was not FUTURES_USDT or FUTURES_COIN",
+            "account_type was not USDT_FUTURE or COIN_FUTURE",
         )
 
         # Futures HTTP API
@@ -164,14 +163,14 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg = self._decoder_order_book_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_snapshot: OrderBookSnapshot = msg.data.parse_to_order_book_snapshot(
+        book_snapshot: OrderBookDeltas = msg.data.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: Optional[
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
-        ] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+            instrument_id,
+        )
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

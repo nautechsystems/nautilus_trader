@@ -67,10 +67,8 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.data.book cimport ORDER_BOOK_DATA
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.book cimport OrderBookSnapshot
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentClose
@@ -176,6 +174,22 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
+    def connect(self) -> None:
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        self._log.info("Connecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+    def disconnect(self) -> None:
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        self._log.info("Disconnecting all clients...")
+        # Implement actual client connections for a live/sandbox context
+
+# --REGISTRATION ----------------------------------------------------------------------------------
+
     def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
         """
         Register the given data catalog with the engine.
@@ -190,8 +204,6 @@ cdef class DataEngine(Component):
 
         self._catalog = catalog
         self._use_rust = use_rust
-
-# --REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client):
         """
@@ -605,7 +617,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBookSnapshot:
+        elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -661,7 +673,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBookSnapshot:
+        elif command.data_type.type == OrderBook:
             self._handle_unsubscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -743,7 +755,7 @@ cdef class DataEngine(Component):
             self._order_book_intervals[key] = []
             now = self._clock.utc_now()
             start_time = now - timedelta(milliseconds=int((now.second * 1000) % interval_ms), microseconds=now.microsecond)
-            timer_name = f"OrderBookSnapshot_{instrument_id}_{interval_ms}"
+            timer_name = f"OrderBook_{instrument_id}_{interval_ms}"
             self._clock.set_timer(
                 name=timer_name,
                 interval=timedelta(milliseconds=interval_ms),
@@ -780,8 +792,8 @@ cdef class DataEngine(Component):
                     f"no instrument found in the cache.",
                 )
                 return
-            order_book = OrderBook.create(
-                instrument=instrument,
+            order_book = OrderBook(
+                instrument_id=instrument.id,
                 book_type=metadata["book_type"],
             )
 
@@ -1220,8 +1232,10 @@ cdef class DataEngine(Component):
     cpdef void _handle_data(self, Data data):
         self.data_count += 1
 
-        if isinstance(data, ORDER_BOOK_DATA):
-            self._handle_order_book_data(data)
+        if isinstance(data, OrderBookDelta):
+            self._handle_order_book_delta(data)
+        elif isinstance(data, OrderBookDeltas):
+            self._handle_order_book_deltas(data)
         elif isinstance(data, Ticker):
             self._handle_ticker(data)
         elif isinstance(data, QuoteTick):
@@ -1252,12 +1266,24 @@ cdef class DataEngine(Component):
             msg=instrument,
         )
 
-    cpdef void _handle_order_book_data(self, Data data):
+    cpdef void _handle_order_book_delta(self, OrderBookDelta delta):
+        cdef OrderBookDeltas deltas = OrderBookDeltas(
+            instrument_id=delta.instrument_id,
+            deltas=[delta]
+        )
         self._msgbus.publish_c(
             topic=f"data.book.deltas"
-                  f".{data.instrument_id.venue}"
-                  f".{data.instrument_id.symbol}",
-            msg=data,
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
+        )
+
+    cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas):
+        self._msgbus.publish_c(
+            topic=f"data.book.deltas"
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
         )
 
     cpdef void _handle_ticker(self, Ticker ticker):

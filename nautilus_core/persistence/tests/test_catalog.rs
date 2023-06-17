@@ -13,8 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use nautilus_model::data::Data;
+use nautilus_model::data::{
+    tick::{QuoteTick, TradeTick},
+    Data,
+};
 use nautilus_persistence::session::{DataBackendSession, QueryResult};
 
 // Note: "current_thread" configuration hangs up for some reason

@@ -15,14 +15,16 @@
 
 use std::ffi::{c_char, CStr, CString};
 
-use pyo3::types::PyString;
-use pyo3::{ffi, FromPyPointer, Python};
+use pyo3::{ffi, types::PyString, FromPyPointer, Python};
 
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
@@ -33,8 +35,11 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 /// Convert a C string pointer into an owned `String`.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
@@ -48,6 +53,7 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 /// Convert a C string pointer into an owned `Option<String>`.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[must_use]
 pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
@@ -60,15 +66,18 @@ pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
 
 /// Create a C string pointer to newly allocated memory from a [&str].
 #[must_use]
-pub fn string_to_cstr(s: &str) -> *const c_char {
+pub fn str_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
 }
 
 /// Drops the C string memory at the pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
+///
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
@@ -141,7 +150,7 @@ mod tests {
     #[test]
     fn test_string_to_cstr() {
         let s = "test string";
-        let c_str_ptr = string_to_cstr(s);
+        let c_str_ptr = str_to_cstr(s);
         let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
         let result = c_str.to_str().expect("CStr::from_ptr failed");
         assert_eq!(result, s);

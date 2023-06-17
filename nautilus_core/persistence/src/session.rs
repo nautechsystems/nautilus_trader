@@ -16,22 +16,22 @@
 use std::vec::IntoIter;
 
 use compare::Compare;
-use datafusion::error::Result;
-use datafusion::physical_plan::SendableRecordBatchStream;
-use datafusion::prelude::*;
-use futures::executor::block_on;
-use futures::{Stream, StreamExt};
+use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
+use futures::{executor::block_on, Stream, StreamExt};
 use nautilus_core::cvec::CVec;
-use nautilus_model::data::bar::Bar;
-use nautilus_model::data::book::{OrderBookDelta, OrderBookSnapshot};
-use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use nautilus_model::data::Data;
-use pyo3::prelude::*;
-use pyo3::types::PyCapsule;
+use nautilus_model::data::{
+    bar::Bar,
+    book::OrderBookDelta,
+    tick::{QuoteTick, TradeTick},
+    Data,
+};
+use pyo3::{prelude::*, types::PyCapsule};
 use pyo3_asyncio::tokio::get_runtime;
 
-use crate::kmerge_batch::{KMerge, PeekElementBatchStream};
-use crate::parquet::{DecodeDataFromRecordBatch, ParquetType};
+use crate::{
+    kmerge_batch::{KMerge, PeekElementBatchStream},
+    parquet::{DecodeDataFromRecordBatch, ParquetType},
+};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
@@ -205,14 +205,6 @@ impl DataBackendSession {
         let _guard = rt.enter();
 
         match parquet_type {
-            ParquetType::OrderBookSnapshot => {
-                match block_on(
-                    slf.add_file_default_query::<OrderBookSnapshot>(table_name, file_path),
-                ) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
             ParquetType::OrderBookDelta => {
                 match block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
                 {
@@ -252,14 +244,6 @@ impl DataBackendSession {
         let _guard = rt.enter();
 
         match parquet_type {
-            ParquetType::OrderBookSnapshot => {
-                match block_on(slf.add_file_with_custom_query::<OrderBookSnapshot>(
-                    table_name, file_path, sql_query,
-                )) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
             ParquetType::OrderBookDelta => {
                 match block_on(
                     slf.add_file_with_custom_query::<OrderBookDelta>(

@@ -18,15 +18,12 @@ import copy
 import os
 import pickle
 
-from ib_insync import Contract
-from ib_insync import ContractDetails
 from ib_insync import Forex
 from ib_insync import Future
 from ib_insync import Option
 from ib_insync import Stock
 
 from nautilus_trader.adapters.interactive_brokers.factories import get_cached_ib_client
-from tests.integration_tests.adapters.interactive_brokers.test_kit import CONTRACT_PATH
 from tests.integration_tests.adapters.interactive_brokers.test_kit import STREAMING_PATH
 
 
@@ -44,24 +41,24 @@ CONTRACTS = [
 ]
 
 
-def generate_test_data() -> None:
-    ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
-    for spec in CONTRACTS:
-        cls = spec.pop("cls")
-        results = ib.reqContractDetails(cls(**spec))
-        print(f"Found {len(results)}, using first instance")
-        c: ContractDetails = results[0]
-        with open(f"./responses/contracts/{c.contract.localSymbol}.pkl", "wb") as f:
-            f.write(pickle.dumps(c))
+# def generate_test_data() -> None:
+#     ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
+#     for spec in CONTRACTS:
+#         cls = spec.pop("cls")
+#         results = ib.reqContractDetails(cls(**spec))
+#         print(f"Found {len(results)}, using first instance")
+#         c: ContractDetails = results[0]
+#         with open(f"./responses/contracts/{c.contract.localSymbol}.pkl", "wb") as f:
+#             f.write(pickle.dumps(c))
 
 
-def generate_contract(sec_type, filename: str, **kwargs):
-    ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
-    [contract] = ib.qualifyContracts(Contract.create(secType=sec_type, **kwargs))
-    [details] = ib.reqContractDetails(contract=contract)
-
-    with open(CONTRACT_PATH / f"{filename}.pkl".lower(), "wb") as f:
-        f.write(pickle.dumps(details))
+# def generate_contract(sec_type, filename: str, **kwargs):
+#     ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
+#     [contract] = ib.qualifyContracts(Contract.create(secType=sec_type, **kwargs))
+#     [details] = ib.reqContractDetails(contract=contract)
+#
+#     with open(CONTRACT_PATH / f"{filename}.pkl".lower(), "wb") as f:
+#         f.write(pickle.dumps(details))
 
 
 async def generate_market_depth(n_records=50):
@@ -106,4 +103,4 @@ if __name__ == "__main__":
     pass
     # generate_test_data()
     # asyncio.run(generate_market_depth())
-    generate_contract(sec_type="CASH", filename="eurusd", pair="EURUSD")
+    # generate_contract(sec_type="CASH", filename="eurusd", pair="EURUSD")

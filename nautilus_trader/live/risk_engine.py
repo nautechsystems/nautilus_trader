@@ -145,11 +145,11 @@ class LiveRiskEngine(RiskEngine):
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
-            self._cmd_queue_task.done()
+            self._cmd_queue_task = None
         if self._evt_queue_task:
             self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
             self._evt_queue_task.cancel()
-            self._evt_queue_task.done()
+            self._evt_queue_task = None
 
     def execute(self, command: Command) -> None:
         """

@@ -44,13 +44,12 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
@@ -86,7 +85,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
+    base_url_ws : str
         The base URL for the WebSocket client.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
@@ -109,7 +108,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
-        base_url_ws: Optional[str] = None,
+        base_url_ws: str,
         use_agg_trade_ticks: bool = False,
     ) -> None:
         super().__init__(
@@ -142,7 +141,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
-            loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_ws_message,
@@ -153,7 +151,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._book_buffer: dict[
             InstrumentId,
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]],
+            list[Union[OrderBookDelta, OrderBookDeltas]],
         ] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
@@ -181,11 +179,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
     async def _connect(self) -> None:
-        # Connect HTTP client
-        self._log.info("Connecting client...")
-        if not self._http_client.connected:
-            await self._http_client.connect()
-
         self._log.info("Initialising instruments...")
         await self._instrument_provider.initialize()
 
@@ -197,14 +190,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         try:
-            while not self._ws_client.is_connected:
+            while True:
                 self._log.debug(
                     f"Scheduled `connect_websockets` to run in "
                     f"{self._connect_websockets_interval}s.",
                 )
                 await asyncio.sleep(self._connect_websockets_interval)
+
                 if self._ws_client.has_subscriptions:
                     await self._ws_client.connect()
+                    break
                 else:
                     self._log.info("Awaiting subscriptions...")
         except asyncio.CancelledError:
@@ -228,20 +223,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
-            self._update_instruments_task.done()
+            self._update_instruments_task = None
 
         # Cancel WebSocket connect task
         if self._connect_websockets_task:
             self._log.debug("Canceling `connect_websockets` task...")
             self._connect_websockets_task.cancel()
-            self._connect_websockets_task.done()
-        # Disconnect WebSocket client
+            self._connect_websockets_task = None
+
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
-
-        # Disconnect HTTP client
-        if self._http_client.connected:
-            await self._http_client.disconnect()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -325,7 +316,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
 
-        snapshot: Optional[OrderBookSnapshot] = None
+        snapshot: Optional[OrderBookDeltas] = None
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
@@ -339,9 +330,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 depth=depth,
                 speed=update_speed,
             )
-
-            while not self._ws_client.is_connected:
-                await asyncio.sleep(self._connect_websockets_interval)
 
             snapshot = await self._http_market.request_order_book_snapshot(
                 instrument_id=instrument_id,
@@ -402,7 +390,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
         self._add_subscription_bars(bar_type)
 
-    async def _unsubscribe(self, data_type: DataType):
+    async def _unsubscribe(self, data_type: DataType) -> None:
         # Replace method in child class, for exchange specific data types.
         raise NotImplementedError(f"Cannot unsubscribe from {data_type.type} (not implemented).")
 
@@ -489,9 +477,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             start_time_ms = None
             end_time_ms = None
             if start:
-                start_time_ms = str(int(start.timestamp() * 1000))
+                start_time_ms = int(start.timestamp() * 1000)
             if end:
-                end_time_ms = str(int(end.timestamp() * 1000))
+                end_time_ms = int(end.timestamp() * 1000)
             ticks = await self._http_market.request_agg_trade_ticks(
                 instrument_id=instrument_id,
                 limit=limit,
@@ -593,7 +581,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
-
         wrapper = self._decoder_data_msg_wrapper.decode(raw)
         try:
             handled = False
@@ -615,9 +602,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: Optional[
-            list[Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot]]
-        ] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+            instrument_id,
+        )
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:

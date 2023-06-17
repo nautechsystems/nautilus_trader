@@ -17,16 +17,19 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport currency_clone
 from nautilus_trader.core.rust.model cimport currency_code_to_cstr
 from nautilus_trader.core.rust.model cimport currency_drop
 from nautilus_trader.core.rust.model cimport currency_eq
+from nautilus_trader.core.rust.model cimport currency_exists
+from nautilus_trader.core.rust.model cimport currency_from_cstr
 from nautilus_trader.core.rust.model cimport currency_from_py
 from nautilus_trader.core.rust.model cimport currency_hash
 from nautilus_trader.core.rust.model cimport currency_name_to_cstr
+from nautilus_trader.core.rust.model cimport currency_register
 from nautilus_trader.core.rust.model cimport currency_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
-from nautilus_trader.model.currencies cimport _CURRENCY_MAP
 from nautilus_trader.model.enums_c cimport CurrencyType
 
 
@@ -41,7 +44,7 @@ cdef class Currency:
     ----------
     code : str
         The currency code.
-    precision : uint8
+    precision : uint8_t
         The currency decimal precision.
     iso4217 : uint16
         The currency ISO 4217 code.
@@ -181,15 +184,27 @@ cdef class Currency:
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=False):
-        if not overwrite and currency.code in _CURRENCY_MAP:
-            return
-        _CURRENCY_MAP[currency.code] = currency
+        cdef Currency existing = Currency.from_internal_map_c(currency.code)
+        if existing is not None and not overwrite:
+            return  # Already exists in internal map
+        currency_register(currency_clone(&currency._mem))
+
+    @staticmethod
+    cdef Currency from_internal_map_c(str code):
+        cdef const char* code_ptr = pystr_to_cstr(code)
+        if not currency_exists(code_ptr):
+            return None
+        cdef Currency currency = Currency.__new__(Currency)
+        currency._mem = currency_from_cstr(code_ptr)
+        return currency
 
     @staticmethod
     cdef Currency from_str_c(str code, bint strict=False):
-        cdef Currency currency = _CURRENCY_MAP.get(code)
-        if strict or currency is not None:
+        cdef Currency currency = Currency.from_internal_map_c(code)
+        if currency is not None:
             return currency
+        if strict:
+            return None
 
         # Strict mode false with no currency found (very likely a crypto)
         currency = Currency(
@@ -201,6 +216,22 @@ cdef class Currency:
         )
         print(f"Currency '{code}' not found, created {repr(currency)}")
         return currency
+
+    @staticmethod
+    cdef bint is_fiat_c(str code):
+        cdef Currency currency = Currency.from_internal_map_c(code)
+        if currency is None:
+            return False
+
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.FIAT
+
+    @staticmethod
+    cdef bint is_crypto_c(str code):
+        cdef Currency currency = Currency.from_internal_map_c(code)
+        if currency is None:
+            return False
+
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def register(Currency currency, bint overwrite=False):
@@ -222,6 +253,25 @@ cdef class Currency:
         return Currency.register_c(currency, overwrite)
 
     @staticmethod
+    def from_internal_map(str code):
+        """
+        Return the currency with the given `code` from the built-in internal map (if found).
+
+        Parameters
+        ----------
+        code : str
+            The code of the currency.
+
+        Returns
+        -------
+        Currency or ``None``
+
+        """
+        Condition.not_none(code, "code")
+
+        return Currency.from_internal_map_c(code)
+
+    @staticmethod
     def from_str(str code, bint strict=False):
         """
         Parse a currency from the given string (if found).
@@ -233,8 +283,7 @@ cdef class Currency:
         strict : bool, default False
             If not `strict` mode then an unknown currency will very likely
             be a Cryptocurrency, so for robustness will then return a new
-            `Currency` object using the given `code` with a default `precision`
-            of 8.
+            `Currency` object using the given `code` with a default `precision` of 8.
 
         Returns
         -------
@@ -242,22 +291,6 @@ cdef class Currency:
 
         """
         return Currency.from_str_c(code, strict)
-
-    @staticmethod
-    cdef bint is_fiat_c(str code):
-        cdef Currency currency = _CURRENCY_MAP.get(code)
-        if currency is None:
-            return False
-
-        return <CurrencyType>currency._mem.currency_type == CurrencyType.FIAT
-
-    @staticmethod
-    cdef bint is_crypto_c(str code):
-        cdef Currency currency = _CURRENCY_MAP.get(code)
-        if currency is None:
-            return False
-
-        return <CurrencyType>currency._mem.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def is_fiat(str code):

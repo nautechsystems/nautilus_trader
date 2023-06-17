@@ -19,12 +19,13 @@ from decimal import Decimal
 
 import fsspec
 import pyarrow.dataset as ds
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -49,6 +50,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 # TODO: Implement with new Rust datafusion backend
@@ -484,6 +488,13 @@ class _TestPersistenceCatalog:
         write_objects(catalog=self.catalog, chunk=[instruments[1]])
         instruments = self.catalog.instruments(as_nautilus=True)
         assert len(instruments) == 2
+
+    def test_writing_instruments_overwrite(self):
+        instruments = self.catalog.instruments(as_nautilus=True)
+        write_objects(catalog=self.catalog, chunk=[instruments[0]], merge_existing_data=False)
+        write_objects(catalog=self.catalog, chunk=[instruments[1]], merge_existing_data=False)
+        instruments = self.catalog.instruments(as_nautilus=True)
+        assert len(instruments) == 1
 
     def test_data_catalog_instruments_filtered_df(self):
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value

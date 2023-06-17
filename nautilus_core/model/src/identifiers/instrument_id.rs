@@ -13,21 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::str::FromStr;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, str_to_cstr};
+use pyo3::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-use crate::identifiers::symbol::Symbol;
-use crate::identifiers::venue::Venue;
+use crate::identifiers::{symbol::Symbol, venue::Venue};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
+#[derive(Clone, Hash, PartialEq, Eq, Default)]
+#[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,
     pub venue: Venue,
@@ -55,6 +58,12 @@ impl FromStr for InstrumentId {
     }
 }
 
+impl Debug for InstrumentId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}.{}\"", self.symbol, self.venue)
+    }
+}
+
 impl Display for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.symbol, self.venue)
@@ -65,6 +74,26 @@ impl InstrumentId {
     #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
         Self { symbol, venue }
+    }
+}
+
+impl Serialize for InstrumentId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+
+impl<'de> Deserialize<'de> for InstrumentId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let instrument_id_str = String::deserialize(deserializer)?;
+        InstrumentId::from_str(&instrument_id_str)
+            .map_err(|err| serde::de::Error::custom(err.to_string()))
     }
 }
 
@@ -81,6 +110,7 @@ pub extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> Instrumen
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
@@ -101,7 +131,7 @@ pub extern "C" fn instrument_id_drop(instrument_id: InstrumentId) {
 /// Returns an [`InstrumentId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
-    string_to_cstr(&instrument_id.to_string())
+    str_to_cstr(&instrument_id.to_string())
 }
 
 #[no_mangle]

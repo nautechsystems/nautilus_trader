@@ -17,8 +17,7 @@ mod implementations;
 
 use std::collections::HashMap;
 
-use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
 
@@ -27,11 +26,10 @@ use pyo3::prelude::*;
 #[derive(Debug, Clone, Copy)]
 pub enum ParquetType {
     // Custom = 0,  # First slot reserved for custom data
-    OrderBookSnapshot = 1,
-    OrderBookDelta = 2,
-    QuoteTick = 3,
-    TradeTick = 4,
-    Bar = 5,
+    OrderBookDelta = 1,
+    QuoteTick = 2,
+    TradeTick = 3,
+    Bar = 4,
 }
 
 #[repr(C)]

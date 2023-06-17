@@ -16,7 +16,7 @@
 import pytest
 
 from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -41,7 +41,7 @@ class TestSpreadAnalyzer:
     def test_handle_ticks_initializes_indicator(self):
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1)  # Only one tick
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick(AUDUSD_SIM)
 
         # Act
         analyzer.handle_quote_tick(tick)

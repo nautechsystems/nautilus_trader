@@ -171,7 +171,9 @@ cdef class Order:
         self.liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
+        self.is_quote_quantity = init.quote_quantity
         self.emulation_trigger = init.emulation_trigger
+        self.trigger_instrument_id = init.trigger_instrument_id
         self.contingency_type = init.contingency_type
         self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None
@@ -303,6 +305,12 @@ cdef class Order:
 
     cdef bint is_emulated_c(self):
         return self.emulation_trigger != TriggerType.NO_TRIGGER
+
+    cdef bint is_primary_c(self):
+        return self.exec_algorithm_id is not None and self.exec_spawn_id is None
+
+    cdef bint is_spawned_c(self):
+        return self.exec_spawn_id is not None
 
     cdef bint is_contingency_c(self):
         return self.contingency_type != ContingencyType.NO_CONTINGENCY
@@ -556,6 +564,30 @@ cdef class Order:
         return self.is_emulated_c()
 
     @property
+    def is_primary(self):
+        """
+        Return whether the order is the primary for an execution algorithm sequence.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_primary_c()
+
+    @property
+    def is_spawned(self):
+        """
+        Return whether the order was spawned as part of an execution algorithm sequence.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_spawned_c()
+
+    @property
     def is_contingency(self):
         """
         Return whether the order has a contingency (`contingency_type` is not ``NO_CONTINGENCY``).
@@ -599,8 +631,8 @@ cdef class Order:
         An order is considered in-flight when its status is any of;
 
         - ``SUBMITTED``
-        - ``PENDING_CANCEL``
         - ``PENDING_UPDATE``
+        - ``PENDING_CANCEL``
 
         Returns
         -------
@@ -622,8 +654,8 @@ cdef class Order:
 
         - ``ACCEPTED``
         - ``TRIGGERED``
-        - ``PENDING_CANCEL``
         - ``PENDING_UPDATE``
+        - ``PENDING_CANCEL``
         - ``PARTIALLY_FILLED``
 
         Returns

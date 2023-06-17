@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.currency cimport Currency
@@ -33,6 +34,9 @@ cdef class ForexSessionFilter:
 
 
 cdef class NewsEvent(Data):
+    cdef uint64_t _ts_event
+    cdef uint64_t _ts_init
+
     cdef readonly object impact
     """The expected news impact.\n\n:returns: `Enum`"""
     cdef readonly str name

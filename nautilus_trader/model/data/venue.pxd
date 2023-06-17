@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.enums_c cimport InstrumentCloseType
 from nautilus_trader.model.enums_c cimport MarketStatus
@@ -30,6 +32,10 @@ cdef class VenueStatusUpdate(StatusUpdate):
     """The venue.\n\n:returns: `Venue`"""
     cdef readonly MarketStatus status
     """The venue market status.\n\n:returns: `MarketStatus`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef VenueStatusUpdate from_dict_c(dict values)
@@ -43,6 +49,10 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     """The instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly MarketStatus status
     """The instrument market status.\n\n:returns: `MarketStatus`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef InstrumentStatusUpdate from_dict_c(dict values)
@@ -58,6 +68,10 @@ cdef class InstrumentClose(Data):
     """The instrument close price.\n\n:returns: `Price`"""
     cdef readonly InstrumentCloseType close_type
     """The instrument close type.\n\n:returns: `InstrumentCloseType`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef InstrumentClose from_dict_c(dict values)

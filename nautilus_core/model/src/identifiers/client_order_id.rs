@@ -13,26 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::{correctness, string::str_to_cstr};
+use pyo3::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[derive(Clone, Hash, PartialEq, Eq)]
+#[pyclass]
 pub struct ClientOrderId {
-    pub value: Box<Rc<String>>,
+    pub value: Box<Arc<String>>,
+}
+
+impl Debug for ClientOrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
 }
 
 impl Display for ClientOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+impl Default for ClientOrderId {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("O-123456789"))),
+        }
     }
 }
 
@@ -42,7 +57,7 @@ impl ClientOrderId {
         correctness::valid_string(s, "`ClientOrderId` value");
 
         Self {
-            value: Box::new(Rc::new(s.to_string())),
+            value: Box::new(Arc::new(s.to_string())),
         }
     }
 }
@@ -53,6 +68,7 @@ impl ClientOrderId {
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
@@ -73,7 +89,7 @@ pub extern "C" fn client_order_id_drop(client_order_id: ClientOrderId) {
 /// Returns a [`ClientOrderId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn client_order_id_to_cstr(client_order_id: &ClientOrderId) -> *const c_char {
-    string_to_cstr(&client_order_id.value)
+    str_to_cstr(&client_order_id.value)
 }
 
 #[no_mangle]

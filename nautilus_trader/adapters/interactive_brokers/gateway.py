@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
+import os
 import warnings
 from enum import IntEnum
 from time import sleep
@@ -27,7 +28,6 @@ except ImportError as e:
         f"Docker required for Gateway, install manually via `pip install docker` ({e})",
     )
     docker = None
-from ib_insync import IB
 
 
 class ContainerStatus(IntEnum):
@@ -45,7 +45,7 @@ class InteractiveBrokersGateway:
     A class to manage starting an Interactive Brokers Gateway docker container
     """
 
-    IMAGE = "ghcr.io/unusualalpha/ib-gateway"
+    IMAGE = "ghcr.io/unusualalpha/ib-gateway:stable"
     CONTAINER_NAME = "nautilus-ib-gateway"
     PORTS = {"paper": 4002, "live": 4001}
 
@@ -58,10 +58,13 @@ class InteractiveBrokersGateway:
         trading_mode: Optional[str] = "paper",
         start: bool = False,
         read_only_api: bool = True,
+        timeout: int = 90,
         logger: Optional[logging.Logger] = None,
     ):
-        assert username is not None, "`username` not set"
-        assert password is not None, "`password` not set"
+        username = username if username is not None else os.environ["TWS_USERNAME"]
+        password = password if password is not None else os.environ["TWS_PASSWORD"]
+        assert username is not None, "`username` not set nor available in env `TWS_USERNAME`"
+        assert password is not None, "`password` not set nor available in env `TWS_PASSWORD`"
         self.username = username
         self.password = password
         self.trading_mode = trading_mode
@@ -71,11 +74,10 @@ class InteractiveBrokersGateway:
         if docker is None:
             raise RuntimeError("Docker not installed")
         self._docker = docker.from_env()
-        self._client: Optional[IB] = None
         self._container = None
         self.log = logger or logging.getLogger("nautilus_trader")
         if start:
-            self.start()
+            self.start(timeout)
 
     @classmethod
     def from_container(cls, **kwargs):
@@ -103,15 +105,8 @@ class InteractiveBrokersGateway:
     def container(self):
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
-            self._container = all_containers.get(self.CONTAINER_NAME)
+            self._container = all_containers.get(f"{self.CONTAINER_NAME}-{self.port}")
         return self._container
-
-    @property
-    def client(self) -> IB:
-        if self._client is None:
-            self._client = IB()
-            self._client.connect(host=self.host, port=self.port)
-        return self._client
 
     @staticmethod
     def is_logged_in(container) -> bool:
@@ -146,14 +141,16 @@ class InteractiveBrokersGateway:
             self.log.debug(f"{status=}, removing existing container")
             self.stop()
         elif status in (ContainerStatus.READY, ContainerStatus.CONTAINER_STARTING):
-            raise ContainerExists
+            self.log.info(f"{status=}, using existing container")
+            return
 
         self.log.debug("Starting new container")
         self._container = self._docker.containers.run(
             image=self.IMAGE,
-            name=self.CONTAINER_NAME,
+            name=f"{self.CONTAINER_NAME}-{self.port}",
+            restart_policy={"Name": "always"},
             detach=True,
-            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
+            ports={str(self.port): self.PORTS[self.trading_mode], str(self.port + 100): "5900"},
             platform="amd64",
             environment={
                 "TWS_USERID": self.username,
@@ -162,7 +159,7 @@ class InteractiveBrokersGateway:
                 "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
             },
         )
-        self.log.info("Container starting, waiting for ready")
+        self.log.info(f"Container `{self.CONTAINER_NAME}-{self.port}` starting, waiting for ready")
 
         if wait is not None:
             for _ in range(wait):
@@ -174,7 +171,9 @@ class InteractiveBrokersGateway:
             else:
                 raise GatewayLoginFailure
 
-        self.log.info("Gateway ready")
+        self.log.info(
+            f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port+100}",
+        )
 
     def safe_start(self, wait: int = 90):
         try:

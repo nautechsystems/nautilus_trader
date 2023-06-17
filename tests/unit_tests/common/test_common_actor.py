@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 from datetime import timedelta
 
 import pytest
@@ -32,9 +31,9 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
@@ -47,8 +46,8 @@ from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -374,7 +373,7 @@ class TestActor:
         )
 
         # Act
-        actor.on_order_book_delta(TestDataStubs.order_book_snapshot())
+        actor.on_order_book_deltas(TestDataStubs.order_book_snapshot())
 
         # Assert
         assert True  # Exception not raised
@@ -453,7 +452,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestDataStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick()
 
         # Act
         actor.on_quote_tick(tick)
@@ -471,7 +470,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestDataStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick()
 
         # Act
         actor.on_trade_tick(tick)
@@ -783,7 +782,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -802,7 +801,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -1099,7 +1098,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         actor.handle_quote_tick(tick)
@@ -1160,7 +1159,7 @@ class TestActor:
 
         actor.start()
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         actor.handle_quote_tick(tick)
@@ -1179,7 +1178,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         actor.handle_trade_tick(tick)
@@ -1200,7 +1199,7 @@ class TestActor:
 
         actor.start()
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         actor.handle_trade_tick(tick)
@@ -1728,7 +1727,6 @@ class TestActor:
         assert msg.ts_init == 0
         assert msg.value == value
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_publish_data_persist(self):
         # Arrange
         actor = MockActor()

@@ -34,7 +34,7 @@ from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -42,7 +42,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import Venue
@@ -53,7 +53,8 @@ from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -266,6 +267,10 @@ class TestExecAlgorithm:
         assert spawned_order.time_in_force == TimeInForce.DAY
         assert not spawned_order.is_reduce_only
         assert spawned_order.tags == "ENTRY"
+        assert primary_order.is_primary
+        assert not primary_order.is_spawned
+        assert not spawned_order.is_primary
+        assert spawned_order.is_spawned
 
     def test_exec_algorithm_spawn_market_to_limit_order(self) -> None:
         """Test that the primary order was reduced and the spawned order has the expected properties."""
@@ -480,24 +485,20 @@ class TestExecAlgorithm:
         )
         exec_algorithm.start()
 
-        tick1 = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5005.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5005.0),
-            bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ts_event=0,
-            ts_init=0,
+        tick1: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5005.0,
+            ask=5005.0,
+            bid_size=10.000,
+            ask_size=10.000,
         )
 
-        tick2 = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(5000.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(5000.0),
-            bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
-            ts_event=0,
-            ts_init=0,
+        tick2: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5000.0,
+            ask=5000.0,
+            bid_size=10.000,
+            ask_size=10.000,
         )
 
         self.data_engine.process(tick1)

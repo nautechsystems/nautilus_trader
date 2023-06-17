@@ -32,7 +32,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -825,7 +825,7 @@ class TestRiskEngineWithCashAccount:
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
         # Initialize market
-        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -914,7 +914,7 @@ class TestRiskEngineWithCashAccount:
 
     def test_submit_order_when_market_order_and_over_free_balance_then_denies(self):
         # Arrange - Initialize market
-        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -953,7 +953,7 @@ class TestRiskEngineWithCashAccount:
 
     def test_submit_order_list_buys_when_over_free_balance_then_denies(self):
         # Arrange - Initialize market
-        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -1003,7 +1003,7 @@ class TestRiskEngineWithCashAccount:
 
     def test_submit_order_list_sells_when_over_free_balance_then_denies(self):
         # Arrange - Initialize market
-        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -1056,7 +1056,7 @@ class TestRiskEngineWithCashAccount:
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
         # Initialize market
-        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -1122,7 +1122,7 @@ class TestRiskEngineWithCashAccount:
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
         # Initialize market
-        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()

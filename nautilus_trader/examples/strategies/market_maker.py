@@ -14,18 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Optional
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
@@ -73,20 +71,20 @@ class MarketMaker(Strategy):
             return
 
         # Create orderbook
-        self._book = OrderBook.create(instrument=self.instrument, book_type=BookType.L2_MBP)
+        self._book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
 
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)
 
-    def on_order_book_delta(
-        self,
-        delta: Union[OrderBookDelta, OrderBookDeltas, OrderBookSnapshot],
-    ) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         if not self._book:
             self.log.error("No book being maintained.")
             return
 
-        self._book.apply(delta)
+        self._book.apply_deltas(deltas)
         bid_price = self._book.best_bid_price()
         ask_price = self._book.best_ask_price()
         if bid_price and ask_price:

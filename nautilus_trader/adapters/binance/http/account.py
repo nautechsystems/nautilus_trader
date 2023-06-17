@@ -88,7 +88,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             The symbol of the order
         timestamp : str
             The millisecond timestamp of the request
-        orderId : str, optional
+        orderId : int, optional
             the order identifier
         origClientOrderId : str, optional
             the client specified order identifier
@@ -102,7 +102,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         timestamp: str
-        orderId: Optional[str] = None
+        orderId: Optional[int] = None
         origClientOrderId: Optional[str] = None
         recvWindow: Optional[str] = None
 
@@ -270,12 +270,12 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
             The symbol of the orders
         timestamp : str
             The millisecond timestamp of the request
-        orderId : str, optional
+        orderId : int, optional
             The order ID for the request.
             If included, request will return orders from this orderId INCLUSIVE
-        startTime : str, optional
+        startTime : int, optional
             The start time (UNIX milliseconds) filter for the request.
-        endTime : str, optional
+        endTime : int, optional
             The end time (UNIX milliseconds) filter for the request.
         limit : int, optional
             The limit for the response.
@@ -286,9 +286,9 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         timestamp: str
-        orderId: Optional[str] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
+        orderId: Optional[int] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
         limit: Optional[int] = None
         recvWindow: Optional[str] = None
 
@@ -400,14 +400,14 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
             The symbol of the orders
         timestamp : str
             The millisecond timestamp of the request
-        orderId : str, optional
+        orderId : int, optional
             The order ID for the request.
             If included, request will return orders from this orderId INCLUSIVE
-        startTime : str, optional
+        startTime : int, optional
             The start time (UNIX milliseconds) filter for the request.
-        endTime : str, optional
+        endTime : int, optional
             The end time (UNIX milliseconds) filter for the request.
-        fromId : str, optional
+        fromId : int, optional
             TradeId to fetch from. Default gets most recent trades.
         limit : int, optional
             The limit for the response.
@@ -418,10 +418,10 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         timestamp: str
-        orderId: Optional[str] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
-        fromId: Optional[str] = None
+        orderId: Optional[int] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
+        fromId: Optional[int] = None
         limit: Optional[int] = None
         recvWindow: Optional[str] = None
 
@@ -460,10 +460,10 @@ class BinanceAccountHttpAPI:
         if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
             user_trades_url = self.base_endpoint + "myTrades"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
             user_trades_url = self.base_endpoint + "userTrades"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
             user_trades_url = self.base_endpoint + "userTrades"
         else:
@@ -484,7 +484,7 @@ class BinanceAccountHttpAPI:
     async def query_order(
         self,
         symbol: str,
-        order_id: Optional[str] = None,
+        order_id: Optional[int] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
@@ -515,7 +515,7 @@ class BinanceAccountHttpAPI:
     async def cancel_order(
         self,
         symbol: str,
-        order_id: Optional[str] = None,
+        order_id: Optional[int] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
@@ -591,9 +591,9 @@ class BinanceAccountHttpAPI:
     async def query_all_orders(
         self,
         symbol: str,
-        order_id: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        order_id: Optional[int] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceOrder]:
@@ -627,10 +627,10 @@ class BinanceAccountHttpAPI:
     async def query_user_trades(
         self,
         symbol: str,
-        order_id: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        from_id: Optional[str] = None,
+        order_id: Optional[int] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        from_id: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceUserTrade]:

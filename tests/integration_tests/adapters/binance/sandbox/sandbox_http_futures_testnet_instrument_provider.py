@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import os
 
 import pytest
@@ -30,19 +29,16 @@ from nautilus_trader.model.identifiers import Symbol
 
 @pytest.mark.asyncio()
 async def test_binance_futures_testnet_instrument_provider():
-    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=BinanceAccountType.USDT_FUTURE,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
     )
-    await client.connect()
 
     provider = BinanceFuturesInstrumentProvider(
         client=client,
@@ -56,5 +52,3 @@ async def test_binance_futures_testnet_instrument_provider():
     await provider.load_all_async()
 
     print(provider.count)
-
-    await client.disconnect()

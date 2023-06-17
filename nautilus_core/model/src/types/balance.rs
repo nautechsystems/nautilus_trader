@@ -15,8 +15,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use crate::types::currency::Currency;
-use crate::types::money::Money;
+use crate::types::{currency::Currency, money::Money};
 
 pub struct AccountBalance {
     pub currency: Currency,

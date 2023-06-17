@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import Venue
 
 

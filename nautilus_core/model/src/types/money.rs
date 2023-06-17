@@ -13,21 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::{
+    cmp::Ordering,
+    fmt::{Display, Formatter},
+    hash::{Hash, Hasher},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    str::FromStr,
+};
 
 use nautilus_core::correctness;
+use pyo3::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::types::currency::Currency;
-use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use crate::types::{
+    currency::Currency,
+    fixed::{f64_to_fixed_i64, fixed_i64_to_f64},
+};
 
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Debug)]
+#[pyclass]
 pub struct Money {
     raw: i64,
     pub currency: Currency,
@@ -198,6 +206,41 @@ impl Display for Money {
             self.as_f64(),
             self.currency.code
         )
+    }
+}
+
+impl Serialize for Money {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+
+impl<'de> Deserialize<'de> for Money {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let money_str: &str = Deserialize::deserialize(deserializer)?;
+
+        let parts: Vec<&str> = money_str.splitn(2, ' ').collect();
+        if parts.len() != 2 {
+            return Err(serde::de::Error::custom("Invalid Money format"));
+        }
+
+        let amount_str = parts[0];
+        let currency_str = parts[1];
+
+        let amount = amount_str
+            .parse::<f64>()
+            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))?;
+
+        let currency = Currency::from_str(currency_str)
+            .map_err(|_| serde::de::Error::custom("Invalid currency"))?;
+
+        Ok(Money::new(amount, currency))
     }
 }
 

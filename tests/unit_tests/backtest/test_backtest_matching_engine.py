@@ -27,7 +27,7 @@ from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -65,7 +65,7 @@ class TestOrderMatchingEngine:
 
         self.matching_engine = OrderMatchingEngine(
             instrument=self.instrument,
-            product_id=0,
+            raw_id=0,
             fill_model=FillModel(),
             book_type=BookType.L1_TBBO,
             oms_type=OmsType.NETTING,
@@ -80,7 +80,7 @@ class TestOrderMatchingEngine:
         # Arrange, Act, Assert
         assert (
             repr(self.matching_engine)
-            == "OrderMatchingEngine(venue=BINANCE, instrument_id=ETHUSDT-PERP.BINANCE, product_id=0)"
+            == "OrderMatchingEngine(venue=BINANCE, instrument_id=ETHUSDT-PERP.BINANCE, raw_id=0)"
         )
 
     def test_set_fill_model(self) -> None:

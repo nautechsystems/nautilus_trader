@@ -92,8 +92,14 @@ cdef class LimitIfTouchedOrder(Order):
         If the ``LIMIT`` order will only provide liquidity (once triggered).
     reduce_only : bool, default False
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool, default False
+        If the order quantity is denominated in the quote currency.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).
+    emulation_trigger : EmulationTrigger, default ``NO_TRIGGER``
+        The emulation trigger for the order.
+    trigger_instrument_id : InstrumentId, optional
+        The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
@@ -149,8 +155,10 @@ cdef class LimitIfTouchedOrder(Order):
         uint64_t expire_time_ns = 0,
         bint post_only = False,
         bint reduce_only = False,
+        bint quote_quantity = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
@@ -197,8 +205,10 @@ cdef class LimitIfTouchedOrder(Order):
             time_in_force=time_in_force,
             post_only=post_only,
             reduce_only=reduce_only,
+            quote_quantity=quote_quantity,
             options=options,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
@@ -313,8 +323,10 @@ cdef class LimitIfTouchedOrder(Order):
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
+            "is_quote_quantity": self.is_quote_quantity,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "emulation_trigger": trigger_type_to_str(self.emulation_trigger),
+            "trigger_instrument_id": self.trigger_instrument_id.to_str() if self.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
@@ -368,8 +380,10 @@ cdef class LimitIfTouchedOrder(Order):
             ts_init=init.ts_init,
             post_only=init.post_only,
             reduce_only=init.reduce_only,
+            quote_quantity=init.quote_quantity,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
             emulation_trigger=init.emulation_trigger,
+            trigger_instrument_id=init.trigger_instrument_id,
             contingency_type=init.contingency_type,
             order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,

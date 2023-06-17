@@ -27,7 +27,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
@@ -40,7 +39,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
@@ -49,6 +47,7 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
@@ -165,7 +164,7 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
+            trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -173,7 +172,7 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            trigger_price=ETHUSDT_PERP_BINANCE.make_price(5010.00),
+            trigger_price=ETHUSDT_PERP_BINANCE.make_price(5010.0),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -181,7 +180,7 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            trigger_price=ETHUSDT_PERP_BINANCE.make_price(5020.00),
+            trigger_price=ETHUSDT_PERP_BINANCE.make_price(5020.0),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -208,9 +207,9 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
@@ -234,11 +233,11 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
@@ -262,8 +261,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -285,8 +284,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -325,8 +324,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -372,8 +371,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -400,7 +399,7 @@ class TestOrderEmulatorWithOrderLists:
 
         self.strategy.modify_order(
             bracket.orders[2],
-            price=ETHUSDT_PERP_BINANCE.make_price(5050),
+            price=ETHUSDT_PERP_BINANCE.make_price(5050.0),
         )
 
         # Assert
@@ -418,11 +417,11 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
@@ -441,14 +440,10 @@ class TestOrderEmulatorWithOrderLists:
             ),
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("4990.0"),
-            ask=Price.from_str("4990.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=4990.0,
+            ask=4990.0,
         )
 
         # Act
@@ -478,8 +473,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -525,9 +520,9 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
@@ -570,11 +565,11 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
             time_in_force=TimeInForce.GTD,
             expire_time=pd.Timestamp("2022-02-02", tz="UTC"),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
@@ -617,9 +612,9 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
@@ -664,8 +659,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -690,14 +685,10 @@ class TestOrderEmulatorWithOrderLists:
             ),
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5100.0"),
-            ask=Price.from_str("5100.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5100.0,
+            ask=5100.0,
         )
 
         # Act
@@ -732,11 +723,11 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
@@ -762,14 +753,10 @@ class TestOrderEmulatorWithOrderLists:
             ),
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5100.0"),
-            ask=Price.from_str("5100.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5100.0,
+            ask=5100.0,
         )
 
         # Act
@@ -804,8 +791,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -830,14 +817,10 @@ class TestOrderEmulatorWithOrderLists:
             ),
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5100.0"),
-            ask=Price.from_str("5100.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5100.0,
+            ask=5100.0,
         )
 
         # Act
@@ -879,8 +862,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OCO,
         )
@@ -904,14 +887,10 @@ class TestOrderEmulatorWithOrderLists:
             ),
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("4900.0"),
-            ask=Price.from_str("4900.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=4900.0,
+            ask=4900.0,
         )
 
         # Act
@@ -954,8 +933,8 @@ class TestOrderEmulatorWithOrderLists:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
-            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
-            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -980,14 +959,10 @@ class TestOrderEmulatorWithOrderLists:
             ),
         )
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("4900.0"),
-            ask=Price.from_str("4900.0"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=4900.0,
+            ask=4900.0,
         )
 
         # Act
@@ -1027,3 +1002,49 @@ class TestOrderEmulatorWithOrderLists:
         assert not matching_core.order_exists(entry_order.client_order_id)
         assert not matching_core.order_exists(sl_order.client_order_id)
         assert matching_core.order_exists(tp_order.client_order_id)
+
+    def test_released_order_with_quote_quantity_sets_contingent_orders_to_base_quantity(self):
+        # Arrange
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5001.0),
+            entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.0),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            quote_quantity=True,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.strategy.submit_order_list(order_list=bracket)
+
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=5000.0,
+            ask=5000.0,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        entry_order = self.cache.order(bracket.orders[0].client_order_id)
+        sl_order = self.cache.order(bracket.orders[1].client_order_id)
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        assert self.exec_engine.command_count == 1
+        assert len(self.emulator.get_submit_order_commands()) == 0
+        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert self.cache.orders_emulated_count() == 2
+        assert not entry_order.is_quote_quantity
+        assert not sl_order.is_quote_quantity
+        assert not tp_order.is_quote_quantity
+        assert entry_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.002)
+        assert sl_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.002)
+        assert tp_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.002)
+        assert entry_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
+        assert sl_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
+        assert tp_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)

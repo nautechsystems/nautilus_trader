@@ -76,6 +76,8 @@ cdef class MarketToLimitOrder(Order):
         The UNIX timestamp (nanoseconds) when the order will expire.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool, default False
+        If the order quantity is denominated in the quote currency.
     display_qty : Quantity, optional
         The quantity of the limit order to display on the public book (iceberg).
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
@@ -123,6 +125,7 @@ cdef class MarketToLimitOrder(Order):
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
         bint reduce_only = False,
+        bint quote_quantity = False,
         Quantity display_qty = None,
         ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
@@ -162,8 +165,10 @@ cdef class MarketToLimitOrder(Order):
             time_in_force=time_in_force,
             post_only=False,
             reduce_only=reduce_only,
+            quote_quantity=quote_quantity,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
@@ -256,7 +261,8 @@ cdef class MarketToLimitOrder(Order):
             "price": str(self.price),
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "expire_time_ns": self.expire_time_ns,
-            "reduce_only": self.is_reduce_only,
+            "is_reduce_only": self.is_reduce_only,
+            "is_quote_quantity": self.is_quote_quantity,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px),
@@ -309,6 +315,7 @@ cdef class MarketToLimitOrder(Order):
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
             reduce_only=init.reduce_only,
+            quote_quantity=init.quote_quantity,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
             init_id=init.id,
             ts_init=init.ts_init,

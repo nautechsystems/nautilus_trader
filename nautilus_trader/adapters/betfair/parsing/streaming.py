@@ -26,6 +26,8 @@ from betfair_parser.spec.streaming.mcm import RunnerStatus
 
 from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -40,15 +42,13 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.book import OrderBookSnapshot
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -60,12 +60,13 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 PARSE_TYPES = Union[
     InstrumentStatusUpdate,
     InstrumentClose,
-    OrderBookSnapshot,
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
@@ -75,7 +76,7 @@ PARSE_TYPES = Union[
 ]
 
 
-def market_change_to_updates(  # noqa: C901
+def market_change_to_updates(  # noqa: too complex
     mc: MarketChange,
     ts_event: int,
     ts_init: int,
@@ -83,21 +84,21 @@ def market_change_to_updates(  # noqa: C901
     updates: list[PARSE_TYPES] = []
 
     # Handle instrument status and close updates first
-    if mc.marketDefinition is not None:
+    if mc.market_definition is not None:
         updates.extend(
             market_definition_to_instrument_status_updates(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
             ),
         )
         updates.extend(
-            market_definition_to_instrument_closes(mc.marketDefinition, mc.id, ts_event, ts_init),
+            market_definition_to_instrument_closes(mc.market_definition, mc.id, ts_event, ts_init),
         )
         updates.extend(
             market_definition_to_betfair_starting_prices(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
@@ -105,8 +106,8 @@ def market_change_to_updates(  # noqa: C901
         )
 
     # Handle market data updates
-    book_updates: list[Union[OrderBookSnapshot, OrderBookDeltas]] = []
-    bsp_book_updates: list[Union[BSPOrderBookDeltas]] = []
+    book_updates: list[OrderBookDeltas] = []
+    bsp_book_updates: list[BSPOrderBookDeltas] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
@@ -171,7 +172,7 @@ def market_definition_to_instrument_status_updates(
             selection_id=str(runner.runner_id),
             selection_handicap=parse_handicap(runner.handicap),
         )
-        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
+        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
         if runner.status == RunnerStatus.REMOVED:
             status = MarketStatus.CLOSED
         else:
@@ -179,7 +180,7 @@ def market_definition_to_instrument_status_updates(
                 status = MARKET_STATUS_MAPPING[key]
             except KeyError:
                 raise ValueError(
-                    f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
+                    f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
@@ -297,7 +298,7 @@ def runner_change_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     try:
         market_data_kind = runner_change_to_market_data_kind(rc)
     except ValueError:
@@ -322,13 +323,15 @@ def runner_change_all_depth_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     # ATL = Available To Lay = Back orders
-    asks = (
-        [(betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price]
-        if rc.atl
-        else []
-    )
+    if rc.atl:
+        asks: list = [
+            (betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price
+        ]
+    else:
+        asks = []
+
     # Asks are available to back (atb)
     if rc.atb:
         bids: list = [
@@ -337,13 +340,9 @@ def runner_change_all_depth_to_order_book_snapshot(
     else:
         bids = []
 
-    return OrderBookSnapshot(
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    deltas = bids + asks
+    deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_best_depth_to_order_book_snapshot(
@@ -351,7 +350,7 @@ def runner_change_best_depth_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     # Bids are best available to lay (batl)
     if rc.batl:
         asks: list = [
@@ -367,13 +366,9 @@ def runner_change_best_depth_to_order_book_snapshot(
         ]
     else:
         bids = []
-    return OrderBookSnapshot(
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    deltas = bids + asks
+    deltas.insert(0, OrderBookDelta.clear(instrument_id, ts_event, ts_init))
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_display_depth_to_order_book_snapshot(
@@ -381,7 +376,7 @@ def runner_change_display_depth_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
+) -> Optional[OrderBookDeltas]:
     # Bids are best display available to lay (bdatl)
     asks = (
         [(betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price]
@@ -395,12 +390,9 @@ def runner_change_display_depth_to_order_book_snapshot(
         ]
     else:
         bids = []
-    return OrderBookSnapshot(
+    return OrderBookDeltas(
         instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
+        deltas=bids + asks,
     )
 
 
@@ -444,7 +436,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.SELL),
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price(back.price, BETFAIR_PRICE_PRECISION),
+                        Quantity(back.volume, BETFAIR_QUANTITY_PRECISION),
+                        ts_init,
+                    ),
                     ts_event,
                     ts_init,
                 )
@@ -459,7 +456,12 @@ def runner_change_all_depth_to_order_book_deltas(
                 OrderBookDelta(
                     instrument_id,
                     BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
+                    BookOrder(
+                        OrderSide.BUY,
+                        Price(lay.price, BETFAIR_PRICE_PRECISION),
+                        Quantity(lay.volume, BETFAIR_QUANTITY_PRECISION),
+                        ts_init,
+                    ),
                     ts_event,
                     ts_init,
                 )
@@ -468,12 +470,7 @@ def runner_change_all_depth_to_order_book_deltas(
         )
     if not deltas:
         return None
-    return OrderBookDeltas(
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_best_depth_to_deltas(
@@ -515,12 +512,7 @@ def runner_change_best_depth_to_deltas(
         )
     if not deltas:
         return None
-    return OrderBookDeltas(
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def runner_change_display_depth_to_deltas(
@@ -690,8 +682,6 @@ def runner_change_to_bsp_order_book_deltas(
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
-    ts_event = one({deltas.ts_event for deltas in all_deltas})
-    ts_init = one({deltas.ts_init for deltas in all_deltas})
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -699,8 +689,6 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
         cls(
             instrument_id=instrument_id,
             deltas=deltas,
-            ts_event=ts_event,
-            ts_init=ts_init,
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]

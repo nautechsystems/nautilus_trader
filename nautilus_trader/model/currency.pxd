@@ -27,6 +27,9 @@ cdef class Currency:
     cdef void register_c(Currency currency, bint overwrite=*)
 
     @staticmethod
+    cdef Currency from_internal_map_c(str code)
+
+    @staticmethod
     cdef Currency from_str_c(str code, bint strict=*)
 
     @staticmethod

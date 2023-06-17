@@ -30,8 +30,8 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OmsType
@@ -58,7 +58,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestSimulatedExchange:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
@@ -160,7 +160,9 @@ class TestSimulatedExchange:
         self.exec_engine.start()
         self.strategy.start()
 
-    def test_trailing_stop_market_order_for_unsupported_offset_type_raises_runtime_error(self):
+    def test_trailing_stop_market_order_for_unsupported_offset_type_raises_runtime_error(
+        self,
+    ) -> None:
         # Arrange: Prepare market
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
@@ -176,7 +178,9 @@ class TestSimulatedExchange:
         with pytest.raises(RuntimeError):
             self.exchange.process(0)
 
-    def test_trailing_stop_market_order_bid_ask_when_no_quote_ticks_raises_runtime_error(self):
+    def test_trailing_stop_market_order_bid_ask_when_no_quote_ticks_raises_runtime_error(
+        self,
+    ) -> None:
         # Arrange: Prepare market
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
@@ -192,7 +196,7 @@ class TestSimulatedExchange:
         with pytest.raises(RuntimeError):
             self.exchange.process(0)
 
-    def test_trailing_stop_market_order_last_when_no_quote_ticks_raises_runtime_error(self):
+    def test_trailing_stop_market_order_last_when_no_quote_ticks_raises_runtime_error(self) -> None:
         # Arrange: Prepare market
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
@@ -208,7 +212,9 @@ class TestSimulatedExchange:
         with pytest.raises(RuntimeError):
             self.exchange.process(0)
 
-    def test_trailing_stop_market_order_last_or_bid_ask_when_no_market_raises_runtime_error(self):
+    def test_trailing_stop_market_order_last_or_bid_ask_when_no_market_raises_runtime_error(
+        self,
+    ) -> None:
         # Arrange: Prepare market
         trailing_stop = self.strategy.order_factory.trailing_stop_market(
             instrument_id=USDJPY_SIM.id,
@@ -251,21 +257,17 @@ class TestSimulatedExchange:
     )
     def test_trailing_stop_market_order_bid_ask_with_no_trigger_updates_order(
         self,
-        order_side,
-        trailing_offset_type,
-        trailing_offset,
-        trigger_type,
-        expected_trigger,
-    ):
+        order_side: OrderSide,
+        trailing_offset_type: TrailingOffsetType,
+        trailing_offset: Decimal,
+        trigger_type: TriggerType,
+        expected_trigger: Price,
+    ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        quote = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -327,21 +329,17 @@ class TestSimulatedExchange:
     )
     def test_trailing_stop_market_order_last_with_no_trigger_updates_order(
         self,
-        order_side,
-        trailing_offset_type,
-        trailing_offset,
-        trigger_type,
-        expected_trigger,
-    ):
+        order_side: OrderSide,
+        trailing_offset_type: TrailingOffsetType,
+        trailing_offset: Decimal,
+        trigger_type: TriggerType,
+        expected_trigger: Price,
+    ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        quote = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -374,16 +372,14 @@ class TestSimulatedExchange:
         # Assert
         assert trailing_stop.trigger_price == expected_trigger
 
-    def test_trailing_stop_market_order_buy_bid_ask_price_when_offset_activated_updates_order(self):
+    def test_trailing_stop_market_order_buy_bid_ask_price_when_offset_activated_updates_order(
+        self,
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -401,14 +397,10 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.000"),
-            ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.0,
+            ask=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -429,16 +421,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_market_order_sell_bid_ask_price_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -456,26 +444,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("14.000"),
-            ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=14.0,
+            ask=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.500"),
-            ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.5,
+            ask=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -528,22 +508,18 @@ class TestSimulatedExchange:
     )
     def test_trailing_stop_limit_order_bid_ask_with_no_trigger_updates_order(
         self,
-        order_side,
-        trailing_offset_type,
-        trailing_offset,
-        trigger_type,
-        expected_trigger,
-        expected_price,
-    ):
+        order_side: OrderSide,
+        trailing_offset_type: TrailingOffsetType,
+        trailing_offset: Decimal,
+        trigger_type: TriggerType,
+        expected_trigger: Price,
+        expected_price: Price,
+    ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        quote = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -644,22 +620,18 @@ class TestSimulatedExchange:
     )
     def test_trailing_stop_limit_order_last_with_no_trigger_updates_order(
         self,
-        order_side,
-        trailing_offset_type,
-        trailing_offset,
-        trigger_type,
-        expected_trigger,
-        expected_price,
-    ):
+        order_side: OrderSide,
+        trailing_offset_type: TrailingOffsetType,
+        trailing_offset: Decimal,
+        trigger_type: TriggerType,
+        expected_trigger: Price,
+        expected_price: Price,
+    ) -> None:
         # Arrange: Prepare market
-        quote = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        quote = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -694,16 +666,14 @@ class TestSimulatedExchange:
         assert trailing_stop.trigger_price == expected_trigger
         assert trailing_stop.price == expected_price
 
-    def test_trailing_stop_limit_order_buy_bid_ask_price_when_offset_activated_updates_order(self):
+    def test_trailing_stop_limit_order_buy_bid_ask_price_when_offset_activated_updates_order(
+        self,
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -723,26 +693,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.000"),
-            ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.0,
+            ask=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.500"),
-            ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.5,
+            ask=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -752,16 +714,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_sell_bid_ask_price_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -781,26 +739,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("14.000"),
-            ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=14.0,
+            ask=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.500"),
-            ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.5,
+            ask=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -810,16 +760,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_buy_bid_ask_basis_points_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -839,26 +785,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.000"),
-            ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.0,
+            ask=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.500"),
-            ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.5,
+            ask=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -868,16 +806,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_sell_bid_ask_basis_points_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -897,26 +831,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("14.000"),
-            ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=14.0,
+            ask=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.500"),
-            ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.5,
+            ask=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -926,16 +852,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_buy_last_ticks_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -967,26 +889,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.000"),
-            ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.0,
+            ask=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.500"),
-            ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.5,
+            ask=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -996,16 +910,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_sell_last_ticks_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1037,26 +947,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("14.000"),
-            ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=14.0,
+            ask=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.500"),
-            ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.5,
+            ask=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -1066,16 +968,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_buy_bid_ask_ticks_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1095,26 +993,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.000"),
-            ask=Price.from_str("13.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.0,
+            ask=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.500"),
-            ask=Price.from_str("13.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=12.5,
+            ask=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -1124,16 +1014,12 @@ class TestSimulatedExchange:
 
     def test_trailing_stop_limit_order_sell_bid_ask_ticks_when_offset_activated_updates_order(
         self,
-    ):
+    ) -> None:
         # Arrange: Prepare market
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.000"),
-            ask=Price.from_str("14.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.0,
+            ask=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1153,26 +1039,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
 
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("14.000"),
-            ask=Price.from_str("15.000"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=14.0,
+            ask=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
-        tick = QuoteTick(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("13.500"),
-            ask=Price.from_str("14.500"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid=13.5,
+            ask=14.5,
         )
         self.exchange.process_quote_tick(tick)
 

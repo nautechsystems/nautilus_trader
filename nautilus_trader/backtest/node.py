@@ -28,8 +28,8 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str

@@ -29,7 +29,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -536,13 +536,13 @@ class TestCashAccount:
             )
 
     @pytest.mark.parametrize(
-        ("inverse_as_quote", "expected"),
+        ("use_quote_for_inverse", "expected"),
         [
             [False, Money(-0.00218331, BTC)],  # Negative commission = credit
             [True, Money(-25.00, USD)],  # Negative commission = credit
         ],
     )
-    def test_calculate_commission_for_inverse_maker_crypto(self, inverse_as_quote, expected):
+    def test_calculate_commission_for_inverse_maker_crypto(self, use_quote_for_inverse, expected):
         # Arrange
         account = TestExecStubs.cash_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
@@ -553,7 +553,7 @@ class TestCashAccount:
             last_qty=Quantity.from_int(100_000),
             last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.MAKER,
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         )
 
         # Assert
