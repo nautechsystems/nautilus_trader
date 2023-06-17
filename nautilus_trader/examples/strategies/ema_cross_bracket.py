@@ -151,8 +151,7 @@ class EMACrossBracket(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a
-        quote tick.
+        Actions to be performed when the strategy is running and receives a quote tick.
 
         Parameters
         ----------
@@ -258,8 +257,7 @@ class EMACrossBracket(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives
-        generic data.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
@@ -270,8 +268,7 @@ class EMACrossBracket(Strategy):
 
     def on_event(self, event: Event) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        event.
+        Actions to be performed when the strategy is running and receives an event.
 
         Parameters
         ----------

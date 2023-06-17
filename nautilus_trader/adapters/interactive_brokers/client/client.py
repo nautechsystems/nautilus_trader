@@ -203,8 +203,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------

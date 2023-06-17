@@ -78,8 +78,7 @@ class BinanceSpotEventType(Enum):
 
 class BinanceSpotEnumParser(BinanceEnumParser):
     """
-    Provides parsing methods for enums used by the 'Binance Spot/Margin'
-    exchange.
+    Provides parsing methods for enums used by the 'Binance Spot/Margin' exchange.
     """
 
     def __init__(self) -> None:

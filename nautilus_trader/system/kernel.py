@@ -798,9 +798,9 @@ class NautilusKernel:
         """
         Dispose of the kernel releasing system resources.
 
-        Calling this method multiple times has the same effect as calling it
-        once (it is idempotent). Once called, it cannot be reversed, and no
-        other methods should be called on this instance.
+        Calling this method multiple times has the same effect as calling it once (it is
+        idempotent). Once called, it cannot be reversed, and no other methods should be
+        called on this instance.
 
         """
         # Stop all engines

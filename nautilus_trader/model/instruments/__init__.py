@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Defines tradable asset/contract instruments with specific properties dependent
-on the asset class and asset type.
+Defines tradable asset/contract instruments with specific properties dependent on the
+asset class and asset type.
 """
 
 from nautilus_trader.model.instruments.base import Instrument

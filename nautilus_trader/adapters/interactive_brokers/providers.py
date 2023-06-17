@@ -240,9 +240,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         filters: Optional[dict] = None,
     ):
         """
-        Search and load the instrument for the given IBContract. It is important
-        that the Contract shall have enough parameters so only one match is
-        returned.
+        Search and load the instrument for the given IBContract. It is important that
+        the Contract shall have enough parameters so only one match is returned.
 
         Parameters
         ----------

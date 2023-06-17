@@ -72,8 +72,7 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
 
     class DeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Parameters of openOrders SPOT/MARGIN DELETE request. Includes OCO
-        orders.
+        Parameters of openOrders SPOT/MARGIN DELETE request. Includes OCO orders.
 
         Parameters
         ----------
@@ -705,8 +704,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         recv_window: Optional[str] = None,
     ) -> list[BinanceSpotOrderOco]:
         """
-        Check all spot OCO orders' information, matching provided filter
-        parameters.
+        Check all spot OCO orders' information, matching provided filter parameters.
         """
         if from_id is not None and (start_time or end_time) is not None:
             raise RuntimeError(

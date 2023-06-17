@@ -104,8 +104,7 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
 
     def handle_account_update(self, exec_client: BinanceCommonExecutionClient):
         """
-        Handle BinanceSpotAccountUpdateMsg as payload of
-        outboundAccountPosition.
+        Handle BinanceSpotAccountUpdateMsg as payload of outboundAccountPosition.
         """
         exec_client.generate_account_state(
             balances=self.parse_to_account_balances(),
@@ -126,8 +125,7 @@ class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
 
 class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     """
-    WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update
-    events.
+    WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update events.
     """
 
     e: BinanceSpotEventType

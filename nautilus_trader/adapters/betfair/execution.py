@@ -696,8 +696,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         """
-        Ensure we have a client_order_id, instrument and order for this venue
-        order update.
+        Ensure we have a client_order_id, instrument and order for this venue order
+        update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = await self.wait_for_order(
@@ -874,8 +874,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         timeout_seconds=10.0,
     ) -> Optional[ClientOrderId]:
         """
-        We may get an order update from the socket before our submit_order
-        response has come back (with our betId).
+        We may get an order update from the socket before our submit_order response has
+        come back (with our betId).
 
         As a precaution, wait up to `timeout_seconds` for the betId to be added
         to `self.order_id_to_client_order_id`.
