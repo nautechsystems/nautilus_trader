@@ -18,15 +18,22 @@ from functools import lru_cache
 from typing import Optional, Union
 
 import pandas as pd
+from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
+from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.orders import PlaceInstruction
 from betfair_parser.spec.betting.orders import ReplaceInstruction
+from betfair_parser.spec.betting.orders import _CancelOrdersParams
 from betfair_parser.spec.betting.orders import _PlaceOrdersParams
 from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
+from betfair_parser.spec.betting.type_definitions import CancelInstruction
+from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.common import CustomerOrderRef
+from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_ORDER_TYPE
 from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import BETFAIR_FLOAT_TO_PRICE
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
@@ -48,7 +55,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import order_type_from_str
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -193,15 +199,18 @@ def order_update_to_replace_order_params(
     )
 
 
-def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
+def order_cancel_to_cancel_order_params(
+    command: CancelOrder,
+    instrument: BettingInstrument,
+) -> _CancelOrdersParams:
     """
     Convert a CancelOrder command into the data required by BetfairClient.
     """
-    return {
-        "market_id": instrument.market_id,
-        "customer_ref": command.id.value.replace("-", ""),
-        "instructions": [{"betId": command.venue_order_id.value}],
-    }
+    return _CancelOrdersParams(
+        market_id=instrument.market_id,
+        instructions=[CancelInstruction(bet_id=command.venue_order_id.value)],
+        customer_ref=command.id.value.replace("-", ""),
+    )
 
 
 def order_cancel_all_to_betfair(instrument: BettingInstrument):
@@ -214,16 +223,16 @@ def order_cancel_all_to_betfair(instrument: BettingInstrument):
 
 
 def betfair_account_to_account_state(
-    account_detail,
-    account_funds,
+    account_detail: AccountDetailsResponse,
+    account_funds: AccountFundsResponse,
     event_id,
     ts_event,
     ts_init,
     account_id="001",
 ) -> AccountState:
-    currency = Currency.from_str(account_detail["currencyCode"])
-    balance = float(account_funds["availableToBetBalance"])
-    locked = -float(account_funds["exposure"]) if account_funds["exposure"] else 0.0
+    currency = Currency.from_str(account_detail.currency_code)
+    balance = float(account_funds.available_to_bet_balance)
+    locked = -float(account_funds.exposure)
     free = balance - locked
     return AccountState(
         account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
@@ -291,7 +300,7 @@ def parse_handicap(x) -> Optional[str]:
 
 
 def bet_to_order_status_report(
-    order,
+    order: CurrentOrderSummary,
     account_id: AccountId,
     instrument_id: InstrumentId,
     venue_order_id: VenueOrderId,
@@ -304,35 +313,33 @@ def bet_to_order_status_report(
         instrument_id=instrument_id,
         venue_order_id=venue_order_id,
         client_order_id=client_order_id,
-        order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-        order_type=order_type_from_str(order["orderType"]),
+        order_side=B2N_ORDER_STREAM_SIDE[order.side],
+        order_type=B2N_ORDER_TYPE[order.order_type],
         contingency_type=ContingencyType.NO_CONTINGENCY,
-        time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
+        time_in_force=B2N_TIME_IN_FORCE[order.persistence_type],
         order_status=determine_order_status(order),
-        price=BETFAIR_FLOAT_TO_PRICE[order["priceSize"]["price"]],
-        quantity=Quantity(order["priceSize"]["size"], BETFAIR_QUANTITY_PRECISION),
-        filled_qty=Quantity(order["sizeMatched"], BETFAIR_QUANTITY_PRECISION),
+        price=BETFAIR_FLOAT_TO_PRICE[order.price_size.price],
+        quantity=Quantity(order.price_size.size, BETFAIR_QUANTITY_PRECISION),
+        filled_qty=Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION),
         report_id=report_id,
-        ts_accepted=dt_to_unix_nanos(pd.Timestamp(order["placedDate"])),
+        ts_accepted=dt_to_unix_nanos(pd.Timestamp(order.placed_date)),
         ts_triggered=0,
-        ts_last=dt_to_unix_nanos(pd.Timestamp(order["matchedDate"]))
-        if "matchedDate" in order
-        else 0,
+        ts_last=dt_to_unix_nanos(pd.Timestamp(order.matched_date)) if order.matched_date else 0,
         ts_init=ts_init,
     )
 
 
-def determine_order_status(order: dict) -> OrderStatus:
-    order_size = order["priceSize"]["size"]
-    if order["status"] == "EXECUTION_COMPLETE":
-        if order_size == order["sizeMatched"]:
+def determine_order_status(order: CurrentOrderSummary) -> OrderStatus:
+    order_size = order.price_size.size
+    if order.status == BetfairOrderStatus.EXECUTION_COMPLETE:
+        if order_size == order.size_matched:
             return OrderStatus.FILLED
-        elif order["sizeCancelled"] > 0.0:
+        elif order.size_cancelled > 0.0:
             return OrderStatus.CANCELED
         else:
             return OrderStatus.PARTIALLY_FILLED
-    elif order["status"] == "EXECUTABLE":
-        if order["sizeMatched"] == 0.0:
+    elif order.status == BetfairOrderStatus.EXECUTABLE:
+        if order.size_matched == 0.0:
             return OrderStatus.ACCEPTED
-        elif order["sizeMatched"] > 0.0:
+        elif order.size_atched > 0.0:
             return OrderStatus.PARTIALLY_FILLED

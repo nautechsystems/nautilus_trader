@@ -34,7 +34,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 @pytest.fixture()
 def instrument():
-    return TestInstrumentProvider.betting_instrument()
+    return TestInstrumentProvider.betting_instrument(selection_handicap="0.0")
 
 
 @pytest.fixture()
@@ -59,6 +59,7 @@ def instrument_provider(betfair_client):
 
 @pytest.fixture()
 def data_client(
+    mocker,
     betfair_client,
     instrument_provider,
     instrument,
@@ -69,14 +70,15 @@ def data_client(
     clock,
     logger,
 ) -> BetfairDataClient:
-    patch(
+    mocker.patch(
         "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
         return_value=betfair_client,
     )
-    patch(
+    mocker.patch(
         "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
         return_value=instrument_provider,
     )
+
     instrument_provider.add(instrument)
     data_client = BetfairLiveDataClientFactory.create(
         loop=event_loop,
@@ -111,6 +113,7 @@ def data_client(
 
 @pytest.fixture()
 def exec_client(
+    mocker,
     betfair_client,
     instrument_provider,
     instrument,
@@ -121,16 +124,17 @@ def exec_client(
     clock,
     logger,
 ) -> BetfairExecutionClient:
-    patch(
+    mocker.patch(
         "nautilus_trader.adapters.betfair.factories.get_cached_betfair_client",
         return_value=betfair_client,
     )
-    patch(
+    mocker.patch(
         "nautilus_trader.adapters.betfair.factories.get_cached_betfair_instrument_provider",
         return_value=instrument_provider,
     )
+
     instrument_provider.add(instrument)
-    exec_client = BetfairLiveExecClientFactory.create(
+    exec_client: BetfairExecutionClient = BetfairLiveExecClientFactory.create(
         loop=event_loop,
         name=venue.value,
         config=BetfairExecClientConfig(

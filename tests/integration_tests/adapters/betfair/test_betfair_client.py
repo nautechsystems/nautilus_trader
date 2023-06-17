@@ -47,7 +47,7 @@ from betfair_parser.spec.navigation import Menu
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
-from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.common.clock import LiveClock
@@ -391,11 +391,14 @@ class TestBetfairHttpClient:
         cancel_command = TestCommandStubs.cancel_order_command(
             venue_order_id=VenueOrderId("228302937743"),
         )
-        cancel_order = order_cancel_to_betfair(command=cancel_command, instrument=instrument)
+        cancel_order_params = order_cancel_to_cancel_order_params(
+            command=cancel_command,
+            instrument=instrument,
+        )
         with mock_client_request(
             response=BetfairResponses.betting_cancel_orders_success(),
         ) as mock_request:
-            resp = await self.client.cancel_orders(cancel_order)
+            resp = await self.client.cancel_orders(cancel_order_params)
             assert resp
 
         _, request = mock_request.call_args[0]

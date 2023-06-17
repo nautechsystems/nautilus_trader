@@ -48,7 +48,6 @@ from nautilus_trader.trading.strategy import Strategy
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-@pytest.mark.skip(reason="WIP")
 class TestBinanceSpotExecutionClient:
     def setup(self):
         # Fixture Setup

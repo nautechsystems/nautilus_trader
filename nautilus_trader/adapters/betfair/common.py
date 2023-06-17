@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from betfair_parser.spec.betting.enums import PersistenceType
+from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.enums import TimeInForce as BetfairTimeInForce
+from betfair_parser.spec.common import OrderType
 
+from nautilus_trader.core.rust.model import OrderType as NautilusOrderType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Venue
@@ -56,14 +60,21 @@ B2N_MARKET_STREAM_SIDE = {
 B2N_ORDER_STREAM_SIDE = {
     "B": OrderSide.BUY,
     "L": OrderSide.SELL,
-    "BACK": OrderSide.BUY,
-    "LAY": OrderSide.SELL,
+    Side.BACK: OrderSide.BUY,
+    Side.LAY: OrderSide.SELL,
 }
 
 B2N_TIME_IN_FORCE = {
-    "LAPSE": TimeInForce.DAY,
-    "PERSIST": TimeInForce.GTC,
+    PersistenceType.LAPSE: TimeInForce.DAY,
+    PersistenceType.PERSIST: TimeInForce.GTC,
 }
+
+B2N_ORDER_TYPE = {
+    OrderType.LIMIT: NautilusOrderType.LIMIT,
+    OrderType.LIMIT_ON_CLOSE: NautilusOrderType.LIMIT,
+    OrderType.MARKET_ON_CLOSE: NautilusOrderType.MARKET,
+}
+
 
 BETFAIR_PRICE_TIERS = [
     (1.01, 2, 0.01),

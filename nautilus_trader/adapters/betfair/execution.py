@@ -21,7 +21,9 @@ from typing import Optional
 import msgspec
 import pandas as pd
 from betfair_parser.exceptions import BetfairError
+from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
+from betfair_parser.spec.betting.enums import InstructionReportStatus
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
@@ -41,7 +43,7 @@ from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_i
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_all_to_betfair
-from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
@@ -234,13 +236,13 @@ class BetfairExecutionClient(LiveExecutionClient):
             return None
         # We have a response, check list length and grab first entry
         assert len(orders) == 1
-        order = orders[0]
+        order: CurrentOrderSummary = orders[0]
         instrument = self._instrument_provider.get_betting_instrument(
-            market_id=str(order["marketId"]),
-            selection_id=str(order["selectionId"]),
-            handicap=parse_handicap(order["handicap"]),
+            market_id=str(order.market_id),
+            selection_id=str(order.selection_id),
+            handicap=parse_handicap(order.handicap),
         )
-        venue_order_id = VenueOrderId(order.bet_id)
+        venue_order_id = VenueOrderId(str(order.bet_id))
 
         report: OrderStatusReport = bet_to_order_status_report(
             order=order,
@@ -430,18 +432,17 @@ class BetfairExecutionClient(LiveExecutionClient):
             # Check the venue_order_id that has been deleted currently exists on our order
             deleted_bet_id = report.cancel_instruction_report.instruction.bet_id
             self._log.debug(f"{existing_order}, {deleted_bet_id}")
-            assert existing_order.venue_order_id == VenueOrderId(
-                deleted_bet_id,
-            ), f"{deleted_bet_id} != {existing_order.venue_order_id}"
+            err = f"{deleted_bet_id} != {existing_order.venue_order_id}"
+            assert existing_order.venue_order_id == VenueOrderId(str(deleted_bet_id)), err
 
             place_instruction = report.place_instruction_report
-            venue_order_id = VenueOrderId(place_instruction.bet_id)
+            venue_order_id = VenueOrderId(str(place_instruction.bet_id))
             self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
                 client_order_id,
-                VenueOrderId(place_instruction.bet_id),
+                venue_order_id,
                 betfair_float_to_quantity(place_instruction.instruction.limit_order.size),
                 betfair_float_to_price(place_instruction.instruction.limit_order.price),
                 None,  # Not applicable for Betfair
@@ -455,12 +456,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)
-        self._log.debug(f"cancel_order {cancel_order}")
+        cancel_order_params = order_cancel_to_cancel_order_params(
+            command=command,
+            instrument=instrument,
+        )
+        self._log.debug(f"cancel_order {cancel_order_params}")
 
         # Send to client
         try:
-            result = await self._client.cancel_orders(**cancel_order)
+            result = await self._client.cancel_orders(cancel_order_params)
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
@@ -478,9 +482,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Parse response
         for report in result.instruction_reports:
-            venue_order_id = VenueOrderId(report.instruction.bet_id)
-            if report.status == ExecutionReportStatus.FAILURE:
-                reason = f"{result.error_code.name} ({result.error_code.__doc__})"
+            venue_order_id = VenueOrderId(str(report.instruction.bet_id))
+            if report.status == InstructionReportStatus.FAILURE:
+                reason = f"{report.error_code.name}: {report.error_code.__doc__}"
                 self._log.warning(f"cancel failed - {reason}")
                 self.generate_order_cancel_rejected(
                     command.strategy_id,
@@ -616,8 +620,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         self._log.debug("Checking account currency")
         PyCondition.not_none(self.base_currency, "self.base_currency")
-        details = await self._client.get_account_details()
-        currency_code = details["currencyCode"]
+        details: AccountDetailsResponse = await self._client.get_account_details()
+        currency_code = details.currency_code
         self._log.debug(f"Account {currency_code=}, {self.base_currency.code=}")
         assert currency_code == self.base_currency.code
         self._log.debug("Base currency matches client details")

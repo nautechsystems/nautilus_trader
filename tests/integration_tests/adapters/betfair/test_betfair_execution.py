@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -59,7 +60,6 @@ from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
-from tests.integration_tests.adapters.betfair.test_kit import format_current_orders
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
@@ -300,15 +300,17 @@ async def test_modify_order_error_order_doesnt_exist(
         await asyncio.sleep(0)
 
     # Assert
-    expected_kw = {
-        "strategy_id": StrategyId("S-001"),
-        "instrument_id": InstrumentId.from_str("1.179082386|50214|None.BETFAIR"),
-        "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
-        "venue_order_id": None,
-        "reason": "ORDER NOT IN CACHE",
-        "ts_event": 0,
-    }
-    assert mock_reject.call_args.kwargs == expected_kw
+    expected_args = tuple(
+        {
+            "strategy_id": StrategyId("S-001"),
+            "instrument_id": InstrumentId.from_str("1.179082386|50214|0.0.BETFAIR"),
+            "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
+            "venue_order_id": None,
+            "reason": "ORDER NOT IN CACHE",
+            "ts_event": 0,
+        }.values(),
+    )
+    assert mock_reject.call_args.args == expected_args
 
 
 @pytest.mark.asyncio()
@@ -331,15 +333,17 @@ async def test_modify_order_error_no_venue_id(
         await asyncio.sleep(0)
 
     # Assert
-    expected_kw = {
-        "strategy_id": strategy_id,
-        "instrument_id": instrument.id,
-        "client_order_id": test_order.client_order_id,
-        "venue_order_id": None,
-        "reason": "ORDER MISSING VENUE_ORDER_ID",
-        "ts_event": 0,
-    }
-    assert mock_reject.call_args.kwargs == expected_kw
+    expected_args = tuple(
+        {
+            "strategy_id": strategy_id,
+            "instrument_id": instrument.id,
+            "client_order_id": test_order.client_order_id,
+            "venue_order_id": None,
+            "reason": "ORDER MISSING VENUE_ORDER_ID",
+            "ts_event": 0,
+        }.values(),
+    )
+    assert mock_reject.call_args.args == expected_args
 
 
 @pytest.mark.asyncio()
@@ -357,23 +361,25 @@ async def test_cancel_order_success(
     mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
 
     # Act
+    command = TestCommandStubs.cancel_order_command(order=order)
     with patch.object(
         BetfairExecutionClient,
         "generate_order_canceled",
     ) as mock_generate_order_canceled:
-        command = TestCommandStubs.cancel_order_command(order=order)
         exec_client.cancel_order(command)
         await asyncio.sleep(0)
 
     # Assert
-    expected_kw = {
-        "strategy_id": strategy_id,
-        "instrument_id": instrument.id,
-        "client_order_id": test_order.client_order_id,
-        "venue_order_id": venue_order_id,
-        "ts_event": 0,
-    }
-    assert mock_generate_order_canceled.call_args.kwargs == expected_kw
+    expected_args = tuple(
+        {
+            "strategy_id": strategy_id,
+            "instrument_id": instrument.id,
+            "client_order_id": test_order.client_order_id,
+            "venue_order_id": venue_order_id,
+            "ts_event": 0,
+        }.values(),
+    )
+    assert mock_generate_order_canceled.call_args.args == expected_args
 
 
 @pytest.mark.asyncio()
@@ -406,15 +412,17 @@ async def test_cancel_order_fail(
         await asyncio.sleep(0)
 
     # Assert
-    expected_kw = {
-        "strategy_id": strategy_id,
-        "instrument_id": instrument.id,
-        "client_order_id": test_order.client_order_id,
-        "venue_order_id": venue_order_id,
-        "reason": "Error: ERROR_IN_ORDER",
-        "ts_event": 0,
-    }
-    assert mock_generate_order_cancel_rejected.call_args.kwargs == expected_kw
+    expected_args = tuple(
+        {
+            "strategy_id": strategy_id,
+            "instrument_id": instrument.id,
+            "client_order_id": test_order.client_order_id,
+            "venue_order_id": venue_order_id,
+            "reason": "ERROR_IN_ORDER: The action failed because the parent order failed",
+            "ts_event": 0,
+        }.values(),
+    )
+    assert mock_generate_order_cancel_rejected.call_args.args == expected_args
 
 
 @pytest.mark.asyncio()
@@ -821,28 +829,26 @@ async def test_order_filled_avp_update(exec_client, setup_order_state):
 @pytest.mark.asyncio()
 async def test_generate_order_status_report_client_id(
     mocker,
-    exec_client,
+    exec_client: BetfairExecutionClient,
     betfair_client,
     instrument_provider,
+    instrument: BettingInstrument,
 ) -> None:
     # Arrange
-    order_resp = format_current_orders()
-    instrument_provider.add(
-        TestInstrumentProvider.betting_instrument(
-            market_id=str(order_resp[0]["marketId"]),
-            selection_id=str(order_resp[0]["selectionId"]),
-            selection_handicap=str(order_resp[0]["handicap"]),
+    mock_betfair_request(
+        betfair_client,
+        BetfairResponses.list_current_orders_custom(
+            market_id=instrument.market_id,
+            selection_id=instrument.selection_id,
         ),
     )
-    venue_order_id = VenueOrderId("1")
-
-    mocker.patch.object(betfair_client, "list_current_orders", return_value=order_resp)
+    instrument_provider.add(instrument)
 
     # Act
     report: OrderStatusReport = await exec_client.generate_order_status_report(
-        venue_order_id=venue_order_id,
+        instrument_id=instrument.id,
+        venue_order_id=VenueOrderId("1"),
         client_order_id=None,
-        instrument_id=None,
     )
 
     # Assert

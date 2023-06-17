@@ -29,6 +29,7 @@ from aiohttp import ClientResponse
 from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import EndpointType
 from betfair_parser.spec.common import Request
+from betfair_parser.spec.common import encode
 from betfair_parser.spec.navigation import flatten_nav_tree
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import stream_decode
@@ -74,43 +75,10 @@ MagicMock.__await__ = lambda x: async_magic().__await__()
 
 def mock_betfair_request(obj, response, attr="_request"):
     mock_resp = MagicMock(spec=ClientResponse)
-    mock_resp.body = msgspec.json.encode(response)
+    mock_resp.body = encode(response)
 
     setattr(obj, attr, MagicMock(return_value=Future()))
     getattr(obj, attr).return_value.set_result(mock_resp)
-
-
-def format_current_orders(
-    bet_id="1",
-    market_id="1.180575118",
-    selection_id=39980,
-    customer_order_ref="O-20211118-030800-000",
-    customer_strategy_ref="TestStrategy-1",
-):
-    return [
-        {
-            "betId": bet_id,
-            "marketId": market_id,
-            "selectionId": selection_id,
-            "handicap": 0.0,
-            "priceSize": {"price": 5.0, "size": 10.0},
-            "bspLiability": 0.0,
-            "side": "BACK",
-            "status": "EXECUTABLE",
-            "persistenceType": "LAPSE",
-            "orderType": "LIMIT",
-            "placedDate": "2021-03-24T06:47:02.000Z",
-            "averagePriceMatched": 0.0,
-            "sizeMatched": 0.0,
-            "sizeRemaining": 10.0,
-            "sizeLapsed": 0.0,
-            "sizeCancelled": 0.0,
-            "sizeVoided": 0.0,
-            "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
-            "customerOrderRef": customer_order_ref,
-            "customerStrategyRef": customer_strategy_ref,
-        },
-    ]
 
 
 class BetfairTestStubs:
@@ -405,6 +373,24 @@ class BetfairResponses:
     @staticmethod
     def list_current_orders_empty():
         return BetfairResponses.load("list_current_orders_empty.json")
+
+    @staticmethod
+    def list_current_orders_custom(
+        market_id: str,
+        selection_id: int,
+        customer_order_ref: str = "",
+        customer_strategy_ref: str = "",
+    ):
+        raw = BetfairResponses.load("list_current_orders_single.json")
+        raw["result"]["currentOrders"][0].update(
+            {
+                "marketId": market_id,
+                "selectionId": selection_id,
+                "customerOrderRef": customer_order_ref,
+                "customerStrategyRef": customer_strategy_ref,
+            },
+        )
+        return raw
 
     @staticmethod
     def betting_list_market_catalogue(filter_: Optional[MarketFilter] = None):
@@ -763,7 +749,7 @@ class BetfairDataProvider:
         return instruments
 
     @staticmethod
-    def betfair_feed_parsed(market_id="1.166564490"):
+    def betfair_feed_parsed(market_id: str = "1.166564490"):
         filename = pathlib.Path(f"{RESOURCES_PATH}/{market_id}.bz2")
         assert filename.exists()
         parser = BetfairParser()

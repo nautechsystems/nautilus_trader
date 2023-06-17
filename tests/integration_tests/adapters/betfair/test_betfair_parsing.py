@@ -37,7 +37,7 @@ from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
 from nautilus_trader.adapters.betfair.parsing.requests import make_order
-from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
@@ -294,7 +294,7 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_order_cancel_to_betfair(self):
-        result = order_cancel_to_betfair(
+        result = order_cancel_to_cancel_order_params(
             command=TestCommandStubs.cancel_order_command(
                 venue_order_id=VenueOrderId("228302937743"),
             ),
