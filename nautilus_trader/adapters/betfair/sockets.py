@@ -47,24 +47,23 @@ class BetfairStreamClient:
         crlf: Optional[bytes] = None,
         encoding: Optional[str] = None,
     ):
+        self._http_client = http_client
         self._log = logger_adapter
+        self.handler = message_handler
         self.host = host or HOST
         self.port = port or PORT
-        self.handler = message_handler
         self.crlf = crlf or CRLF
         self.encoding = encoding or ENCODING
-        self._http_client = http_client
         self._client: Optional[SocketClient] = None
         self.unique_id = next(UNIQUE_ID)
         self.is_connected: bool = False
 
     async def connect(self):
         if not self._http_client.session_token:
-            self._log.info("Connecting to betfair http client..")
             await self._http_client.connect()
 
         if self.is_connected:
-            self._log.info("Already connected.")
+            self._log.info("Socket already connected.")
             return
 
         self._log.info("Connecting betfair socket client..")

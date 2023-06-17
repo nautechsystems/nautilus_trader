@@ -88,7 +88,6 @@ def get_cached_betfair_client(
             username=username,
             password=password,
             app_key=app_key,
-            loop=loop,
             logger=logger,
         )
         CLIENTS[key] = client

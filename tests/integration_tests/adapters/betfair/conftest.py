@@ -93,10 +93,12 @@ def data_client(
         clock=clock,
         logger=logger,
     )
-    data_client._client.headers = {
-        "X-Authentication": "token",
-        "X-Application": "product",
-    }
+    data_client._client._headers.update(
+        {
+            "X-Authentication": "token",
+            "X-Application": "product",
+        },
+    )
 
     # Patches
     patch(
@@ -148,8 +150,11 @@ def exec_client(
         clock=clock,
         logger=logger,
     )
-    exec_client._client.headers = {
-        "X-Authentication": "token",
-        "X-Application": "product",
-    }
+    exec_client._client._headers.update(
+        {
+            "X-Authentication": "token",
+            "X-Application": "product",
+        },
+    )
+
     return exec_client

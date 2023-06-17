@@ -12,8 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import asyncio
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 from betfair_parser.endpoints import ENDPOINTS
 from betfair_parser.spec.accounts.operations import GetAccountDetails
@@ -54,29 +53,19 @@ from betfair_parser.spec.common import EventId
 from betfair_parser.spec.common import EventTypeId
 from betfair_parser.spec.common import MarketId
 from betfair_parser.spec.common import Request
-from betfair_parser.spec.common import Response
 from betfair_parser.spec.common import TimeRange
-from betfair_parser.spec.common import decode
-from betfair_parser.spec.common import encode
 from betfair_parser.spec.identity import KeepAlive
 from betfair_parser.spec.identity import Login
+from betfair_parser.spec.identity import LoginResponse
 from betfair_parser.spec.identity import LoginStatus
 from betfair_parser.spec.navigation import Menu
 from betfair_parser.spec.navigation import Navigation
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.nautilus_pyo3.network import HttpClient
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
-from nautilus_trader.network.http import ClientResponse
-from nautilus_trader.network.http import HttpClient
-
-
-def betfair_encoder(obj: Any):
-    return encode(obj)
-
-
-def betfair_decoder(raw: bytes, cls: type = None):
-    return decode(raw, type=cls)
+from nautilus_trader.core.rust.common import LogColor
 
 
 class BetfairHttpClient:
@@ -86,11 +75,10 @@ class BetfairHttpClient:
 
     def __init__(
         self,
+        logger: Logger,
         username: str,
         password: str,
-        app_key: str,
-        loop: asyncio.AbstractEventLoop,
-        logger: Logger,
+        app_key: Optional[str] = None,
     ):
         # Config
         self.username = username
@@ -98,18 +86,19 @@ class BetfairHttpClient:
         self.app_key = app_key
 
         # Client
-        self.http_client = HttpClient(loop, logger)
-        self.headers: dict[str, str] = {}
-        self.session_token: Optional[str] = None
+        self._client = HttpClient()
+        self._headers: dict[str, str] = {}
         self._log = LoggerAdapter(type(self).__name__, logger)
+        self.reset_headers()
 
-    async def _request(self, method: Literal["GET", "POST"], request: Request) -> ClientResponse:
+    async def _request(self, method: Literal["GET", "POST"], request: Request) -> HttpResponse:
         url = ENDPOINTS.url_for_request(request)
-        response: ClientResponse = await self.http_client.request(
+        headers = self._headers
+        response: HttpResponse = await self._client.request(
             method,
             url,
-            headers=self.headers,
-            payload=request.body(),
+            headers=headers,
+            body=request.body().encode(),
         )
         return response
 
@@ -121,31 +110,41 @@ class BetfairHttpClient:
         response: HttpResponse = await self._request("GET", request)
         return request.parse_response(response.body, raise_errors=True)
 
+    @property
+    def session_token(self) -> Optional[str]:
+        return self._headers.get("X-Authentication")
+
+    def update_headers(self, login_resp: LoginResponse):
+        self._headers.update(
+            {
+                "X-Authentication": login_resp.token,
+                "X-Application": login_resp.product,
+            },
+        )
+
+    def reset_headers(self):
+        self._headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Application": self.app_key,
+        }
+
     async def connect(self):
-        await self.login()
+        if self.session_token is not None:
+            self._log.warning("Session token exists (already connected), skipping.")
+            return
+
+        self._log.info("Connecting (Betfair login)")
+        request = Login.with_params(username=self.username, password=self.password)
+        resp: LoginResponse = await self._post(request)
+        assert resp.status == LoginStatus.SUCCESS
+        self._log.info("Login success.", color=LogColor.GREEN)
+        self.update_headers(login_resp=resp)
 
     async def disconnect(self):
         self._log.info("Disconnecting..")
-        self._headers = {}
+        self.reset_headers()
         self._log.info("Disconnected.")
-
-    async def login(self):
-        self._log.info("BetfairClient login")
-
-        if "session_token" in self.headers:
-            self._log.warning("Session token exists (already logged in), skipping.")
-            return
-
-        request = Login.with_params(username=self.username, password=self.password)
-        resp: Response = await self._post(request)
-        assert resp.status == LoginStatus.SUCCESS
-        self._log.info("Login success.")
-        self.headers.update(
-            {
-                "X-Authentication": resp.token,
-                "X-Application": resp.product,
-            },
-        )
 
     async def keep_alive(self):
         """
@@ -153,7 +152,7 @@ class BetfairHttpClient:
         """
         resp: KeepAlive.return_type = await self._post(KeepAlive())
         if resp.status == "SUCCESS":
-            self._headers.update({"X-Authentication": resp.token})
+            self.update_headers(resp)
 
     async def list_navigation(self) -> Navigation:
         """

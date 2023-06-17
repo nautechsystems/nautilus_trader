@@ -98,7 +98,6 @@ class BetfairTestStubs:
             username="",
             password="",
             app_key="",
-            loop=loop,
             logger=logger,
         )
 
@@ -135,7 +134,7 @@ class BetfairTestStubs:
 
         client._request = MagicMock()  # type: ignore
         client._request.side_effect = request
-        client.session_token = "xxxsessionToken="
+        client._headers["X-Authentication"] = "xxxsessionToken="
 
         return client
 
