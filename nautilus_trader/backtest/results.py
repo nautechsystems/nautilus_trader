@@ -62,8 +62,8 @@ def ensure_plotting(func):
     """
     Decorate a function that require a plotting library.
 
-    Ensures library is installed and providers a better error about how to
-    install if not found.
+    Ensures library is installed and providers a better error about how to install if
+    not found.
 
     """
 

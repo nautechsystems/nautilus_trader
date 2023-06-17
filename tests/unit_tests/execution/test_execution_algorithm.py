@@ -186,8 +186,8 @@ class TestExecAlgorithm:
 
     def test_exec_algorithm_spawn_market_order(self) -> None:
         """
-        Test that the primary order was reduced and the spawned order has the
-        expected properties.
+        Test that the primary order was reduced and the spawned order has the expected
+        properties.
         """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
@@ -230,8 +230,8 @@ class TestExecAlgorithm:
 
     def test_exec_algorithm_spawn_limit_order(self) -> None:
         """
-        Test that the primary order was reduced and the spawned order has the
-        expected properties.
+        Test that the primary order was reduced and the spawned order has the expected
+        properties.
         """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
@@ -280,8 +280,8 @@ class TestExecAlgorithm:
 
     def test_exec_algorithm_spawn_market_to_limit_order(self) -> None:
         """
-        Test that the primary order was reduced and the spawned order has the
-        expected properties.
+        Test that the primary order was reduced and the spawned order has the expected
+        properties.
         """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()

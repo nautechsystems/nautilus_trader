@@ -96,14 +96,12 @@ repos:
       - id: docformatter
         additional_dependencies: [tomli]
         args: [
-          "--in-place",
-          "--blank",
+          "--black",
           "--make-summary-multi-line",
           "--pre-summary-newline",
-          "--wrap-summaries",
-          "80",
-          "--wrap-descriptions",
-          "80",
+          "--blank",
+          "--recursive",
+          "--in-place",
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy

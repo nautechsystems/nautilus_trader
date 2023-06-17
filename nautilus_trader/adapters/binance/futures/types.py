@@ -111,8 +111,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     @staticmethod
     def from_dict(values: dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":
         """
-        Return a `Binance Futures` mark price update parsed from the given
-        values.
+        Return a `Binance Futures` mark price update parsed from the given values.
 
         Parameters
         ----------

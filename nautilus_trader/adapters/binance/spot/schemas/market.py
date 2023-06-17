@@ -44,8 +44,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Spot/Margin` GET
-    /api/v3/exchangeInfo.
+    HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo.
     """
 
     symbol: str

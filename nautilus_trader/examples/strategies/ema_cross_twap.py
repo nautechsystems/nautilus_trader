@@ -159,8 +159,7 @@ class EMACrossTWAP(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -173,8 +172,8 @@ class EMACrossTWAP(Strategy):
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives order
-        book deltas.
+        Actions to be performed when the strategy is running and receives order book
+        deltas.
 
         Parameters
         ----------
@@ -187,8 +186,7 @@ class EMACrossTWAP(Strategy):
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        order book.
+        Actions to be performed when the strategy is running and receives an order book.
 
         Parameters
         ----------
@@ -201,8 +199,7 @@ class EMACrossTWAP(Strategy):
 
     def on_ticker(self, ticker: Ticker) -> None:
         """
-        Actions to be performed when the strategy is running and receives a
-        ticker.
+        Actions to be performed when the strategy is running and receives a ticker.
 
         Parameters
         ----------
@@ -215,8 +212,7 @@ class EMACrossTWAP(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a
-        quote tick.
+        Actions to be performed when the strategy is running and receives a quote tick.
 
         Parameters
         ----------
@@ -229,8 +225,7 @@ class EMACrossTWAP(Strategy):
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a
-        trade tick.
+        Actions to be performed when the strategy is running and receives a trade tick.
 
         Parameters
         ----------
@@ -312,8 +307,7 @@ class EMACrossTWAP(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives
-        generic data.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
@@ -324,8 +318,7 @@ class EMACrossTWAP(Strategy):
 
     def on_event(self, event: Event) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        event.
+        Actions to be performed when the strategy is running and receives an event.
 
         Parameters
         ----------

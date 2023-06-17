@@ -61,16 +61,14 @@ class SignalStrategy(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a
-        quote tick.
+        Actions to be performed when the strategy is running and receives a quote tick.
         """
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a
-        trade tick.
+        Actions to be performed when the strategy is running and receives a trade tick.
         """
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
