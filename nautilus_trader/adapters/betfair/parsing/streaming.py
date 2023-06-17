@@ -312,8 +312,8 @@ def runner_change_to_order_book_snapshot(
         ),
     ]
 
-    # Bids are available to lay (atl)
-    for bid in rc.atl:
+    # Bids are available to back (atb)
+    for bid in rc.atb:
         bid_price = betfair_float_to_price(bid.price)
         bid_volume = betfair_float_to_quantity(bid.volume)
         bid_order_id = price_to_order_id(bid_price)
@@ -326,8 +326,8 @@ def runner_change_to_order_book_snapshot(
         )
         deltas.append(delta)
 
-    # Asks are available to back (atb)
-    for ask in rc.atb:
+    # Asks are available to back (atl)
+    for ask in rc.atl:
         ask_price = betfair_float_to_price(ask.price)
         ask_volume = betfair_float_to_quantity(ask.volume)
         ask_order_id = price_to_order_id(ask_price)
@@ -361,8 +361,8 @@ def runner_change_to_order_book_deltas(
 
     deltas: list[OrderBookDelta] = []
 
-    # Bids are available to lay (atl)
-    for bid in rc.atl:
+    # Bids are available to back (atb)
+    for bid in rc.atb:
         bid_price = betfair_float_to_price(bid.price)
         bid_volume = betfair_float_to_quantity(bid.volume)
         bid_order_id = price_to_order_id(bid_price)
@@ -375,8 +375,8 @@ def runner_change_to_order_book_deltas(
         )
         deltas.append(delta)
 
-    # Asks are available to back (atb)
-    for ask in rc.atb:
+    # Asks are available to back (atl)
+    for ask in rc.atl:
         ask_price = betfair_float_to_price(ask.price)
         ask_volume = betfair_float_to_quantity(ask.volume)
         ask_order_id = price_to_order_id(ask_price)

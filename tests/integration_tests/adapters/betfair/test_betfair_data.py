@@ -36,7 +36,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.tick import TradeTick
@@ -47,7 +46,6 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook import OrderBook
@@ -295,9 +293,9 @@ def test_orderbook_repr(data_client, mock_data_engine_process):
     # Assert
     ob_snap = mock_data_engine_process.call_args_list[14][0][0]
     ob = create_betfair_order_book(InstrumentId(Symbol("1"), BETFAIR_VENUE))
-    ob.apply_snapshot(ob_snap)
-    assert ob.best_ask_price() == 1.71
-    assert ob.best_bid_price() == 1.70
+    ob.apply(ob_snap)
+    assert ob.best_ask_price() == betfair_float_to_price(1.71)
+    assert ob.best_bid_price() == betfair_float_to_price(1.70)
 
 
 def test_orderbook_updates(data_client):
@@ -315,9 +313,9 @@ def test_orderbook_updates(data_client):
                 order_books[update.instrument_id] = create_betfair_order_book(
                     instrument_id=update.instrument_id,
                 )
-                order_books[update.instrument_id].apply_snapshot(update)
+                order_books[update.instrument_id].apply(update)
             elif isinstance(update, OrderBookDeltas):
-                order_books[update.instrument_id].apply_deltas(update)
+                order_books[update.instrument_id].apply(update)
             elif isinstance(update, TradeTick):
                 pass
             else:
@@ -325,14 +323,16 @@ def test_orderbook_updates(data_client):
 
     # Assert
     book = order_books[list(order_books)[0]]
-    expected = """bids        price    asks
----------  --------  --------
-           1.210000  [76.38]
-           1.200000  [156.74]
-           1.190000  [147.79]
-[151.96]   1.180000
-[1275.83]  1.170000
-[932.64]   1.160000"""
+    expected = """╭───────────────┬───────┬──────────────╮
+│ bids          │ price │ asks         │
+├───────────────┼───────┼──────────────┤
+│               │ 1.21  │ [76.380000]  │
+│               │ 1.20  │ [156.740000] │
+│               │ 1.19  │ [147.790000] │
+│ [151.960000]  │ 1.18  │              │
+│ [1275.830000] │ 1.17  │              │
+│ [932.640000]  │ 1.16  │              │
+╰───────────────┴───────┴──────────────╯"""
 
     result = book.pprint()
     assert result == expected
@@ -500,7 +500,6 @@ def test_bsp_deltas_apply(data_client, instrument):
         {
             "type": "BSPOrderBookDeltas",
             "instrument_id": instrument.id.value,
-            "book_type": "L2_MBP",
             "deltas": msgspec.json.encode(
                 [
                     {
@@ -508,11 +507,12 @@ def test_bsp_deltas_apply(data_client, instrument):
                         "instrument_id": instrument.id.value,
                         "book_type": "L2_MBP",
                         "action": "UPDATE",
-                        "price": 0.990099,
-                        "size": 2.0,
+                        "price": "0.990099",
+                        "size": "2.0",
                         "side": "BUY",
-                        "order_id": "ef93694d-64c7-4b26-b03b-48c0bc2afea7",
-                        "update_id": 0,
+                        "order_id": 1,
+                        "flags": 0,
+                        "sequence": 0,
                         "ts_event": 1667288437852999936,
                         "ts_init": 1667288437852999936,
                     },
@@ -528,8 +528,5 @@ def test_bsp_deltas_apply(data_client, instrument):
     book.apply(deltas)
 
     # Assert
-    expected_ask = BookOrder(0.001, 55.81, OrderSide.SELL, "0.00100")
-    assert book.best_ask_level() == expected_ask
-
-    expected_bid = BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010")
-    assert book.best_bid_level() == expected_bid
+    assert book.best_ask_price() == betfair_float_to_price(0.001)
+    assert book.best_bid_price() == betfair_float_to_price(0.990099)
