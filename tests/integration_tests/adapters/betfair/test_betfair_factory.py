@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
@@ -77,25 +75,24 @@ class TestBetfairFactory:
             base_currency="AUD",
         )
 
-        with patch.object(BetfairHttpClient, "ssl_context", return_value=True):
-            data_client = BetfairLiveDataClientFactory.create(
-                loop=asyncio.get_event_loop(),
-                name=BETFAIR_VENUE.value,
-                config=data_config,
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
-            exec_client = BetfairLiveExecClientFactory.create(
-                loop=asyncio.get_event_loop(),
-                name=BETFAIR_VENUE.value,
-                config=exec_config,
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
+        data_client = BetfairLiveDataClientFactory.create(
+            loop=asyncio.get_event_loop(),
+            name=BETFAIR_VENUE.value,
+            config=data_config,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_client = BetfairLiveExecClientFactory.create(
+            loop=asyncio.get_event_loop(),
+            name=BETFAIR_VENUE.value,
+            config=exec_config,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Assert
         assert BetfairDataClient == type(data_client)
