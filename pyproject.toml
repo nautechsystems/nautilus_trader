@@ -112,9 +112,6 @@ sphinx-external-toc = "^0.3.1"
 sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 
-##########################################################
-# Formatter configs                                      #
-##########################################################
 [tool.isort]
 py_version = "39"
 skip_glob = ["**/core/rust/*"]
@@ -141,9 +138,6 @@ blank = true
 recursive = true
 in-place = true
 
-##########################################################
-# Linter configs                                         #
-##########################################################
 [tool.ruff]
 target-version = "py39"
 line-length = 150  # Reduce to 100
@@ -252,9 +246,6 @@ lines-after-imports = 2
 [tool.ruff.mccabe]
 max-complexity = 10
 
-##########################################################
-# Static analysis configs                                #
-##########################################################
 [tool.mypy]
 python_version = "3.9"
 disallow_incomplete_defs = true
@@ -265,9 +256,6 @@ warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
 
-##########################################################
-# Test configs                                           #
-##########################################################
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first --doctest-modules --doctest-glob=\"*.pyx\""
