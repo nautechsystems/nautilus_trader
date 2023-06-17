@@ -105,7 +105,7 @@ def data_client(
     )
     patch(
         "nautilus_trader.adapters.betfair.providers.BetfairInstrumentProvider._client.list_navigation",
-        return_value=BetfairResponses.navigation_list_navigation_response(),
+        return_value=BetfairResponses.navigation_list_navigation(),
     )
 
     return data_client

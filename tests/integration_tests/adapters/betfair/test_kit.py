@@ -58,6 +58,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from tests import TEST_DATA_DIR
 
 
 RESOURCES_PATH = pathlib.Path(__file__).parent.joinpath("resources")
@@ -126,7 +127,7 @@ class BetfairTestStubs:
             elif request.endpoint_type == EndpointType.NAVIGATION:
                 resp = MagicMock(spec=ClientResponse)
                 resp.body = msgspec.json.encode(
-                    BetfairResponses.navigation_list_navigation_response(),
+                    BetfairResponses.navigation_list_navigation(),
                 )
                 return resp
             else:
@@ -403,8 +404,16 @@ class BetfairResponses:
         return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod
-    def navigation_list_navigation_response():
+    def navigation_list_navigation():
         return BetfairResponses.load("navigation_list_navigation.json")
+
+    @staticmethod
+    def market_definition_open():
+        return BetfairResponses.load("market_definition_open.json")
+
+    @staticmethod
+    def market_definition_closed():
+        return BetfairResponses.load("market_definition_closed.json")
 
 
 class BetfairStreaming:
@@ -709,7 +718,8 @@ class BetfairDataProvider:
 
     @staticmethod
     def read_lines(filename: str = "1.166811431.bz2") -> list[bytes]:
-        path = RESOURCES_PATH / filename
+        path = pathlib.Path(f"{TEST_DATA_DIR}/betfair/{filename}")
+
         if path.suffix == ".bz2":
             return bz2.open(path).readlines()
         elif path.suffix == ".gz":

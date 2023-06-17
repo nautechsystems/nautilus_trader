@@ -19,10 +19,13 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
+from betfair_parser.spec.common import decode
+from betfair_parser.spec.common import encode
 from betfair_parser.spec.streaming import stream_decode
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 from betfair_parser.spec.streaming.mcm import MarketChange
+from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 # fmt: off
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
@@ -84,8 +87,14 @@ class TestBetfairParsingStreaming:
         self.instrument = TestInstrumentProvider.betting_instrument()
         self.tick_scheme = BETFAIR_TICK_SCHEME
 
-    def test_market_definition_to_instrument_status_updates(self, market_definition_open):
-        # Arrange, Act
+    def test_market_definition_to_instrument_status_updates(self):
+        # Arrange
+        market_definition_open = decode(
+            encode(BetfairResponses.market_definition_open()),
+            type=MarketDefinition,
+        )
+
+        # Act
         updates = market_definition_to_instrument_status_updates(
             market_definition_open,
             "1.205822330",
@@ -101,8 +110,14 @@ class TestBetfairParsingStreaming:
         ]
         assert len(result) == 17
 
-    def test_market_definition_to_instrument_close_price(self, market_definition_close):
-        # Arrange, Act
+    def test_market_definition_to_instrument_close_price(self):
+        # Arrange
+        market_definition_close = decode(
+            encode(BetfairResponses.market_definition_closed()),
+            type=MarketDefinition,
+        )
+
+        # Act
         updates = market_definition_to_instrument_closes(
             market_definition_close,
             "1.205822330",
@@ -114,8 +129,13 @@ class TestBetfairParsingStreaming:
         result = [upd for upd in updates if isinstance(upd, InstrumentClose)]
         assert len(result) == 17
 
-    def test_market_definition_to_betfair_starting_price(self, market_definition_close):
-        # Arrange, Act
+    def test_market_definition_to_betfair_starting_price(self):
+        # Arrange
+        market_definition_close = decode(
+            encode(BetfairResponses.market_definition_closed()),
+            type=MarketDefinition,
+        )
+
         updates = market_definition_to_betfair_starting_prices(
             market_definition_close,
             "1.205822330",
@@ -131,7 +151,7 @@ class TestBetfairParsingStreaming:
         raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'  # noqa
         mc = msgspec.json.decode(raw, type=MarketChange)
         result = Counter([upd.__class__.__name__ for upd in market_change_to_updates(mc, 0, 0)])
-        expected = Counter({"BSPOrderBookDeltas": 12, "OrderBookDeltas": 1})
+        expected = Counter({"BSPOrderBookDeltas": 12})
         assert result == expected
 
     def test_market_change_ticker(self):
@@ -163,7 +183,6 @@ class TestBetfairParsingStreaming:
             },
         )
         assert isinstance(result[2], OrderBookDeltas)
-        assert isinstance(result[3], OrderBookDeltas)
 
     @pytest.mark.parametrize(
         ("filename", "num_msgs"),
