@@ -21,7 +21,7 @@ import pytest
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
@@ -83,7 +83,7 @@ class TestCatalogPerformance(PerformanceHarness):
         def setup():
             file_path = os.path.join(PACKAGE_ROOT, "bench_data/quotes_0005.parquet")
             session = DataBackendSession()
-            session.add_file("quote_ticks", file_path, ParquetType.QuoteTick)
+            session.add_file("quote_ticks", file_path, NautilusDataType.QuoteTick)
             return (session.to_query_result(),), {}
 
         def run(result):
@@ -108,10 +108,10 @@ class TestCatalogPerformance(PerformanceHarness):
                         file_stem = os.path.splitext(filename)[0]
                         if "quotes" in filename:
                             full_path = os.path.join(dirpath, filename)
-                            session.add_file(file_stem, full_path, ParquetType.QuoteTick)
+                            session.add_file(file_stem, full_path, NautilusDataType.QuoteTick)
                         elif "trades" in filename:
                             full_path = os.path.join(dirpath, filename)
-                            session.add_file(file_stem, full_path, ParquetType.TradeTick)
+                            session.add_file(file_stem, full_path, NautilusDataType.TradeTick)
 
             return (session.to_query_result(),), {}
 
