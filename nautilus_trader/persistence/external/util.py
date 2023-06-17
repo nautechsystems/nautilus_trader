@@ -21,7 +21,7 @@ from typing import Optional
 
 import pandas as pd
 
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
+from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 
@@ -124,10 +124,10 @@ def parse_filename_start(fn: str) -> Optional[tuple[str, pd.Timestamp]]:
     return instrument_id, start
 
 
-def py_type_to_parquet_type(cls: type) -> ParquetType:
+def py_type_to_parquet_type(cls: type) -> NautilusDataType:
     if cls == QuoteTick:
-        return ParquetType.QuoteTick
+        return NautilusDataType.QuoteTick
     elif cls == TradeTick:
-        return ParquetType.TradeTick
+        return NautilusDataType.TradeTick
     else:
-        raise RuntimeError(f"Type {cls} not supported as a `ParquetType` yet.")
+        raise RuntimeError(f"Type {cls} not supported as a `NautilusDataType` yet.")
