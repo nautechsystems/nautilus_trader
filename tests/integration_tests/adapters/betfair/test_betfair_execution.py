@@ -72,8 +72,8 @@ async def _setup_order_state(
     include_fills: bool = False,
 ):
     """
-    Ready the engine to test a message from betfair, setting orders into the
-    correct state.
+    Ready the engine to test a message from betfair, setting orders into the correct
+    state.
     """
     if isinstance(order_change_message, bytes):
         order_change_message = stream_decode(order_change_message)

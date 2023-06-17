@@ -270,8 +270,7 @@ class OrderEmulatorConfig(NautilusConfig, frozen=True):
 
 class StreamingConfig(NautilusConfig, frozen=True):
     """
-    Configuration for streaming live or backtest runs to the catalog in feather
-    format.
+    Configuration for streaming live or backtest runs to the catalog in feather format.
 
     Parameters
     ----------
@@ -658,8 +657,8 @@ class ImportableFactoryConfig(NautilusConfig, frozen=True):
 
 class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable configuration (typically live data client or live
-    execution client).
+    Represents an importable configuration (typically live data client or live execution
+    client).
     """
 
     path: str

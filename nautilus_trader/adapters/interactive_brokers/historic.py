@@ -306,9 +306,9 @@ def _request_historical_bars(ib: IB, contract: Contract, end_time: str, bar_spec
 
 def _determine_next_timestamp(timestamps: list[pd.Timestamp], date: datetime.date, tz_name: str):
     """
-    While looping over available data, it is possible for very liquid products
-    that a 1s period may contain 1000 ticks, at which point we need to step the
-    time forward to avoid getting stuck when iterating.
+    While looping over available data, it is possible for very liquid products that a 1s
+    period may contain 1000 ticks, at which point we need to step the time forward to
+    avoid getting stuck when iterating.
     """
     if not timestamps:
         return pd.Timestamp(date, tz=tz_name).tz_convert("UTC")

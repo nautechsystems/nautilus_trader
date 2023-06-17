@@ -1927,6 +1927,7 @@ dependencies = [
  "pyo3",
  "pyo3-asyncio",
  "rand",
+ "thiserror",
  "tokio",
 ]
 

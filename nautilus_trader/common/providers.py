@@ -108,8 +108,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
+        Load the instruments for the given IDs into the provider, optionally applying
+        the given filters.
 
         Parameters
         ----------
@@ -181,8 +181,8 @@ class InstrumentProvider:
 
     def load_all(self, filters: Optional[dict] = None) -> None:
         """
-        Load the latest instruments into the provider, optionally applying the
-        given filters.
+        Load the latest instruments into the provider, optionally applying the given
+        filters.
 
         Parameters
         ----------
@@ -202,8 +202,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
+        Load the instruments for the given IDs into the provider, optionally applying
+        the given filters.
 
         Parameters
         ----------
@@ -227,8 +227,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instrument for the given ID into the provider, optionally
-        applying the given filters.
+        Load the instrument for the given ID into the provider, optionally applying the
+        given filters.
 
         Parameters
         ----------

@@ -32,8 +32,8 @@ from nautilus_trader.model.position import Position
 
 class PortfolioAnalyzer:
     """
-    Provides a portfolio performance analyzer for tracking and generating
-    performance metrics and statistics.
+    Provides a portfolio performance analyzer for tracking and generating performance
+    metrics and statistics.
     """
 
     def __init__(self) -> None:
@@ -342,8 +342,8 @@ class PortfolioAnalyzer:
         unrealized_pnl: Optional[Money] = None,
     ) -> dict[str, float]:
         """
-        Return the 'PnL' (profit and loss) performance statistics, optionally
-        includes the unrealized PnL.
+        Return the 'PnL' (profit and loss) performance statistics, optionally includes
+        the unrealized PnL.
 
         Money objects are converted to floats.
 
@@ -423,8 +423,8 @@ class PortfolioAnalyzer:
         unrealized_pnl: Optional[Money] = None,
     ) -> list[str]:
         """
-        Return the performance statistics from the last backtest run formatted
-        for printing in the backtest run footer.
+        Return the performance statistics from the last backtest run formatted for
+        printing in the backtest run footer.
 
         Parameters
         ----------

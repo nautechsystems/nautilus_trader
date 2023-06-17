@@ -95,8 +95,7 @@ class BinanceFuturesMarginCallMsg(msgspec.Struct, frozen=True):
 
 class BinanceFuturesBalance(msgspec.Struct, frozen=True):
     """
-    Inner struct balance for `Binance Futures` Balance and Position update
-    event.
+    Inner struct balance for `Binance Futures` Balance and Position update event.
     """
 
     a: str  # Asset
@@ -119,8 +118,7 @@ class BinanceFuturesBalance(msgspec.Struct, frozen=True):
 
 class BinanceFuturesPosition(msgspec.Struct, frozen=True):
     """
-    Inner struct position for `Binance Futures` Balance and Position update
-    event.
+    Inner struct position for `Binance Futures` Balance and Position update event.
     """
 
     s: str  # Symbol
@@ -170,8 +168,7 @@ class BinanceFuturesAccountUpdateMsg(msgspec.Struct, frozen=True):
 
 class BinanceFuturesAccountUpdateWrapper(msgspec.Struct, frozen=True):
     """
-    WebSocket message wrapper for `Binance Futures` Balance and Position Update
-    events.
+    WebSocket message wrapper for `Binance Futures` Balance and Position Update events.
     """
 
     stream: str

@@ -15,16 +15,22 @@
 
 mod implementations;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{self, Write},
+};
 
-use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
+use datafusion::arrow::{
+    datatypes::SchemaRef, ipc::writer::StreamWriter, record_batch::RecordBatch,
+};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
+use thiserror::Error;
 
 #[repr(C)]
 #[pyclass]
 #[derive(Debug, Clone, Copy)]
-pub enum ParquetType {
+pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
     QuoteTick = 2,
@@ -32,12 +38,22 @@ pub enum ParquetType {
     Bar = 4,
 }
 
-#[repr(C)]
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
-pub enum ParquetReaderType {
-    File = 0,
-    Buffer = 1,
+#[derive(Debug, Error)]
+pub enum DataStreamingError {
+    #[error("Arrow error: {0}")]
+    ArrowError(#[from] datafusion::arrow::error::ArrowError),
+    #[error("I/O error: {0}")]
+    IoError(#[from] io::Error),
+    #[error("Python error: {0}")]
+    PythonError(#[from] PyErr),
+}
+
+pub trait EncodeDataToRecordBatch
+where
+    Self: Sized + From<Data>,
+{
+    fn encode_batch(data: &[Self]) -> RecordBatch;
+    fn get_schema() -> SchemaRef;
 }
 
 pub trait DecodeDataFromRecordBatch
@@ -46,4 +62,17 @@ where
 {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
+}
+
+pub trait WriteStream {
+    fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError>;
+}
+
+impl<T: EncodeDataToRecordBatch + Write> WriteStream for T {
+    fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError> {
+        let mut writer = StreamWriter::try_new(self, &record_batch.schema())?;
+        writer.write(record_batch)?;
+        writer.finish()?;
+        Ok(())
+    }
 }

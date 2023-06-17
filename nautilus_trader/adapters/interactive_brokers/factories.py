@@ -56,8 +56,7 @@ def get_cached_ib_client(
     gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig(),
 ) -> InteractiveBrokersClient:
     """
-    Cache and return a InteractiveBrokers HTTP client with the given key and
-    secret.
+    Cache and return a InteractiveBrokers HTTP client with the given key and secret.
 
     If a cached client with matching key and secret already exists, then that
     cached client will be returned.

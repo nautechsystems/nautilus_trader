@@ -81,9 +81,8 @@ def make_custom_order_ref(
     strategy_id: StrategyId,
 ) -> CustomerOrderRef:
     """
-    Remove the strategy name from customer_order_ref; it has a limited size and
-    don't control what length the strategy might be or what characters users
-    might append.
+    Remove the strategy name from customer_order_ref; it has a limited size and don't
+    control what length the strategy might be or what characters users might append.
     """
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 

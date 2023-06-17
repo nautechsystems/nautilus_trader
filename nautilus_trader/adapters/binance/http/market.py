@@ -82,8 +82,7 @@ class BinancePingHttp(BinanceHttpEndpoint):
 
 class BinanceTimeHttp(BinanceHttpEndpoint):
     """
-    Endpoint for testing connectivity to the REST API and receiving current
-    server time.
+    Endpoint for testing connectivity to the REST API and receiving current server time.
 
     `GET /api/v3/time`
     `GET /fapi/v1/time`
@@ -287,9 +286,8 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
 
 class BinanceAggTradesHttp(BinanceHttpEndpoint):
     """
-    Endpoint of compressed and aggregated market trades. Market trades that fill
-    in 100ms with the same price and same taking side will have the quantity
-    aggregated.
+    Endpoint of compressed and aggregated market trades. Market trades that fill in
+    100ms with the same price and same taking side will have the quantity aggregated.
 
     `GET /api/v3/aggTrades`
     `GET /fapi/v1/aggTrades`
@@ -352,8 +350,8 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
 
 class BinanceKlinesHttp(BinanceHttpEndpoint):
     """
-    Endpoint of Kline/candlestick bars for a symbol. Klines are uniquely
-    identified by their open time.
+    Endpoint of Kline/candlestick bars for a symbol. Klines are uniquely identified by
+    their open time.
 
     `GET /api/v3/klines`
     `GET /fapi/v1/klines`
@@ -760,8 +758,8 @@ class BinanceMarketHttpAPI:
         """
         Request TradeTicks from Binance aggregated trades.
 
-        If start_time and end_time are both specified, will fetch *all*
-        TradeTicks in the interval, making multiple requests if necessary.
+        If start_time and end_time are both specified, will fetch *all* TradeTicks in
+        the interval, making multiple requests if necessary.
 
         """
         ticks: list[TradeTick] = []

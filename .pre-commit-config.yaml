@@ -96,14 +96,12 @@ repos:
       - id: docformatter
         additional_dependencies: [tomli]
         args: [
-          "--in-place",
-          "--blank",
+          "--black",
           "--make-summary-multi-line",
           "--pre-summary-newline",
-          "--wrap-summaries",
-          "80",
-          "--wrap-descriptions",
-          "80",
+          "--blank",
+          "--recursive",
+          "--in-place",
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
@@ -111,10 +109,10 @@ repos:
     hooks:
       - id: mypy
         args: [
-          --ignore-missing-imports,
-          --allow-incomplete-defs,
-          --no-strict-optional,  # Fixing in progress
-          --warn-no-return,
+          "--ignore-missing-imports",
+          "--allow-incomplete-defs",
+          "--no-strict-optional",  # Fixing in progress
+          "--warn-no-return",
         ]
         additional_dependencies: [
           msgspec,

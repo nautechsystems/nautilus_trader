@@ -88,8 +88,7 @@ class BacktestNode:
 
     def get_engine(self, run_config_id: str) -> Optional[BacktestEngine]:
         """
-        Return the backtest engine associated with the given run config ID (if
-        found).
+        Return the backtest engine associated with the given run config ID (if found).
 
         Parameters
         ----------

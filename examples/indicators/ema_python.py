@@ -32,8 +32,7 @@ from nautilus_trader.model.enums import PriceType
 
 class PyExponentialMovingAverage(Indicator):
     """
-    An indicator which calculates an exponential moving average across a rolling
-    window.
+    An indicator which calculates an exponential moving average across a rolling window.
 
     Parameters
     ----------
