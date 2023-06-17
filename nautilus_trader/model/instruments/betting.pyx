@@ -143,7 +143,7 @@ cdef class BettingInstrument(Instrument):
         return {
             "type": "BettingInstrument",
             "id": obj.id.to_str(),
-            "venue_name": obj.id.venue.to_str(),
+            "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
             "competition_id": obj.competition_id,

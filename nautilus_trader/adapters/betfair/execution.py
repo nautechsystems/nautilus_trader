@@ -139,7 +139,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairHttpClient = client
         self.stream = BetfairOrderStreamClient(
-            client=self._client,
+            http_client=self._client,
             logger=logger,
             message_handler=self.handle_order_stream_update,
         )
@@ -179,9 +179,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Closing BetfairHttpClient...")
         await self._client.disconnect()
 
+    # TODO - remove when we get socket reconnect in rust.
     async def watch_stream(self) -> None:
         """Ensure socket stream is connected"""
-        while not self.stream.is_stopping:
+        while True:
             if not self.stream.is_connected:
                 await self.stream.connect()
             await asyncio.sleep(1)

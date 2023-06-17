@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+import itertools
 from typing import Callable, Optional
 
 import msgspec
@@ -21,7 +21,7 @@ import msgspec
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.network.socket import SocketClient
+from nautilus_trader.core.nautilus_pyo3.network import SocketClient
 
 
 HOST = "stream-api.betfair.com"
@@ -29,53 +29,92 @@ HOST = "stream-api.betfair.com"
 PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
-_UNIQUE_ID = 0
+UNIQUE_ID = itertools.count()
 
 
-class BetfairStreamClient(SocketClient):
+class BetfairStreamClient:
     """
     Provides a streaming client for `Betfair`.
     """
 
     def __init__(
         self,
-        client: BetfairHttpClient,
+        http_client: BetfairHttpClient,
         logger_adapter: LoggerAdapter,
         message_handler,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
-        host: Optional[str] = None,
+        host: Optional[str] = HOST,
         port: Optional[int] = None,
         crlf: Optional[bytes] = None,
         encoding: Optional[str] = None,
     ):
-        super().__init__(
-            loop=loop or asyncio.get_event_loop(),
-            logger=logger_adapter.get_logger(),
-            host=host or HOST,
-            port=port or PORT,
-            handler=message_handler,
-            crlf=crlf or CRLF,
-            encoding=encoding or ENCODING,
-        )
-        self.client = client
-        self.unique_id = self.new_unique_id()
+        self._log = logger_adapter
+        self.host = host or HOST
+        self.port = port or PORT
+        self.handler = message_handler
+        self.crlf = crlf or CRLF
+        self.encoding = encoding or ENCODING
+        self._http_client = http_client
+        self._client: Optional[SocketClient] = None
+        self.unique_id = next(UNIQUE_ID)
+        self.is_connected: bool = False
 
     async def connect(self):
-        if not self.client.session_token:
-            await self.client.connect()
-        return await super().connect()
+        if not self._http_client.session_token:
+            self._log.info("Connecting to betfair http client..")
+            await self._http_client.connect()
 
-    def new_unique_id(self) -> int:
-        global _UNIQUE_ID
-        _UNIQUE_ID += 1
-        return _UNIQUE_ID
+        if self.is_connected:
+            self._log.info("Already connected.")
+            return
+
+        self._log.info("Connecting betfair socket client..")
+        self._client = await SocketClient.connect(
+            url=f"{self.host}:{self.port}",
+            handler=self.handler,
+        )
+
+        self._log.debug("Running post connect")
+        await self.post_connection()
+
+        self.is_connected = True
+        self._log.info("Connected.")
+
+    async def post_connection(self):
+        """
+        Actions to be performed post connection.
+
+        """
+
+    async def disconnect(self):
+        self._log.info("Disconnecting .. ")
+        self._client.close()
+        await self.post_disconnection()
+        self.is_connected = False
+        self._log.info("Disconnected.")
+
+    async def post_disconnection(self) -> None:
+        """
+        Actions to be performed post disconnection.
+
+        """
+        # Override to implement additional disconnection related behaviour
+        # (canceling ping tasks etc.).
+
+    async def reconnect(self):
+        self._log.info("Triggering reconnect..")
+        await self.disconnect()
+        await self.connect()
+        self._log.info("Reconnected.")
+
+    async def send(self, message: bytes):
+        await self._client.send(message)
 
     def auth_message(self):
         return {
             "op": "authentication",
             "id": self.unique_id,
-            "appKey": self.client.app_key,
-            "session": self.client.session_token,
+            "appKey": self._http_client.app_key,
+            "session": self._http_client.session_token,
         }
 
 
@@ -86,7 +125,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
     def __init__(
         self,
-        client: BetfairHttpClient,
+        http_client: BetfairHttpClient,
         logger: Logger,
         message_handler,
         partition_matched_by_strategy_ref: bool = True,
@@ -95,7 +134,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         **kwargs,
     ):
         super().__init__(
-            client=client,
+            http_client=http_client,
             logger_adapter=LoggerAdapter("BetfairOrderStreamClient", logger),
             message_handler=message_handler,
             **kwargs,
@@ -124,11 +163,11 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     """
 
     def __init__(
-        self, client: BetfairHttpClient, logger: Logger, message_handler: Callable, **kwargs
+        self, http_client: BetfairHttpClient, logger: Logger, message_handler: Callable, **kwargs
     ):
         self.subscription_message = None
         super().__init__(
-            client=client,
+            http_client=http_client,
             logger_adapter=LoggerAdapter("BetfairMarketStreamClient", logger),
             message_handler=message_handler,
             **kwargs,

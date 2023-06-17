@@ -100,7 +100,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairHttpClient = client
         self._stream = BetfairMarketStreamClient(
-            client=self._client,
+            http_client=self._client,
             logger=logger,
             message_handler=self.on_market_update,
         )

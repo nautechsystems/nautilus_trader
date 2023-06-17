@@ -77,7 +77,7 @@ class TestBetfairInstrumentProvider:
             for m in parse_market_catalog(
                 BetfairResponses.betting_list_market_catalogue()["result"],
             )
-            if m.eventType.name == "Basketball"
+            if m.event_type.name == "Basketball"
         ]
 
         # Act
@@ -135,8 +135,8 @@ class TestBetfairInstrumentProvider:
         update = msgspec.json.decode(raw, type=MCM)
 
         mc: MarketChange = update.mc[0]
-        market_def = mc.marketDefinition
-        market_def = msgspec.structs.replace(market_def, marketId=mc.id)
+        market_def = mc.market_definition
+        market_def = msgspec.structs.replace(market_def, market_id=mc.id)
         instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 

@@ -26,6 +26,7 @@ import pandas as pd
 import pyarrow as pa
 from fsspec.core import OpenFile
 from pyarrow import ArrowInvalid
+from pyarrow import ArrowTypeError
 from pyarrow import dataset as ds
 from pyarrow import parquet as pq
 from tqdm import tqdm
@@ -324,7 +325,11 @@ def write_parquet(
     df = clean_partition_cols(df=df, mappings=mappings)
 
     # Dataframe -> pyarrow Table
-    table = pa.Table.from_pandas(df, schema=schema)
+    try:
+        table = pa.Table.from_pandas(df, schema)
+    except (ArrowTypeError, ArrowInvalid) as e:
+        logging.error(f"Failed to convert dataframe to pyarrow table with {schema=}, exception={e}")
+        raise
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
         if "bar_type" in df.columns:

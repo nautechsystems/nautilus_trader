@@ -39,7 +39,6 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
@@ -347,7 +346,7 @@ def runner_change_to_order_book_deltas(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> OrderBookDeltas:
+) -> Optional[OrderBookDeltas]:
     """Convert a RunnerChange to a list of OrderBookDeltas"""
     assert not (
         rc.bdatb or rc.bdatl
@@ -362,7 +361,7 @@ def runner_change_to_order_book_deltas(
     for bid in rc.atl:
         bid_price = betfair_float_to_price(bid.price)
         bid_volume = betfair_float_to_quantity(bid.volume)
-        bid_order_id = bid_price._mem
+        bid_order_id = price_to_order_id(bid_price)
         delta = OrderBookDelta(
             instrument_id,
             BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
@@ -376,7 +375,7 @@ def runner_change_to_order_book_deltas(
     for ask in rc.atl:
         ask_price = betfair_float_to_price(ask.price)
         ask_volume = betfair_float_to_quantity(ask.volume)
-        ask_order_id = ask_price._mem
+        ask_order_id = price_to_order_id(ask_price)
         delta = OrderBookDelta(
             instrument_id,
             BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
@@ -386,12 +385,10 @@ def runner_change_to_order_book_deltas(
         )
         deltas.append(delta)
 
-    return OrderBookDeltas(
-        instrument_id,
-        deltas,
-        ts_event,
-        ts_init,
-    )
+    if not deltas:
+        return None
+
+    return OrderBookDeltas(instrument_id, deltas)
 
 
 def runner_change_to_trade_ticks(
@@ -457,13 +454,16 @@ def _create_bsp_order_book_delta(
     ts_event: int,
     ts_init: int,
 ) -> BSPOrderBookDelta:
+    price = betfair_float_to_price(price)
+    order_id = price_to_order_id(price)
     return BSPOrderBookDelta(
         instrument_id=bsp_instrument_id,
         action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
         order=BookOrder(
-            price=betfair_float_to_price(price),
+            price=price,
             size=betfair_float_to_quantity(volume),
             side=B2N_MARKET_STREAM_SIDE[side],
+            order_id=order_id,
         ),
         ts_event=ts_event,
         ts_init=ts_init,
@@ -506,16 +506,12 @@ def runner_change_to_bsp_order_book_deltas(
     return BSPOrderBookDeltas(
         instrument_id=bsp_instrument_id,
         deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
     )
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
-    ts_event = one({deltas.ts_event for deltas in all_deltas})
-    ts_init = one({deltas.ts_init for deltas in all_deltas})
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -523,8 +519,6 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
         cls(
             instrument_id=instrument_id,
             deltas=deltas,
-            ts_event=ts_event,
-            ts_init=ts_init,
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]
