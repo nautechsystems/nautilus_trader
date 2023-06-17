@@ -41,6 +41,7 @@ class MockCacheDatabase(CacheDatabase):
     ----------
     logger : Logger
         The logger for the database.
+
     """
 
     def __init__(self, logger: Logger):

@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The test suite for `NautilusTrader` including unit, integration, acceptance and performance tests.
 """

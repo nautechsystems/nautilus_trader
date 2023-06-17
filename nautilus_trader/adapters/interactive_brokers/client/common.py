@@ -62,7 +62,8 @@ class Subscription(msgspec.Struct, frozen=True):
 
 class Base:
     """
-    Base class to maintain Request Id mapping for subscriptions and data requests.
+    Base class to maintain Request Id mapping for subscriptions and data
+    requests.
     """
 
     def __init__(self):

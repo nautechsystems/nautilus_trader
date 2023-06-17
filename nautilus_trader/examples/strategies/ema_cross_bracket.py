@@ -103,6 +103,7 @@ class EMACrossBracket(Strategy):
     ------
     ValueError
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
+
     """
 
     def __init__(self, config: EMACrossBracketConfig) -> None:
@@ -127,7 +128,9 @@ class EMACrossBracket(Strategy):
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -148,7 +151,8 @@ class EMACrossBracket(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a quote tick.
+        Actions to be performed when the strategy is running and receives a
+        quote tick.
 
         Parameters
         ----------
@@ -254,7 +258,8 @@ class EMACrossBracket(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives
+        generic data.
 
         Parameters
         ----------
@@ -265,7 +270,8 @@ class EMACrossBracket(Strategy):
 
     def on_event(self, event: Event) -> None:
         """
-        Actions to be performed when the strategy is running and receives an event.
+        Actions to be performed when the strategy is running and receives an
+        event.
 
         Parameters
         ----------

@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use rhai::{Engine, Scope, AST};
+use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
@@ -26,15 +26,14 @@ pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
-#[derive(Debug)]
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
     pub precision: u8,
     pub components: Vec<InstrumentId>,
     pub formula: String,
     pub variables: Vec<String>,
-    pub compiled: AST,
-    pub engine: Engine,
+    pub context: HashMapContext,
+    operator_tree: Node,
 }
 
 impl SyntheticInstrument {
@@ -44,8 +43,7 @@ impl SyntheticInstrument {
         components: Vec<InstrumentId>,
         formula: String,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let engine = Engine::new();
-        let compiled = engine.compile(&formula)?;
+        let context = HashMapContext::new();
 
         // Extract variables from the component instruments
         let variables: Vec<String> = components
@@ -53,70 +51,70 @@ impl SyntheticInstrument {
             .map(|component| component.to_string())
             .collect();
 
+        let operator_tree = evalexpr::build_operator_tree(&formula)?;
+
         Ok(SyntheticInstrument {
             id: InstrumentId::new(symbol, Venue::new(SYNTHETIC_VENUE)),
             precision,
             components,
             formula,
             variables,
-            compiled,
-            engine,
+            context,
+            operator_tree,
         })
     }
 
-    /// Changes the internal derivation formula by recompiling it with a new evaluation engine.
+    pub fn is_valid_formula(&self, formula: &str) -> bool {
+        evalexpr::build_operator_tree(formula).is_ok()
+    }
+
     pub fn change_formula(&mut self, formula: String) -> Result<(), Box<dyn std::error::Error>> {
-        self.engine = Engine::new();
-        self.compiled = self.engine.compile(&formula)?;
+        let operator_tree = evalexpr::build_operator_tree(&formula)?;
         self.formula = formula;
+        self.operator_tree = operator_tree;
         Ok(())
     }
 
-    /// Calculates the price of the synthetic instrument based on the given component input values
+    /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as a map.
+    #[allow(dead_code)]
     pub fn calculate_from_map(
-        &self,
+        &mut self,
         inputs: &HashMap<String, f64>,
     ) -> Result<Price, Box<dyn std::error::Error>> {
-        let input_values: Vec<f64> = self
-            .variables
-            .iter()
-            .map(|variable| {
-                if let Some(&value) = inputs.get(variable) {
-                    value
-                } else {
-                    panic!("Missing price for component: {}", variable);
-                }
-            })
-            .collect();
+        let mut input_values = Vec::new();
+
+        for variable in &self.variables {
+            if let Some(&value) = inputs.get(variable) {
+                input_values.push(value);
+                self.context
+                    .set_value(variable.clone(), Value::from(value))?;
+            } else {
+                panic!("Missing price for component: {}", variable);
+            }
+        }
 
         self.calculate(&input_values)
     }
 
-    /// Calculates the price of the synthetic instrument based on the given component input values
+    /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
-    pub fn calculate(&self, inputs: &[f64]) -> Result<Price, Box<dyn std::error::Error>> {
-        let mut scope = self.create_scope(inputs)?;
-        let result: f64 = self
-            .engine
-            .eval_ast_with_scope(&mut scope, &self.compiled)?;
-
-        Ok(Price::new(result, self.precision))
-    }
-
-    // Creates the evaluation scope with input values.
-    fn create_scope(&self, inputs: &[f64]) -> Result<Scope, Box<dyn std::error::Error>> {
+    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, Box<dyn std::error::Error>> {
         if inputs.len() != self.variables.len() {
             return Err("Invalid number of input values".into());
         }
 
-        let mut scope = Scope::new();
-
         for (variable, input) in self.variables.iter().zip(inputs) {
-            scope.push(variable.replace('.', "_"), *input);
+            self.context
+                .set_value(variable.clone(), Value::from(*input))?;
         }
 
-        Ok(scope)
+        let result: Value = self.operator_tree.eval_with_context(&self.context)?;
+
+        match result {
+            Value::Float(price) => Ok(Price::new(price, self.precision)),
+            _ => Err("Failed to evaluate formula to a floating point number".into()),
+        }
     }
 }
 
@@ -125,14 +123,14 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-    use crate::identifiers::symbol::Symbol;
+    use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
 
     #[test]
     fn test_calculate_from_map() {
         let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
-        let formula = "(BTC_BINANCE + LTC_BINANCE) / 2".to_string();
-        let synth = SyntheticInstrument::new(
+        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
+        let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC"),
             2,
             vec![btc_binance.clone(), ltc_binance],
@@ -154,8 +152,8 @@ mod tests {
     fn test_calculate() {
         let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
-        let formula = "(BTC_BINANCE + LTC_BINANCE) / 2.0".to_string();
-        let synth = SyntheticInstrument::new(
+        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
+        let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC"),
             2,
             vec![btc_binance.clone(), ltc_binance],
@@ -174,16 +172,16 @@ mod tests {
     fn test_change_formula() {
         let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
-        let formula = "(BTC_BINANCE + LTC_BINANCE) / 2".to_string();
+        let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC"),
             2,
-            vec![btc_binance.clone(), ltc_binance],
+            vec![btc_binance, ltc_binance],
             formula.clone(),
         )
         .unwrap();
 
-        let new_formula = "(BTC_BINANCE + LTC_BINANCE) / 4".to_string();
+        let new_formula = "(BTC.BINANCE + LTC.BINANCE) / 4".to_string();
         synth.change_formula(new_formula.clone()).unwrap();
 
         let mut inputs = HashMap::new();

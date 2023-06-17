@@ -241,6 +241,7 @@ class CSVReader(Reader):
         passed will potentially contain many lines (a block).
     as_dataframe: bool, default False
         If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`.
+
     """
 
     def __init__(
@@ -321,6 +322,7 @@ class ParquetReader(ByteReader):
     instrument_provider_update : Callable , optional
         An optional hook/callable to update instrument provider before data is passed to `byte_parser`
         (in many cases instruments need to be known ahead of parsing).
+
     """
 
     def __init__(

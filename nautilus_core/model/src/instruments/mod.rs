@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod synthetic;
-pub mod synthetic_api;
+mod synthetic;
+mod synthetic_api;
 
 use rust_decimal::Decimal;
 

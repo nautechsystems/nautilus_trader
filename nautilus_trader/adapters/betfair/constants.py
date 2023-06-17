@@ -45,7 +45,9 @@ STRICT_MARKET_DATA_HANDLING = os.environ.get("BETFAIR_STRICT_MARKET_DATA_HANDLIN
 
 
 class MarketDataKind(Enum):
-    """MarketDataKind"""
+    """
+    MarketDataKind.
+    """
 
     ALL = "ALL"
     BEST = "BEST"

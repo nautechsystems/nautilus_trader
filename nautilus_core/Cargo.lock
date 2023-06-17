@@ -699,9 +699,9 @@ checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e4c1eaa2012c47becbbad2ab175484c2a84d1185b566fb2cc5b8707343dfe58"
+checksum = "03e69e28e9f7f77debdedbaafa2866e1de9ba56df55a8bd7cfc724c25a09987c"
 dependencies = [
  "libc",
 ]
@@ -1142,6 +1142,12 @@ dependencies = [
  "cc",
  "libc",
 ]
+
+[[package]]
+name = "evalexpr"
+version = "11.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec3b4e80fd8edee77d6fc35d59862d5765dae7512a95f49fd7bf03847c85b26a"
 
 [[package]]
 name = "fastrand"
@@ -1816,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -1828,7 +1834,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1843,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1858,7 +1864,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "nautilus-core",
  "nautilus-model",
@@ -1867,16 +1873,16 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "cbindgen",
  "criterion",
  "derive_builder",
+ "evalexpr",
  "iai",
  "lazy_static",
  "nautilus-core",
  "pyo3",
- "rhai",
  "rmp-serde",
  "rstest",
  "rust_decimal",
@@ -1889,7 +1895,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "criterion",
  "futures",
@@ -1908,7 +1914,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "binary-heap-plus",
  "compare",
@@ -1926,7 +1932,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "nautilus-indicators",
  "nautilus-model",
@@ -2296,9 +2302,9 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "plotters"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2538b639e642295546c50fcd545198c9d64ee2a38620a628724a3b266d5fbf97"
+checksum = "d2c224ba00d7cadd4d5c660deaf2098e5e80e07846537c51f9cfa4be50c1fd45"
 dependencies = [
  "num-traits",
  "plotters-backend",
@@ -2309,15 +2315,15 @@ dependencies = [
 
 [[package]]
 name = "plotters-backend"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "193228616381fecdc1224c62e96946dfbc73ff4384fba576e052ff8c1bea8142"
+checksum = "9e76628b4d3a7581389a35d5b6e2139607ad7c75b17aed325f210aa91f4a9609"
 
 [[package]]
 name = "plotters-svg"
-version = "0.3.3"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9a81d2759aae1dae668f783c308bc5c8ebd191ff4184aaa1b37f65a6ae5a56f"
+checksum = "38f6d39893cca0701371e3c27294f09797214b86f1fb951b89ade8ec04e2abab"
 dependencies = [
  "plotters-backend",
 ]
@@ -2596,32 +2602,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "581008d2099240d37fb08d77ad713bcaec2c4d89d50b5b21a8bb1996bbab68ab"
 dependencies = [
  "bytecheck",
-]
-
-[[package]]
-name = "rhai"
-version = "1.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2c99b27f6661b4d217b6aa21727c6a0808729266edfc8a8877042d609b1904e"
-dependencies = [
- "ahash 0.8.3",
- "bitflags",
- "instant",
- "num-traits",
- "rhai_codegen",
- "smallvec",
- "smartstring",
-]
-
-[[package]]
-name = "rhai_codegen"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db74e3fdd29d969a0ec1f8e79171a6f0f71d0429293656901db382d248c4c021"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -2908,9 +2888,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.96"
+version = "1.0.97"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057d394a50403bcac12672b2b18fb387ab6d289d957dab67dd201875391e52f1"
+checksum = "bdf3bf93142acad5821c99197022e170842cdbc1c30482b98750c688c640842a"
 dependencies = [
  "itoa",
  "ryu",
@@ -2972,17 +2952,6 @@ name = "smallvec"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
-
-[[package]]
-name = "smartstring"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb72c633efbaa2dd666986505016c32c3044395ceaf881518399d2f4127ee29"
-dependencies = [
- "autocfg",
- "static_assertions",
- "version_check",
-]
 
 [[package]]
 name = "snafu"

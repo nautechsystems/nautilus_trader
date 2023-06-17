@@ -29,7 +29,7 @@ def test_synthetic_instrument_initialization() -> None:
     symbol = Symbol("BTC-ETH")
     precision = 8
     components = [BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id]
-    formula = "(BTCUSDT_BINANCE + ETHUSDT_BINANCE) / 2"
+    formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 
     # Act
     synthetic = SyntheticInstrument(
@@ -52,7 +52,7 @@ def test_synthetic_instrument_calculate() -> None:
         symbol=Symbol("BTC-ETH"),
         precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
-        formula="(BTCUSDT_BINANCE + ETHUSDT_BINANCE) / 2",
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
     )
 
     # Act
@@ -71,14 +71,14 @@ def test_synthetic_instrument_change_formula() -> None:
         symbol=Symbol("BTC-ETH"),
         precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
-        formula="(BTCUSDT_BINANCE + ETHUSDT_BINANCE) / 2",
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
     )
 
     inputs = [100.0, 200.0]
     price1 = synthetic.calculate(inputs)
 
     # Act
-    new_formula = "(BTCUSDT_BINANCE + ETHUSDT_BINANCE) / 4"
+    new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 4"
     synthetic.change_formula(new_formula)
     price2 = synthetic.calculate(inputs)
 

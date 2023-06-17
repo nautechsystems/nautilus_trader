@@ -40,7 +40,9 @@ class MockReader(Reader):
 
 
 class NewsEventData(NewsEvent):
-    """Generic data NewsEvent"""
+    """
+    Generic data NewsEvent.
+    """
 
 
 def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:

@@ -148,7 +148,9 @@ class BetfairHttpClient:
         )
 
     async def keep_alive(self):
-        """Renew authentication."""
+        """
+        Renew authentication.
+        """
         resp: KeepAlive.return_type = await self._post(KeepAlive())
         if resp.status == "SUCCESS":
             self._headers.update({"X-Authentication": resp.token})

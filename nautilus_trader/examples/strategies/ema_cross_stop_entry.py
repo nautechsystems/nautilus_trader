@@ -149,7 +149,9 @@ class EMACrossStopEntry(Strategy):
         self.trailing_stop = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -185,7 +187,8 @@ class EMACrossStopEntry(Strategy):
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
-        Actions to be performed when the strategy is running and receives an order book.
+        Actions to be performed when the strategy is running and receives an
+        order book.
 
         Parameters
         ----------
@@ -197,7 +200,8 @@ class EMACrossStopEntry(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a quote tick.
+        Actions to be performed when the strategy is running and receives a
+        quote tick.
 
         Parameters
         ----------
@@ -208,7 +212,8 @@ class EMACrossStopEntry(Strategy):
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a trade tick.
+        Actions to be performed when the strategy is running and receives a
+        trade tick.
 
         Parameters
         ----------
@@ -366,7 +371,8 @@ class EMACrossStopEntry(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives
+        generic data.
 
         Parameters
         ----------
@@ -377,7 +383,8 @@ class EMACrossStopEntry(Strategy):
 
     def on_event(self, event: Event) -> None:
         """
-        Actions to be performed when the strategy is running and receives an event.
+        Actions to be performed when the strategy is running and receives an
+        event.
 
         Parameters
         ----------

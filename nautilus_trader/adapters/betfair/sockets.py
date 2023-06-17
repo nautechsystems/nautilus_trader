@@ -82,7 +82,6 @@ class BetfairStreamClient:
     async def post_connection(self):
         """
         Actions to be performed post connection.
-
         """
 
     async def disconnect(self):
@@ -95,7 +94,6 @@ class BetfairStreamClient:
     async def post_disconnection(self) -> None:
         """
         Actions to be performed post disconnection.
-
         """
         # Override to implement additional disconnection related behaviour
         # (canceling ping tasks etc.).

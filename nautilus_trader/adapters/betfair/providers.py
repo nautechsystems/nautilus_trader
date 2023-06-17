@@ -127,11 +127,21 @@ class BetfairInstrumentProvider(InstrumentProvider):
         self._log.info(f"{len(instruments)} Instruments created")
 
     def load_markets(self, market_filter: Optional[dict] = None):
-        """Search for betfair markets. Useful for debugging / interactive use"""
+        """
+        Search for betfair markets.
+
+        Useful for debugging / interactive use
+
+        """
         return load_markets(client=self._client, market_filter=market_filter)
 
     def search_instruments(self, instrument_filter: Optional[dict] = None):
-        """Search for instruments within the cache. Useful for debugging / interactive use"""
+        """
+        Search for instruments within the cache.
+
+        Useful for debugging / interactive use
+
+        """
         instruments = self.list_all()
         if instrument_filter:
             instruments = [
@@ -147,7 +157,9 @@ class BetfairInstrumentProvider(InstrumentProvider):
         selection_id: str,
         handicap: str,
     ) -> BettingInstrument:
-        """Return a betting instrument with performance friendly lookup."""
+        """
+        Return a betting instrument with performance friendly lookup.
+        """
         key = (market_id, selection_id, handicap)
         if key not in self._cache:
             instrument_filter = {

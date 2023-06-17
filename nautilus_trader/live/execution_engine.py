@@ -89,6 +89,7 @@ class LiveExecutionEngine(ExecutionEngine):
     ------
     TypeError
         If `config` is not of type `LiveExecEngineConfig`.
+
     """
 
     _sentinel = None
@@ -396,7 +397,8 @@ class LiveExecutionEngine(ExecutionEngine):
 
     async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
         """
-        Reconcile the internal execution state with all execution clients (external state).
+        Reconcile the internal execution state with all execution clients
+        (external state).
 
         Parameters
         ----------

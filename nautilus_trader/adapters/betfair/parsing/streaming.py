@@ -291,7 +291,9 @@ def runner_change_to_order_book_snapshot(
     ts_event: int,
     ts_init: int,
 ) -> OrderBookDeltas:
-    """Convert a RunnerChange to a OrderBookDeltas snapshot"""
+    """
+    Convert a RunnerChange to a OrderBookDeltas snapshot.
+    """
     # Check for incorrect data types
     assert not (
         rc.bdatb or rc.bdatl
@@ -347,7 +349,9 @@ def runner_change_to_order_book_deltas(
     ts_event: int,
     ts_init: int,
 ) -> Optional[OrderBookDeltas]:
-    """Convert a RunnerChange to a list of OrderBookDeltas"""
+    """
+    Convert a RunnerChange to a list of OrderBookDeltas.
+    """
     assert not (
         rc.bdatb or rc.bdatl
     ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"

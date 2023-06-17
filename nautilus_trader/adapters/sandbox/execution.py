@@ -68,6 +68,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
     INSTRUMENTS: list[Instrument] = []

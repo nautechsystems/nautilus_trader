@@ -51,6 +51,7 @@ class MyStrategy(Strategy):
     ----------
     config : MyStrategyConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: MyStrategyConfig) -> None:
@@ -60,15 +61,21 @@ class MyStrategy(Strategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
     def on_start(self) -> None:
-        """Actions to be performed when the strategy is started."""
+        """
+        Actions to be performed when the strategy is started.
+        """
         # Optionally implement
 
     def on_stop(self) -> None:
-        """Actions to be performed when the strategy is stopped."""
+        """
+        Actions to be performed when the strategy is stopped.
+        """
         # Optionally implement
 
     def on_reset(self) -> None:
-        """Actions to be performed when the strategy is reset."""
+        """
+        Actions to be performed when the strategy is reset.
+        """
         # Optionally implement
 
     def on_dispose(self) -> None:
@@ -123,7 +130,8 @@ class MyStrategy(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a quote tick.
+        Actions to be performed when the strategy is running and receives a
+        quote tick.
 
         Parameters
         ----------
@@ -135,7 +143,8 @@ class MyStrategy(Strategy):
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
-        Actions to be performed when the strategy is running and receives a trade tick.
+        Actions to be performed when the strategy is running and receives a
+        trade tick.
 
         Parameters
         ----------
@@ -171,7 +180,8 @@ class MyStrategy(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives
+        generic data.
 
         Parameters
         ----------
@@ -183,7 +193,8 @@ class MyStrategy(Strategy):
 
     def on_event(self, event: Event) -> None:
         """
-        Actions to be performed when the strategy is running and receives an event.
+        Actions to be performed when the strategy is running and receives an
+        event.
 
         Parameters
         ----------

@@ -48,6 +48,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     References
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#mark-price-stream
+
     """
 
     def __init__(
@@ -110,7 +111,8 @@ class BinanceFuturesMarkPriceUpdate(Data):
     @staticmethod
     def from_dict(values: dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":
         """
-        Return a `Binance Futures` mark price update parsed from the given values.
+        Return a `Binance Futures` mark price update parsed from the given
+        values.
 
         Parameters
         ----------

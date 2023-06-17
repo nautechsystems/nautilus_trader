@@ -1152,11 +1152,16 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `formula_ptr` is a valid C string pointer.
+    uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
+                                                  const char *formula_ptr);
+
+    # # Safety
+    #
+    # - Assumes `formula_ptr` is a valid C string pointer.
     void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
                                              const char *formula_ptr);
 
-    Price_t synthetic_instrument_calculate(const SyntheticInstrument_API *synth,
-                                           const CVec *inputs_ptr);
+    Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
 
     OrderBook_API orderbook_new(InstrumentId_t instrument_id, BookType book_type);
 

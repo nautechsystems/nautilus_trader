@@ -31,6 +31,7 @@ class SortinoRatio(PortfolioStatistic):
     ----------
     period : int, default 252
         The trading period in days.
+
     """
 
     def __init__(self, period: int = 252):

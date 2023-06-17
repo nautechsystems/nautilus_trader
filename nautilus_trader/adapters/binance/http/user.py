@@ -55,6 +55,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
     https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
     https://binance-docs.github.io/apidocs/delivery/en/#start-user-data-stream-user_stream
+
     """
 
     def __init__(
@@ -84,6 +85,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         ----------
         symbol : BinanceSymbol
             The trading pair. Only required for ISOLATED MARGIN accounts!
+
         """
 
         symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
@@ -98,6 +100,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
             The trading pair. Only required for ISOLATED MARGIN accounts!
         listenKey : str
             The listen key to manage. Only required for SPOT/MARGIN accounts!
+
         """
 
         symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
@@ -170,7 +173,9 @@ class BinanceUserDataHttpAPI:
         self,
         symbol: Optional[str] = None,
     ) -> BinanceListenKey:
-        """Create Binance ListenKey."""
+        """
+        Create Binance ListenKey.
+        """
         key = await self._endpoint_listenkey._post(
             parameters=self._endpoint_listenkey.PostParameters(
                 symbol=BinanceSymbol(symbol),
@@ -183,7 +188,9 @@ class BinanceUserDataHttpAPI:
         symbol: Optional[str] = None,
         listen_key: Optional[str] = None,
     ):
-        """Ping/Keepalive Binance ListenKey."""
+        """
+        Ping/Keepalive Binance ListenKey.
+        """
         await self._endpoint_listenkey._put(
             parameters=self._endpoint_listenkey.PutDeleteParameters(
                 symbol=BinanceSymbol(symbol),
@@ -196,7 +203,9 @@ class BinanceUserDataHttpAPI:
         symbol: Optional[str] = None,
         listen_key: Optional[str] = None,
     ):
-        """Delete Binance ListenKey."""
+        """
+        Delete Binance ListenKey.
+        """
         await self._endpoint_listenkey._delete(
             parameters=self._endpoint_listenkey.PutDeleteParameters(
                 symbol=BinanceSymbol(symbol),

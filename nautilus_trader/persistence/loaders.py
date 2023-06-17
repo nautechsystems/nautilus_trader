@@ -82,7 +82,8 @@ def _ts_parser(time_in_secs: str) -> datetime:
 
 class TardisTradeDataLoader:
     """
-    Provides a means of loading trade data pandas DataFrames from Tardis CSV files.
+    Provides a means of loading trade data pandas DataFrames from Tardis CSV
+    files.
     """
 
     @staticmethod
@@ -115,7 +116,8 @@ class TardisTradeDataLoader:
 
 class TardisQuoteDataLoader:
     """
-    Provides a means of loading quote data pandas DataFrames from Tardis CSV files.
+    Provides a means of loading quote data pandas DataFrames from Tardis CSV
+    files.
     """
 
     @staticmethod

@@ -75,9 +75,9 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         .map(|s| InstrumentId::from_str(&s).unwrap())
         .collect::<Vec<InstrumentId>>();
     let formula = cstr_to_string(formula_ptr);
-    let synth = SyntheticInstrument::new(symbol, precision, components, formula).unwrap();
+    let synth = SyntheticInstrument::new(symbol, precision, components, formula);
 
-    SyntheticInstrument_API(Box::new(synth))
+    SyntheticInstrument_API(Box::new(synth.unwrap()))
 }
 
 #[no_mangle]
@@ -119,6 +119,18 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
 #[no_mangle]
+pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
+    synth: &SyntheticInstrument_API,
+    formula_ptr: *const c_char,
+) -> u8 {
+    let formula = cstr_to_string(formula_ptr);
+    synth.is_valid_formula(&formula) as u8
+}
+
+/// # Safety
+///
+/// - Assumes `formula_ptr` is a valid C string pointer.
+#[no_mangle]
 pub unsafe extern "C" fn synthetic_instrument_change_formula(
     synth: &mut SyntheticInstrument_API,
     formula_ptr: *const c_char,
@@ -130,7 +142,7 @@ pub unsafe extern "C" fn synthetic_instrument_change_formula(
 
 #[no_mangle]
 pub extern "C" fn synthetic_instrument_calculate(
-    synth: &SyntheticInstrument_API,
+    synth: &mut SyntheticInstrument_API,
     inputs_ptr: &CVec,
 ) -> Price {
     let CVec { ptr, len, .. } = inputs_ptr;

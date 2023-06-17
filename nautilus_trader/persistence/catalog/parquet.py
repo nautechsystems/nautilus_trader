@@ -70,6 +70,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     Warnings
     --------
     The catalog is not threadsafe.
+
     """
 
     def __init__(

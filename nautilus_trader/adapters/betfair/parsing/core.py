@@ -27,7 +27,9 @@ from nautilus_trader.core.datetime import millis_to_nanos
 
 
 class BetfairParser:
-    """Stateful parser that keeps market definition"""
+    """
+    Stateful parser that keeps market definition.
+    """
 
     def __init__(self) -> None:
         self.market_definitions: dict[str, MarketDefinition] = {}

@@ -54,6 +54,7 @@ class LiveRiskEngine(RiskEngine):
     ------
     TypeError
         If `config` is not of type `LiveRiskEngineConfig`.
+
     """
 
     _sentinel = None

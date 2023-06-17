@@ -12,7 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Defines `Binance` Spot/Margin specific enums.
 
+References
+----------
+https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
+"""
 from enum import Enum
 from enum import unique
 
@@ -24,18 +30,11 @@ from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.orders import Order
 
 
-"""
-Defines `Binance` Spot/Margin specific enums.
-
-References
-----------
-https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
-"""
-
-
 @unique
 class BinanceSpotPermissions(Enum):
-    """Represents `Binance Spot/Margin` trading permissions."""
+    """
+    Represents `Binance Spot/Margin` trading permissions.
+    """
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
@@ -52,7 +51,9 @@ class BinanceSpotPermissions(Enum):
 
 @unique
 class BinanceSpotSymbolStatus(Enum):
-    """Represents a `Binance Spot/Margin` symbol status."""
+    """
+    Represents a `Binance Spot/Margin` symbol status.
+    """
 
     PRE_TRADING = "PRE_TRADING"
     TRADING = "TRADING"
@@ -65,7 +66,9 @@ class BinanceSpotSymbolStatus(Enum):
 
 @unique
 class BinanceSpotEventType(Enum):
-    """Represents a `Binance Spot/Margin` event type."""
+    """
+    Represents a `Binance Spot/Margin` event type.
+    """
 
     outboundAccountPosition = "outboundAccountPosition"
     balanceUpdate = "balanceUpdate"
@@ -75,7 +78,8 @@ class BinanceSpotEventType(Enum):
 
 class BinanceSpotEnumParser(BinanceEnumParser):
     """
-    Provides parsing methods for enums used by the 'Binance Spot/Margin' exchange.
+    Provides parsing methods for enums used by the 'Binance Spot/Margin'
+    exchange.
     """
 
     def __init__(self) -> None:

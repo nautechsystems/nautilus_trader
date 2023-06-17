@@ -42,6 +42,7 @@ class InstrumentProvider:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -131,8 +132,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instrument for the given ID into the provider asynchronously, optionally
-        applying the given filters.
+        Load the instrument for the given ID into the provider asynchronously,
+        optionally applying the given filters.
 
         Parameters
         ----------
@@ -154,6 +155,7 @@ class InstrumentProvider:
         Initialize the instrument provider.
 
         If `initialize()` then will immediately return.
+
         """
         if self._loaded:
             return  # Already loaded
