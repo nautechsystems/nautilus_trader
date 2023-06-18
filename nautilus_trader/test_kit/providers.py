@@ -43,6 +43,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -506,6 +507,20 @@ class TestInstrumentProvider:
             },
         )
 
+    @staticmethod
+    def synthetic_instrument() -> SyntheticInstrument:
+        return SyntheticInstrument(
+            symbol=Symbol("BTC-ETH"),
+            precision=8,
+            components=[
+                TestInstrumentProvider.btcusdt_binance().id,
+                TestInstrumentProvider.ethusdt_binance().id,
+            ],
+            formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+            ts_event=0,
+            ts_init=0,
+        )
+
 
 class TestDataProvider:
     """
@@ -519,7 +534,7 @@ class TestDataProvider:
 
     """
 
-    def __init__(self, branch="develop") -> None:
+    def __init__(self, branch: str = "develop") -> None:
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()

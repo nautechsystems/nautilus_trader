@@ -25,6 +25,7 @@ from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.futures_contract import FuturesContract
 from nautilus_trader.model.instruments.options_contract import OptionsContract
+from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
 
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "Equity",
     "FuturesContract",
     "OptionsContract",
+    "SyntheticInstrument",
 ]
