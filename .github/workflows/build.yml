@@ -26,11 +26,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Setup for Windows builds
-      - name: Set up MSVC environment
-        if: runner.os == 'Windows'
-        uses: microsoft/setup-msbuild@v1.1
-
       # Rust setup (ensures latest stable)
       - name: Set up Rust tool-chain (Linux/Windows)
         if: runner.os != 'macOS'

@@ -48,9 +48,9 @@ if platform.system() == "Linux":
     # Use clang as the default compiler
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
-elif platform.system() == "Windows":
-    os.environ["CC"] = "cl"
-    os.environ["CXX"] = "cl"
+# elif platform.system() == "Windows":
+#     os.environ["CC"] = "cl"
+#     os.environ["CXX"] = "cl"
 
 TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
