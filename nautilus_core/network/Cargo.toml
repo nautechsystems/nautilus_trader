@@ -8,7 +8,7 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_network"
-crate-type = ["rlib", "staticlib", "cdylib" ]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
