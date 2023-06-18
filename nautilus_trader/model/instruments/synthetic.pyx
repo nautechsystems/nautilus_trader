@@ -17,20 +17,24 @@ import msgspec
 
 from cpython.mem cimport PyMem_Free
 from cpython.mem cimport PyMem_Malloc
+from libc.math cimport isnan
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport ERROR_PRICE
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
 from nautilus_trader.core.rust.model cimport symbol_clone
 from nautilus_trader.core.rust.model cimport synthetic_instrument_calculate
 from nautilus_trader.core.rust.model cimport synthetic_instrument_change_formula
+from nautilus_trader.core.rust.model cimport synthetic_instrument_components_count
 from nautilus_trader.core.rust.model cimport synthetic_instrument_components_to_cstr
 from nautilus_trader.core.rust.model cimport synthetic_instrument_drop
 from nautilus_trader.core.rust.model cimport synthetic_instrument_formula_to_cstr
 from nautilus_trader.core.rust.model cimport synthetic_instrument_id
+from nautilus_trader.core.rust.model cimport synthetic_instrument_is_valid_formula
 from nautilus_trader.core.rust.model cimport synthetic_instrument_new
 from nautilus_trader.core.rust.model cimport synthetic_instrument_precision
 from nautilus_trader.core.string cimport cstr_to_pybytes
@@ -70,6 +74,9 @@ cdef class SyntheticInstrument:
         If the `components` list does not contain at least 2 instrument IDs.
     ValueError
         If the `formula` is not a valid string.
+    ValueError
+        If the `formula` is not a valid expression.
+
     """
 
     def __init__(
@@ -83,6 +90,9 @@ cdef class SyntheticInstrument:
         Condition.true(len(components) >= 2, "There must be at least two component instruments")
         Condition.list_type(components, InstrumentId, "components")
         Condition.valid_string(formula, "formula")
+
+        if not synthetic_instrument_is_valid_formula(&self._mem, pystr_to_cstr(formula)):
+            raise ValueError(f"invalid `formula`, was '{formula}'")
 
         self._mem = synthetic_instrument_new(
             symbol_clone(&symbol._mem),
@@ -135,7 +145,7 @@ cdef class SyntheticInstrument:
     @property
     def formula(self) -> str:
         """
-        Return the synthetic instrument derivation formula.
+        Return the synthetic instrument internal derivation formula.
 
         Returns
         -------
@@ -146,15 +156,25 @@ cdef class SyntheticInstrument:
 
     cpdef void change_formula(self, str formula):
         """
-        Change the internal derivation formula by recompiling the internal evaluation engine.
+        Change the internal derivation formula for the synthetic instrument.
 
         Parameters
         ----------
         formula : str
             The derivation formula to change to.
 
+        Raises
+        ------
+        ValueError
+            If the `formula` is not a valid string.
+        ValueError
+            If the `formula` is not a valid expression.
+
         """
         Condition.valid_string(formula, "formula")
+
+        if not synthetic_instrument_is_valid_formula(&self._mem, pystr_to_cstr(formula)):
+            raise ValueError(f"invalid `formula`, was '{formula}'")
 
         synthetic_instrument_change_formula(&self._mem, pystr_to_cstr(formula))
 
@@ -170,10 +190,32 @@ cdef class SyntheticInstrument:
         -------
         Price
 
+        Raises
+        ------
+        ValueError
+            If `inputs` is empty, contains a NaN value, or length is different from components count.
+        RuntimeError
+            If an internal error occurs when calculating the price.
+
         """
-        # Create a C doubles buffer
+        Condition.not_empty(inputs, "inputs")
+
         cdef uint64_t len_ = len(inputs)
-        cdef double * data = <double *>PyMem_Malloc(len_ * sizeof(double))
+
+        cdef uint64_t components_count = synthetic_instrument_components_count(&self._mem)
+        if len_ != components_count:
+            raise ValueError(
+                f"error calculating {self.id} `SyntheticInstrument` price: "
+                f"length of inputs ({len_}) not equal to components count ({components_count})",
+            )
+
+        cdef double value
+        for value in inputs:
+            if isnan(value):
+                raise ValueError(f"NaN detected in inputs {inputs}")
+
+        # Create a C doubles buffer
+        cdef double* data = <double *>PyMem_Malloc(len_ * sizeof(double))
         if not data:
             raise MemoryError()
 
@@ -182,7 +224,7 @@ cdef class SyntheticInstrument:
             data[i] = <double>inputs[i]
 
         # Create CVec
-        cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cdef CVec* cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
         if not cvec:
             raise MemoryError()
 
@@ -191,6 +233,11 @@ cdef class SyntheticInstrument:
         cvec.cap = len_
 
         cdef Price_t mem = synthetic_instrument_calculate(&self._mem, cvec)
+        if mem.raw == ERROR_PRICE.raw:
+            raise RuntimeError(
+                f"error calculating {self.id} `SyntheticInstrument` price from {inputs}",
+            )
+
         cdef Price price = Price.from_mem_c(mem)
 
         PyMem_Free(cvec.ptr) # De-allocate buffer

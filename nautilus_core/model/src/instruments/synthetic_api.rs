@@ -28,7 +28,7 @@ use nautilus_core::{
 use super::synthetic::SyntheticInstrument;
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    types::price::Price,
+    types::price::{Price, ERROR_PRICE},
 };
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -115,6 +115,11 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
     string_vec_to_bytes(components_vec)
 }
 
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_components_count(synth: &SyntheticInstrument_API) -> usize {
+    synth.components.len()
+}
+
 /// # Safety
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
@@ -123,6 +128,9 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
     synth: &SyntheticInstrument_API,
     formula_ptr: *const c_char,
 ) -> u8 {
+    if formula_ptr.is_null() {
+        return false as u8;
+    }
     let formula = cstr_to_string(formula_ptr);
     synth.is_valid_formula(&formula) as u8
 }
@@ -148,6 +156,8 @@ pub extern "C" fn synthetic_instrument_calculate(
     let CVec { ptr, len, .. } = inputs_ptr;
     let inputs: &[f64] = unsafe { std::slice::from_raw_parts(*ptr as *mut f64, *len) };
 
-    // TODO: There is absolutely no error handling here yet
-    synth.calculate(inputs).unwrap()
+    match synth.calculate(inputs) {
+        Ok(price) => price,
+        Err(_) => ERROR_PRICE,
+    }
 }

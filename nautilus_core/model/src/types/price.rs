@@ -31,6 +31,12 @@ use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
+/// Sentinel Price for errors.
+pub const ERROR_PRICE: Price = Price {
+    raw: i64::MAX,
+    precision: 0,
+};
+
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
 #[pyclass]
