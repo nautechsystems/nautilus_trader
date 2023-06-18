@@ -18,7 +18,7 @@
 pub mod limit;
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
-use thiserror::Error;
+use thiserror;
 
 use crate::{
     enums::{
@@ -38,7 +38,7 @@ use crate::{
     types::{fixed::fixed_i64_to_f64, price::Price, quantity::Quantity},
 };
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum OrderError {
     #[error("Invalid state transition")]
     InvalidStateTransition,

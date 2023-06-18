@@ -24,7 +24,7 @@ use std::{
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
-use thiserror::Error;
+use thiserror;
 
 use crate::identifiers::{symbol::Symbol, venue::Venue};
 
@@ -36,7 +36,7 @@ pub struct InstrumentId {
     pub venue: Venue,
 }
 
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 #[error("Error parsing `InstrumentId` from '{input}'")]
 pub struct InstrumentIdParseError {
     input: String,

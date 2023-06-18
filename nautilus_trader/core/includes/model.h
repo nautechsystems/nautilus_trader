@@ -847,6 +847,11 @@ typedef struct Money_t {
     struct Currency_t currency;
 } Money_t;
 
+/**
+ * Sentinel Price for errors.
+ */
+#define ERROR_PRICE (Price_t){ .raw = INT64_MAX, .precision = 0 }
+
 struct BarSpecification_t bar_specification_new(uint64_t step,
                                                 uint8_t aggregation,
                                                 uint8_t price_type);
@@ -1641,6 +1646,8 @@ uint8_t synthetic_instrument_precision(const struct SyntheticInstrument_API *syn
 const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
 
 const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
+
+uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
 
 /**
  * # Safety
