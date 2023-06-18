@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::vec::IntoIter;
+use std::{collections::HashMap, vec::IntoIter};
 
 use compare::Compare;
 use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
@@ -31,7 +31,7 @@ use pyo3_asyncio::tokio::get_runtime;
 use crate::{
     kmerge_batch::{KMerge, PeekElementBatchStream},
     parquet::{
-        DataStreamingError, DecodeDataFromRecordBatch, EncodeDataToRecordBatch, NautilusDataType,
+        DataStreamingError, DecodeFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
         WriteStream,
     },
 };
@@ -75,11 +75,12 @@ impl DataBackendSession {
         }
     }
 
-    pub fn write_data<T: EncodeDataToRecordBatch>(
+    pub fn write_data<T: EncodeToRecordBatch>(
         data: &[T],
+        metadata: &HashMap<String, String>,
         stream: &mut dyn WriteStream,
     ) -> Result<(), DataStreamingError> {
-        let record_batch = T::encode_batch(data);
+        let record_batch = T::encode_batch(metadata, data);
         stream.write(&record_batch)?;
         Ok(())
     }
@@ -92,7 +93,7 @@ impl DataBackendSession {
         file_path: &str,
     ) -> Result<()>
     where
-        T: DecodeDataFromRecordBatch + Into<Data>,
+        T: DecodeFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
@@ -126,7 +127,7 @@ impl DataBackendSession {
         sql_query: &str,
     ) -> Result<()>
     where
-        T: DecodeDataFromRecordBatch + Into<Data>,
+        T: DecodeFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
@@ -149,7 +150,7 @@ impl DataBackendSession {
 
     fn add_batch_stream<T>(&mut self, stream: SendableRecordBatchStream)
     where
-        T: DecodeDataFromRecordBatch + Into<Data>,
+        T: DecodeFromRecordBatch + Into<Data>,
     {
         let transform = stream.map(|result| match result {
             Ok(batch) => T::decode_batch(batch.schema().metadata(), batch).into_iter(),
