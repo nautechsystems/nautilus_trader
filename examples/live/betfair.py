@@ -45,7 +45,6 @@ async def main(market_id: str):
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
         app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
-        cert_dir=None,  # Pass here or will source from the `BETFAIR_CERT_DIR` env var
         logger=logger,
         loop=loop,
     )

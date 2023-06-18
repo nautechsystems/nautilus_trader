@@ -69,12 +69,12 @@ from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_reque
 @pytest.mark.asyncio()
 async def test_connect(betfair_client):
     # Arrange
-    betfair_client.session_token = None
+    betfair_client.reset_headers()
     mock_betfair_request(betfair_client, BetfairResponses.login_success())
 
     # Act
     await betfair_client.connect()
-    assert betfair_client.headers["X-Authentication"]
+    assert betfair_client._headers["X-Authentication"]
 
     # Assert
     _, request = betfair_client._request.call_args[0]

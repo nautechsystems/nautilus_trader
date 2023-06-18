@@ -70,6 +70,8 @@ class BetfairStreamClient:
         self._client = await SocketClient.connect(
             url=f"{self.host}:{self.port}",
             handler=self.handler,
+            ssl=True,
+            suffix=self.crlf,
         )
 
         self._log.debug("Running post connect")
@@ -104,6 +106,7 @@ class BetfairStreamClient:
         self._log.info("Reconnected.")
 
     async def send(self, message: bytes):
+        self._log.debug(f"[SEND] {message.decode()}")
         await self._client.send(message)
 
     def auth_message(self):

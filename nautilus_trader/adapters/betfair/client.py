@@ -75,10 +75,10 @@ class BetfairHttpClient:
 
     def __init__(
         self,
-        logger: Logger,
         username: str,
         password: str,
-        app_key: Optional[str] = None,
+        app_key: str,
+        logger: Logger,
     ):
         # Config
         self.username = username
@@ -94,11 +94,14 @@ class BetfairHttpClient:
     async def _request(self, method: Literal["GET", "POST"], request: Request) -> HttpResponse:
         url = ENDPOINTS.url_for_request(request)
         headers = self._headers
+        body = request.body()
+        if isinstance(body, str):
+            body = body.encode()
         response: HttpResponse = await self._client.request(
             method,
             url,
             headers=headers,
-            body=request.body().encode(),
+            body=body,
         )
         return response
 
