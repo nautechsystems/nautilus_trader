@@ -145,7 +145,7 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
         return false as u8;
     }
     let formula = cstr_to_string(formula_ptr);
-    synth.is_valid_formula(&formula) as u8
+    u8::from(synth.is_valid_formula(&formula))
 }
 
 /// # Safety

@@ -31,6 +31,17 @@ pub struct ExecAlgorithmId {
     pub value: Box<Arc<String>>,
 }
 
+impl ExecAlgorithmId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`ExecAlgorithmId` value");
+
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
+    }
+}
+
 impl Debug for ExecAlgorithmId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)
@@ -40,17 +51,6 @@ impl Debug for ExecAlgorithmId {
 impl Display for ExecAlgorithmId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
-    }
-}
-
-impl ExecAlgorithmId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ExecAlgorithmId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
     }
 }
 

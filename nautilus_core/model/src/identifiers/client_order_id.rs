@@ -31,15 +31,14 @@ pub struct ClientOrderId {
     pub value: Box<Arc<String>>,
 }
 
-impl Debug for ClientOrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
-    }
-}
+impl ClientOrderId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`ClientOrderId` value");
 
-impl Display for ClientOrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
     }
 }
 
@@ -51,14 +50,15 @@ impl Default for ClientOrderId {
     }
 }
 
-impl ClientOrderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ClientOrderId` value");
+impl Debug for ClientOrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
 
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
+impl Display for ClientOrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 

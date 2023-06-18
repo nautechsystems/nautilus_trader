@@ -1437,6 +1437,8 @@ uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct Instrume
 
 uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
 
+uint8_t instrument_id_is_synthetic(const struct InstrumentId_t *instrument_id);
+
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
@@ -1603,6 +1605,8 @@ const char *venue_to_cstr(const struct Venue_t *venue);
 uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
 
 uint64_t venue_hash(const struct Venue_t *venue);
+
+uint8_t venue_is_synthetic(const struct Venue_t *venue);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

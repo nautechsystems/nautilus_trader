@@ -213,6 +213,24 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
         )
 
+    cpdef void cache_synthetics(self):
+        """
+        Clear the current synthetic instruments cache and load synthetic instruments from the cache
+        database.
+        """
+        self._log.debug(f"Loading synthetic instruments from database...")
+
+        if self._database is not None:
+            self._synthetics = self._database.load_synthetics()
+        else:
+            self._synthetics = {}
+
+        cdef int count = len(self._synthetics)
+        self._log.info(
+            f"Cached {count} synthetic instrument{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._synthetics else LogColor.NORMAL,
+        )
+
     cpdef void cache_accounts(self):
         """
         Clear the current accounts cache and load accounts from the cache
@@ -943,7 +961,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or ``None``
+        Instrument or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -955,6 +973,36 @@ cdef class Cache(CacheFacade):
                 self._instruments[instrument.id] = instrument
 
         return instrument
+
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id):
+        """
+        Load the synthetic instrument associated with the given `instrument_id` (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The synthetic instrument ID to load.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not a synthetic instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+
+        cdef SyntheticInstrument synthetic = self._synthetics.get(instrument_id)
+        if synthetic is None and self._database is not None:
+            synthetic = self._database.load_synthetic(instrument_id)
+            if synthetic is not None:
+                self._synthetics[synthetic.id] = synthetic
+
+        return synthetic
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -1338,6 +1386,24 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.add_instrument(instrument)
+
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Add the given synthetic instrument to the cache.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to add.
+
+        """
+        self._synthetics[synthetic.id] = synthetic
+
+        self._log.debug(f"Added synthetic instrument {synthetic.id}.")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_synthetic(synthetic)
 
     cpdef void add_account(self, Account account):
         """
