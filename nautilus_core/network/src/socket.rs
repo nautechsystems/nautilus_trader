@@ -142,9 +142,11 @@ impl SocketClient {
 
     fn send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let inner = slf.inner.clone();
+        let suffix = slf.suffix.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut writer = inner.lock().await;
             writer.write_all(&data).await?;
+            writer.write_all(&suffix).await?;
             Ok(())
         })
     }
