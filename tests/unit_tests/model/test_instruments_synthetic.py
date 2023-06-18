@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
@@ -46,6 +48,42 @@ def test_synthetic_instrument_initialization() -> None:
     assert synthetic.components == components
 
 
+def test_synthetic_instrument_with_invalid_formula() -> None:
+    # Arrange, Act, Assert
+    with pytest.raises(ValueError):
+        SyntheticInstrument(
+            symbol=Symbol("BTC-ETH"),
+            precision=8,
+            components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+            formula="z)(?,.",  # <-- Invalid
+        )
+
+
+@pytest.mark.parametrize(
+    ("inputs"),
+    [
+        [],
+        [100.0, float("nan")],
+        [100.0],
+        [100.0] * 3,
+    ],
+)
+def test_synthetic_instrument_calculate_with_invalid_inputs(
+    inputs: list[float],
+) -> None:
+    # Arrange
+    synthetic = SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        precision=8,
+        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+    )
+
+    # Act, Assert
+    with pytest.raises(ValueError):
+        synthetic.calculate(inputs)
+
+
 def test_synthetic_instrument_calculate() -> None:
     # Arrange
     synthetic = SyntheticInstrument(
@@ -63,6 +101,24 @@ def test_synthetic_instrument_calculate() -> None:
     assert isinstance(price, Price)
     assert price.precision == synthetic.precision
     assert price == 150.0
+
+
+def test_synthetic_instrument_change_formula_with_invalid_formula() -> None:
+    # Arrange
+    synthetic = SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        precision=8,
+        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+    )
+
+    inputs = [100.0, 200.0]
+    synthetic.calculate(inputs)
+
+    # Act, Assert
+    new_formula = "z)(?,."  # <-- Invalid fromula
+    with pytest.raises(ValueError):
+        synthetic.change_formula(new_formula)
 
 
 def test_synthetic_instrument_change_formula() -> None:

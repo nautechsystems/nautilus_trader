@@ -510,6 +510,9 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
+    # Sentinel Price for errors.
+    const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }
+
     BarSpecification_t bar_specification_new(uint64_t step,
                                              uint8_t aggregation,
                                              uint8_t price_type);
@@ -1148,6 +1151,8 @@ cdef extern from "../includes/model.h":
     const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
 
     const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
+
+    uintptr_t synthetic_instrument_components_count(const SyntheticInstrument_API *synth);
 
     # # Safety
     #
