@@ -25,7 +25,7 @@ use datafusion::arrow::{
 };
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
-use thiserror::Error;
+use thiserror;
 
 #[repr(C)]
 #[pyclass]
@@ -38,7 +38,7 @@ pub enum NautilusDataType {
     Bar = 4,
 }
 
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
     #[error("Arrow error: {0}")]
     ArrowError(#[from] datafusion::arrow::error::ArrowError),
