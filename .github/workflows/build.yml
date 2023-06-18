@@ -26,6 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # Setup for Windows builds
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v1.0.1
+
+      - name: Install Visual Studio Build Tools
+        if: runner.os == 'Windows'
+        run: |
+          choco install visualstudio2019buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          refreshenv
+
       # Rust setup (ensures latest stable)
       - name: Set up Rust tool-chain (Linux/Windows)
         if: runner.os != 'macOS'
