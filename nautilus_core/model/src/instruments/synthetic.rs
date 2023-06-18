@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use anyhow;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 
 use crate::{
@@ -42,7 +43,7 @@ impl SyntheticInstrument {
         precision: u8,
         components: Vec<InstrumentId>,
         formula: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, anyhow::Error> {
         let context = HashMapContext::new();
 
         // Extract variables from the component instruments
@@ -68,7 +69,7 @@ impl SyntheticInstrument {
         evalexpr::build_operator_tree(formula).is_ok()
     }
 
-    pub fn change_formula(&mut self, formula: String) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn change_formula(&mut self, formula: String) -> Result<(), anyhow::Error> {
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
         self.formula = formula;
         self.operator_tree = operator_tree;
@@ -81,7 +82,7 @@ impl SyntheticInstrument {
     pub fn calculate_from_map(
         &mut self,
         inputs: &HashMap<String, f64>,
-    ) -> Result<Price, Box<dyn std::error::Error>> {
+    ) -> Result<Price, anyhow::Error> {
         let mut input_values = Vec::new();
 
         for variable in &self.variables {
@@ -99,9 +100,9 @@ impl SyntheticInstrument {
 
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
-    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, Box<dyn std::error::Error>> {
+    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, anyhow::Error> {
         if inputs.len() != self.variables.len() {
-            return Err("Invalid number of input values".into());
+            return Err(anyhow::anyhow!("Invalid number of input values"));
         }
 
         for (variable, input) in self.variables.iter().zip(inputs) {
@@ -113,7 +114,9 @@ impl SyntheticInstrument {
 
         match result {
             Value::Float(price) => Ok(Price::new(price, self.precision)),
-            _ => Err("Failed to evaluate formula to a floating point number".into()),
+            _ => Err(anyhow::anyhow!(
+                "Failed to evaluate formula to a floating point number"
+            )),
         }
     }
 }

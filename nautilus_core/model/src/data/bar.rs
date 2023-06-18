@@ -22,7 +22,7 @@ use std::{
 
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
-use thiserror::Error;
+use thiserror;
 
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
@@ -74,7 +74,7 @@ pub struct BarType {
     pub aggregation_source: AggregationSource,
 }
 
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 #[error("Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
 pub struct BarTypeParseError {
     input: String,

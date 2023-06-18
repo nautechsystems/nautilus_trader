@@ -78,10 +78,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
-name = "arrayvec"
-version = "0.7.3"
+name = "anyhow"
+version = "1.0.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8868f09ff8cea88b079da74ae569d9b8c62a23c68c746240b704ee6f7525c89c"
+checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
+
+[[package]]
+name = "arrayvec"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
 
 [[package]]
 name = "arrow"
@@ -1875,6 +1881,7 @@ dependencies = [
 name = "nautilus-model"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "cbindgen",
  "criterion",
  "derive_builder",
@@ -1897,6 +1904,7 @@ dependencies = [
 name = "nautilus-network"
 version = "0.7.0"
 dependencies = [
+ "anyhow",
  "criterion",
  "futures",
  "futures-util",
@@ -3429,7 +3437,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tungstenite"
 version = "0.19.0"
-source = "git+https://github.com/snapview/tungstenite-rs#d7b559d724eb156590f9b739245499d6bdce41a3"
+source = "git+https://github.com/snapview/tungstenite-rs#57d9e23939085c342949e62df799d75ed7c27d2f"
 dependencies = [
  "byteorder",
  "bytes",
