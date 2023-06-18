@@ -43,6 +43,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -62,6 +63,7 @@ cdef str _UTF8 = "utf-8"
 cdef str _GENERAL = "general"
 cdef str _CURRENCIES = "currencies"
 cdef str _INSTRUMENTS = "instruments"
+cdef str _SYNTHETICS = "synthetics"
 cdef str _ACCOUNTS = "accounts"
 cdef str _TRADER = "trader"
 cdef str _ORDERS = "orders"
@@ -122,6 +124,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
         self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
         self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
+        self._key_synthetics  = f"{self._key_trader}:{_SYNTHETICS}:"  # noqa
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
         self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
         self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
@@ -234,6 +237,35 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 instruments[instrument.id] = instrument
 
         return instruments
+
+    cpdef dict load_synthetics(self):
+        """
+        Load all synthetic instruments from the database.
+
+        Returns
+        -------
+        dict[InstrumentId, SyntheticInstrument]
+
+        """
+        cdef dict synthetics = {}
+
+        cdef list synthetic_keys = self._redis.keys(f"{self._key_synthetics}*")
+        if not synthetic_keys:
+            return synthetics
+
+        cdef bytes key_bytes
+        cdef str key_str
+        cdef InstrumentId instrument_id
+        cdef SyntheticInstrument synthetic
+        for key_bytes in synthetic_keys:
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            instrument_id = InstrumentId.from_str_c(key_str)
+            synthetic = self.load_synthetic(instrument_id)
+
+            if synthetic is not None:
+                synthetics[synthetic.id] = synthetic
+
+        return synthetics
 
     cpdef dict load_accounts(self):
         """
@@ -476,6 +508,36 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         return self._serializer.deserialize(instrument_bytes)
+
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id):
+        """
+        Load the synthetic instrument associated with the given synthetic instrument ID
+        (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The synthetic instrument ID to load.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not for a synthetic instrument.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not for a synthetic instrument")
+
+        cdef str key = self._key_synthetics + instrument_id.to_str()
+        cdef bytes synthetic_bytes = self._redis.get(name=key)
+        if not synthetic_bytes:
+            return None
+
+        return self._serializer.deserialize(synthetic_bytes)
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -737,6 +799,23 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._redis.set(name=key, value=self._serializer.serialize(instrument))
 
         self._log.debug(f"Added instrument {instrument.id}.")
+
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Add the given synthetic instrument to the database.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to add.
+
+        """
+        Condition.not_none(synthetic, "synthetic")
+
+        cdef str key = self._key_synthetics + synthetic.id.to_str()
+        self._redis.set(name=key, value=self._serializer.serialize(synthetic))
+
+        self._log.debug(f"Added synthetic instrument {synthetic.id}.")
 
     cpdef void add_account(self, Account account):
         """

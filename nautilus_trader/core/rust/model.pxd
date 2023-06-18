@@ -990,6 +990,8 @@ cdef extern from "../includes/model.h":
 
     uint64_t instrument_id_hash(const InstrumentId_t *instrument_id);
 
+    uint8_t instrument_id_is_synthetic(const InstrumentId_t *instrument_id);
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
@@ -1114,6 +1116,8 @@ cdef extern from "../includes/model.h":
     uint8_t venue_eq(const Venue_t *lhs, const Venue_t *rhs);
 
     uint64_t venue_hash(const Venue_t *venue);
+
+    uint8_t venue_is_synthetic(const Venue_t *venue);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

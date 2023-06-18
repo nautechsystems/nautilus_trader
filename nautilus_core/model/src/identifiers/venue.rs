@@ -24,6 +24,8 @@ use std::{
 use nautilus_core::{correctness, string::str_to_cstr};
 use pyo3::prelude::*;
 
+pub const SYNTHETIC_VENUE: &str = "SYNTH";
+
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq)]
 #[pyclass]
@@ -31,15 +33,23 @@ pub struct Venue {
     pub value: Box<Arc<String>>,
 }
 
-impl Debug for Venue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
-    }
-}
+impl Venue {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`Venue` value");
 
-impl Display for Venue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
+    }
+
+    #[must_use]
+    pub fn synthetic() -> Self {
+        Self::new(SYNTHETIC_VENUE)
+    }
+
+    pub fn is_synthetic(&self) -> bool {
+        self.value.as_ref().as_str() == SYNTHETIC_VENUE
     }
 }
 
@@ -51,14 +61,15 @@ impl Default for Venue {
     }
 }
 
-impl Venue {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`Venue` value");
+impl Debug for Venue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
 
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
+impl Display for Venue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -102,6 +113,11 @@ pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
     let mut h = DefaultHasher::new();
     venue.hash(&mut h);
     h.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
+    u8::from(venue.is_synthetic())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

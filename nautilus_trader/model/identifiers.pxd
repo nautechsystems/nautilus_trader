@@ -42,6 +42,8 @@ cdef class Venue(Identifier):
     @staticmethod
     cdef Venue from_mem_c(Venue_t* mem)
 
+    cpdef bint is_synthetic(self)
+
 
 cdef class InstrumentId(Identifier):
     cdef InstrumentId_t _mem
@@ -51,6 +53,8 @@ cdef class InstrumentId(Identifier):
 
     @staticmethod
     cdef InstrumentId from_str_c(str value)
+
+    cpdef bint is_synthetic(self)
 
 
 cdef class ComponentId(Identifier):

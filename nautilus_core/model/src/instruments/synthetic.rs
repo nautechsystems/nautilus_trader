@@ -24,8 +24,6 @@ use crate::{
     types::price::Price,
 };
 
-pub const SYNTHETIC_VENUE: &str = "SYNTH";
-
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
 pub struct SyntheticInstrument {
@@ -60,7 +58,7 @@ impl SyntheticInstrument {
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
 
         Ok(SyntheticInstrument {
-            id: InstrumentId::new(symbol, Venue::new(SYNTHETIC_VENUE)),
+            id: InstrumentId::new(symbol, Venue::synthetic()),
             precision,
             components,
             formula,

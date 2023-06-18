@@ -31,6 +31,17 @@ pub struct ComponentId {
     pub value: Box<Arc<String>>,
 }
 
+impl ComponentId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`ComponentId` value");
+
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
+    }
+}
+
 impl Debug for ComponentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)
@@ -40,17 +51,6 @@ impl Debug for ComponentId {
 impl Display for ComponentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
-    }
-}
-
-impl ComponentId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ComponentId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
     }
 }
 

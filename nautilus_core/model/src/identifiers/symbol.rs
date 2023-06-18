@@ -31,15 +31,14 @@ pub struct Symbol {
     pub value: Box<Arc<String>>,
 }
 
-impl Debug for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
-    }
-}
+impl Symbol {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`Symbol` value");
 
-impl Display for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
     }
 }
 
@@ -51,14 +50,15 @@ impl Default for Symbol {
     }
 }
 
-impl Symbol {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`Symbol` value");
+impl Debug for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
 
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
