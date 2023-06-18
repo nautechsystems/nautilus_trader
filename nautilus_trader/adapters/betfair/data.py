@@ -143,8 +143,8 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _post_connect_heartbeat(self):
         for _ in range(3):
-            await asyncio.sleep(5)
             await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
+            await asyncio.sleep(5)
 
     async def _disconnect(self):
         # Close socket

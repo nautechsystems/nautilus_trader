@@ -188,7 +188,7 @@ class BetfairHttpClient:
         return resp
 
     async def get_account_details(self) -> AccountDetailsResponse:
-        return await self._post(request=GetAccountDetails())
+        return await self._post(request=GetAccountDetails.with_params())
 
     async def get_account_funds(self, wallet: Optional[str] = None) -> AccountFundsResponse:
         return await self._post(request=GetAccountFunds.with_params(wallet=wallet))

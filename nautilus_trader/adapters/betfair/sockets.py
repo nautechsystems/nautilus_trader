@@ -108,6 +108,7 @@ class BetfairStreamClient:
     async def send(self, message: bytes):
         self._log.debug(f"[SEND] {message.decode()}")
         await self._client.send(message)
+        self._log.debug("[SENT]")
 
     def auth_message(self):
         return {
@@ -165,7 +166,6 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     def __init__(
         self, http_client: BetfairHttpClient, logger: Logger, message_handler: Callable, **kwargs
     ):
-        self.subscription_message = None
         super().__init__(
             http_client=http_client,
             logger_adapter=LoggerAdapter("BetfairMarketStreamClient", logger),
