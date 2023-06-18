@@ -1635,7 +1635,9 @@ uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
                                                         uint8_t precision,
                                                         const char *components_ptr,
-                                                        const char *formula_ptr);
+                                                        const char *formula_ptr,
+                                                        uint64_t ts_event,
+                                                        uint64_t ts_init);
 
 void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
 
@@ -1648,6 +1650,10 @@ const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrumen
 const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
 
 uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_event(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synth);
 
 /**
  * # Safety

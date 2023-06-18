@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from pandas.core.generic import pickle
 
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -39,6 +40,8 @@ def test_synthetic_instrument_initialization() -> None:
         precision=precision,
         components=components,
         formula=formula,
+        ts_event=0,
+        ts_init=1,
     )
 
     # Assert
@@ -46,6 +49,10 @@ def test_synthetic_instrument_initialization() -> None:
     assert synthetic.id == InstrumentId.from_str("BTC-ETH.SYNTH")
     assert synthetic.formula == formula
     assert synthetic.components == components
+    assert synthetic == synthetic
+    assert isinstance(hash(synthetic), int)
+    assert synthetic.ts_event == 0
+    assert synthetic.ts_init == 1
 
 
 def test_synthetic_instrument_with_invalid_formula() -> None:
@@ -56,6 +63,8 @@ def test_synthetic_instrument_with_invalid_formula() -> None:
             precision=8,
             components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
             formula="z)(?,.",  # <-- Invalid
+            ts_event=0,
+            ts_init=0,
         )
 
 
@@ -77,6 +86,8 @@ def test_synthetic_instrument_calculate_with_invalid_inputs(
         precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
     )
 
     # Act, Assert
@@ -91,6 +102,8 @@ def test_synthetic_instrument_calculate() -> None:
         precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
     )
 
     # Act
@@ -110,6 +123,8 @@ def test_synthetic_instrument_change_formula_with_invalid_formula() -> None:
         precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
     )
 
     inputs = [100.0, 200.0]
@@ -128,6 +143,8 @@ def test_synthetic_instrument_change_formula() -> None:
         precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
     )
 
     inputs = [100.0, 200.0]
@@ -144,3 +161,66 @@ def test_synthetic_instrument_change_formula() -> None:
     assert price1 == 150.0
     assert price2 == 75.0
     assert synthetic.formula == new_formula
+
+
+def test_synthetic_instrument_to_dict():
+    # Arrange
+    synthetic = SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        precision=8,
+        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act
+    result = SyntheticInstrument.to_dict(synthetic)
+
+    # Assert
+    assert result == {
+        "type": "SyntheticInstrument",
+        "symbol": "BTC-ETH",
+        "precision": 8,
+        "components": b'["BTCUSDT.BINANCE","ETHUSDT.BINANCE"]',
+        "formula": "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        "ts_event": 0,
+        "ts_init": 0,
+    }
+
+
+def test_synthetic_instrument_from_dict():
+    # Arrange
+    synthetic = SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        precision=8,
+        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act
+    result = SyntheticInstrument.from_dict(SyntheticInstrument.to_dict(synthetic))
+
+    # Assert
+    assert result == synthetic
+
+
+def test_pickling_round_trip_results_in_expected_tick():
+    # Arrange
+    synthetic = SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        precision=8,
+        components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
+        formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act
+    pickled = pickle.dumps(synthetic)
+    unpickled = pickle.loads(pickled)  # S301 (pickle is safe here)
+
+    # Assert
+    assert synthetic == unpickled

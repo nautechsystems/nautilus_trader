@@ -23,6 +23,7 @@ use nautilus_core::{
     cvec::CVec,
     parsing::{bytes_to_string_vec, string_vec_to_bytes},
     string::{cstr_to_string, str_to_cstr},
+    time::UnixNanos,
 };
 
 use super::synthetic::SyntheticInstrument;
@@ -68,6 +69,8 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     precision: u8,
     components_ptr: *const c_char,
     formula_ptr: *const c_char,
+    ts_event: u64,
+    ts_init: u64,
 ) -> SyntheticInstrument_API {
     // TODO: There is absolutely no error handling here yet
     let components = bytes_to_string_vec(components_ptr)
@@ -75,7 +78,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         .map(|s| InstrumentId::from_str(&s).unwrap())
         .collect::<Vec<InstrumentId>>();
     let formula = cstr_to_string(formula_ptr);
-    let synth = SyntheticInstrument::new(symbol, precision, components, formula);
+    let synth = SyntheticInstrument::new(symbol, precision, components, formula, ts_event, ts_init);
 
     SyntheticInstrument_API(Box::new(synth.unwrap()))
 }
@@ -118,6 +121,16 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
 #[no_mangle]
 pub extern "C" fn synthetic_instrument_components_count(synth: &SyntheticInstrument_API) -> usize {
     synth.components.len()
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_ts_event(synth: &SyntheticInstrument_API) -> UnixNanos {
+    synth.ts_event
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument_API) -> UnixNanos {
+    synth.ts_init
 }
 
 /// # Safety

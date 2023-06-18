@@ -60,6 +60,7 @@ cdef class Cache(CacheFacade):
     cdef dict _bars_ask
     cdef dict _currencies
     cdef dict _instruments
+    cdef dict _synthetics
     cdef dict _accounts
     cdef dict _orders
     cdef dict _order_lists
