@@ -48,27 +48,29 @@ pub enum DataStreamingError {
     PythonError(#[from] PyErr),
 }
 
-pub trait EncodeDataToRecordBatch
-where
-    Self: Sized + From<Data>,
-{
-    fn encode_batch(data: &[Self]) -> RecordBatch;
-    fn get_schema() -> SchemaRef;
+pub trait DataSchemaProvider {
+    fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
 }
 
-pub trait DecodeDataFromRecordBatch
+pub trait EncodeToRecordBatch
 where
-    Self: Sized + Into<Data>,
+    Self: Sized + DataSchemaProvider,
+{
+    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch;
+}
+
+pub trait DecodeFromRecordBatch
+where
+    Self: Sized + Into<Data> + DataSchemaProvider,
 {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
-    fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
 }
 
 pub trait WriteStream {
     fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError>;
 }
 
-impl<T: EncodeDataToRecordBatch + Write> WriteStream for T {
+impl<T: EncodeToRecordBatch + Write> WriteStream for T {
     fn write(&mut self, record_batch: &RecordBatch) -> Result<(), DataStreamingError> {
         let mut writer = StreamWriter::try_new(self, &record_batch.schema())?;
         writer.write(record_batch)?;

@@ -201,6 +201,32 @@ pub struct Bar {
     pub ts_init: UnixNanos,
 }
 
+impl Bar {
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event,
+            ts_init,
+        }
+    }
+}
+
 impl Display for Bar {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
