@@ -1140,7 +1140,9 @@ cdef extern from "../includes/model.h":
     SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
                                                      uint8_t precision,
                                                      const char *components_ptr,
-                                                     const char *formula_ptr);
+                                                     const char *formula_ptr,
+                                                     uint64_t ts_event,
+                                                     uint64_t ts_init);
 
     void synthetic_instrument_drop(SyntheticInstrument_API synth);
 
@@ -1153,6 +1155,10 @@ cdef extern from "../includes/model.h":
     const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
 
     uintptr_t synthetic_instrument_components_count(const SyntheticInstrument_API *synth);
+
+    uint64_t synthetic_instrument_ts_event(const SyntheticInstrument_API *synth);
+
+    uint64_t synthetic_instrument_ts_init(const SyntheticInstrument_API *synth);
 
     # # Safety
     #

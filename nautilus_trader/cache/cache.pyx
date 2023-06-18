@@ -58,6 +58,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -113,6 +114,7 @@ cdef class Cache(CacheFacade):
         self._bars_ask: dict[InstrumentId, Bar] = {}
         self._currencies: dict[str, Currency] = {}
         self._instruments: dict[InstrumentId, Instrument] = {}
+        self._synthetics: dict[InstrumentId, SyntheticInstrument] = {}
         self._accounts: dict[AccountId, Account] = {}
         self._orders: dict[ClientOrderId, Order] = {}
         self._order_lists: dict[OrderListId, OrderList] = {}
