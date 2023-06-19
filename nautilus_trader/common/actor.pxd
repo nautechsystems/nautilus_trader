@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -86,11 +87,6 @@ cdef class Actor(Component):
     cpdef void on_historical_data(self, Data data)
     cpdef void on_event(self, Event event)
 
-# -- ACTOR COMMANDS -------------------------------------------------------------------------------
-
-    cpdef dict save(self)
-    cpdef void load(self, dict state)
-
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_base(
@@ -103,6 +99,13 @@ cdef class Actor(Component):
 
     cpdef void register_warning_event(self, type event)
     cpdef void deregister_warning_event(self, type event)
+
+# -- ACTOR COMMANDS -------------------------------------------------------------------------------
+
+    cpdef dict save(self)
+    cpdef void load(self, dict state)
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic)
+    cpdef void update_synthetic(self, SyntheticInstrument synthetic)
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
