@@ -812,7 +812,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(synthetic, "synthetic")
 
-        cdef str key = self._key_synthetics + synthetic.id.to_str()
+        cdef str key = self._key_synthetics + synthetic.id.value
         self._redis.set(name=key, value=self._serializer.serialize(synthetic))
 
         self._log.debug(f"Added synthetic instrument {synthetic.id}.")
