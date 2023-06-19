@@ -2512,6 +2512,54 @@ cdef class Cache(CacheFacade):
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
+# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+
+    cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id):
+        """
+        Return the synthetic instrument corresponding to the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID of the synthetic instrument to return.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not a synthetic instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+
+        return self._synthetics.get(instrument_id)
+
+    cpdef list synthetic_ids(self):
+        """
+        Return all synthetic instrument IDs held by the cache.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(self._synthetics.keys())
+
+    cpdef list synthetics(self):
+        """
+        Return all synthetic instruments held by the cache.
+
+        Returns
+        -------
+        list[SyntheticInstrument]
+
+        """
+        return list(self._synthetics.values())
+
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
