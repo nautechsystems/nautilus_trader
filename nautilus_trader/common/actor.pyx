@@ -824,39 +824,6 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
-        """
-        Subscribe to update `Instrument` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-        client_id : ClientId, optional
-            The specific client ID for the command.
-            If ``None`` then will be inferred from the venue in the instrument ID.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"data.instrument"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
-            handler=self.handle_instrument,
-        )
-
-        cdef Subscribe command = Subscribe(
-            client_id=client_id,
-            venue=instrument_id.venue,
-            data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            command_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
