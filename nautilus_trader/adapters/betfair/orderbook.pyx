@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 from nautilus_trader.adapters.betfair.common import BETFAIR_FLOAT_TO_PRICE
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
-from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.core.rust.model import BookType
