@@ -69,7 +69,7 @@ def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
 def aud_usd_data_loader(catalog: ParquetDataCatalog):
     from nautilus_trader.test_kit.providers import TestInstrumentProvider
     from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-    from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
+    from tests.unit_tests.backtest.test_config import TEST_DATA_DIR
 
     venue = Venue("SIM")
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)
