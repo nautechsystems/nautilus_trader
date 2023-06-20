@@ -144,7 +144,12 @@ async def test_get_account_details(betfair_client):
 
     assert account.points_balance == 10
     _, request = betfair_client._request.call_args[0]
-    expected = GetAccountDetails(jsonrpc="2.0", id=1, method="", params={})
+    expected = GetAccountDetails(
+        jsonrpc="2.0",
+        id=1,
+        method="AccountAPING/v1.0/getAccountDetails",
+        params={},
+    )
     assert request == expected
 
 
