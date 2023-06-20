@@ -21,14 +21,12 @@ from typing import Optional, Union
 from unittest.mock import MagicMock
 
 import msgspec
-import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
 from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import EndpointType
 from betfair_parser.spec.common import Request
 from betfair_parser.spec.common import encode
-from betfair_parser.spec.navigation import flatten_nav_tree
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import stream_decode
 from betfair_parser.spec.streaming.ocm import OCM
@@ -696,13 +694,6 @@ class BetfairDataProvider:
             "1.180737206",
             "1.165003060",
         )
-
-    @staticmethod
-    def market_sample():
-        rng = np.random.default_rng()
-        navigation = BetfairResponses.navigation_list_navigation_response()
-        markets = list(flatten_nav_tree(navigation))
-        return rng.choice(markets, size=int(len(markets) * 0.05))
 
     @staticmethod
     def market_catalogue_short():
