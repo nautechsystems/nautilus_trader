@@ -34,12 +34,26 @@ type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 
+/// Creates a TcpStream with the server
+///
+/// The stream can be encrypted with TLS or Plain. The stream is split into
+/// read and write ends.
+/// * The read end is passed to task that keeps receiving
+///   messages from the server and passing them to a handler.
+/// * The write end is wrapped in an Arc Mutex and used to send messages
+///   or heart beats
+///
+/// The heartbeat is optional and can be configured with an interval and message.
+///
+/// The client uses a suffix to separate messages on the byte stream. It is
+/// appended to all sent messages and heartbeats. It is also used the split
+/// the received byte stream.
 #[pyclass]
 pub struct SocketClient {
     read_task: task::JoinHandle<()>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedTcpWriter,
-    suffix: Box<[u8]>,
+    suffix: Vec<u8>,
 }
 
 impl SocketClient {
@@ -53,19 +67,18 @@ impl SocketClient {
         let (reader, writer) = SocketClient::tls_connect_with_server(url, mode).await;
         let shared_writer = Arc::new(Mutex::new(writer));
 
-        let suffix_slice = suffix.clone().into_boxed_slice();
-
         // Keep receiving messages from socket pass them as arguments to handler
-        let read_task = SocketClient::spawn_read_task(reader, handler, suffix);
+        let read_task = SocketClient::spawn_read_task(reader, handler, suffix.clone());
 
         // Optionally create heartbeat task
-        let heartbeat_task = SocketClient::spawn_heartbeat_task(heartbeat, shared_writer.clone());
+        let heartbeat_task =
+            SocketClient::spawn_heartbeat_task(heartbeat, shared_writer.clone(), suffix.clone());
 
         Ok(Self {
             read_task,
             heartbeat_task,
             writer: shared_writer,
-            suffix: suffix_slice,
+            suffix,
         })
     }
 
@@ -126,10 +139,12 @@ impl SocketClient {
     pub fn spawn_heartbeat_task(
         heartbeat: Option<(u64, Vec<u8>)>,
         writer: SharedTcpWriter,
+        suffix: Vec<u8>,
     ) -> Option<task::JoinHandle<()>> {
-        heartbeat.map(|(duration, message)| {
+        heartbeat.map(|(duration, mut message)| {
             task::spawn(async move {
                 let duration = Duration::from_secs(duration);
+                message.extend(suffix);
                 loop {
                     sleep(duration).await;
                     debug!("Sending heartbeat");
@@ -203,13 +218,12 @@ impl SocketClient {
         })
     }
 
-    fn send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    fn send<'py>(slf: PyRef<'_, Self>, mut data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let writer = slf.writer.clone();
-        let suffix = slf.suffix.clone(); // TODO: cheaper clone
+        data.extend(&slf.suffix);
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut writer = writer.lock().await;
             writer.write_all(&data).await?;
-            writer.write_all(&suffix).await?;
             Ok(())
         })
     }
