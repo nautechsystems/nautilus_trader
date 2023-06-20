@@ -80,6 +80,9 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -131,6 +134,8 @@ cdef class DataEngine(Component):
         self._use_rust: bool = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
+        self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
+        self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
 
         # Settings
         self.debug = config.debug
@@ -514,6 +519,8 @@ cdef class DataEngine(Component):
 
         self._order_book_intervals.clear()
         self._bar_aggregators.clear()
+        self._synthetic_quote_feeds.clear()
+        self._synthetic_trade_feeds.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -719,6 +726,10 @@ cdef class DataEngine(Component):
             client.subscribe_instruments()
             return
 
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot subscribe for synthetic instrument `Instrument` data.")
+            return
+
         if instrument_id not in client.subscribed_instruments():
             client.subscribe_instrument(instrument_id)
 
@@ -731,6 +742,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
+
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot subscribe for synthetic instrument `OrderBookDelta` data.")
+            return
 
         self._setup_order_book(
             client,
@@ -748,6 +763,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
+
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data.")
+            return
 
         cdef int interval_ms = metadata["interval_ms"]
         key = (instrument_id, interval_ms)
@@ -841,6 +860,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot subscribe for synthetic instrument `Ticker` data.")
+            return
+
         if instrument_id not in client.subscribed_tickers():
             client.subscribe_ticker(instrument_id)
 
@@ -852,8 +875,31 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
+        if instrument_id.is_synthetic():
+            self._handle_subscribe_synthetic_quote_ticks(instrument_id)
+            return
+
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id)
+
+    cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id):
+        cdef SyntheticInstrument synthetic = self._cache.synthetic(instrument_id)
+        if synthetic is None:
+            self._log.error(
+                f"Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id} "
+                ", not found."
+            )
+            return
+
+        cdef list synthetics_for_feed
+        for instrument_id in synthetic.components:
+            synthetics_for_feed = self._synthetic_quote_feeds.get(instrument_id)
+            if synthetics_for_feed is None:
+                synthetics_for_feed = []
+            if synthetic in synthetics_for_feed:
+                continue
+            synthetics_for_feed.append(synthetic)
+            self._synthetic_quote_feeds[instrument_id] = synthetics_for_feed
 
     cpdef void _handle_subscribe_trade_ticks(
         self,
@@ -863,8 +909,31 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
+        if instrument_id.is_synthetic():
+            self._handle_subscribe_synthetic_trade_ticks(instrument_id)
+            return
+
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id)
+
+    cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id):
+        cdef SyntheticInstrument synthetic = self._cache.synthetic(instrument_id)
+        if synthetic is None:
+            self._log.error(
+                f"Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id} "
+                ", not found."
+            )
+            return
+
+        cdef list synthetics_for_feed
+        for instrument_id in synthetic.components:
+            synthetics_for_feed = self._synthetic_trade_feeds.get(instrument_id)
+            if synthetics_for_feed is None:
+                synthetics_for_feed = []
+            if synthetic in synthetics_for_feed:
+                continue
+            synthetics_for_feed.append(synthetic)
+            self._synthetic_trade_feeds[instrument_id] = synthetics_for_feed
 
     cpdef void _handle_subscribe_bars(
         self,
@@ -880,6 +949,12 @@ cdef class DataEngine(Component):
                 self._start_bar_aggregator(client, bar_type)
         else:
             # External aggregation
+            if bar_type.instrument_id.is_synthetic():
+                self._log.error(
+                    "Cannot subscribe for externally aggregated synthetic instrument bar data.",
+                )
+                return
+
             if bar_type not in client.subscribed_bars():
                 client.subscribe_bars(bar_type)
 
@@ -920,6 +995,12 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
+        if instrument_id.is_synthetic():
+            self._log.error(
+                "Cannot subscribe for synthetic instrument `InstrumentStatusUpdate` data.",
+            )
+            return
+
         if instrument_id not in client.subscribed_instrument_status_updates():
             client.subscribe_instrument_status_updates(instrument_id)
 
@@ -930,6 +1011,10 @@ cdef class DataEngine(Component):
     ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
+
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot subscribe for synthetic instrument `InstrumentClose` data.")
+            return
 
         if instrument_id not in client.subscribed_instrument_close():
             client.subscribe_instrument_close(instrument_id)
@@ -946,6 +1031,10 @@ cdef class DataEngine(Component):
                 client.unsubscribe_instruments()
             return
         else:
+            if instrument_id.is_synthetic():
+                self._log.error("Cannot unsubscribe from synthetic instrument `Instrument` data.")
+                return
+
             if not self._msgbus.has_subscribers(
                 f"data.instrument"
                 f".{instrument_id.venue}"
@@ -962,6 +1051,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
+
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data.")
+            return
 
         if not self._msgbus.has_subscribers(
             f"data.book.deltas"
@@ -980,6 +1073,10 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data.")
+            return
+
         if not self._msgbus.has_subscribers(
             f"data.book.snapshots"
             f".{instrument_id.venue}"
@@ -994,6 +1091,10 @@ cdef class DataEngine(Component):
     ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
+
+        if instrument_id.is_synthetic():
+            self._log.error("Cannot unsubscribe from synthetic instrument `Ticker` data.")
+            return
 
         if not self._msgbus.has_subscribers(
             f"data.tickers"
@@ -1297,6 +1398,12 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_quote_tick(self, QuoteTick tick):
         self._cache.add_quote_tick(tick)
+
+        # Handle synthetics update
+        cdef list synthetics = self._synthetic_quote_feeds.get(tick.instrument_id)
+        if synthetics is not None:
+            self._update_synthetics_with_quote(synthetics, tick)
+
         self._msgbus.publish_c(
             topic=f"data.quotes"
                   f".{tick.instrument_id.venue}"
@@ -1306,6 +1413,12 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_trade_tick(self, TradeTick tick):
         self._cache.add_trade_tick(tick)
+
+        # Handle synthetics update
+        cdef list synthetics = self._synthetic_trade_feeds.get(tick.instrument_id)
+        if synthetics is not None:
+            self._update_synthetics_with_trade(synthetics, tick)
+
         self._msgbus.publish_c(
             topic=f"data.trades"
                   f".{tick.instrument_id.venue}"
@@ -1561,3 +1674,99 @@ cdef class DataEngine(Component):
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
+
+    cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
+        cdef SyntheticInstrument synthetic
+        for synthetic in synthetics:
+            self._update_synthetic_with_quote(synthetic, update)
+
+    cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update):
+        cdef list components = synthetic.components
+        cdef list[double] inputs_bid = []
+        cdef list[double] inputs_ask = []
+
+        cdef:
+            InstrumentId instrument_id
+            QuoteTick component_quote
+        for instrument_id in components:
+            if instrument_id == update.instrument_id:
+                inputs_bid.append(update.bid.as_f64_c())
+                inputs_ask.append(update.ask.as_f64_c())
+                continue
+            component_quote = self._cache.quote_tick(instrument_id)
+            if component_quote is None:
+                self._log.warning(
+                    f"Cannot calculate synthetic instrument {synthetic.instrument_id} price, "
+                    f"no quotes for {instrument_id} yet...",
+                )
+                return
+            inputs_bid.append(component_quote.bid.as_f64_c())
+            inputs_ask.append(component_quote.ask.as_f64_c())
+
+        cdef Price bid = synthetic.calculate_price(inputs_bid)
+        cdef Price ask = synthetic.calculate_price(inputs_ask)
+        cdef Quantity size_one = Quantity(1, 0)  # Placeholder for now
+
+        cdef InstrumentId synthetic_instrument_id = synthetic.instrument_id
+        cdef QuoteTick synthetic_quote = QuoteTick(
+            synthetic_instrument_id,
+            bid,
+            ask,
+            size_one,
+            size_one,
+            update.ts_event,
+            self._clock.timestamp_ns(),
+        )
+
+        self._msgbus.publish_c(
+            topic=f"data.quotes"
+                  f".{synthetic_instrument_id.venue}"
+                  f".{synthetic_instrument_id.symbol}",
+            msg=synthetic_quote,
+        )
+
+    cpdef void _update_synthetics_with_trade(self, list synthetics, TradeTick update):
+        cdef SyntheticInstrument synthetic
+        for synthetic in synthetics:
+            self._update_synthetic_with_trade(synthetic, update)
+
+    cpdef void _update_synthetic_with_trade(self, SyntheticInstrument synthetic, TradeTick update):
+        cdef list components = synthetic.components
+        cdef list[double] inputs = []
+
+        cdef:
+            InstrumentId instrument_id
+            TradeTick component_quote
+        for instrument_id in components:
+            if instrument_id == update.instrument_id:
+                inputs.append(update.price.as_f64_c())
+                continue
+            component_trade = self._cache.trade_tick(instrument_id)
+            if component_trade is None:
+                self._log.warning(
+                    f"Cannot calculate synthetic instrument {synthetic.instrument_id} price, "
+                    f"no trades for {instrument_id} yet...",
+                )
+                return
+            inputs.append(component_trade.price.as_f64_c())
+
+        cdef Price price = synthetic.calculate_price(inputs)
+        cdef Quantity size_one = Quantity(1, 0)  # Placeholder for now
+
+        cdef InstrumentId synthetic_instrument_id = synthetic.instrument_id
+        cdef TradeTick synthetic_trade = TradeTick(
+            synthetic_instrument_id,
+            price,
+            size_one,
+            update.aggressor_side,
+            update.trade_id,
+            update.ts_event,
+            self._clock.timestamp_ns(),
+        )
+
+        self._msgbus.publish_c(
+            topic=f"data.trades"
+                  f".{synthetic_instrument_id.venue}"
+                  f".{synthetic_instrument_id.symbol}",
+            msg=synthetic_trade,
+        )
