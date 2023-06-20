@@ -247,7 +247,7 @@ def market_definition_to_instruments(
             if market_definition.market_time
             else pd.Timestamp(0, tz="UTC"),
             market_type=market_definition.market_type,
-            selection_id=str(runner.selection_id),
+            selection_id=str(runner.selection_id or runner.id),
             selection_name=runner.name or "",
             selection_handicap=parse_handicap(runner.hc),
             currency=currency,

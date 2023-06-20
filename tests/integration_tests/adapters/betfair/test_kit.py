@@ -743,23 +743,21 @@ class BetfairDataProvider:
     @staticmethod
     def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
         instruments: list[BettingInstrument] = []
-        if mcm.marketDefinition:
-            instruments.extend(market_definition_to_instruments(mcm.marketDefinition, currency))
+        if mcm.market_definition:
+            instruments.extend(market_definition_to_instruments(mcm.market_definition, currency))
         for mc in mcm.mc:
-            if mc.marketDefinition:
-                market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
+            if mc.market_definition:
+                market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
                 instruments.extend(market_definition_to_instruments(market_def, currency))
         return instruments
 
     @staticmethod
     def betfair_feed_parsed(market_id: str = "1.166564490"):
-        filename = pathlib.Path(f"{RESOURCES_PATH}/{market_id}.bz2")
-        assert filename.exists()
         parser = BetfairParser()
 
         instruments: list[BettingInstrument] = []
         data = []
-        for mcm in BetfairDataProvider.read_mcm(str(filename)):
+        for mcm in BetfairDataProvider.read_mcm(f"{market_id}.bz2"):
             if not instruments:
                 instruments = BetfairDataProvider.mcm_to_instruments(mcm)
                 data.extend(instruments)

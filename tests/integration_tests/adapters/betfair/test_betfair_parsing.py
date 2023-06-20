@@ -298,7 +298,7 @@ class TestBetfairParsing:
                     order_type=OrderType.LIMIT,
                     selection_id="50214",
                     handicap=None,
-                    side="BACK",
+                    side=Side.BACK,
                     limit_order=LimitOrder(
                         price=2.5,
                         size=10.0,
@@ -434,7 +434,7 @@ class TestBetfairParsing:
             order_type=OrderType.LIMIT,
             selection_id="50214",
             handicap=None,
-            side="BACK",
+            side=Side.BACK,
             limit_order=LimitOrder(
                 size=10.0,
                 price=3.05,
@@ -463,7 +463,7 @@ class TestBetfairParsing:
             order_type=OrderType.LIMIT_ON_CLOSE,
             selection_id="50214",
             handicap=None,
-            side="BACK",
+            side=Side.BACK,
             limit_order=None,
             limit_on_close_order=LimitOnCloseOrder(liability=10.0, price=3.05),
             market_on_close_order=None,
@@ -479,7 +479,7 @@ class TestBetfairParsing:
             order_type=OrderType.LIMIT,
             selection_id="50214",
             handicap=None,
-            side="BACK",
+            side=Side.BACK,
             limit_order=LimitOrder(
                 size=100.0,
                 price=Price.from_str("1.01"),
@@ -503,7 +503,7 @@ class TestBetfairParsing:
             order_type=OrderType.LIMIT,
             selection_id="50214",
             handicap=None,
-            side="LAY",
+            side=Side.LAY,
             limit_order=LimitOrder(
                 size=100.0,
                 price=Price.from_str("1000"),

@@ -58,6 +58,8 @@ B2N_MARKET_SIDE = {
 B2N_ORDER_SIDE = {
     Side.BACK: OrderSide.BUY,
     Side.LAY: OrderSide.SELL,
+    "B": OrderSide.BUY,
+    "L": OrderSide.BUY,
 }
 
 B2N_TIME_IN_FORCE = {

@@ -22,6 +22,7 @@ from betfair_parser.spec.accounts.operations import _GetAccountFundsParams
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import BetStatus
 from betfair_parser.spec.betting.enums import PersistenceType
+from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.listings import ListMarketCatalogue
 from betfair_parser.spec.betting.listings import _ListMarketCatalogueParams
 from betfair_parser.spec.betting.orders import CancelOrders
@@ -202,7 +203,7 @@ async def test_place_orders(betfair_client):
                     order_type=OrderType.LIMIT,
                     selection_id="50214",
                     handicap=None,
-                    side="BACK",
+                    side=Side.BACK,
                     limit_order=LimitOrder(
                         price=2.0,
                         size=10.0,
@@ -249,7 +250,7 @@ async def test_place_orders_handicap(betfair_client):
                     order_type=OrderType.LIMIT,
                     selection_id="5304641",
                     handicap="-5.5",
-                    side="BACK",
+                    side=Side.BACK,
                     limit_order=LimitOrder(
                         price=2.0,
                         size=10.0,
@@ -306,7 +307,7 @@ async def test_place_orders_market_on_close(betfair_client):
                     order_type=OrderType.MARKET_ON_CLOSE,
                     selection_id="50214",
                     handicap=None,
-                    side="BACK",
+                    side=Side.BACK,
                     limit_order=None,
                     limit_on_close_order=None,
                     market_on_close_order=MarketOnCloseOrder(liability=10.0),
