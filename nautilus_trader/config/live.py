@@ -98,6 +98,7 @@ class RoutingConfig(NautilusConfig, frozen=True):
         (when a specific venue routing cannot be found).
     venues : list[str], optional
         The venues to register for routing.
+
     """
 
     default: bool = False

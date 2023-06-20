@@ -79,8 +79,8 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
 
 class VolatilityMarketMaker(Strategy):
     """
-    A very dumb market maker which brackets the current market based on
-    volatility measured by an ATR indicator.
+    A very dumb market maker which brackets the current market based on volatility
+    measured by an ATR indicator.
 
     Cancels all orders and closes all positions on stop.
 
@@ -88,6 +88,7 @@ class VolatilityMarketMaker(Strategy):
     ----------
     config : VolatilityMarketMakerConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: VolatilityMarketMakerConfig) -> None:
@@ -110,7 +111,9 @@ class VolatilityMarketMaker(Strategy):
         self.sell_order: Union[LimitOrder, None] = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -136,15 +139,15 @@ class VolatilityMarketMaker(Strategy):
         # )  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
-        #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+        #         BinanceFuturesMarkPriceUpdate,
+        #         metadata={"instrument_id": self.instrument.id},
         #     ),
         #     client_id=ClientId("BINANCE"),
         # )
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic
-        data.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
@@ -157,8 +160,7 @@ class VolatilityMarketMaker(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -184,7 +186,8 @@ class VolatilityMarketMaker(Strategy):
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives order book deltas.
+        Actions to be performed when the strategy is running and receives order book
+        deltas.
 
         Parameters
         ----------

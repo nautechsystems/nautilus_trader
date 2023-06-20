@@ -20,14 +20,18 @@ import msgspec
 
 
 class BetfairSide(Enum):
-    """BetfairSide"""
+    """
+    BetfairSide.
+    """
 
     BACK = "BACK"
     LAY = "LAY"
 
 
 class ExecutionStatus(Enum):
-    """ExecutionStatus"""
+    """
+    ExecutionStatus.
+    """
 
     PENDING = "PENDING"
     EXECUTABLE = "EXECUTABLE"
@@ -36,7 +40,9 @@ class ExecutionStatus(Enum):
 
 
 class PersistenceType(Enum):
-    """PersistenceType"""
+    """
+    PersistenceType.
+    """
 
     LAPSE = "LAPSE"
     PERSIST = "PERSIST"
@@ -44,7 +50,9 @@ class PersistenceType(Enum):
 
 
 class OrderType(Enum):
-    """OrderType"""
+    """
+    OrderType.
+    """
 
     LIMIT = "LIMIT"
     LIMIT_ON_CLOSE = "LIMIT_ON_CLOSE"
@@ -55,14 +63,18 @@ class OrderType(Enum):
 
 
 class BetOutcome(Enum):
-    """BetOutcome"""
+    """
+    BetOutcome.
+    """
 
     WON = "WON"
     LOST = "LOST"
 
 
 class ClearedOrder(msgspec.Struct):
-    """ClearedOrder"""
+    """
+    ClearedOrder.
+    """
 
     eventTypeId: str
     eventId: str
@@ -88,7 +100,9 @@ class ClearedOrder(msgspec.Struct):
 
 
 class ClearedOrdersResponse(msgspec.Struct):
-    """ClearedOrdersResponse"""
+    """
+    ClearedOrdersResponse.
+    """
 
     clearedOrders: list[ClearedOrder]
     moreAvailable: bool

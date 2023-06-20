@@ -55,6 +55,7 @@ class MockExecutionClient(ExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
     def __init__(
@@ -172,6 +173,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
     def __init__(

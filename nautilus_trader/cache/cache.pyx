@@ -58,6 +58,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -113,6 +114,7 @@ cdef class Cache(CacheFacade):
         self._bars_ask: dict[InstrumentId, Bar] = {}
         self._currencies: dict[str, Currency] = {}
         self._instruments: dict[InstrumentId, Instrument] = {}
+        self._synthetics: dict[InstrumentId, SyntheticInstrument] = {}
         self._accounts: dict[AccountId, Account] = {}
         self._orders: dict[ClientOrderId, Order] = {}
         self._order_lists: dict[OrderListId, OrderList] = {}
@@ -211,6 +213,24 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
         )
 
+    cpdef void cache_synthetics(self):
+        """
+        Clear the current synthetic instruments cache and load synthetic instruments from the cache
+        database.
+        """
+        self._log.debug(f"Loading synthetic instruments from database...")
+
+        if self._database is not None:
+            self._synthetics = self._database.load_synthetics()
+        else:
+            self._synthetics = {}
+
+        cdef int count = len(self._synthetics)
+        self._log.info(
+            f"Cached {count} synthetic instrument{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._synthetics else LogColor.NORMAL,
+        )
+
     cpdef void cache_accounts(self):
         """
         Clear the current accounts cache and load accounts from the cache
@@ -249,11 +269,11 @@ cdef class Cache(CacheFacade):
                 for client_order_id in order.linked_order_ids or []:
                     contingent_order = self._orders.get(client_order_id)
                     if contingent_order is None:
-                        self._log.error(f"Contingency order {repr(client_order_id)} not found.")
+                        self._log.error(f"Contingency order {client_order_id!r} not found.")
                         continue
                     # Assign the parents position ID
                     if contingent_order.position_id is None:
-                        self._log.info(f"Assigned {repr(order.position_id)} to {repr(client_order_id)}.")
+                        self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
                         contingent_order.position_id = order.position_id
 
         cdef int count = len(self._orders)
@@ -941,7 +961,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or ``None``
+        Instrument or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -953,6 +973,36 @@ cdef class Cache(CacheFacade):
                 self._instruments[instrument.id] = instrument
 
         return instrument
+
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id):
+        """
+        Load the synthetic instrument associated with the given `instrument_id` (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The synthetic instrument ID to load.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not a synthetic instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+
+        cdef SyntheticInstrument synthetic = self._synthetics.get(instrument_id)
+        if synthetic is None and self._database is not None:
+            synthetic = self._database.load_synthetic(instrument_id)
+            if synthetic is not None:
+                self._synthetics[synthetic.id] = synthetic
+
+        return synthetic
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -1336,6 +1386,24 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.add_instrument(instrument)
+
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Add the given synthetic instrument to the cache.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to add.
+
+        """
+        self._synthetics[synthetic.id] = synthetic
+
+        self._log.debug(f"Added synthetic instrument {synthetic.id}.")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_synthetic(synthetic)
 
     cpdef void add_account(self, Account account):
         """
@@ -2443,6 +2511,54 @@ cdef class Cache(CacheFacade):
 
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
+
+# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+
+    cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id):
+        """
+        Return the synthetic instrument corresponding to the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID of the synthetic instrument to return.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not a synthetic instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+
+        return self._synthetics.get(instrument_id)
+
+    cpdef list synthetic_ids(self):
+        """
+        Return all synthetic instrument IDs held by the cache.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(self._synthetics.keys())
+
+    cpdef list synthetics(self):
+        """
+        Return all synthetic instruments held by the cache.
+
+        Returns
+        -------
+        list[SyntheticInstrument]
+
+        """
+        return list(self._synthetics.values())
 
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 

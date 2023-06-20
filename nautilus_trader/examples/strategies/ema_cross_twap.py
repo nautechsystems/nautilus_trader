@@ -103,6 +103,7 @@ class EMACrossTWAP(Strategy):
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
     ValueError
         If `config.twap_interval_secs` is not less than or equal to `config.twap_horizon_secs`.
+
     """
 
     def __init__(self, config: EMACrossTWAPConfig) -> None:
@@ -136,7 +137,9 @@ class EMACrossTWAP(Strategy):
         self.instrument: Instrument = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -156,8 +159,7 @@ class EMACrossTWAP(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -170,7 +172,8 @@ class EMACrossTWAP(Strategy):
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives order book deltas.
+        Actions to be performed when the strategy is running and receives order book
+        deltas.
 
         Parameters
         ----------

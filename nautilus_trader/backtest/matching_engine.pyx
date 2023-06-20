@@ -1760,14 +1760,16 @@ cdef class OrderMatchingEngine:
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void accept_order(self, Order order):
-        self._generate_order_accepted(order)
+        # Check if order already accepted (being added back into the matching engine)
+        if not order.status_c() == OrderStatus.ACCEPTED:
+            self._generate_order_accepted(order)
 
-        if (
-            order.order_type == OrderType.TRAILING_STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            if order.trigger_price is None:
-                self._update_trailing_stop_order(order)
+            if (
+                order.order_type == OrderType.TRAILING_STOP_MARKET
+                or order.order_type == OrderType.TRAILING_STOP_LIMIT
+            ):
+                if order.trigger_price is None:
+                    self._update_trailing_stop_order(order)
 
         self._core.add_order(order)
 

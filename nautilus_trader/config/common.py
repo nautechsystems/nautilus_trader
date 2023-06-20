@@ -250,12 +250,15 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
+    filter_unclaimed_external_orders : bool, default False
+        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = True
+    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
@@ -281,6 +284,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The flush interval (milliseconds) for writing chunks.
     replace_existing: bool, default False
         If any existing feather files should be replaced.
+
     """
 
     catalog_path: str
@@ -316,6 +320,7 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
         The fsspec storage options for the data catalog.
     use_rust : bool, default False
         If queries will be for Rust schema versions (when implemented).
+
     """
 
     path: str
@@ -333,6 +338,7 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
     component_id : str, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
+
     """
 
     component_id: Optional[str] = None
@@ -350,6 +356,7 @@ class ImportableActorConfig(NautilusConfig, frozen=True):
         The fully qualified name of the Actor Config class.
     config : dict
         The actor configuration.
+
     """
 
     actor_path: str
@@ -404,6 +411,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         how the `ExecutionEngine` handles position IDs (see docs).
     external_order_claims : list[str], optional
         The external order claim instrument IDs.
+
     """
 
     strategy_id: Optional[str] = None
@@ -424,6 +432,7 @@ class ImportableStrategyConfig(NautilusConfig, frozen=True):
         The fully qualified name of the config class.
     config : dict[str, Any]
         The strategy configuration.
+
     """
 
     strategy_path: str
@@ -471,6 +480,7 @@ class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
     exec_algorithm_id : str, optional
         The unique ID for the execution algorithm.
         If not ``None`` then will become the execution algorithm ID.
+
     """
 
     exec_algorithm_id: Optional[str] = None
@@ -488,6 +498,7 @@ class ImportableExecAlgorithmConfig(NautilusConfig, frozen=True):
         The fully qualified name of the config class.
     config : dict[str, Any]
         The execution algorithm configuration.
+
     """
 
     exec_algorithm_path: str
@@ -646,7 +657,8 @@ class ImportableFactoryConfig(NautilusConfig, frozen=True):
 
 class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable configuration (typically live data client or live execution client).
+    Represents an importable configuration (typically live data client or live execution
+    client).
     """
 
     path: str

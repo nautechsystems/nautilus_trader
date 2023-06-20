@@ -214,8 +214,9 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
     """
     Handle existing data for instrument subclasses.
 
-    Instruments all live in a single file, so merge with existing data.
-    For all other classes, simply return data unchanged.
+    Instruments all live in a single file, so merge with existing data. For all other
+    classes, simply return data unchanged.
+
     """
     if cls not in Instrument.__subclasses__():
         return df

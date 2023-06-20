@@ -104,6 +104,7 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
+
     """
 
     def __init__(  # noqa (too complex)
@@ -797,8 +798,9 @@ class NautilusKernel:
         """
         Dispose of the kernel releasing system resources.
 
-        Calling this method multiple times has the same effect as calling it once (it is idempotent).
-        Once called, it cannot be reversed, and no other methods should be called on this instance.
+        Calling this method multiple times has the same effect as calling it once (it is
+        idempotent). Once called, it cannot be reversed, and no other methods should be
+        called on this instance.
 
         """
         # Stop all engines

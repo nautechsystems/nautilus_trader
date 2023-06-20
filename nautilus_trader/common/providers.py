@@ -42,6 +42,7 @@ class InstrumentProvider:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -107,8 +108,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
+        Load the instruments for the given IDs into the provider, optionally applying
+        the given filters.
 
         Parameters
         ----------
@@ -131,8 +132,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instrument for the given ID into the provider asynchronously, optionally
-        applying the given filters.
+        Load the instrument for the given ID into the provider asynchronously,
+        optionally applying the given filters.
 
         Parameters
         ----------
@@ -154,6 +155,7 @@ class InstrumentProvider:
         Initialize the instrument provider.
 
         If `initialize()` then will immediately return.
+
         """
         if self._loaded:
             return  # Already loaded
@@ -179,8 +181,8 @@ class InstrumentProvider:
 
     def load_all(self, filters: Optional[dict] = None) -> None:
         """
-        Load the latest instruments into the provider, optionally applying the
-        given filters.
+        Load the latest instruments into the provider, optionally applying the given
+        filters.
 
         Parameters
         ----------
@@ -200,8 +202,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
+        Load the instruments for the given IDs into the provider, optionally applying
+        the given filters.
 
         Parameters
         ----------
@@ -225,8 +227,8 @@ class InstrumentProvider:
         filters: Optional[dict] = None,
     ) -> None:
         """
-        Load the instrument for the given ID into the provider, optionally
-        applying the given filters.
+        Load the instrument for the given ID into the provider, optionally applying the
+        given filters.
 
         Parameters
         ----------

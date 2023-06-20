@@ -29,15 +29,15 @@ pub struct TraderId {
     pub value: Box<Arc<String>>,
 }
 
-impl Debug for TraderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
-    }
-}
+impl TraderId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`TraderId` value");
+        correctness::string_contains(s, "-", "`TraderId` value");
 
-impl Display for TraderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
     }
 }
 
@@ -49,15 +49,15 @@ impl Default for TraderId {
     }
 }
 
-impl TraderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`TraderId` value");
-        correctness::string_contains(s, "-", "`TraderId` value");
+impl Debug for TraderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
 
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
+impl Display for TraderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 

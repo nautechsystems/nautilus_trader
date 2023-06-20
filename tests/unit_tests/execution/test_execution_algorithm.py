@@ -185,7 +185,10 @@ class TestExecAlgorithm:
         self.strategy.start()
 
     def test_exec_algorithm_spawn_market_order(self) -> None:
-        """Test that the primary order was reduced and the spawned order has the expected properties."""
+        """
+        Test that the primary order was reduced and the spawned order has the expected
+        properties.
+        """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -226,7 +229,10 @@ class TestExecAlgorithm:
         assert spawned_order.tags == "EXIT"
 
     def test_exec_algorithm_spawn_limit_order(self) -> None:
-        """Test that the primary order was reduced and the spawned order has the expected properties."""
+        """
+        Test that the primary order was reduced and the spawned order has the expected
+        properties.
+        """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -273,7 +279,10 @@ class TestExecAlgorithm:
         assert spawned_order.is_spawned
 
     def test_exec_algorithm_spawn_market_to_limit_order(self) -> None:
-        """Test that the primary order was reduced and the spawned order has the expected properties."""
+        """
+        Test that the primary order was reduced and the spawned order has the expected
+        properties.
+        """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -317,7 +326,9 @@ class TestExecAlgorithm:
         assert spawned_order.tags == "ENTRY"
 
     def test_exec_algorithm_modify_order_in_place(self) -> None:
-        """Test that the primary order is modified in place."""
+        """
+        Test that the primary order is modified in place.
+        """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -358,7 +369,9 @@ class TestExecAlgorithm:
         assert primary_order.price == new_price
 
     def test_exec_algorithm_modify_order(self) -> None:
-        """Test that the primary order is modified."""
+        """
+        Test that the primary order is modified.
+        """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(
@@ -400,7 +413,9 @@ class TestExecAlgorithm:
         assert primary_order.quantity == new_qty
 
     def test_exec_algorithm_cancel_order(self) -> None:
-        """Test that the primary order is canceled."""
+        """
+        Test that the primary order is canceled.
+        """
         # Arrange
         exec_algorithm = TWAPExecAlgorithm()
         exec_algorithm.register(

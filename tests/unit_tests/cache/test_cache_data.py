@@ -205,6 +205,30 @@ class TestCache:
         # Assert
         assert result == []
 
+    def test_synthetic_ids_when_one_synthetic_instrument_returns_expected_list(self):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        self.cache.add_synthetic(synthetic)
+
+        # Act
+        result = self.cache.synthetic_ids()
+
+        # Assert
+        assert result == [synthetic.id]
+
+    def test_synthetics_when_one_synthetic_instrument_returns_expected_list(self):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        self.cache.add_synthetic(synthetic)
+
+        # Act
+        result = self.cache.synthetics()
+
+        # Assert
+        assert result == [synthetic]
+
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = TestDataStubs.quote_tick()

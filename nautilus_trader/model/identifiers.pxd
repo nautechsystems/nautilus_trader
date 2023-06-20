@@ -42,6 +42,8 @@ cdef class Venue(Identifier):
     @staticmethod
     cdef Venue from_mem_c(Venue_t* mem)
 
+    cpdef bint is_synthetic(self)
+
 
 cdef class InstrumentId(Identifier):
     cdef InstrumentId_t _mem
@@ -51,6 +53,8 @@ cdef class InstrumentId(Identifier):
 
     @staticmethod
     cdef InstrumentId from_str_c(str value)
+
+    cpdef bint is_synthetic(self)
 
 
 cdef class ComponentId(Identifier):
@@ -68,6 +72,7 @@ cdef class TraderId(ComponentId):
 cdef class StrategyId(ComponentId):
     cpdef str get_tag(self)
     cpdef bint is_external(self)
+
     @staticmethod
     cdef StrategyId external_c()
 
@@ -85,6 +90,8 @@ cdef class AccountId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     cdef ClientOrderId_t _mem
+
+    cpdef bint is_this_trader(self, TraderId trader_id)
 
 
 cdef class VenueOrderId(Identifier):

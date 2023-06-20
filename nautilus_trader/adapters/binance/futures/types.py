@@ -48,6 +48,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     References
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#mark-price-stream
+
     """
 
     def __init__(
@@ -61,14 +62,14 @@ class BinanceFuturesMarkPriceUpdate(Data):
         ts_event: int,
         ts_init: int,
     ):
-        super().__init__(ts_event=ts_event, ts_init=ts_init)
-
         self.instrument_id = instrument_id
         self.mark = mark
         self.index = index
         self.estimated_settle = estimated_settle
         self.funding_rate = funding_rate
         self.ts_next_funding = ts_next_funding
+        self._ts_event = ts_event
+        self._ts_init = ts_init
 
     def __repr__(self) -> str:
         return (
@@ -82,6 +83,30 @@ class BinanceFuturesMarkPriceUpdate(Data):
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @staticmethod
     def from_dict(values: dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":

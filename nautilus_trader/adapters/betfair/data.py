@@ -71,6 +71,7 @@ class BetfairDataClient(LiveMarketDataClient):
         The instrument provider.
     strict_handling : bool
         If strict handling mode is enabled.
+
     """
 
     def __init__(

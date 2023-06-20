@@ -31,18 +31,6 @@ pub struct VenueOrderId {
     pub value: Box<Arc<String>>,
 }
 
-impl Debug for VenueOrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
-    }
-}
-
-impl Display for VenueOrderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
 impl VenueOrderId {
     #[must_use]
     pub fn new(s: &str) -> Self {
@@ -59,6 +47,18 @@ impl Default for VenueOrderId {
         Self {
             value: Box::new(Arc::new(String::from("001"))),
         }
+    }
+}
+
+impl Debug for VenueOrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl Display for VenueOrderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 

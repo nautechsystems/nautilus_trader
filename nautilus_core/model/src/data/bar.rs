@@ -22,7 +22,7 @@ use std::{
 
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
-use thiserror::Error;
+use thiserror;
 
 use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
@@ -74,7 +74,7 @@ pub struct BarType {
     pub aggregation_source: AggregationSource,
 }
 
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 #[error("Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
 pub struct BarTypeParseError {
     input: String,
@@ -199,6 +199,32 @@ pub struct Bar {
     pub volume: Quantity,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
+}
+
+impl Bar {
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event,
+            ts_init,
+        }
+    }
 }
 
 impl Display for Bar {

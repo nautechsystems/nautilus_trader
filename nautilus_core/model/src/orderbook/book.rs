@@ -38,7 +38,7 @@ pub struct OrderBook {
     pub count: u64,
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum InvalidBookOperation {
     #[error("Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),

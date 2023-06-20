@@ -29,6 +29,7 @@ class PortfolioStatistic:
     Notes
     -----
     The return value should be a JSON serializable primitive.
+
     """
 
     @classmethod

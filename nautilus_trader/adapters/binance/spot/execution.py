@@ -71,6 +71,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         The base URL for the WebSocket client.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
+
     """
 
     def __init__(

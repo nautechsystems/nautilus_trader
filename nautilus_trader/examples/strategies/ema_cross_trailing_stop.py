@@ -95,8 +95,8 @@ class EMACrossTrailingStopConfig(StrategyConfig, frozen=True):
 
 class EMACrossTrailingStop(Strategy):
     """
-    A simple moving average cross example strategy with a stop-market entry and
-    trailing stop.
+    A simple moving average cross example strategy with a stop-market entry and trailing
+    stop.
 
     When the fast EMA crosses the slow EMA then submits a stop-market order one
     tick above the current bar for BUY, or one tick below the current bar
@@ -116,6 +116,7 @@ class EMACrossTrailingStop(Strategy):
     ------
     ValueError
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
+
     """
 
     def __init__(self, config: EMACrossTrailingStopConfig) -> None:
@@ -148,7 +149,9 @@ class EMACrossTrailingStop(Strategy):
         self.position_id = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -191,8 +194,7 @@ class EMACrossTrailingStop(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------

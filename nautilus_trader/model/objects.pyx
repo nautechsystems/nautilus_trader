@@ -233,7 +233,7 @@ cdef class Quantity:
 
         Returns
         -------
-        uint8
+        uint8_t
 
         """
         return self._mem.precision
@@ -498,7 +498,7 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9,f"invalid `precision` greater than max 9, was {precision}")
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
         if value > PRICE_MAX:
             raise ValueError(
                 f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
@@ -625,7 +625,7 @@ cdef class Price:
 
         Returns
         -------
-        uint8
+        uint8_t
 
         """
         return self._mem.precision

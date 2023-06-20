@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `LiveDataClient` class is responsible for interfacing with a particular API
 which may be presented directly by an exchange, or broker intermediary. It
@@ -71,6 +70,7 @@ class LiveDataClient(DataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -123,8 +123,8 @@ class LiveDataClient(DataClient):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -283,6 +283,7 @@ class LiveMarketDataClient(MarketDataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -339,8 +340,8 @@ class LiveMarketDataClient(MarketDataClient):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------

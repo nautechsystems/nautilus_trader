@@ -122,6 +122,7 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     Schema of a binance orderbook depth.
 
     GET response of `depth`.
+
     """
 
     lastUpdateId: int
@@ -164,7 +165,9 @@ class BinanceDepth(msgspec.Struct, frozen=True):
 
 
 class BinanceTrade(msgspec.Struct, frozen=True):
-    """Schema of a single trade."""
+    """
+    Schema of a single trade.
+    """
 
     id: int
     price: str
@@ -179,7 +182,9 @@ class BinanceTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> TradeTick:
-        """Parse Binance trade to internal TradeTick."""
+        """
+        Parse Binance trade to internal TradeTick.
+        """
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.price),
@@ -192,7 +197,9 @@ class BinanceTrade(msgspec.Struct, frozen=True):
 
 
 class BinanceAggTrade(msgspec.Struct, frozen=True):
-    """Schema of a single compressed aggregate trade."""
+    """
+    Schema of a single compressed aggregate trade.
+    """
 
     a: int  # Aggregate tradeId
     p: str  # Price
@@ -208,7 +215,9 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> TradeTick:
-        """Parse Binance trade to internal TradeTick"""
+        """
+        Parse Binance trade to internal TradeTick.
+        """
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.p),
@@ -221,7 +230,9 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
 
 
 class BinanceKline(msgspec.Struct, array_like=True):
-    """Array-like schema of single Binance kline."""
+    """
+    Array-like schema of single Binance kline.
+    """
 
     open_time: int
     open: str
@@ -241,7 +252,9 @@ class BinanceKline(msgspec.Struct, array_like=True):
         bar_type: BarType,
         ts_init: int,
     ) -> BinanceBar:
-        """Parse kline to BinanceBar."""
+        """
+        Parse kline to BinanceBar.
+        """
         return BinanceBar(
             bar_type=bar_type,
             open=Price.from_str(self.open),
@@ -259,7 +272,9 @@ class BinanceKline(msgspec.Struct, array_like=True):
 
 
 class BinanceTicker24hr(msgspec.Struct, frozen=True):
-    """Schema of single Binance 24hr ticker (FULL/MINI)."""
+    """
+    Schema of single Binance 24hr ticker (FULL/MINI).
+    """
 
     symbol: Optional[str]
     lastPrice: Optional[str]
@@ -291,7 +306,9 @@ class BinanceTicker24hr(msgspec.Struct, frozen=True):
 
 
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
-    """Schema of single Binance Price Ticker."""
+    """
+    Schema of single Binance Price Ticker.
+    """
 
     symbol: Optional[str]
     price: Optional[str]
@@ -300,7 +317,9 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
 
 
 class BinanceTickerBook(msgspec.Struct, frozen=True):
-    """Schema of a single Binance Order Book Ticker."""
+    """
+    Schema of a single Binance Order Book Ticker.
+    """
 
     symbol: Optional[str]
     bidPrice: Optional[str]
@@ -325,7 +344,9 @@ class BinanceDataMsgWrapper(msgspec.Struct):
 
 
 class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
-    """Schema of single ask/bid delta."""
+    """
+    Schema of single ask/bid delta.
+    """
 
     price: str
     size: str
@@ -495,7 +516,9 @@ class BinanceAggregatedTradeData(msgspec.Struct, frozen=True):
 
 
 class BinanceAggregatedTradeMsg(msgspec.Struct, frozen=True):
-    """WebSocket message."""
+    """
+    WebSocket message.
+    """
 
     stream: str
     data: BinanceAggregatedTradeData
@@ -589,7 +612,9 @@ class BinanceTickerData(msgspec.Struct, kw_only=True, frozen=True):
 
 
 class BinanceTickerMsg(msgspec.Struct, frozen=True):
-    """WebSocket message."""
+    """
+    WebSocket message.
+    """
 
     stream: str
     data: BinanceTickerData
@@ -666,7 +691,9 @@ class BinanceCandlestick(msgspec.Struct, frozen=True):
 
 
 class BinanceCandlestickData(msgspec.Struct, frozen=True):
-    """WebSocket message 'inner struct'."""
+    """
+    WebSocket message 'inner struct'.
+    """
 
     e: str
     E: int

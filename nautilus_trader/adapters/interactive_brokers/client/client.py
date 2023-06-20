@@ -203,8 +203,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -260,7 +260,9 @@ class InteractiveBrokersClient(Component, EWrapper):
                 self._log.info(success, LogColor.GREEN)
 
     def _next_req_id(self) -> int:
-        """Get next available request ID."""
+        """
+        Get next available request ID.
+        """
         new_id = self._request_id_seq
         self._request_id_seq += 1
         return new_id
@@ -504,7 +506,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     async def _socket_connect(self):
         """
-        Create socket connection with TWS/Gateway
+        Create socket connection with TWS/Gateway.
         """
         try:
             self._client.host = self._host
@@ -1045,7 +1047,9 @@ class InteractiveBrokersClient(Component, EWrapper):
         return self._accounts.copy()
 
     def managedAccounts(self, accounts_list: str):  # : Override the EWrapper
-        """Received once the connection is established."""
+        """
+        Received once the connection is established.
+        """
         self.logAnswer(current_fn_name(), vars())
         self._accounts = {a for a in accounts_list.split(",") if a}
         if self._next_valid_order_id >= 0 and not self.is_ib_ready.is_set():
@@ -1476,7 +1480,9 @@ class InteractiveBrokersClient(Component, EWrapper):
     def _end_request(self, req_id, success=True, exception=None):
         """
         Finish the future of corresponding key with the given result.
+
         If no result is given then it will be popped of the general results.
+
         """
         if not (request := self.requests.get(req_id=req_id)):
             return

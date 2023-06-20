@@ -12,6 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Defines `Binance` common enums.
+
+
+References
+----------
+https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
+https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
+"""
+
 
 from enum import Enum
 from enum import unique
@@ -28,20 +38,10 @@ from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.orders import Order
 
 
-"""
-Defines `Binance` common enums.
-
-
-References
-----------
-https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
-https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
-"""
-
-
 @unique
 class BinanceRateLimitType(Enum):
-    """Represents a `Binance` rate limit type."""
+    """
+    Represents a `Binance` rate limit type."""
 
     REQUEST_WEIGHT = "REQUEST_WEIGHT"
     ORDERS = "ORDERS"
@@ -246,6 +246,7 @@ class BinanceEnumParser:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(self) -> None:

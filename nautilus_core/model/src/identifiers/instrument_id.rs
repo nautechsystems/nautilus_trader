@@ -24,7 +24,7 @@ use std::{
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
-use thiserror::Error;
+use thiserror;
 
 use crate::identifiers::{symbol::Symbol, venue::Venue};
 
@@ -36,10 +36,21 @@ pub struct InstrumentId {
     pub venue: Venue,
 }
 
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 #[error("Error parsing `InstrumentId` from '{input}'")]
 pub struct InstrumentIdParseError {
     input: String,
+}
+
+impl InstrumentId {
+    #[must_use]
+    pub fn new(symbol: Symbol, venue: Venue) -> Self {
+        Self { symbol, venue }
+    }
+
+    pub fn is_synthetic(&self) -> bool {
+        self.venue.is_synthetic()
+    }
 }
 
 impl FromStr for InstrumentId {
@@ -67,13 +78,6 @@ impl Debug for InstrumentId {
 impl Display for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.symbol, self.venue)
-    }
-}
-
-impl InstrumentId {
-    #[must_use]
-    pub fn new(symbol: Symbol, venue: Venue) -> Self {
-        Self { symbol, venue }
     }
 }
 
@@ -144,6 +148,11 @@ pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
     let mut h = DefaultHasher::new();
     instrument_id.hash(&mut h);
     h.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn instrument_id_is_synthetic(instrument_id: &InstrumentId) -> u8 {
+    u8::from(instrument_id.is_synthetic())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

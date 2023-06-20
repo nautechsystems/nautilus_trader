@@ -44,10 +44,13 @@ else:
 ################################################################################
 #  RUST BUILD
 ################################################################################
-if platform.system() != "Darwin":
+if platform.system() == "Linux":
     # Use clang as the default compiler
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
+# elif platform.system() == "Windows":
+#     os.environ["CC"] = "cl"
+#     os.environ["CXX"] = "cl"
 
 TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
@@ -295,7 +298,9 @@ def _strip_unneeded_symbols() -> None:
 
 
 def build() -> None:
-    """Construct the extensions and distribution."""
+    """
+    Construct the extensions and distribution.
+    """
     _build_rust_libs()
     _copy_rust_dylibs_to_project()
 

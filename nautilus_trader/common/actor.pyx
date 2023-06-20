@@ -70,6 +70,7 @@ from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -643,6 +644,55 @@ cdef class Actor(Component):
             self.log.exception(f"Error on load {repr(state)}", e)
             raise
 
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Add the created synthetic instrument to the cache.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to add to the cache.
+
+        Raises
+        ------
+        KeyError
+            If `synthetic` is already in the cache.
+
+        Notes
+        -----
+        If you are updating the synthetic instrument then you should use the `update_synthetic` method.
+
+        """
+        Condition.not_none(synthetic, "synthetic")
+        Condition.true(self.cache.synthetic(synthetic.id) is None, f"`synthetic` {synthetic.id} already exists")
+
+        self.cache.add_synthetic(synthetic)
+
+    cpdef void update_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Update the synthetic instrument in the cache.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to update in the cache.
+
+        Raises
+        ------
+        KeyError
+            If `synthetic` does not already exist in the cache.
+
+        Notes
+        -----
+        If you are adding a new synthetic instrument then you should use the `add_synthetic` method.
+
+        """
+        Condition.not_none(synthetic, "synthetic")
+        Condition.true(self.cache.synthetic(synthetic.id) is not None, f"`synthetic` {synthetic.id} does not exist")
+
+        # This will replace the previous synthetic
+        self.cache.add_synthetic(synthetic)
+
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
@@ -710,6 +760,37 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id = None):
+        """
+        Subscribe to update `Instrument` data for the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the subscription.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.instrument.{venue}.*",
+            handler=self.handle_instrument,
+        )
+
+        cdef Subscribe command = Subscribe(
+            client_id=client_id,
+            venue=venue,
+            data_type=DataType(Instrument),
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
     cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to update `Instrument` data for the given instrument ID.
@@ -737,37 +818,6 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            command_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
-    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id = None):
-        """
-        Subscribe to update `Instrument` data for the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the subscription.
-        client_id : ClientId, optional
-            The specific client ID for the command.
-            If ``None`` then will be inferred from the venue.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"data.instrument.{venue}.*",
-            handler=self.handle_instrument,
-        )
-
-        cdef Subscribe command = Subscribe(
-            client_id=client_id,
-            venue=venue,
-            data_type=DataType(Instrument),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )

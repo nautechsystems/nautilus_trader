@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Defines a scheme for modeling the tick space for various instruments."""
+"""
+Defines a scheme for modeling the tick space for various instruments.
+"""
 
 # Required to register tick schemes
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme  # noqa: F401

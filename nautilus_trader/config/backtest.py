@@ -218,6 +218,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         The data configurations for the backtest run.
     batch_size_bytes : optional
         The batch block size in bytes (will then run in streaming mode).
+
     """
 
     engine: Optional[BacktestEngineConfig] = None

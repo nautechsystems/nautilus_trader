@@ -57,6 +57,7 @@ class BacktestNode:
         If `configs` is ``None`` or empty.
     ValueError
         If `configs` contains a type other than `BacktestRunConfig`.
+
     """
 
     def __init__(self, configs: list[BacktestRunConfig]):
@@ -87,8 +88,7 @@ class BacktestNode:
 
     def get_engine(self, run_config_id: str) -> Optional[BacktestEngine]:
         """
-        Return the backtest engine associated with the given run config ID
-        (if found).
+        Return the backtest engine associated with the given run config ID (if found).
 
         Parameters
         ----------

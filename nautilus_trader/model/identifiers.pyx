@@ -33,6 +33,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_drop
 from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_hash
+from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
@@ -62,6 +63,7 @@ from nautilus_trader.core.rust.model cimport venue_clone
 from nautilus_trader.core.rust.model cimport venue_drop
 from nautilus_trader.core.rust.model cimport venue_eq
 from nautilus_trader.core.rust.model cimport venue_hash
+from nautilus_trader.core.rust.model cimport venue_is_synthetic
 from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.rust.model cimport venue_order_id_drop
 from nautilus_trader.core.rust.model cimport venue_order_id_eq
@@ -219,6 +221,17 @@ cdef class Venue(Identifier):
     cdef str to_str(self):
         return cstr_to_pystr(venue_to_cstr(&self._mem))
 
+    cpdef bint is_synthetic(self):
+        """
+        Return whether the venue is synthetic ('SYNTH').
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>venue_is_synthetic(&self._mem)
+
 
 cdef class InstrumentId(Identifier):
     """
@@ -319,6 +332,17 @@ cdef class InstrumentId(Identifier):
 
         """
         return InstrumentId.from_str_c(value)
+
+    cpdef bint is_synthetic(self):
+        """
+        Return whether the instrument ID is a synthetic instrument (with venue of 'SYNTH').
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>instrument_id_is_synthetic(&self._mem)
 
 
 cdef class ComponentId(Identifier):
@@ -436,7 +460,7 @@ cdef class TraderId(ComponentId):
 
 
 # External strategy ID constant
-cdef StrategyId EXTERNAL_STRATEGY = StrategyId("EXTERNAL")
+cdef StrategyId EXTERNAL_STRATEGY_ID = StrategyId("EXTERNAL")
 
 
 cdef class StrategyId(ComponentId):
@@ -494,11 +518,11 @@ cdef class StrategyId(ComponentId):
         bool
 
         """
-        return self == EXTERNAL_STRATEGY
+        return self == EXTERNAL_STRATEGY_ID
 
     @staticmethod
     cdef StrategyId external_c():
-        return EXTERNAL_STRATEGY
+        return EXTERNAL_STRATEGY_ID
 
 
 cdef class ExecAlgorithmId(ComponentId):
@@ -514,10 +538,6 @@ cdef class ExecAlgorithmId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string.
-
-    References
-    ----------
-    https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
     """
 
     def __init__(self, str value not None):
@@ -643,6 +663,28 @@ cdef class ClientOrderId(Identifier):
 
     cdef str to_str(self):
         return cstr_to_pystr(client_order_id_to_cstr(&self._mem))
+
+    cpdef bint is_this_trader(self, TraderId trader_id):
+        """
+        Return whether this client order ID is for the given trader ID instance.
+
+        Will compare the given `trader_id.get_tag()` with this identifier.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader ID to compare with.
+
+        Returns
+        -------
+        bool
+            True if for this instance, else false.
+
+        """
+        cdef list parts = self.to_str().split("-", maxsplit=4)
+        if len(parts) < 4:
+            return False
+        return parts[3] == trader_id.get_tag()
 
 
 cdef class VenueOrderId(Identifier):

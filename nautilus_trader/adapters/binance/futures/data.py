@@ -67,6 +67,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
+
     """
 
     def __init__(

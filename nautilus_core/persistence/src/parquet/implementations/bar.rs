@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
     array::{Array, Int64Array, UInt64Array},
@@ -25,51 +25,9 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{Data, DecodeDataFromRecordBatch};
+use crate::parquet::{Data, DataSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch};
 
-impl DecodeDataFromRecordBatch for Bar {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
-        // Parse and validate metadata
-        let (bar_type, price_precision, size_precision) = parse_metadata(metadata);
-
-        // Extract field value arrays from record batch
-        let cols = record_batch.columns();
-        let open_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let high_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let low_values = cols[2].as_any().downcast_ref::<Int64Array>().unwrap();
-        let close_values = cols[3].as_any().downcast_ref::<Int64Array>().unwrap();
-        let volume_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
-
-        // Construct iterator of values from field value arrays
-        let values = open_values
-            .into_iter()
-            .zip(high_values.iter())
-            .zip(low_values.iter())
-            .zip(close_values.iter())
-            .zip(volume_values.iter())
-            .zip(ts_event_values.iter())
-            .zip(ts_init_values.iter())
-            .map(
-                |((((((open, high), low), close), volume), ts_event), ts_init)| {
-                    Self {
-                        bar_type: bar_type.clone(),
-                        open: Price::from_raw(open.unwrap(), price_precision),
-                        high: Price::from_raw(high.unwrap(), price_precision),
-                        low: Price::from_raw(low.unwrap(), price_precision),
-                        close: Price::from_raw(close.unwrap(), price_precision),
-                        volume: Quantity::from_raw(volume.unwrap(), size_precision),
-                        ts_event: ts_event.unwrap(),
-                        ts_init: ts_init.unwrap(),
-                    }
-                    .into()
-                },
-            );
-
-        values.collect()
-    }
-
+impl DataSchemaProvider for Bar {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
         let fields = vec![
             Field::new("open", DataType::Int64, false),
@@ -99,6 +57,98 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> (BarType, u8, u8) {
         .unwrap();
 
     (bar_type, price_precision, size_precision)
+}
+
+impl EncodeToRecordBatch for Bar {
+    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
+        // Create array builders
+        let mut open_builder = Int64Array::builder(data.len());
+        let mut high_builder = Int64Array::builder(data.len());
+        let mut low_builder = Int64Array::builder(data.len());
+        let mut close_builder = Int64Array::builder(data.len());
+        let mut volume_builder = UInt64Array::builder(data.len());
+        let mut ts_event_builder = UInt64Array::builder(data.len());
+        let mut ts_init_builder = UInt64Array::builder(data.len());
+
+        // Iterate over data
+        for bar in data {
+            open_builder.append_value(bar.open.raw);
+            high_builder.append_value(bar.high.raw);
+            low_builder.append_value(bar.low.raw);
+            close_builder.append_value(bar.close.raw);
+            volume_builder.append_value(bar.volume.raw);
+            ts_event_builder.append_value(bar.ts_event);
+            ts_init_builder.append_value(bar.ts_init);
+        }
+
+        // Build arrays
+        let open_array = open_builder.finish();
+        let high_array = high_builder.finish();
+        let low_array = low_builder.finish();
+        let close_array = close_builder.finish();
+        let volume_array = volume_builder.finish();
+        let ts_event_array = ts_event_builder.finish();
+        let ts_init_array = ts_init_builder.finish();
+
+        // Build record batch
+        RecordBatch::try_new(
+            Self::get_schema(metadata.clone()),
+            vec![
+                Arc::new(open_array),
+                Arc::new(high_array),
+                Arc::new(low_array),
+                Arc::new(close_array),
+                Arc::new(volume_array),
+                Arc::new(ts_event_array),
+                Arc::new(ts_init_array),
+            ],
+        )
+        .unwrap()
+    }
+}
+
+impl DecodeFromRecordBatch for Bar {
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
+        // Parse and validate metadata
+        let (bar_type, price_precision, size_precision) = parse_metadata(metadata);
+
+        // Extract field value arrays
+        let cols = record_batch.columns();
+        let open_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let high_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let low_values = cols[2].as_any().downcast_ref::<Int64Array>().unwrap();
+        let close_values = cols[3].as_any().downcast_ref::<Int64Array>().unwrap();
+        let volume_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_init_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        // Construct iterator of values from arrays
+        let values = open_values
+            .into_iter()
+            .zip(high_values.iter())
+            .zip(low_values.iter())
+            .zip(close_values.iter())
+            .zip(volume_values.iter())
+            .zip(ts_event_values.iter())
+            .zip(ts_init_values.iter())
+            .map(
+                |((((((open, high), low), close), volume), ts_event), ts_init)| {
+                    Self {
+                        bar_type: bar_type.clone(),
+                        open: Price::from_raw(open.unwrap(), price_precision),
+                        high: Price::from_raw(high.unwrap(), price_precision),
+                        low: Price::from_raw(low.unwrap(), price_precision),
+                        close: Price::from_raw(close.unwrap(), price_precision),
+                        volume: Quantity::from_raw(volume.unwrap(), size_precision),
+                        ts_event: ts_event.unwrap(),
+                        ts_init: ts_init.unwrap(),
+                    }
+                    .into()
+                },
+            );
+
+        values.collect()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -141,14 +191,75 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_batch() {
+        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let bar1 = Bar::new(
+            bar_type.clone(),
+            Price::new(100.10, 2),
+            Price::new(102.00, 2),
+            Price::new(100.00, 2),
+            Price::new(101.00, 2),
+            Quantity::new(1100.0, 0),
+            1,
+            3,
+        );
+        let bar2 = Bar::new(
+            bar_type,
+            Price::new(100.00, 2),
+            Price::new(100.00, 2),
+            Price::new(100.00, 2),
+            Price::new(100.10, 2),
+            Quantity::new(1110.0, 0),
+            2,
+            4,
+        );
+
+        let data = vec![bar1, bar2];
+        let metadata = create_metadata();
+        let record_batch = Bar::encode_batch(&metadata, &data);
+
+        let columns = record_batch.columns();
+        let open_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let high_values = columns[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let low_values = columns[2].as_any().downcast_ref::<Int64Array>().unwrap();
+        let close_values = columns[3].as_any().downcast_ref::<Int64Array>().unwrap();
+        let volume_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_init_values = columns[6].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        assert_eq!(columns.len(), 7);
+        assert_eq!(open_values.len(), 2);
+        assert_eq!(open_values.value(0), 100100000000);
+        assert_eq!(open_values.value(1), 100000000000);
+        assert_eq!(high_values.len(), 2);
+        assert_eq!(high_values.value(0), 102000000000);
+        assert_eq!(high_values.value(1), 100000000000);
+        assert_eq!(low_values.len(), 2);
+        assert_eq!(low_values.value(0), 100000000000);
+        assert_eq!(low_values.value(1), 100000000000);
+        assert_eq!(close_values.len(), 2);
+        assert_eq!(close_values.value(0), 101000000000);
+        assert_eq!(close_values.value(1), 100100000000);
+        assert_eq!(volume_values.len(), 2);
+        assert_eq!(volume_values.value(0), 1100000000000);
+        assert_eq!(volume_values.value(1), 1110000000000);
+        assert_eq!(ts_event_values.len(), 2);
+        assert_eq!(ts_event_values.value(0), 1);
+        assert_eq!(ts_event_values.value(1), 2);
+        assert_eq!(ts_init_values.len(), 2);
+        assert_eq!(ts_init_values.value(0), 3);
+        assert_eq!(ts_init_values.value(1), 4);
+    }
+
+    #[test]
     fn test_decode_batch() {
         let metadata = create_metadata();
 
-        let open = Int64Array::from(vec![10010, 10000]);
-        let high = Int64Array::from(vec![10200, 10000]);
-        let low = Int64Array::from(vec![10000, 10000]);
-        let close = Int64Array::from(vec![10100, 10010]);
-        let volume = UInt64Array::from(vec![110, 100]);
+        let open = Int64Array::from(vec![100100000000, 10000000000]);
+        let high = Int64Array::from(vec![102000000000, 10000000000]);
+        let low = Int64Array::from(vec![100000000000, 10000000000]);
+        let close = Int64Array::from(vec![101000000000, 10010000000]);
+        let volume = UInt64Array::from(vec![11000000000, 10000000000]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
