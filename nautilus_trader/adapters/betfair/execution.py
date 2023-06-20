@@ -35,8 +35,8 @@ from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import B2N_ORDER_SIDE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
@@ -762,7 +762,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
                     trade_id=trade_id,
-                    order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
+                    order_side=B2N_ORDER_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
                     last_qty=betfair_float_to_quantity(fill_qty),
                     last_px=betfair_float_to_price(fill_price),
@@ -831,7 +831,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
                     trade_id=trade_id,
-                    order_side=B2N_ORDER_STREAM_SIDE[unmatched_order.side],
+                    order_side=B2N_ORDER_SIDE[unmatched_order.side],
                     order_type=OrderType.LIMIT,
                     last_qty=betfair_float_to_quantity(fill_qty),
                     last_px=betfair_float_to_price(fill_price),

@@ -26,7 +26,7 @@ from betfair_parser.spec.streaming.mcm import RunnerChange
 from betfair_parser.spec.streaming.mcm import RunnerStatus
 from betfair_parser.spec.streaming.mcm import _PriceVolume
 
-from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_MARKET_SIDE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -466,7 +466,7 @@ def _create_bsp_order_book_delta(
         BookOrder(
             price=price,
             size=betfair_float_to_quantity(volume),
-            side=B2N_MARKET_STREAM_SIDE[side],
+            side=B2N_MARKET_SIDE[side],
             order_id=order_id,
         ),
         ts_event,

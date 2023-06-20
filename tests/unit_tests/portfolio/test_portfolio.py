@@ -18,7 +18,6 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -56,7 +55,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 SIM = Venue("SIM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
-BETFAIR = BETFAIR_VENUE
+BETFAIR = Venue("BETFAIR")
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")

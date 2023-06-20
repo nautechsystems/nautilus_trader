@@ -23,7 +23,7 @@ from betfair_parser.spec.streaming.status import Connection
 from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus

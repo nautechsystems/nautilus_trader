@@ -26,8 +26,8 @@ from betfair_parser.spec.streaming import stream_decode
 from betfair_parser.spec.streaming.ocm import MatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
-from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price

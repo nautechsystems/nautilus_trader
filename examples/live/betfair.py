@@ -28,7 +28,6 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.rust.common import LogLevel
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
@@ -41,11 +40,12 @@ from nautilus_trader.live.node import TradingNode
 async def main(market_id: str):
     # Connect to Betfair client early to load instruments and account currency
     loop = asyncio.get_event_loop()
-    logger = Logger(clock=LiveClock(), level_stdout=LogLevel.DEBUG)
+    logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
         app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
+        cert_dir=None,  # Pass here or will source from the `BETFAIR_CERT_DIR` env var
         logger=logger,
         loop=loop,
     )
@@ -68,7 +68,7 @@ async def main(market_id: str):
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        logging=LoggingConfig(log_level="DEBUG"),
+        logging=LoggingConfig(log_level="INFO"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
@@ -126,4 +126,4 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.215270777"))
+    asyncio.run(main(market_id="1.207188674"))

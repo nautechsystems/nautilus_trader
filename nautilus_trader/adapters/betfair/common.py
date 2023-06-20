@@ -21,25 +21,18 @@ from betfair_parser.spec.common import OrderType
 from nautilus_trader.core.rust.model import OrderType as NautilusOrderType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 
 
-BETFAIR_VENUE = Venue("BETFAIR")
-BETFAIR_PRICE_PRECISION = 2
-BETFAIR_QUANTITY_PRECISION = 4
-
 # ------------------------------- MAPPINGS ------------------------------- #
-
 # Mappings between Nautilus and betfair - prefixes:
 #     N2B = {NAUTILUS: BETFAIR}
 #     B2N = {BETFAIR: NAUTILUS}
 
-
 N2B_SIDE = {
-    OrderSide.BUY: "BACK",
-    OrderSide.SELL: "LAY",
+    OrderSide.BUY: Side.BACK,
+    OrderSide.SELL: Side.LAY,
 }
 
 N2B_TIME_IN_FORCE = {
@@ -51,7 +44,7 @@ N2B_PERSISTENCE = {
     TimeInForce.DAY: PersistenceType.MARKET_ON_CLOSE,
 }
 
-B2N_MARKET_STREAM_SIDE = {
+B2N_MARKET_SIDE = {
     "atb": OrderSide.SELL,  # Available to Back / Sell order
     "batb": OrderSide.SELL,  # Best available to Back / Sell order
     "bdatb": OrderSide.SELL,  # Best display to Back / Sell order
@@ -62,9 +55,7 @@ B2N_MARKET_STREAM_SIDE = {
     "spl": OrderSide.BUY,  # Starting Price LAY
 }
 
-B2N_ORDER_STREAM_SIDE = {
-    "B": OrderSide.BUY,
-    "L": OrderSide.SELL,
+B2N_ORDER_SIDE = {
     Side.BACK: OrderSide.BUY,
     Side.LAY: OrderSide.SELL,
 }
@@ -79,7 +70,6 @@ B2N_ORDER_TYPE = {
     OrderType.LIMIT_ON_CLOSE: NautilusOrderType.LIMIT,
     OrderType.MARKET_ON_CLOSE: NautilusOrderType.MARKET,
 }
-
 
 BETFAIR_PRICE_TIERS = [
     (1.01, 2, 0.01),

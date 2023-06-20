@@ -38,7 +38,7 @@ from betfair_parser.spec.streaming.ocm import OrderChanges
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
