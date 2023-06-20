@@ -17,13 +17,12 @@ use std::collections::HashMap;
 
 use anyhow;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
+use nautilus_core::time::UnixNanos;
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::price::Price,
 };
-
-pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
@@ -32,8 +31,10 @@ pub struct SyntheticInstrument {
     pub precision: u8,
     pub components: Vec<InstrumentId>,
     pub formula: String,
-    pub variables: Vec<String>,
     pub context: HashMapContext,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+    variables: Vec<String>,
     operator_tree: Node,
 }
 
@@ -43,6 +44,8 @@ impl SyntheticInstrument {
         precision: u8,
         components: Vec<InstrumentId>,
         formula: String,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Result<Self, anyhow::Error> {
         let context = HashMapContext::new();
 
@@ -55,13 +58,15 @@ impl SyntheticInstrument {
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
 
         Ok(SyntheticInstrument {
-            id: InstrumentId::new(symbol, Venue::new(SYNTHETIC_VENUE)),
+            id: InstrumentId::new(symbol, Venue::synthetic()),
             precision,
             components,
             formula,
-            variables,
             context,
+            variables,
             operator_tree,
+            ts_event,
+            ts_init,
         })
     }
 
@@ -138,6 +143,8 @@ mod tests {
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
+            0,
+            0,
         )
         .unwrap();
 
@@ -161,6 +168,8 @@ mod tests {
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
+            0,
+            0,
         )
         .unwrap();
 
@@ -181,6 +190,8 @@ mod tests {
             2,
             vec![btc_binance, ltc_binance],
             formula.clone(),
+            0,
+            0,
         )
         .unwrap();
 

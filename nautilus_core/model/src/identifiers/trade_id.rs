@@ -31,6 +31,17 @@ pub struct TradeId {
     pub value: Box<Arc<String>>,
 }
 
+impl TradeId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`TradeId` value");
+
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
+    }
+}
+
 impl Debug for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)
@@ -40,17 +51,6 @@ impl Debug for TradeId {
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
-    }
-}
-
-impl TradeId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`TradeId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
     }
 }
 

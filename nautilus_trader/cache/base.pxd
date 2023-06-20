@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
@@ -83,6 +84,12 @@ cdef class CacheFacade:
     cpdef Instrument instrument(self, InstrumentId instrument_id)
     cpdef list instrument_ids(self, Venue venue=*)
     cpdef list instruments(self, Venue venue=*)
+
+# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+
+    cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id)
+    cpdef list synthetic_ids(self)
+    cpdef list synthetics(self)
 
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 

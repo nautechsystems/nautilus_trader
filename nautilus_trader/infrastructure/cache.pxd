@@ -22,6 +22,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
     cdef str _key_general
     cdef str _key_currencies
     cdef str _key_instruments
+    cdef str _key_synthetics
     cdef str _key_accounts
     cdef str _key_orders
     cdef str _key_positions

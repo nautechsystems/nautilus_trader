@@ -532,6 +532,27 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == {AUDUSD_SIM.id: AUDUSD_SIM}
 
+    def test_load_synthetic_when_no_synethic_instrument_in_database_returns_none(self):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        # Act
+        result = self.database.load_synthetic(synthetic.id)
+
+        # Assert
+        assert result is None
+
+    def test_load_synthetic_when_synthetic_instrument_in_database_returns_expected(self):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.database.add_synthetic(synthetic)
+
+        # Act
+        result = self.database.load_synthetic(synthetic.id)
+
+        # Assert
+        assert result == synthetic
+
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
         account = TestExecStubs.cash_account()

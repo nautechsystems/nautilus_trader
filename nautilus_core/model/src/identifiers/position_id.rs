@@ -31,17 +31,6 @@ pub struct PositionId {
     pub value: Box<Arc<String>>,
 }
 
-impl Debug for PositionId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
-    }
-}
-impl Display for PositionId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
 impl PositionId {
     #[must_use]
     pub fn new(s: &str) -> Self {
@@ -50,6 +39,17 @@ impl PositionId {
         Self {
             value: Box::new(Arc::new(s.to_string())),
         }
+    }
+}
+
+impl Debug for PositionId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+impl Display for PositionId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 

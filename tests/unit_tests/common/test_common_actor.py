@@ -1322,6 +1322,79 @@ class TestActor:
         assert actor.calls == ["on_start", "on_data"]
         assert actor.store[0] == data
 
+    def test_add_synthetic_instrument_when_already_exists(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        actor.add_synthetic(synthetic)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            actor.add_synthetic(synthetic)
+
+    def test_add_synthetic_instrument_when_no_synthetic(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        # Act
+        actor.add_synthetic(synthetic)
+
+        # Assert
+        assert actor.cache.synthetic(synthetic.id) == synthetic
+
+    def test_update_synthetic_instrument_when_no_synthetic(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            actor.update_synthetic(synthetic)
+
+    def test_update_synthetic_instrument(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        original_formula = synthetic.formula
+        actor.add_synthetic(synthetic)
+
+        new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 4"
+        synthetic.change_formula(new_formula)
+        actor.update_synthetic(synthetic)
+
+        # Act
+        assert new_formula != original_formula
+        assert actor.cache.synthetic(synthetic.id).formula == new_formula
+
     def test_subscribe_custom_data(self):
         # Arrange
         actor = MockActor()

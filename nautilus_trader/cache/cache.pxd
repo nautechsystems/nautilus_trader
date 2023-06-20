@@ -37,6 +37,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -60,6 +61,7 @@ cdef class Cache(CacheFacade):
     cdef dict _bars_ask
     cdef dict _currencies
     cdef dict _instruments
+    cdef dict _synthetics
     cdef dict _accounts
     cdef dict _orders
     cdef dict _order_lists
@@ -102,6 +104,7 @@ cdef class Cache(CacheFacade):
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
     cpdef void cache_instruments(self)
+    cpdef void cache_synthetics(self)
     cpdef void cache_accounts(self)
     cpdef void cache_orders(self)
     cpdef void cache_order_lists(self)
@@ -125,6 +128,7 @@ cdef class Cache(CacheFacade):
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
@@ -143,6 +147,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_bars(self, list bars)
     cpdef void add_currency(self, Currency currency)
     cpdef void add_instrument(self, Instrument instrument)
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic)
     cpdef void add_account(self, Account account)
     cpdef void add_order(self, Order order, PositionId position_id, bint override=*)
     cpdef void add_order_list(self, OrderList order_list)

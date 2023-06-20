@@ -31,6 +31,17 @@ pub struct OrderListId {
     pub value: Box<Arc<String>>,
 }
 
+impl OrderListId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`OrderListId` value");
+
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
+        }
+    }
+}
+
 impl Debug for OrderListId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)
@@ -40,17 +51,6 @@ impl Debug for OrderListId {
 impl Display for OrderListId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
-    }
-}
-
-impl OrderListId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`OrderListId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
     }
 }
 

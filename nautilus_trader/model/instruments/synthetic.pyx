@@ -22,11 +22,13 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport ERROR_PRICE
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
 from nautilus_trader.core.rust.model cimport symbol_clone
+from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport synthetic_instrument_calculate
 from nautilus_trader.core.rust.model cimport synthetic_instrument_change_formula
 from nautilus_trader.core.rust.model cimport synthetic_instrument_components_count
@@ -37,6 +39,8 @@ from nautilus_trader.core.rust.model cimport synthetic_instrument_id
 from nautilus_trader.core.rust.model cimport synthetic_instrument_is_valid_formula
 from nautilus_trader.core.rust.model cimport synthetic_instrument_new
 from nautilus_trader.core.rust.model cimport synthetic_instrument_precision
+from nautilus_trader.core.rust.model cimport synthetic_instrument_ts_event
+from nautilus_trader.core.rust.model cimport synthetic_instrument_ts_init
 from nautilus_trader.core.string cimport cstr_to_pybytes
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pybytes_to_cstr
@@ -46,7 +50,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 
 
-cdef class SyntheticInstrument:
+cdef class SyntheticInstrument(Data):
     """
     Represents a synthetic instrument with prices derived from component instruments using a
     formula.
@@ -63,6 +67,10 @@ cdef class SyntheticInstrument:
         The component instruments for the synthetic instrument.
     formula : str
         The derivation formula for the synthetic instrument.
+    ts_event : uint64_t
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -85,6 +93,8 @@ cdef class SyntheticInstrument:
         uint8_t precision,
         list components not None,
         str formula not None,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
         Condition.true(len(components) >= 2, "There must be at least two component instruments")
@@ -99,11 +109,39 @@ cdef class SyntheticInstrument:
             precision,
             pybytes_to_cstr(msgspec.json.encode([c.value for c in components])),
             pystr_to_cstr(formula),
+            ts_event,
+            ts_init,
         )
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
             synthetic_instrument_drop(self._mem)
+
+    def __getstate__(self):
+        return (
+            self.id.symbol.value,
+            self.precision,
+            msgspec.json.encode([c.value for c in self.components]),
+            self.formula,
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self._mem = synthetic_instrument_new(
+            symbol_new(pystr_to_cstr(state[0])),
+            state[1],
+            pybytes_to_cstr(state[2]),
+            pystr_to_cstr(state[3]),
+            state[4],
+            state[5],
+        )
+
+    def __eq__(self, SyntheticInstrument other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     @property
     def id(self) -> InstrumentId:
@@ -153,6 +191,30 @@ cdef class SyntheticInstrument:
 
         """
         return cstr_to_pystr(synthetic_instrument_formula_to_cstr(&self._mem))
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return synthetic_instrument_ts_event(&self._mem)
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return synthetic_instrument_ts_init(&self._mem)
 
     cpdef void change_formula(self, str formula):
         """
@@ -244,3 +306,57 @@ cdef class SyntheticInstrument:
         PyMem_Free(cvec) # De-allocate cvec
 
         return price
+
+    @staticmethod
+    cdef SyntheticInstrument from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return SyntheticInstrument(
+            symbol=Symbol(values["symbol"]),
+            precision=values["precision"],
+            components=[InstrumentId.from_str_c(c) for c in msgspec.json.decode(values["components"])],
+            formula=values["formula"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(SyntheticInstrument obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "SyntheticInstrument",
+            "symbol": obj.id.symbol.value,
+            "precision": obj.precision,
+            "components": msgspec.json.encode([c.value for c in obj.components]),
+            "formula": obj.formula,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> SyntheticInstrument:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        SyntheticInstrument
+
+        """
+        return SyntheticInstrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(SyntheticInstrument obj) -> dict[str, object]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return SyntheticInstrument.to_dict_c(obj)
