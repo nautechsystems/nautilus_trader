@@ -750,6 +750,7 @@ cdef class Cache(CacheFacade):
         self._bars_ask.clear()
         self._currencies.clear()
         self._instruments.clear()
+        self._synthetics.clear()
         self._accounts.clear()
         self._orders.clear()
         self._order_lists.clear()
