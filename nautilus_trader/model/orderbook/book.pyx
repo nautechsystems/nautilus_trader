@@ -17,8 +17,6 @@ from operator import itemgetter
 
 import pandas as pd
 
-from nautilus_trader.model.orderbook.error import BookIntegrityError
-
 from libc.stdint cimport INT64_MAX
 from libc.stdint cimport INT64_MIN
 from libc.stdint cimport int64_t
@@ -324,11 +322,6 @@ cdef class OrderBook(Data):
 
         For all order books:
         - The bid side price should not be greater than the ask side price.
-
-        Raises
-        ------
-        BookIntegrityError
-            If any check fails.
 
         """
         orderbook_check_integrity(&self._mem)
