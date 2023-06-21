@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 
 import msgspec
 import pytest
@@ -35,9 +36,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-pytestmark = pytest.mark.skip(reason="Repair order book parsing")
-
-
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBetfairInstrumentProvider:
     def setup(self):
         # Fixture Setup
@@ -116,7 +115,7 @@ class TestBetfairInstrumentProvider:
         kw = {
             "market_id": "1.180678317",
             "selection_id": "11313157",
-            "handicap": 0.0,
+            "handicap": "0.0",
         }
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument.market_id == "1.180678317"

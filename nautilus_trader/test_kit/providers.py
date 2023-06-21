@@ -23,7 +23,7 @@ import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
