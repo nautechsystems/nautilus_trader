@@ -626,6 +626,25 @@ class TestDataEngine:
         assert self.data_engine.command_count == 1
         assert self.data_engine.subscribed_instruments() == [ETHUSDT_BINANCE.id]
 
+    def test_execute_subscribe_instrument_synthetic_logs_error(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=Venue("SYNTH"),
+            data_type=DataType(Instrument, metadata={"instrument_id": TestIdStubs.synthetic_id()}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
     def test_execute_unsubscribe_instrument_then_removes_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -654,6 +673,25 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_instruments() == []
+
+    def test_execute_unsubscribe_synthetic_instrument_logs_error(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        unsubscribe = Unsubscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(Instrument, metadata={"instrument_id": TestIdStubs.synthetic_id()}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.command_count == 1
 
     def test_process_instrument_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
@@ -965,7 +1003,7 @@ class TestDataEngine:
         # Assert
         assert len(handler) == 0
 
-    @pytest.mark.skip(reason="Snapshots marked for deletion")
+    @pytest.mark.skip(reason="Snapshots returning eventually")
     def test_process_order_book_snapshot_when_one_subscriber_then_sends_to_registered_handler(
         self,
     ):
@@ -1046,7 +1084,7 @@ class TestDataEngine:
         assert handler[0].instrument_id == ETHUSDT_BINANCE.id
         assert isinstance(handler[0], OrderBookDeltas)
 
-    @pytest.mark.skip(reason="Snapshots marked for deletion")
+    @pytest.mark.skip(reason="Snapshots returning eventually")
     def test_process_order_book_snapshots_when_multiple_subscribers_then_sends_to_registered_handlers(
         self,
     ):
@@ -1398,6 +1436,50 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_trade_ticks() == []
+
+    def test_subscribe_synthetic_quote_ticks_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        subscribe = Subscribe(
+            client_id=None,
+            venue=Venue("SYNTH"),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": synthetic.id}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_synthetic_quotes() == [synthetic.id]
+
+    def test_subscribe_synthetic_trade_ticks_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        subscribe = Subscribe(
+            client_id=None,
+            venue=Venue("SYNTH"),
+            data_type=DataType(TradeTick, metadata={"instrument_id": synthetic.id}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_synthetic_trades() == [synthetic.id]
 
     def test_process_trade_tick_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange

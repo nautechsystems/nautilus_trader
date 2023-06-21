@@ -136,6 +136,8 @@ cdef class DataEngine(Component):
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
+        self._subscribed_synthetic_quotes: list[InstrumentId] = []
+        self._subscribed_synthetic_trades: list[InstrumentId] = []
 
         # Settings
         self.debug = config.debug
@@ -192,6 +194,38 @@ cdef class DataEngine(Component):
         """
         self._log.info("Disconnecting all clients...")
         # Implement actual client connections for a live/sandbox context
+
+    cpdef bint check_connected(self):
+        """
+        Check all of the engines clients are connected.
+
+        Returns
+        -------
+        bool
+            True if all clients connected, else False.
+
+        """
+        cdef DataClient client
+        for client in self._clients.values():
+            if not client.is_connected:
+                return False
+        return True
+
+    cpdef bint check_disconnected(self):
+        """
+        Check all of the engines clients are disconnected.
+
+        Returns
+        -------
+        bool
+            True if all clients disconnected, else False.
+
+        """
+        cdef DataClient client
+        for client in self._clients.values():
+            if client.is_connected:
+                return False
+        return True
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
@@ -452,37 +486,27 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_instrument_close()
         return subscriptions
 
-    cpdef bint check_connected(self):
+    cpdef list subscribed_synthetic_quotes(self):
         """
-        Check all of the engines clients are connected.
+        Return the synthetic instrument quote ticks subscribed to.
 
         Returns
         -------
-        bool
-            True if all clients connected, else False.
+        list[InstrumentId]
 
         """
-        cdef DataClient client
-        for client in self._clients.values():
-            if not client.is_connected:
-                return False
-        return True
+        return self._subscribed_synthetic_quotes.copy()
 
-    cpdef bint check_disconnected(self):
+    cpdef list subscribed_synthetic_trades(self):
         """
-        Check all of the engines clients are disconnected.
+        Return the synthetic instrument trade ticks subscribed to.
 
         Returns
         -------
-        bool
-            True if all clients disconnected, else False.
+        list[InstrumentId]
 
         """
-        cdef DataClient client
-        for client in self._clients.values():
-            if client.is_connected:
-                return False
-        return True
+        return self._subscribed_synthetic_trades.copy()
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
@@ -521,6 +545,8 @@ cdef class DataEngine(Component):
         self._bar_aggregators.clear()
         self._synthetic_quote_feeds.clear()
         self._synthetic_trade_feeds.clear()
+        self._subscribed_synthetic_quotes.clear()
+        self._subscribed_synthetic_trades.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -600,8 +626,12 @@ cdef class DataEngine(Component):
             self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
+        cdef Venue venue = command.venue
         cdef DataClient client = self._clients.get(command.client_id)
-        if client is None:
+        if venue is not None and venue.is_synthetic():
+            # No further check as no client needed
+            pass
+        elif client is None:
             client = self._routing_map.get(command.venue, self._default_client)
             if client is None:
                 self._log.error(
@@ -872,12 +902,11 @@ cdef class DataEngine(Component):
         MarketDataClient client,
         InstrumentId instrument_id,
     ):
-        Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-
         if instrument_id.is_synthetic():
             self._handle_subscribe_synthetic_quote_ticks(instrument_id)
             return
+        Condition.not_none(client, "client")
 
         if instrument_id not in client.subscribed_quote_ticks():
             client.subscribe_quote_ticks(instrument_id)
@@ -886,32 +915,38 @@ cdef class DataEngine(Component):
         cdef SyntheticInstrument synthetic = self._cache.synthetic(instrument_id)
         if synthetic is None:
             self._log.error(
-                f"Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id} "
-                ", not found."
+                f"Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id}, "
+                " not found."
             )
             return
 
-        cdef list synthetics_for_feed
-        for instrument_id in synthetic.components:
-            synthetics_for_feed = self._synthetic_quote_feeds.get(instrument_id)
+        if instrument_id in self._subscribed_synthetic_quotes:
+            return  # Already setup
+
+        cdef:
+            InstrumentId component_instrument_id
+            list synthetics_for_feed
+        for component_instrument_id in synthetic.components:
+            synthetics_for_feed = self._synthetic_quote_feeds.get(component_instrument_id)
             if synthetics_for_feed is None:
                 synthetics_for_feed = []
             if synthetic in synthetics_for_feed:
                 continue
             synthetics_for_feed.append(synthetic)
-            self._synthetic_quote_feeds[instrument_id] = synthetics_for_feed
+            self._synthetic_quote_feeds[component_instrument_id] = synthetics_for_feed
+
+        self._subscribed_synthetic_quotes.append(instrument_id)
 
     cpdef void _handle_subscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
     ):
-        Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-
         if instrument_id.is_synthetic():
             self._handle_subscribe_synthetic_trade_ticks(instrument_id)
             return
+        Condition.not_none(client, "client")
 
         if instrument_id not in client.subscribed_trade_ticks():
             client.subscribe_trade_ticks(instrument_id)
@@ -920,20 +955,27 @@ cdef class DataEngine(Component):
         cdef SyntheticInstrument synthetic = self._cache.synthetic(instrument_id)
         if synthetic is None:
             self._log.error(
-                f"Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id} "
-                ", not found."
+                f"Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id}, "
+                " not found."
             )
             return
 
-        cdef list synthetics_for_feed
-        for instrument_id in synthetic.components:
-            synthetics_for_feed = self._synthetic_trade_feeds.get(instrument_id)
+        if instrument_id in self._subscribed_synthetic_trades:
+            return  # Already setup
+
+        cdef:
+            InstrumentId component_instrument_id
+            list synthetics_for_feed
+        for component_instrument_id in synthetic.components:
+            synthetics_for_feed = self._synthetic_trade_feeds.get(component_instrument_id)
             if synthetics_for_feed is None:
                 synthetics_for_feed = []
             if synthetic in synthetics_for_feed:
                 continue
             synthetics_for_feed.append(synthetic)
-            self._synthetic_trade_feeds[instrument_id] = synthetics_for_feed
+            self._synthetic_trade_feeds[component_instrument_id] = synthetics_for_feed
+
+        self._subscribed_synthetic_trades.append(instrument_id)
 
     cpdef void _handle_subscribe_bars(
         self,
