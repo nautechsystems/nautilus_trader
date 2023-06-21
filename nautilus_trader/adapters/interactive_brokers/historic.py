@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Literal, Union
+from typing import Literal, Optional, Union
 
 import pandas as pd
 import pytz
@@ -131,7 +131,7 @@ def request_data(
     date: datetime.date,
     kind: str,
     tz_name: str,
-    ib: IB = None,
+    ib: Optional[IB] = None,
 ):
     if kind in ("TRADES", "BID_ASK"):
         raw = request_tick_data(contract=contract, date=date, kind=kind, tz_name=tz_name, ib=ib)

@@ -87,6 +87,10 @@ class TestIdStubs:
         )
 
     @staticmethod
+    def synthetic_id():
+        return InstrumentId(Symbol("BTC-ETH"), Venue("SYNTH"))
+
+    @staticmethod
     def client_order_id(counter: int = 1) -> ClientOrderId:
         return ClientOrderId(f"O-20210410-022422-001-001-{counter}")
 

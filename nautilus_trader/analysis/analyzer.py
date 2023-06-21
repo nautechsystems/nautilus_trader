@@ -193,7 +193,7 @@ class PortfolioAnalyzer:
             self._returns.loc[timestamp] = 0.0
         self._returns.loc[timestamp] += float(value)
 
-    def realized_pnls(self, currency: Currency = None) -> Optional[pd.Series]:
+    def realized_pnls(self, currency: Optional[Currency] = None) -> Optional[pd.Series]:
         """
         Return the realized PnL for the portfolio.
 
@@ -277,7 +277,7 @@ class PortfolioAnalyzer:
 
     def total_pnl_percentage(
         self,
-        currency: Currency = None,
+        currency: Optional[Currency] = None,
         unrealized_pnl: Optional[Money] = None,
     ) -> float:
         """
@@ -338,7 +338,7 @@ class PortfolioAnalyzer:
 
     def get_performance_stats_pnls(
         self,
-        currency: Currency = None,
+        currency: Optional[Currency] = None,
         unrealized_pnl: Optional[Money] = None,
     ) -> dict[str, float]:
         """
@@ -419,7 +419,7 @@ class PortfolioAnalyzer:
 
     def get_stats_pnls_formatted(
         self,
-        currency: Currency = None,
+        currency: Optional[Currency] = None,
         unrealized_pnl: Optional[Money] = None,
     ) -> list[str]:
         """

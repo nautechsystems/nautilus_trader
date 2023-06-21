@@ -159,7 +159,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -168,7 +168,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

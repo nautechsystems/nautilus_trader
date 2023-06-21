@@ -108,7 +108,7 @@ class Base:
     def get(
         self,
         req_id: Optional[int] = None,
-        name: Union[str, tuple] = None,
+        name: Optional[Union[str, tuple]] = None,
     ):
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -139,7 +139,7 @@ class Subscriptions(Base):
     def get(
         self,
         req_id: Optional[int] = None,
-        name: Union[str, tuple] = None,
+        name: Optional[Union[str, tuple]] = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)
@@ -188,7 +188,7 @@ class Requests(Base):
     def get(
         self,
         req_id: Optional[int] = None,
-        name: Union[str, tuple] = None,
+        name: Optional[Union[str, tuple]] = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)

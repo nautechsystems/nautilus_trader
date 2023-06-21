@@ -111,7 +111,7 @@ def process_files(
     compression: str = "infer",
     executor: Optional[Executor] = None,
     use_rust=False,
-    instrument: Instrument = None,
+    instrument: Optional[Instrument] = None,
     **kwargs,
 ):
     PyCondition.type_or_none(executor, Executor, "executor")
@@ -199,7 +199,7 @@ def dicts_to_dataframes(dicts) -> dict[type, dict[str, pd.DataFrame]]:
     return tables
 
 
-def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[list, None]:
+def determine_partition_cols(cls: type, instrument_id: Optional[str] = None) -> Union[list, None]:
     """
     Determine partition columns (if any) for this type `cls`.
     """

@@ -329,7 +329,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
+    def default_fx_ccy(symbol: str, venue: Optional[Venue] = None) -> CurrencyPair:
         """
         Return a default FX currency pair instrument from the given symbol and venue.
 

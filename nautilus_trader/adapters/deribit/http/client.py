@@ -108,8 +108,8 @@ class DeribitHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: dict[str, str] = None,
-        params: dict[str, Any] = None,
+        payload: Optional[dict[str, str]] = None,
+        params: Optional[dict[str, Any]] = None,
     ) -> Any:
         auth = self._generate_authorization(
             http_method,
@@ -130,9 +130,9 @@ class DeribitHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        headers: dict[str, Any] = None,
-        payload: dict[str, str] = None,
-        params: dict[str, str] = None,
+        headers: Optional[dict[str, Any]] = None,
+        payload: Optional[dict[str, str]] = None,
+        params: Optional[dict[str, str]] = None,
     ) -> Any:
         if payload is None:
             payload = {}
