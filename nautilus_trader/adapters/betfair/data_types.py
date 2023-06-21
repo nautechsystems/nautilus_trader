@@ -163,7 +163,7 @@ class BetfairStartingPrice(Data):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        bsp: float = None,
+        bsp: Optional[float] = None,
     ):
         super().__init__()
         self._ts_event = ts_event

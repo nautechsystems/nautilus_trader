@@ -488,7 +488,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         return sorted(sum(data.values(), []), key=lambda x: x.ts_init)
 
 
-def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):
+def read_feather_file(path: str, fs: Optional[fsspec.AbstractFileSystem] = None):
     fs = fs or fsspec.filesystem("file")
     if not fs.exists(path):
         return

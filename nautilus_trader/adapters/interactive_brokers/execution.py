@@ -683,7 +683,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         status: OrderStatus,
         order: Order,
-        order_id: int = None,
+        order_id: Optional[int] = None,
         reason: str = "",
     ):
         if status == OrderStatus.SUBMITTED:

@@ -370,8 +370,8 @@ class TestDataStubs:
 
     @staticmethod
     def venue_status_update(
-        venue: Venue = None,
-        status: MarketStatus = None,
+        venue: Optional[Venue] = None,
+        status: Optional[MarketStatus] = None,
     ) -> VenueStatusUpdate:
         return VenueStatusUpdate(
             venue=venue or Venue("BINANCE"),
@@ -382,8 +382,8 @@ class TestDataStubs:
 
     @staticmethod
     def instrument_status_update(
-        instrument_id: InstrumentId = None,
-        status: MarketStatus = None,
+        instrument_id: Optional[InstrumentId] = None,
+        status: Optional[MarketStatus] = None,
     ) -> InstrumentStatusUpdate:
         return InstrumentStatusUpdate(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),

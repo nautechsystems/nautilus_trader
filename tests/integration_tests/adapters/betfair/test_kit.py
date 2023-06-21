@@ -190,7 +190,7 @@ class BetfairTestStubs:
     def streaming_config(
         catalog_path: str,
         catalog_fs_protocol: str = "memory",
-        flush_interval_ms: int = None,
+        flush_interval_ms: Optional[int] = None,
     ) -> StreamingConfig:
         return StreamingConfig(
             catalog_path=catalog_path,
@@ -206,7 +206,7 @@ class BetfairTestStubs:
         persist=True,
         add_strategy=True,
         bypass_risk=False,
-        flush_interval_ms: int = None,
+        flush_interval_ms: Optional[int] = None,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),

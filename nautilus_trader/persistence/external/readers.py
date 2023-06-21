@@ -91,7 +91,7 @@ class Reader:
     def __init__(
         self,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update: Callable = None,
+        instrument_provider_update: Optional[Callable] = None,
     ):
         self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
@@ -141,7 +141,7 @@ class ByteReader(Reader):
         self,
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update: Callable = None,
+        instrument_provider_update: Optional[Callable] = None,
     ):
         super().__init__(
             instrument_provider_update=instrument_provider_update,
@@ -184,7 +184,7 @@ class TextReader(ByteReader):
     def __init__(
         self,
         line_parser: Callable,
-        line_preprocessor: LinePreprocessor = None,
+        line_preprocessor: Optional[LinePreprocessor] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
         newline: bytes = b"\n",
@@ -327,7 +327,7 @@ class ParquetReader(ByteReader):
 
     def __init__(
         self,
-        parser: Callable = None,
+        parser: Optional[Callable] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
     ):

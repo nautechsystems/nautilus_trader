@@ -149,7 +149,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -160,7 +160,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
