@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
+from datetime import datetime
 from functools import lru_cache
 from typing import Optional
 
@@ -306,7 +306,7 @@ async def generate_trades_list(
     self,
     venue_order_id: VenueOrderId,
     symbol: Symbol,
-    since: Optional[datetime] = None,  # type: ignore
+    since: Optional[datetime] = None,
 ) -> list[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
