@@ -167,6 +167,15 @@ class TestVenue:
         assert venue1 != venue2
         assert venue1 == venue3
 
+    def test_venue_is_synthetic(self):
+        # Arrange
+        venue1 = Venue("SYNTH")
+        venue2 = Venue("SIM")
+
+        # Act, Assert
+        assert venue1.is_synthetic()
+        assert not venue2.is_synthetic()
+
     def test_venue_str(self):
         # Arrange
         venue = Venue("NYMEX")
@@ -204,6 +213,15 @@ class TestInstrumentId:
         assert instrument_id1 == instrument_id1
         assert instrument_id1 != instrument_id2
         assert instrument_id1 != instrument_id3
+
+    def test_instrument_id_is_synthetic(self):
+        # Arrange
+        instrument_id1 = InstrumentId(Symbol("BTC-ETH"), Venue("SYNTH"))
+        instrument_id2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
+
+        # Act, Assert
+        assert instrument_id1.is_synthetic()
+        assert not instrument_id2.is_synthetic()
 
     def test_instrument_id_str(self):
         # Arrange
