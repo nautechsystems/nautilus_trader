@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 from collections import defaultdict
+from datetime import datetime
 from typing import Literal, Optional, Union
 
 import pandas as pd
@@ -529,7 +529,7 @@ async def generate_trades_list(
     self,
     venue_order_id: VenueOrderId,
     symbol: Symbol,
-    since: Optional[datetime] = None,  # type: ignore
+    since: Optional[datetime] = None,
 ) -> list[TradeReport]:
     filled: list[ClearedOrderSummary] = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
