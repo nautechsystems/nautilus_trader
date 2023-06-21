@@ -58,17 +58,14 @@ from nautilus_trader.serialization.arrow.serializer import register_parquet
 NAUTILUS_PARQUET_SCHEMA = {
     OrderBookDelta: pa.schema(
         {
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
+            "action": pa.uint8(),
+            "side": pa.uint8(),
+            "price": pa.int64(),
+            "size": pa.uint64(),
+            "order_id": pa.uint64(),
+            "flags": pa.uint8(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-            "action": pa.string(),
-            "side": pa.string(),
-            "price": pa.float64(),
-            "size": pa.float64(),
-            "order_id": pa.string(),
-            # Track grouped OrderBookDeltas
-            "_type": pa.dictionary(pa.int8(), pa.string()),
-            "_last": pa.bool_(),
         },
         metadata={"type": "OrderBookDelta"},
     ),

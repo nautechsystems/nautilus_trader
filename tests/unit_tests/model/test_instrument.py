@@ -489,3 +489,8 @@ class TestBettingInstrument:
     def test_min_max_price(self):
         assert self.instrument.min_price == Price.from_str("1.01")
         assert self.instrument.max_price == Price.from_str("1000")
+
+    def test_to_dict(self):
+        instrument = TestInstrumentProvider.betting_instrument()
+        data = instrument.to_dict(instrument)
+        assert data["venue_name"] == "BETFAIR"

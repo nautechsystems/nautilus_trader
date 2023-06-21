@@ -12,23 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import time
 from typing import Optional, Union
 
 import msgspec.json
 import pandas as pd
+from betfair_parser.spec.betting.enums import MarketProjection
 from betfair_parser.spec.betting.type_definitions import MarketCatalogue
+from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import decode as bf_decode
 from betfair_parser.spec.common import encode as bf_encode
 from betfair_parser.spec.navigation import FlattenedMarket
 from betfair_parser.spec.navigation import Navigation
-from betfair_parser.spec.navigation import navigation_to_flatten_markets
+from betfair_parser.spec.navigation import flatten_nav_tree
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
-from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.enums import MarketProjection
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.client import BetfairHttpClient
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.common.clock import LiveClock
@@ -56,7 +56,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: Optional[BetfairClient],
+        client: Optional[BetfairHttpClient],
         logger: Logger,
         filters: Optional[dict] = None,
         config: Optional[InstrumentProviderConfig] = None,
@@ -182,7 +182,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
             detail = await self._client.get_account_details()
-            self._account_currency = detail["currencyCode"]
+            self._account_currency = detail.currency_code
         return self._account_currency
 
 
@@ -212,7 +212,7 @@ def market_catalog_to_instruments(
             market_name=market_catalog.market_name,
             market_start_time=pd.Timestamp(market_catalog.market_start_time),
             market_type=market_catalog.description.market_type,
-            selection_id=str(runner.runner_id),
+            selection_id=str(runner.selection_id),
             selection_name=runner.runner_name,
             selection_handicap=parse_handicap(runner.handicap),
             currency=currency,
@@ -287,7 +287,7 @@ VALID_MARKET_FILTER_KEYS = (
 
 
 async def load_markets(
-    client: BetfairClient,
+    client: BetfairHttpClient,
     market_filter: Optional[dict] = None,
 ) -> list[FlattenedMarket]:
     if isinstance(market_filter, dict):
@@ -300,7 +300,7 @@ async def load_markets(
         }
     assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
     navigation: Navigation = await client.list_navigation()
-    markets = navigation_to_flatten_markets(navigation, **market_filter)
+    markets = flatten_nav_tree(navigation, **market_filter)
     return markets
 
 
@@ -310,10 +310,10 @@ def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalogue]:
 
 
 async def load_markets_metadata(
-    client: BetfairClient,
+    client: BetfairHttpClient,
     markets: list[FlattenedMarket],
 ) -> list[MarketCatalogue]:
-    all_results = []
+    all_results: list[MarketCatalogue] = []
     for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):
         results = await client.list_market_catalogue(
             market_projection=[
@@ -325,11 +325,11 @@ async def load_markets_metadata(
                 MarketProjection.RUNNER_DESCRIPTION,
                 MarketProjection.MARKET_START_TIME,
             ],
-            filter_={"marketIds": market_id_chunk},
+            filter_=MarketFilter(market_ids=market_id_chunk),
             max_results=len(market_id_chunk),
         )
         all_results.extend(results)
-    return parse_market_catalog(all_results)
+    return all_results
 
 
 def get_market_book(client, market_ids):

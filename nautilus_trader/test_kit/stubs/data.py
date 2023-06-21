@@ -210,7 +210,7 @@ class TestDataStubs:
 
     @staticmethod
     def instrument_close() -> InstrumentClose:
-        from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+        from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 
         return InstrumentClose(
             TestIdStubs.betting_instrument_id(),

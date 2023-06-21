@@ -123,7 +123,7 @@ def on_cancel_order_setup(client, status, order_id, manual_cancel_order_time):
 
 
 @pytest.mark.asyncio
-async def test_factory(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
+async def test_factory(exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
     # Act
     exec_client = InteractiveBrokersLiveExecClientFactory.create(
         loop=event_loop,
