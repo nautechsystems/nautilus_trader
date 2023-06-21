@@ -8,6 +8,26 @@
    :member-order: bysource
 ```
 
+## Client
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.betfair.client
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Common
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.betfair.common
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Config
 
 ```{eval-rst}
@@ -87,4 +107,3 @@
    :members:
    :member-order: bysource
 ```
-
