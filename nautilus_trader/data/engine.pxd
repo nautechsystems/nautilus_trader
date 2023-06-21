@@ -56,6 +56,8 @@ cdef class DataEngine(Component):
     cdef readonly dict _bar_aggregators
     cdef readonly dict _synthetic_quote_feeds
     cdef readonly dict _synthetic_trade_feeds
+    cdef readonly list _subscribed_synthetic_quotes
+    cdef readonly list _subscribed_synthetic_trades
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly bint _validate_data_sequence
@@ -98,6 +100,8 @@ cdef class DataEngine(Component):
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status_updates(self)
     cpdef list subscribed_instrument_close(self)
+    cpdef list subscribed_synthetic_quotes(self)
+    cpdef list subscribed_synthetic_trades(self)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
