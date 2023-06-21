@@ -41,12 +41,12 @@ class BetfairStreamClient:
         self,
         http_client: BetfairHttpClient,
         logger_adapter: LoggerAdapter,
-        message_handler,
+        message_handler: Callable[[bytes], None],
         host: Optional[str] = HOST,
         port: Optional[int] = None,
         crlf: Optional[bytes] = None,
         encoding: Optional[str] = None,
-    ):
+    ) -> None:
         self._http_client = http_client
         self._log = logger_adapter
         self.handler = message_handler
