@@ -33,7 +33,6 @@ more stable releases on `master`.
    live.md
    model/index.md
    msgbus.md
-   network.md
    persistence.md
    portfolio.md
    risk.md
