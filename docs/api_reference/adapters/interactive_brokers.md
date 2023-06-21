@@ -8,6 +8,16 @@
    :member-order: bysource
 ```
 
+## Common
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.interactive_brokers.common
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Config
 
 ```{eval-rst}
