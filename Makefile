@@ -14,7 +14,7 @@ install-debug:
 
 .PHONY: install-just-deps
 install-just-deps:
-	poetry install --with dev,test --all-extras --no-root --sync
+	poetry install --with dev,test --all-extras --no-root
 
 .PHONY: install-just-deps-all
 install-just-deps-all:
@@ -60,6 +60,7 @@ ruff:
 update:
 	(cd nautilus_core && cargo update)
 	poetry update
+	poetry install --with dev,test --all-extras --no-root
 
 .PHONY: clippy
 clippy:
