@@ -18,6 +18,7 @@ from betfair_parser.exceptions import AccountAPINGException
 from betfair_parser.spec.accounts.enums import Wallet
 from betfair_parser.spec.accounts.operations import GetAccountDetails
 from betfair_parser.spec.accounts.operations import GetAccountFunds
+from betfair_parser.spec.accounts.operations import _GetAccountDetailsParams
 from betfair_parser.spec.accounts.operations import _GetAccountFundsParams
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import BetStatus
@@ -149,7 +150,7 @@ async def test_get_account_details(betfair_client):
         jsonrpc="2.0",
         id=1,
         method="AccountAPING/v1.0/getAccountDetails",
-        params={},
+        params=_GetAccountDetailsParams(),
     )
     assert request == expected
 
