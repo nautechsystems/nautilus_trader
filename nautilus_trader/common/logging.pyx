@@ -20,7 +20,6 @@ import traceback
 from platform import python_version
 from typing import Optional
 
-import aiohttp
 import msgspec
 import numpy as np
 import pandas as pd
@@ -577,7 +576,6 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
     logger.info(f"pandas {pd.__version__}")
-    logger.info(f"aiohttp {aiohttp.__version__}")
     logger.info(f"msgspec {msgspec.__version__}")
     logger.info(f"psutil {psutil.__version__}")
     logger.info(f"pyarrow {pyarrow.__version__}")
