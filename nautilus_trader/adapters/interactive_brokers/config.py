@@ -168,6 +168,6 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     ibg_port: Optional[int] = None
     ibg_client_id: int = 1
     gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig()
-    account_id: str = None
+    account_id: Optional[str] = None
 
     # trade_outside_regular_hours (possible to set flag in order)
