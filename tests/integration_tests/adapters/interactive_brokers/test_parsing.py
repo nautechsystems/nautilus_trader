@@ -47,7 +47,7 @@ pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 @pytest.mark.parametrize(
-    "contract, instrument_id",
+    ("contract", "instrument_id"),
     [
         # fmt: off
         (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR/USD.IDEALPRO"),
@@ -80,7 +80,7 @@ def test_ib_contract_to_instrument_id(contract, instrument_id):
 
 
 @pytest.mark.parametrize(
-    "instrument_id, contract",
+    ("instrument_id", "contract"),
     [
         # fmt: off
         ("EUR/USD.IDEALPRO", IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD")),
@@ -151,7 +151,7 @@ def test_regular_expression_crypto():
 
 
 @pytest.mark.parametrize(
-    "symbol, expected",
+    ("symbol", "expected"),
     [
         # fmt: off
         ("AAPL230217P00155000", {"symbol": "AAPL", "expiry": "230217", "right": "P", "strike": "00155", "decimal": "000"}),
@@ -169,7 +169,7 @@ def test_regular_expression_option(symbol, expected):
 
 
 @pytest.mark.parametrize(
-    "symbol, expected",
+    ("symbol", "expected"),
     [
         ("ES", {"symbol": "ES"}),
         ("MES", {"symbol": "MES"}),
@@ -184,7 +184,7 @@ def test_regular_expression_index(symbol, expected):
 
 
 @pytest.mark.parametrize(
-    "symbol, expected",
+    ("symbol", "expected"),
     [
         ("ESH23", {"symbol": "ES", "month": "H", "year": "23"}),
         ("M6EH23", {"symbol": "M6E", "month": "H", "year": "23"}),
@@ -199,7 +199,7 @@ def test_regular_expression_future(symbol, expected):
 
 
 @pytest.mark.parametrize(
-    "symbol, expected",
+    ("symbol", "expected"),
     [
         ("ESH3", {"symbol": "ES", "month": "H", "year": "3"}),
         ("M6EH3", {"symbol": "M6E", "month": "H", "year": "3"}),
@@ -214,7 +214,7 @@ def test_regular_expression_future_original(symbol, expected):
 
 
 @pytest.mark.parametrize(
-    "symbol, expected",
+    ("symbol", "expected"),
     [
         # fmt: off
         ("EX2G23P4080", {"symbol": "EX2", "month": "G", "year": "23", "right": "P", "strike": "4080"}),
@@ -231,7 +231,7 @@ def test_regular_expression_future_options(symbol, expected):
 
 
 @pytest.mark.parametrize(
-    "symbol, expected",
+    ("symbol", "expected"),
     [
         # fmt: off
         ("EX2G3 P4080", {"symbol": "EX2", "month": "G", "year": "3", "right": "P", "strike": "4080"}),
@@ -248,7 +248,7 @@ def test_regular_expression_future_options_original(symbol, expected):
 
 
 @pytest.mark.parametrize(
-    "bar_spec, expected",
+    ("bar_spec", "expected"),
     [
         ("5-SECOND-MID", "5 secs"),
         ("10-SECOND-MID", "10 secs"),
@@ -283,7 +283,7 @@ def test_bar_spec_to_bar_size(bar_spec, expected):
 
 
 @pytest.mark.parametrize(
-    "timedelta, expected",
+    ("timedelta", "expected"),
     [
         (datetime.timedelta(days=700), "2 Y"),
         (datetime.timedelta(days=365), "1 Y"),
@@ -306,7 +306,7 @@ def test_timedelta_to_duration_str(timedelta, expected):
 
 
 @pytest.mark.parametrize(
-    "tick_size, expected",
+    ("tick_size", "expected"),
     [
         (5e-10, 10),
         (5e-07, 7),
