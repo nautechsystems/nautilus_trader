@@ -76,7 +76,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.274
+    rev: v0.0.275
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -91,7 +91,7 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.2
+    rev: v1.7.3
     hooks:
       - id: docformatter
         additional_dependencies: [tomli]
