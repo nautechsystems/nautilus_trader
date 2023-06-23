@@ -2161,7 +2161,7 @@ class TestExecutionEngine:
         assert isinstance(bracket.orders[2].last_event, OrderDenied)
 
     @pytest.mark.parametrize(
-        ("order_side, expected_quantity"),
+        ("order_side", "expected_quantity"),
         [
             [OrderSide.BUY, Quantity.from_str("124984")],
             [OrderSide.SELL, Quantity.from_str("125000")],
@@ -2217,7 +2217,7 @@ class TestExecutionEngine:
         assert not order.is_quote_quantity
 
     @pytest.mark.parametrize(
-        ("order_side, expected_quantity"),
+        ("order_side", "expected_quantity"),
         [
             [OrderSide.BUY, Quantity.from_str("124992")],
             [OrderSide.SELL, Quantity.from_str("124992")],
@@ -2274,7 +2274,7 @@ class TestExecutionEngine:
         assert not order.is_quote_quantity
 
     @pytest.mark.parametrize(
-        ("order_side, expected_quantity"),
+        ("order_side", "expected_quantity"),
         [
             [OrderSide.BUY, Quantity.from_str("124984")],
             [OrderSide.SELL, Quantity.from_str("125000")],

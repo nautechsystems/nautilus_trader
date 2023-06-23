@@ -316,7 +316,7 @@ class TestSimulatedExchange:
         assert isinstance(self.strategy.store[2], OrderAccepted)
 
     @pytest.mark.parametrize(
-        ("side, price, new_price"),
+        ("side", "price", "new_price"),
         [
             [
                 OrderSide.BUY,
@@ -359,7 +359,7 @@ class TestSimulatedExchange:
         assert isinstance(self.strategy.store[4], OrderUpdated)
 
     @pytest.mark.parametrize(
-        ("side, price"),
+        ("side", "price"),
         [
             [
                 OrderSide.BUY,
@@ -1824,7 +1824,7 @@ class TestSimulatedExchange:
         assert order.trigger_price == Price.from_str("90.011")
 
     @pytest.mark.parametrize(
-        ("order_side, price, trigger_price, new_trigger_price"),
+        ("order_side", "price", "trigger_price", "new_trigger_price"),
         [
             [
                 OrderSide.BUY,

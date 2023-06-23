@@ -343,14 +343,10 @@ def test_instrument_opening_events(data_client):
     parser = BetfairParser()
     messages = parser.parse(updates[0])
     assert len(messages) == 2
-    assert (
-        isinstance(messages[0], InstrumentStatusUpdate)
-        and messages[0].status == MarketStatus.PRE_OPEN
-    )
-    assert (
-        isinstance(messages[1], InstrumentStatusUpdate)
-        and messages[0].status == MarketStatus.PRE_OPEN
-    )
+    assert isinstance(messages[0], InstrumentStatusUpdate)
+    assert messages[0].status == MarketStatus.PRE_OPEN
+    assert isinstance(messages[1], InstrumentStatusUpdate)
+    assert messages[0].status == MarketStatus.PRE_OPEN
 
 
 def test_instrument_in_play_events(data_client):
@@ -387,26 +383,18 @@ def test_instrument_closing_events(data_client):
     parser = BetfairParser()
     messages = parser.parse(updates[-1])
     assert len(messages) == 4
-    assert (
-        isinstance(messages[0], InstrumentStatusUpdate)
-        and messages[0].status == MarketStatus.CLOSED
-    )
+    assert isinstance(messages[0], InstrumentStatusUpdate)
+    assert messages[0].status == MarketStatus.CLOSED
     assert isinstance(messages[2], InstrumentClose)
     assert messages[2].close_price == 1.0000
-    assert (
-        isinstance(messages[2], InstrumentClose)
-        and messages[2].close_type == InstrumentCloseType.CONTRACT_EXPIRED
-    )
-    assert (
-        isinstance(messages[1], InstrumentStatusUpdate)
-        and messages[1].status == MarketStatus.CLOSED
-    )
+    assert isinstance(messages[2], InstrumentClose)
+    assert messages[2].close_type == InstrumentCloseType.CONTRACT_EXPIRED
+    assert isinstance(messages[1], InstrumentStatusUpdate)
+    assert messages[1].status == MarketStatus.CLOSED
     assert isinstance(messages[3], InstrumentClose)
     assert messages[3].close_price == 0.0
-    assert (
-        isinstance(messages[3], InstrumentClose)
-        and messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED
-    )
+    assert isinstance(messages[3], InstrumentClose)
+    assert messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED
 
 
 def test_betfair_ticker(data_client, mock_data_engine_process) -> None:

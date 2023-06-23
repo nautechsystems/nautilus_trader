@@ -663,14 +663,10 @@ async def test_duplicate_trade_id(exec_client, setup_order_state, fill_events, c
     assert isinstance(fill1, OrderFilled)
     assert isinstance(cancel, OrderCanceled)
     # Second order example, partial fill followed by remainder filled
-    assert (
-        isinstance(fill2, OrderFilled)
-        and fill2.trade_id.value == "c18af83bb4ca0ac45000fa380a2a5887a1bf3e75"
-    )
-    assert (
-        isinstance(fill3, OrderFilled)
-        and fill3.trade_id.value == "561879891c1645e8627cf97ed825d16e43196408"
-    )
+    assert isinstance(fill2, OrderFilled)
+    assert fill2.trade_id.value == "c18af83bb4ca0ac45000fa380a2a5887a1bf3e75"
+    assert isinstance(fill3, OrderFilled)
+    assert fill3.trade_id.value == "561879891c1645e8627cf97ed825d16e43196408"
 
 
 @pytest.mark.parametrize(

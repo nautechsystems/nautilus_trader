@@ -287,7 +287,7 @@ class TestExecAlgorithmId:
 
 
 @pytest.mark.parametrize(
-    ("client_order_id, trader_id, expected"),
+    ("client_order_id", "trader_id", "expected"),
     [
         [
             ClientOrderId("O-20210410-022422-001-001-001"),
