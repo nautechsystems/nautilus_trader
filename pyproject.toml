@@ -75,10 +75,10 @@ optional = true
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"
-docformatter = "^1.7.2"
+docformatter = "^1.7.3"
 mypy = "^1.4.0"
 pre-commit = "^3.3.3"
-ruff = "^0.0.274"
+ruff = "^0.0.275"
 types-pytz = "^2023.3.0"
 types-redis = "^4.5.5"
 types-requests = "^2.29.0"
@@ -169,7 +169,6 @@ select = [
 ]
 
 ignore = [
-    "E741",  # Ambiguous variable name (single char)
     "D100",  # Missing docstring in public module  **fix**
     "D101",
     "D102",  # Missing docstring in public method  **fix**
@@ -185,7 +184,8 @@ ignore = [
     "D413",  # Missing blank line after last section ('Parameters')
     "D415",  # First line should end with a period, question mark, or exclamation point (not always a first line)
     "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
-    "RUF012",  # **fix**
+    "E741",  # Ambiguous variable name (single char)
+    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
     "S101",  # Use of assert detected (OK in test suite)
     "S105",  # Use of hardcoded password (spurious)
     "S106",  # Use of hardcoded password (spurious)
