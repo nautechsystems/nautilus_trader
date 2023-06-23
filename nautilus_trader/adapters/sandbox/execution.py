@@ -15,7 +15,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
+from typing import ClassVar, Optional
 
 import pandas as pd
 
@@ -71,7 +71,7 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     """
 
-    INSTRUMENTS: list[Instrument] = []
+    INSTRUMENTS: ClassVar[list[Instrument]] = []
 
     def __init__(
         self,
