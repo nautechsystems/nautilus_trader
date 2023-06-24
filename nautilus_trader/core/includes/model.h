@@ -630,12 +630,6 @@ typedef struct String String;
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 
-typedef struct BarSpecification_t {
-    uint64_t step;
-    uint8_t aggregation;
-    enum PriceType price_type;
-} BarSpecification_t;
-
 typedef struct Symbol_t {
     struct Arc_String *value;
 } Symbol_t;
@@ -649,12 +643,6 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
-typedef struct BarType_t {
-    struct InstrumentId_t instrument_id;
-    struct BarSpecification_t spec;
-    enum AggregationSource aggregation_source;
-} BarType_t;
-
 typedef struct Price_t {
     int64_t raw;
     uint8_t precision;
@@ -664,17 +652,6 @@ typedef struct Quantity_t {
     uint64_t raw;
     uint8_t precision;
 } Quantity_t;
-
-typedef struct Bar_t {
-    struct BarType_t bar_type;
-    struct Price_t open;
-    struct Price_t high;
-    struct Price_t low;
-    struct Price_t close;
-    struct Quantity_t volume;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} Bar_t;
 
 /**
  * Represents an order in a book.
@@ -728,6 +705,29 @@ typedef struct TradeTick_t {
     uint64_t ts_event;
     uint64_t ts_init;
 } TradeTick_t;
+
+typedef struct BarSpecification_t {
+    uint64_t step;
+    uint8_t aggregation;
+    enum PriceType price_type;
+} BarSpecification_t;
+
+typedef struct BarType_t {
+    struct InstrumentId_t instrument_id;
+    struct BarSpecification_t spec;
+    enum AggregationSource aggregation_source;
+} BarType_t;
+
+typedef struct Bar_t {
+    struct BarType_t bar_type;
+    struct Price_t open;
+    struct Price_t high;
+    struct Price_t low;
+    struct Price_t close;
+    struct Quantity_t volume;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} Bar_t;
 
 typedef enum Data_t_Tag {
     DELTA,
@@ -851,6 +851,10 @@ typedef struct Money_t {
  * Sentinel Price for errors.
  */
 #define ERROR_PRICE (Price_t){ .raw = INT64_MAX, .precision = 0 }
+
+void data_drop(struct Data_t data);
+
+struct Data_t data_clone(const struct Data_t *data);
 
 struct BarSpecification_t bar_specification_new(uint64_t step,
                                                 uint8_t aggregation,
@@ -1016,10 +1020,6 @@ struct TradeTick_t trade_tick_clone(const struct TradeTick_t *tick);
  * Returns a [`TradeTick`] as a C string pointer.
  */
 const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
-
-void data_drop(struct Data_t data);
-
-struct Data_t data_clone(const struct Data_t *data);
 
 const char *account_type_to_cstr(enum AccountType value);
 

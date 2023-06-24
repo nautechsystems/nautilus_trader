@@ -15,58 +15,14 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{string::str_to_cstr, time::UnixNanos};
+use nautilus_core::string::str_to_cstr;
 
-use super::{
-    tick::{QuoteTick, TradeTick},
-    Data,
-};
+use super::trade::TradeTick;
 use crate::{
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},
 };
-
-#[no_mangle]
-pub extern "C" fn quote_tick_new(
-    instrument_id: InstrumentId,
-    bid_price_raw: i64,
-    ask_price_raw: i64,
-    bid_price_prec: u8,
-    ask_price_prec: u8,
-    bid_size_raw: u64,
-    ask_size_raw: u64,
-    bid_size_prec: u8,
-    ask_size_prec: u8,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> QuoteTick {
-    QuoteTick::new(
-        instrument_id,
-        Price::from_raw(bid_price_raw, bid_price_prec),
-        Price::from_raw(ask_price_raw, ask_price_prec),
-        Quantity::from_raw(bid_size_raw, bid_size_prec),
-        Quantity::from_raw(ask_size_raw, ask_size_prec),
-        ts_event,
-        ts_init,
-    )
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
-    tick.clone()
-}
-
-/// Returns a [`QuoteTick`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
-    str_to_cstr(&tick.to_string())
-}
 
 #[no_mangle]
 pub extern "C" fn trade_tick_new(
@@ -105,14 +61,4 @@ pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
 #[no_mangle]
 pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
     str_to_cstr(&tick.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn data_drop(data: Data) {
-    drop(data); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn data_clone(data: &Data) -> Data {
-    data.clone()
 }

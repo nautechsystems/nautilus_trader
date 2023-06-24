@@ -21,7 +21,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::tick::TradeTick,
+    data::trade::TradeTick,
     enums::AggressorSide,
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},

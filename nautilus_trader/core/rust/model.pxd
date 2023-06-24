@@ -345,11 +345,6 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument:
         pass
 
-    cdef struct BarSpecification_t:
-        uint64_t step;
-        uint8_t aggregation;
-        PriceType price_type;
-
     cdef struct Symbol_t:
         Arc_String *value;
 
@@ -360,11 +355,6 @@ cdef extern from "../includes/model.h":
         Symbol_t symbol;
         Venue_t venue;
 
-    cdef struct BarType_t:
-        InstrumentId_t instrument_id;
-        BarSpecification_t spec;
-        AggregationSource aggregation_source;
-
     cdef struct Price_t:
         int64_t raw;
         uint8_t precision;
@@ -372,16 +362,6 @@ cdef extern from "../includes/model.h":
     cdef struct Quantity_t:
         uint64_t raw;
         uint8_t precision;
-
-    cdef struct Bar_t:
-        BarType_t bar_type;
-        Price_t open;
-        Price_t high;
-        Price_t low;
-        Price_t close;
-        Quantity_t volume;
-        uint64_t ts_event;
-        uint64_t ts_init;
 
     # Represents an order in a book.
     cdef struct BookOrder_t:
@@ -420,6 +400,26 @@ cdef extern from "../includes/model.h":
         Quantity_t size;
         AggressorSide aggressor_side;
         TradeId_t trade_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct BarSpecification_t:
+        uint64_t step;
+        uint8_t aggregation;
+        PriceType price_type;
+
+    cdef struct BarType_t:
+        InstrumentId_t instrument_id;
+        BarSpecification_t spec;
+        AggregationSource aggregation_source;
+
+    cdef struct Bar_t:
+        BarType_t bar_type;
+        Price_t open;
+        Price_t high;
+        Price_t low;
+        Price_t close;
+        Quantity_t volume;
         uint64_t ts_event;
         uint64_t ts_init;
 
@@ -512,6 +512,10 @@ cdef extern from "../includes/model.h":
 
     # Sentinel Price for errors.
     const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }
+
+    void data_drop(Data_t data);
+
+    Data_t data_clone(const Data_t *data);
 
     BarSpecification_t bar_specification_new(uint64_t step,
                                              uint8_t aggregation,
@@ -658,10 +662,6 @@ cdef extern from "../includes/model.h":
 
     # Returns a [`TradeTick`] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);
-
-    void data_drop(Data_t data);
-
-    Data_t data_clone(const Data_t *data);
 
     const char *account_type_to_cstr(AccountType value);
 

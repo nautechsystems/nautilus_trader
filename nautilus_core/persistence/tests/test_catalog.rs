@@ -13,18 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::{
-    tick::{QuoteTick, TradeTick},
-    Data,
-};
+use nautilus_model::data::{quote::QuoteTick, trade::TradeTick, Data};
 use nautilus_persistence::session::{DataBackendSession, QueryResult};
 
 // Note: "current_thread" configuration hangs up for some reason
 #[tokio::test(flavor = "multi_thread")]
 async fn test_quote_ticks() {
     let file_path = "../../tests/test_data/quote_tick_data.parquet";
-    let length = 9500;
-    let mut catalog = DataBackendSession::new(10000);
+    let length = 9_500;
+    let mut catalog = DataBackendSession::new(10_000);
     catalog
         .add_file_default_query::<QuoteTick>("quotes_0005", file_path)
         .await
@@ -59,7 +56,7 @@ async fn test_quote_ticks() {
 // Note: "current_thread" hangs up for some reason
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_ticks() {
-    let mut catalog = DataBackendSession::new(5000);
+    let mut catalog = DataBackendSession::new(5_000);
     catalog
         .add_file_default_query::<QuoteTick>(
             "quote_tick",

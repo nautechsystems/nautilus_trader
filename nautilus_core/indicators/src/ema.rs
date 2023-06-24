@@ -14,10 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::{
-    data::{
-        bar::Bar,
-        tick::{QuoteTick, TradeTick},
-    },
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
 };
 use pyo3::prelude::*;

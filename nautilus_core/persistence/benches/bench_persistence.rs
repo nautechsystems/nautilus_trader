@@ -16,7 +16,7 @@
 use std::fs;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use nautilus_model::data::tick::{QuoteTick, TradeTick};
+use nautilus_model::data::{quote::QuoteTick, trade::TradeTick};
 use nautilus_persistence::session::{DataBackendSession, QueryResult};
 use pyo3_asyncio::tokio::get_runtime;
 

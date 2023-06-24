@@ -24,7 +24,8 @@ use super::book::OrderBook;
 use crate::{
     data::{
         book::{BookOrder, OrderBookDelta},
-        tick::{QuoteTick, TradeTick},
+        quote::QuoteTick,
+        trade::TradeTick,
     },
     enums::BookType,
     identifiers::instrument_id::InstrumentId,

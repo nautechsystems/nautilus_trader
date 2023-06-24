@@ -19,17 +19,18 @@ use std::{
 };
 
 use nautilus_core::{correctness, time::UnixNanos};
-use pyo3::prelude::*;
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{AggressorSide, PriceType},
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    enums::PriceType,
+    identifiers::instrument_id::InstrumentId,
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct QuoteTick {
     pub instrument_id: InstrumentId,
@@ -99,55 +100,113 @@ impl Display for QuoteTick {
     }
 }
 
-/// Represents a single trade tick in a financial market.
-#[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[pyclass]
-pub struct TradeTick {
-    pub instrument_id: InstrumentId,
-    pub price: Price,
-    pub size: Quantity,
-    pub aggressor_side: AggressorSide,
-    pub trade_id: TradeId,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
-}
-
-impl TradeTick {
-    #[must_use]
-    pub fn new(
+#[pymethods]
+impl QuoteTick {
+    #[new]
+    fn new_py(
         instrument_id: InstrumentId,
-        price: Price,
-        size: Quantity,
-        aggressor_side: AggressorSide,
-        trade_id: TradeId,
+        bid_price: Price,
+        ask_price: Price,
+        bid_size: Quantity,
+        ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        Self {
+        Self::new(
             instrument_id,
-            price,
-            size,
-            aggressor_side,
-            trade_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
             ts_event,
             ts_init,
+        )
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
         }
     }
-}
 
-impl Display for TradeTick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{},{},{},{},{},{}",
-            self.instrument_id,
-            self.price,
-            self.size,
-            self.aggressor_side,
-            self.trade_id,
-            self.ts_event,
-        )
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[getter]
+    fn instrument_id(&self) -> InstrumentId {
+        self.instrument_id.clone()
+    }
+
+    #[getter]
+    fn bid_price(&self) -> Price {
+        self.bid
+    }
+
+    #[getter]
+    fn ask_price(&self) -> Price {
+        self.ask
+    }
+
+    #[getter]
+    fn bid_size(&self) -> Quantity {
+        self.bid_size
+    }
+
+    #[getter]
+    fn ask_size(&self) -> Quantity {
+        self.ask_size
+    }
+
+    #[getter]
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
+    fn extract_price_py(&self, price_type: PriceType) -> PyResult<Price> {
+        Ok(self.extract_price(price_type))
+    }
+
+    /// Return a dictionary representation of the object.
+    fn to_dict(&self) -> Py<PyDict> {
+        Python::with_gil(|py| {
+            let dict = PyDict::new(py);
+
+            dict.set_item("type", stringify!(QuoteTick)).unwrap();
+            dict.set_item("instrument_id", self.instrument_id.to_string())
+                .unwrap();
+            dict.set_item("bid", self.bid.to_string()).unwrap();
+            dict.set_item("ask", self.ask.to_string()).unwrap();
+            dict.set_item("bid_size", self.bid_size.to_string())
+                .unwrap();
+            dict.set_item("ask_size", self.ask_size.to_string())
+                .unwrap();
+            dict.set_item("ts_event", self.ts_event).unwrap();
+            dict.set_item("ts_init", self.ts_init).unwrap();
+
+            dict.into_py(py)
+        })
+    }
+
+    /// Return JSON encoded bytes representation of the object.
+    fn to_json(&self) -> Py<PyAny> {
+        Python::with_gil(|py| serde_json::to_vec(self).unwrap().into_py(py))
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    fn to_msgpack(&self) -> Py<PyAny> {
+        Python::with_gil(|py| rmp_serde::to_vec(self).unwrap().into_py(py))
     }
 }
 
@@ -161,9 +220,9 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::tick::{QuoteTick, TradeTick},
-        enums::{AggressorSide, PriceType},
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        data::quote::QuoteTick,
+        enums::PriceType,
+        identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
 
@@ -204,22 +263,5 @@ mod tests {
 
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_trade_tick_to_string() {
-        let tick = TradeTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            price: Price::new(10000.0, 4),
-            size: Quantity::new(1.0, 8),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789"),
-            ts_event: 0,
-            ts_init: 0,
-        };
-        assert_eq!(
-            tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
-        );
     }
 }
