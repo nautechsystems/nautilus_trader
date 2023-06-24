@@ -1774,6 +1774,35 @@ dev = ["pre-commit", "tox"]
 testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
+name = "polars"
+version = "0.18.4"
+description = "Blazingly fast DataFrame library"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "polars-0.18.4-cp37-abi3-macosx_10_7_x86_64.whl", hash = "sha256:3adfd39f84387f8589735e5c57f466c7ba19812140bc64248b9602755915c52f"},
+    {file = "polars-0.18.4-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:5658f9751d93451549ecf429eb6486b203a86130132310c520cd1336d15ca258"},
+    {file = "polars-0.18.4-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4bbc04db1d765f7cad287204a014e8e10bb2245f1910e26cd99964333e3682c6"},
+    {file = "polars-0.18.4-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f9117544d86542954588e295127f3892c15e09db04c474a0d8d830735154a54c"},
+    {file = "polars-0.18.4-cp37-abi3-win_amd64.whl", hash = "sha256:a033ee71d8fde63ac71c7579230d31372cdaddf1df4227a537d96b91a58abd29"},
+    {file = "polars-0.18.4.tar.gz", hash = "sha256:136d8cdbf3c1ec33ab577536ac35a10701ec3dfd21b54cb757ee9b0e0f525a85"},
+]
+
+[package.extras]
+all = ["polars[connectorx,deltalake,fsspec,matplotlib,numpy,pandas,pyarrow,sqlalchemy,timezone,xlsx2csv,xlsxwriter]"]
+connectorx = ["connectorx"]
+deltalake = ["deltalake (>=0.8.0)"]
+fsspec = ["fsspec"]
+matplotlib = ["matplotlib"]
+numpy = ["numpy (>=1.16.0)"]
+pandas = ["pandas", "pyarrow (>=7.0.0)"]
+pyarrow = ["pyarrow (>=7.0.0)"]
+sqlalchemy = ["pandas", "sqlalchemy"]
+timezone = ["backports.zoneinfo", "tzdata"]
+xlsx2csv = ["xlsx2csv (>=0.8.0)"]
+xlsxwriter = ["xlsxwriter"]
+
+[[package]]
 name = "pre-commit"
 version = "3.3.3"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
@@ -2885,4 +2914,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "b5971e17686ff635334801127d8d2efb241a13eeb51b20887bffac76b723a6b8"
+content-hash = "3e6abccaeada5792b0a37a4f596a190291744ca7dd1754db72de745e05abd8b8"
