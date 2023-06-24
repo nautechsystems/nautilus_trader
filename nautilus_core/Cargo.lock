@@ -1862,6 +1862,7 @@ dependencies = [
  "criterion",
  "iai",
  "pyo3",
+ "rmp-serde",
  "rstest",
  "serde",
  "serde_json",

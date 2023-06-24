@@ -18,7 +18,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use nautilus_core::{correctness, time::UnixNanos};
+use nautilus_core::{correctness, serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
@@ -88,27 +88,9 @@ impl QuoteTick {
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
-
-    /// Return a [`QuoteTick`] from JSON encoded bytes.
-    fn from_json_bytes(data: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(data)
-    }
-
-    /// Return a [`QuoteTick`] from MsgPack encoded bytes.
-    fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(data)
-    }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn to_json_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap()
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn to_msgpack_bytes(&self) -> Vec<u8> {
-        rmp_serde::to_vec(self).unwrap()
-    }
 }
+
+impl Serializable for QuoteTick {}
 
 impl Display for QuoteTick {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -221,7 +203,7 @@ impl QuoteTick {
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_json_bytes(data.as_slice()) {
+        match Self::from_json_bytes(data) {
             Ok(quote) => Ok(quote),
             Err(err) => Err(PyValueError::new_err(format!(
                 "Failed to deserialize JSON: {}",
@@ -232,7 +214,7 @@ impl QuoteTick {
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_msgpack_bytes(data.as_slice()) {
+        match Self::from_msgpack_bytes(data) {
             Ok(quote) => Ok(quote),
             Err(err) => Err(PyValueError::new_err(format!(
                 "Failed to deserialize MsgPack: {}",
@@ -242,13 +224,15 @@ impl QuoteTick {
     }
 
     /// Return JSON encoded bytes representation of the object.
-    fn to_json(&self) -> Py<PyAny> {
-        Python::with_gil(|py| self.to_json_bytes().into_py(py))
+    fn as_json(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn to_msgpack(&self) -> Py<PyAny> {
-        Python::with_gil(|py| self.to_msgpack_bytes().into_py(py))
+    fn as_msgpack(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
     }
 }
 

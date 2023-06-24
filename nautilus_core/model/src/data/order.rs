@@ -18,7 +18,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use pyo3::{prelude::*, pyclass::CompareOp};
+use nautilus_core::serialization::Serializable;
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
@@ -102,6 +103,8 @@ impl BookOrder {
     }
 }
 
+impl Serializable for BookOrder {}
+
 impl PartialEq for BookOrder {
     fn eq(&self, other: &Self) -> bool {
         self.order_id == other.order_id
@@ -173,6 +176,40 @@ impl BookOrder {
 
     fn py_signed_size(&self) -> f64 {
         self.signed_size()
+    }
+
+    #[staticmethod]
+    fn from_json(data: Vec<u8>) -> PyResult<Self> {
+        match Self::from_json_bytes(data) {
+            Ok(quote) => Ok(quote),
+            Err(err) => Err(PyValueError::new_err(format!(
+                "Failed to deserialize JSON: {}",
+                err
+            ))),
+        }
+    }
+
+    #[staticmethod]
+    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
+        match Self::from_msgpack_bytes(data) {
+            Ok(quote) => Ok(quote),
+            Err(err) => Err(PyValueError::new_err(format!(
+                "Failed to deserialize MsgPack: {}",
+                err
+            ))),
+        }
+    }
+
+    /// Return JSON encoded bytes representation of the object.
+    fn as_json(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    fn as_msgpack(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
     }
 }
 

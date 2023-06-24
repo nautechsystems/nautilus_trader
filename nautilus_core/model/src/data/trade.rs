@@ -15,8 +15,8 @@
 
 use std::fmt::{Display, Formatter};
 
-use nautilus_core::time::UnixNanos;
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -60,17 +60,9 @@ impl TradeTick {
             ts_init,
         }
     }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn to_json_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap()
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn to_msgpack_bytes(&self) -> Vec<u8> {
-        rmp_serde::to_vec(self).unwrap()
-    }
 }
+
+impl Serializable for TradeTick {}
 
 impl Display for TradeTick {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -182,14 +174,38 @@ impl TradeTick {
         })
     }
 
+    #[staticmethod]
+    fn from_json(data: Vec<u8>) -> PyResult<Self> {
+        match Self::from_json_bytes(data) {
+            Ok(quote) => Ok(quote),
+            Err(err) => Err(PyValueError::new_err(format!(
+                "Failed to deserialize JSON: {}",
+                err
+            ))),
+        }
+    }
+
+    #[staticmethod]
+    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
+        match Self::from_msgpack_bytes(data) {
+            Ok(quote) => Ok(quote),
+            Err(err) => Err(PyValueError::new_err(format!(
+                "Failed to deserialize MsgPack: {}",
+                err
+            ))),
+        }
+    }
+
     /// Return JSON encoded bytes representation of the object.
-    fn to_json(&self) -> Py<PyAny> {
-        Python::with_gil(|py| self.to_json_bytes().into_py(py))
+    fn as_json(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn to_msgpack(&self) -> Py<PyAny> {
-        Python::with_gil(|py| self.to_msgpack_bytes().into_py(py))
+    fn as_msgpack(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
     }
 }
 
