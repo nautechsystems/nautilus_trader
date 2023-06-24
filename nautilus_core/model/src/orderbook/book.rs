@@ -18,11 +18,7 @@ use thiserror::Error;
 
 use super::{ladder::BookPrice, level::Level};
 use crate::{
-    data::{
-        book::{BookOrder, OrderBookDelta},
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     orderbook::ladder::Ladder,
@@ -443,7 +439,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        data::book::BookOrder,
+        data::order::BookOrder,
         enums::{AggressorSide, OrderSide},
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
         types::{price::Price, quantity::Quantity},

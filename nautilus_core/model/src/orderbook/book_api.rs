@@ -22,11 +22,7 @@ use nautilus_core::{cvec::CVec, string::str_to_cstr};
 
 use super::book::OrderBook;
 use crate::{
-    data::{
-        book::{BookOrder, OrderBookDelta},
-        quote::QuoteTick,
-        trade::TradeTick,
-    },
+    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::BookType,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},

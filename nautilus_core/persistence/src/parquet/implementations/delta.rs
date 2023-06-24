@@ -21,7 +21,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::book::{BookOrder, OrderBookDelta},
+    data::{delta::OrderBookDelta, order::BookOrder},
     enums::{BookAction, BookType, FromU8, OrderSide},
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},

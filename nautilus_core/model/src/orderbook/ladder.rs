@@ -21,7 +21,7 @@ use std::{
 
 use super::book::BookIntegrityError;
 use crate::{
-    data::book::BookOrder,
+    data::order::BookOrder,
     enums::OrderSide,
     orderbook::level::Level,
     types::{price::Price, quantity::Quantity},
@@ -216,7 +216,7 @@ impl Ladder {
 #[cfg(test)]
 mod tests {
     use crate::{
-        data::book::BookOrder,
+        data::order::BookOrder,
         enums::OrderSide,
         orderbook::ladder::{BookPrice, Ladder},
         types::{
