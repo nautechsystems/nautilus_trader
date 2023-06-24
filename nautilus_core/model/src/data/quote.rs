@@ -88,6 +88,16 @@ impl QuoteTick {
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
+
+    /// Return JSON encoded bytes representation of the object.
+    fn to_json_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap()
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    fn to_msgpack_bytes(&self) -> Vec<u8> {
+        rmp_serde::to_vec(self).unwrap()
+    }
 }
 
 impl Display for QuoteTick {
@@ -201,12 +211,12 @@ impl QuoteTick {
 
     /// Return JSON encoded bytes representation of the object.
     fn to_json(&self) -> Py<PyAny> {
-        Python::with_gil(|py| serde_json::to_vec(self).unwrap().into_py(py))
+        Python::with_gil(|py| self.to_json_bytes().into_py(py))
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     fn to_msgpack(&self) -> Py<PyAny> {
-        Python::with_gil(|py| rmp_serde::to_vec(self).unwrap().into_py(py))
+        Python::with_gil(|py| self.to_msgpack_bytes().into_py(py))
     }
 }
 
@@ -227,7 +237,7 @@ mod tests {
     };
 
     #[test]
-    fn test_quote_tick_to_string() {
+    fn test_to_string() {
         let tick = QuoteTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             bid: Price::new(10000.0, 4),
@@ -250,7 +260,7 @@ mod tests {
         case(PriceType::Ask, 10_001_000_000_000),
         case(PriceType::Mid, 10_000_500_000_000)
     )]
-    fn test_quote_tick_extract_price(input: PriceType, expected: i64) {
+    fn test_extract_price(input: PriceType, expected: i64) {
         let tick = QuoteTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             bid: Price::new(10000.0, 4),

@@ -940,6 +940,22 @@ uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
 
+void orderbook_delta_drop(struct OrderBookDelta_t delta);
+
+struct OrderBookDelta_t orderbook_delta_clone(const struct OrderBookDelta_t *delta);
+
+struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
+                                            enum BookAction action,
+                                            struct BookOrder_t order,
+                                            uint8_t flags,
+                                            uint64_t sequence,
+                                            uint64_t ts_event,
+                                            uint64_t ts_init);
+
+uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
+
+uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
+
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
                                        uint8_t price_prec,
@@ -964,22 +980,6 @@ const char *book_order_display_to_cstr(const struct BookOrder_t *order);
  * Returns a [`BookOrder`] debug string as a C string pointer.
  */
 const char *book_order_debug_to_cstr(const struct BookOrder_t *order);
-
-void orderbook_delta_drop(struct OrderBookDelta_t delta);
-
-struct OrderBookDelta_t orderbook_delta_clone(const struct OrderBookDelta_t *delta);
-
-struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
-                                            enum BookAction action,
-                                            struct BookOrder_t order,
-                                            uint8_t flags,
-                                            uint64_t sequence,
-                                            uint64_t ts_event,
-                                            uint64_t ts_init);
-
-uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
-
-uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
 
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   int64_t bid_price_raw,

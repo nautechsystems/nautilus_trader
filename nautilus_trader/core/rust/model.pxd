@@ -590,6 +590,22 @@ cdef extern from "../includes/model.h":
 
     uint64_t bar_hash(const Bar_t *bar);
 
+    void orderbook_delta_drop(OrderBookDelta_t delta);
+
+    OrderBookDelta_t orderbook_delta_clone(const OrderBookDelta_t *delta);
+
+    OrderBookDelta_t orderbook_delta_new(InstrumentId_t instrument_id,
+                                         BookAction action,
+                                         BookOrder_t order,
+                                         uint8_t flags,
+                                         uint64_t sequence,
+                                         uint64_t ts_event,
+                                         uint64_t ts_init);
+
+    uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
+
+    uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
+
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,
                                     uint8_t price_prec,
@@ -610,22 +626,6 @@ cdef extern from "../includes/model.h":
 
     # Returns a [`BookOrder`] debug string as a C string pointer.
     const char *book_order_debug_to_cstr(const BookOrder_t *order);
-
-    void orderbook_delta_drop(OrderBookDelta_t delta);
-
-    OrderBookDelta_t orderbook_delta_clone(const OrderBookDelta_t *delta);
-
-    OrderBookDelta_t orderbook_delta_new(InstrumentId_t instrument_id,
-                                         BookAction action,
-                                         BookOrder_t order,
-                                         uint8_t flags,
-                                         uint64_t sequence,
-                                         uint64_t ts_event,
-                                         uint64_t ts_init);
-
-    uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
-
-    uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                int64_t bid_price_raw,

@@ -16,12 +16,12 @@
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
+    hash::Hash,
     str::FromStr,
 };
 
 use nautilus_core::time::UnixNanos;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 use thiserror;
 
@@ -68,7 +68,8 @@ impl PartialOrd for BarSpecification {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[pyclass]
 pub struct BarType {
     pub instrument_id: InstrumentId,
     pub spec: BarSpecification,
@@ -138,21 +139,6 @@ impl FromStr for BarType {
             },
             aggregation_source,
         })
-    }
-}
-
-impl PartialEq for BarType {
-    fn eq(&self, other: &Self) -> bool {
-        self.instrument_id == other.instrument_id
-            && self.spec == other.spec
-            && self.aggregation_source == other.aggregation_source
-    }
-}
-
-impl Hash for BarType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.spec.hash(state);
-        self.instrument_id.hash(state);
     }
 }
 
@@ -226,6 +212,16 @@ impl Bar {
             ts_init,
         }
     }
+
+    /// Return JSON encoded bytes representation of the object.
+    fn to_json_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap()
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    fn to_msgpack_bytes(&self) -> Vec<u8> {
+        rmp_serde::to_vec(self).unwrap()
+    }
 }
 
 impl Display for Bar {
@@ -235,6 +231,90 @@ impl Display for Bar {
             "{},{},{},{},{},{},{}",
             self.bar_type, self.open, self.high, self.low, self.close, self.volume, self.ts_event
         )
+    }
+}
+
+#[pymethods]
+#[allow(clippy::too_many_arguments)]
+impl Bar {
+    #[new]
+    fn py_new(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[getter]
+    fn bar_type(&self) -> BarType {
+        self.bar_type.clone()
+    }
+
+    #[getter]
+    fn open(&self) -> Price {
+        self.open
+    }
+
+    #[getter]
+    fn high(&self) -> Price {
+        self.high
+    }
+
+    #[getter]
+    fn low(&self) -> Price {
+        self.low
+    }
+
+    #[getter]
+    fn close(&self) -> Price {
+        self.close
+    }
+
+    #[getter]
+    fn volume(&self) -> Quantity {
+        self.volume
+    }
+
+    #[getter]
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
+    /// Return JSON encoded bytes representation of the object.
+    fn to_json(&self) -> Py<PyAny> {
+        Python::with_gil(|py| self.to_json_bytes().into_py(py))
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    fn to_msgpack(&self) -> Py<PyAny> {
+        Python::with_gil(|py| self.to_msgpack_bytes().into_py(py))
     }
 }
 

@@ -16,7 +16,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    data::book::BookOrder,
+    data::order::BookOrder,
     orderbook::{book::BookIntegrityError, ladder::BookPrice},
 };
 
@@ -156,7 +156,7 @@ impl Ord for Level {
 #[cfg(test)]
 mod tests {
     use crate::{
-        data::book::BookOrder,
+        data::order::BookOrder,
         enums::OrderSide,
         orderbook::{ladder::BookPrice, level::Level},
         types::{price::Price, quantity::Quantity},

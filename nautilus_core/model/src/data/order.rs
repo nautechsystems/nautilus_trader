@@ -18,13 +18,12 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::time::UnixNanos;
+use pyo3::{prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
 use crate::{
-    enums::{BookAction, OrderSide},
-    identifiers::instrument_id::InstrumentId,
+    enums::OrderSide,
     orderbook::{book::BookIntegrityError, ladder::BookPrice},
     types::{price::Price, quantity::Quantity},
 };
@@ -32,6 +31,7 @@ use crate::{
 /// Represents an order in a book.
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
+#[pyclass]
 pub struct BookOrder {
     pub side: OrderSide,
     pub price: Price,
@@ -124,56 +124,55 @@ impl Display for BookOrder {
     }
 }
 
-/// Represents a single change/delta in an order book.
-#[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct OrderBookDelta {
-    pub instrument_id: InstrumentId,
-    pub action: BookAction,
-    pub order: BookOrder,
-    pub flags: u8,
-    pub sequence: u64,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
-}
+#[pymethods]
+impl BookOrder {
+    #[new]
+    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: u64) -> Self {
+        Self::new(side, price, size, order_id)
+    }
 
-impl OrderBookDelta {
-    #[allow(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        action: BookAction,
-        order: BookOrder,
-        flags: u8,
-        sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
         }
     }
-}
 
-impl Display for OrderBookDelta {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{},{},{},{},{},{},{}",
-            self.instrument_id,
-            self.action,
-            self.order,
-            self.flags,
-            self.sequence,
-            self.ts_event,
-            self.ts_init
-        )
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[getter]
+    fn side(&self) -> OrderSide {
+        self.side
+    }
+
+    #[getter]
+    fn price(&self) -> Price {
+        self.price
+    }
+
+    #[getter]
+    fn size(&self) -> Quantity {
+        self.size
+    }
+
+    #[getter]
+    fn order_id(&self) -> u64 {
+        self.order_id
+    }
+
+    fn py_exposure(&self) -> f64 {
+        self.exposure()
+    }
+
+    fn py_signed_size(&self) -> f64 {
+        self.signed_size()
     }
 }
 
@@ -188,10 +187,13 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{enums::AggressorSide, identifiers::trade_id::TradeId};
+    use crate::{
+        enums::AggressorSide,
+        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    };
 
     #[test]
-    fn test_book_order_new() {
+    fn test_new() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
@@ -206,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn test_book_order_to_book_price() {
+    fn test_to_book_price() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
@@ -220,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn test_book_order_exposure() {
+    fn test_exposure() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
@@ -233,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn test_book_order_signed_size() {
+    fn test_signed_size() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let order_id = 123456;
@@ -248,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn test_book_order_display() {
+    fn test_display() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
         let side = OrderSide::Buy;
@@ -262,7 +264,7 @@ mod tests {
     }
 
     #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
-    fn book_order_from_quote_tick(side: OrderSide) {
+    fn test_from_quote_tick(side: OrderSide) {
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),
@@ -302,75 +304,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_orderbook_delta_new() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let action = BookAction::Add;
-        let price = Price::from("100.00");
-        let size = Quantity::from("10");
-        let side = OrderSide::Buy;
-        let order_id = 123456;
-        let flags = 0;
-        let sequence = 1;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
-        let delta = OrderBookDelta::new(
-            instrument_id.clone(),
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        );
-
-        assert_eq!(delta.instrument_id, instrument_id);
-        assert_eq!(delta.action, action);
-        assert_eq!(delta.order.price, price);
-        assert_eq!(delta.order.size, size);
-        assert_eq!(delta.order.side, side);
-        assert_eq!(delta.order.order_id, order_id);
-        assert_eq!(delta.flags, flags);
-        assert_eq!(delta.sequence, sequence);
-        assert_eq!(delta.ts_event, ts_event);
-        assert_eq!(delta.ts_init, ts_init);
-    }
-
-    #[test]
-    fn test_order_book_delta_display() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let action = BookAction::Add;
-        let price = Price::from("100.00");
-        let size = Quantity::from("10");
-        let side = OrderSide::Buy;
-        let order_id = 123456;
-        let flags = 0;
-        let sequence = 1;
-        let ts_event = 1;
-        let ts_init = 2;
-
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
-
-        let delta = OrderBookDelta::new(
-            instrument_id.clone(),
-            action,
-            order.clone(),
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        );
-
-        assert_eq!(
-            format!("{}", delta),
-            "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
-        );
-    }
-
     #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
-    fn book_order_from_trade_tick(side: OrderSide) {
+    fn test_from_trade_tick(side: OrderSide) {
         let tick = TradeTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),
