@@ -19,8 +19,9 @@ use std::{
 };
 
 use nautilus_core::time::UnixNanos;
+use serde::{Deserialize, Serialize};
 
-use super::tick::{QuoteTick, TradeTick};
+use super::{quote::QuoteTick, trade::TradeTick};
 use crate::{
     enums::{BookAction, OrderSide},
     identifiers::instrument_id::InstrumentId,
@@ -30,7 +31,7 @@ use crate::{
 
 /// Represents an order in a book.
 #[repr(C)]
-#[derive(Copy, Clone, Eq, Debug)]
+#[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
 pub struct BookOrder {
     pub side: OrderSide,
     pub price: Price,
@@ -125,7 +126,7 @@ impl Display for BookOrder {
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OrderBookDelta {
     pub instrument_id: InstrumentId,
     pub action: BookAction,

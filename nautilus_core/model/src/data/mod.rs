@@ -17,16 +17,14 @@ pub mod bar;
 pub mod bar_api;
 pub mod book;
 pub mod book_api;
-pub mod tick;
-pub mod tick_api;
+pub mod quote;
+pub mod quote_api;
+pub mod trade;
+pub mod trade_api;
 
 use nautilus_core::time::UnixNanos;
 
-use self::{
-    bar::Bar,
-    book::OrderBookDelta,
-    tick::{QuoteTick, TradeTick},
-};
+use self::{bar::Bar, book::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -71,4 +69,14 @@ impl From<Bar> for Data {
     fn from(value: Bar) -> Self {
         Self::Bar(value)
     }
+}
+
+#[no_mangle]
+pub extern "C" fn data_drop(data: Data) {
+    drop(data); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn data_clone(data: &Data) -> Data {
+    data.clone()
 }

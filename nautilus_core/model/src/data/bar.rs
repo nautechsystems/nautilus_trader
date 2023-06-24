@@ -22,6 +22,7 @@ use std::{
 
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use thiserror;
 
 use crate::{
@@ -31,7 +32,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct BarSpecification {
     pub step: u64,
     pub aggregation: BarAggregation,
@@ -67,7 +68,7 @@ impl PartialOrd for BarSpecification {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BarType {
     pub instrument_id: InstrumentId,
     pub spec: BarSpecification,
@@ -188,7 +189,7 @@ impl Display for BarType {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct Bar {
     pub bar_type: BarType,

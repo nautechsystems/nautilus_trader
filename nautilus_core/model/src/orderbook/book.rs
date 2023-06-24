@@ -20,7 +20,8 @@ use super::{ladder::BookPrice, level::Level};
 use crate::{
     data::{
         book::{BookOrder, OrderBookDelta},
-        tick::{QuoteTick, TradeTick},
+        quote::QuoteTick,
+        trade::TradeTick,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,

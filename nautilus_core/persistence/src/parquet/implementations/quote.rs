@@ -21,7 +21,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::tick::QuoteTick,
+    data::quote::QuoteTick,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
