@@ -349,7 +349,9 @@ class EMACross(Strategy):
                 self.sell()
 
     def buy(self) -> None:
-        """Users simple buy method (example)."""
+        """
+        Users simple buy method (example).
+        """
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -359,7 +361,9 @@ class EMACross(Strategy):
         self.submit_order(order)
 
     def sell(self) -> None:
-        """Users simple sell method (example)."""
+        """
+        Users simple sell method (example).
+        """
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
