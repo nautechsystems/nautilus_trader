@@ -33,6 +33,7 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[pyclass]
 pub struct BarSpecification {
     pub step: u64,
     pub aggregation: BarAggregation,
