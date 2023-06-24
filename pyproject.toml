@@ -89,7 +89,7 @@ optional = true
 
 [tool.poetry.group.test.dependencies]
 coverage = "^7.2.7"
-pytest = "^7.3.2"
+pytest = "^7.4.0"
 pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.0"
 pytest-benchmark = "^4.0.0"
