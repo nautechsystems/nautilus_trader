@@ -327,7 +327,7 @@ class BarDataWrangler:
         Parameters
         ----------
         data : polars.DataFrame
-            The trade tick data frame to process.
+            The bar data frame to process.
         default_volume : float, default 1_000_000.0
             The default volume for each bar (if not provided).
         ts_init_delta : int, default 0
@@ -359,7 +359,7 @@ class BarDataWrangler:
         Parameters
         ----------
         data : pandas.DataFrame
-            The trade tick data frame to process.
+            The bar data frame to process.
         default_volume : float, default 1_000_000.0
             The default volume for each bar (if not provided).
         ts_init_delta : int, default 0
