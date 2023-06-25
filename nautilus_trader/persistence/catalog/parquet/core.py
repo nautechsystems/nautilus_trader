@@ -13,44 +13,31 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import heapq
-import itertools
 import os
 import pathlib
 import platform
-import sys
 from pathlib import Path
 from typing import Callable, Optional, Union
 
 import fsspec
-import numpy as np
 import pandas as pd
 import pyarrow as pa
-import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
 from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.external.metadata import load_mappings
-from nautilus_trader.persistence.external.util import is_filename_in_time_range
-from nautilus_trader.persistence.streaming.batching import generate_batches_rust
+from nautilus_trader.persistence.catalog.parquet.reader import ParquetReader
+from nautilus_trader.persistence.catalog.parquet.writer import ParquetWriter
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
@@ -95,6 +82,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             path = "/" + path
 
         self.path = str(path)
+        self.reader = ParquetReader(fs=self.fs)
+        self.writer = ParquetWriter(fs=self.fs)
 
     @classmethod
     def from_env(cls):
@@ -124,197 +113,196 @@ class ParquetDataCatalog(BaseDataCatalog):
                 **kwargs,
             )
         else:
-            return self._query(
+            return self.reader.query(
                 cls=cls,
                 filter_expr=filter_expr,
                 instrument_ids=instrument_ids,
-                as_nautilus=as_nautilus,
                 **kwargs,
             )
 
-    def _query(  # noqa (too complex)
-        self,
-        cls: type,
-        instrument_ids: Optional[list[str]] = None,
-        filter_expr: Optional[Callable] = None,
-        start: Optional[Union[pd.Timestamp, str, int]] = None,
-        end: Optional[Union[pd.Timestamp, str, int]] = None,
-        ts_column: str = "ts_init",
-        raise_on_empty: bool = True,
-        instrument_id_column="instrument_id",
-        table_kwargs: Optional[dict] = None,
-        clean_instrument_keys: bool = True,
-        as_dataframe: bool = True,
-        projections: Optional[dict] = None,
-        **kwargs,
-    ):
-        filters = [filter_expr] if filter_expr is not None else []
-        if instrument_ids is not None:
-            if not isinstance(instrument_ids, list):
-                instrument_ids = [instrument_ids]
-            if clean_instrument_keys:
-                instrument_ids = list(set(map(clean_key, instrument_ids)))
-            filters.append(ds.field(instrument_id_column).cast("string").isin(instrument_ids))
-        if start is not None:
-            filters.append(ds.field(ts_column) >= pd.Timestamp(start).value)
-        if end is not None:
-            filters.append(ds.field(ts_column) <= pd.Timestamp(end).value)
+    # def _query(  # (too complex)
+    #     self,
+    #     cls: type,
+    #     instrument_ids: Optional[list[str]] = None,
+    #     filter_expr: Optional[Callable] = None,
+    #     start: Optional[Union[pd.Timestamp, str, int]] = None,
+    #     end: Optional[Union[pd.Timestamp, str, int]] = None,
+    #     ts_column: str = "ts_init",
+    #     raise_on_empty: bool = True,
+    #     instrument_id_column="instrument_id",
+    #     table_kwargs: Optional[dict] = None,
+    #     clean_instrument_keys: bool = True,
+    #     as_dataframe: bool = True,
+    #     projections: Optional[dict] = None,
+    #     **kwargs,
+    # ):
+    #     filters = [filter_expr] if filter_expr is not None else []
+    #     if instrument_ids is not None:
+    #         if not isinstance(instrument_ids, list):
+    #             instrument_ids = [instrument_ids]
+    #         if clean_instrument_keys:
+    #             instrument_ids = list(set(map(clean_key, instrument_ids)))
+    #         filters.append(ds.field(instrument_id_column).cast("string").isin(instrument_ids))
+    #     if start is not None:
+    #         filters.append(ds.field(ts_column) >= pd.Timestamp(start).value)
+    #     if end is not None:
+    #         filters.append(ds.field(ts_column) <= pd.Timestamp(end).value)
+    #
+    #     full_path = self.make_path(cls=cls)
+    #
+    #     if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
+    #         if raise_on_empty:
+    #             raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
+    #         else:
+    #             return pd.DataFrame() if as_dataframe else None
+    #
+    #     # Load rust objects
+    #     if isinstance(start, int) or start is None:
+    #         start_nanos = start
+    #     else:
+    #         start_nanos = dt_to_unix_nanos(start)  # datetime > nanos
+    #
+    #     if isinstance(end, int) or end is None:
+    #         end_nanos = end
+    #     else:
+    #         end_nanos = dt_to_unix_nanos(end)  # datetime > nanos
+    #
+    #     use_rust = kwargs.get("use_rust") and cls in (QuoteTick, TradeTick)
+    #     if use_rust and kwargs.get("as_nautilus"):
+    #         assert instrument_ids is not None
+    #         assert len(instrument_ids) > 0
+    #
+    #         to_merge = []
+    #         for instrument_id in instrument_ids:
+    #             files = self.get_files(cls, instrument_id, start_nanos, end_nanos)
+    #
+    #             if raise_on_empty and not files:
+    #                 raise RuntimeError("No files found.")
+    #
+    #             batches = generate_batches_rust(
+    #                 files=files,
+    #                 cls=cls,
+    #                 batch_size=sys.maxsize,
+    #                 start_nanos=start_nanos,
+    #                 end_nanos=end_nanos,
+    #             )
+    #             objs = list(itertools.chain.from_iterable(batches))
+    #             if len(instrument_ids) == 1:
+    #                 return objs  # skip merge, only 1 instrument
+    #             to_merge.append(objs)
+    #
+    #         return list(heapq.merge(*to_merge, key=lambda x: x.ts_init))
+    #
+    #     dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
+    #
+    #     table_kwargs = table_kwargs or {}
+    #     if projections:
+    #         projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
+    #         table_kwargs.update(columns=projected)
+    #
+    #     try:
+    #         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
+    #     except Exception as e:
+    #         print(e)
+    #         raise e
+    #
+    #     if use_rust:
+    #         df = int_to_float_dataframe(table.to_pandas())
+    #         if start_nanos and end_nanos is None:
+    #             return df
+    #         if start_nanos is None:
+    #             start_nanos = 0
+    #         if end_nanos is None:
+    #             end_nanos = sys.maxsize
+    #         df = df[(df["ts_init"] >= start_nanos) & (df["ts_init"] <= end_nanos)]
+    #         return df
+    #
+    #     mappings = self.load_inverse_mappings(path=full_path)
+    #
+    #     if "as_nautilus" in kwargs:
+    #         as_dataframe = not kwargs.pop("as_nautilus")
+    #
+    #     if as_dataframe:
+    #         return self._handle_table_dataframe(
+    #             table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
+    #         )
+    #     else:
+    #         return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
 
-        full_path = self.make_path(cls=cls)
+    # def make_path(self, cls: type, instrument_id: Optional[str] = None) -> str:
+    #     path = f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
+    #     if instrument_id is not None:
+    #         path += f"/instrument_id={clean_key(instrument_id)}"
+    #     return path
 
-        if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
-            if raise_on_empty:
-                raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
-            else:
-                return pd.DataFrame() if as_dataframe else None
+    # def get_files(
+    #     self,
+    #     cls: type,
+    #     instrument_id: Optional[str] = None,
+    #     start_nanos: Optional[int] = None,
+    #     end_nanos: Optional[int] = None,
+    #     bar_spec: Optional[BarSpecification] = None,
+    # ) -> list[str]:
+    #     folder = self.make_path(cls=cls, instrument_id=instrument_id)
+    #
+    #     if not self.fs.isdir(folder):
+    #         return []
+    #
+    #     paths = self.fs.glob(f"{folder}/**")
+    #
+    #     file_paths = []
+    #     for path in paths:
+    #         # Filter by BarType
+    #         bar_spec_matched = False
+    #         if cls is Bar:
+    #             bar_spec_matched = bar_spec and str(bar_spec) in path
+    #             if not bar_spec_matched:
+    #                 continue
+    #
+    #         # Filter by time range
+    #         file_path = pathlib.PurePosixPath(path).name
+    #         matched = is_filename_in_time_range(file_path, start_nanos, end_nanos)
+    #         if matched:
+    #             file_paths.append(str(path))
+    #
+    #     file_paths = sorted(file_paths, key=lambda x: Path(x).stem)
+    #
+    #     return file_paths
 
-        # Load rust objects
-        if isinstance(start, int) or start is None:
-            start_nanos = start
-        else:
-            start_nanos = dt_to_unix_nanos(start)  # datetime > nanos
+    # def _get_files(
+    #     self,
+    #     cls: type,
+    #     instrument_id: Optional[str] = None,
+    #     start_nanos: Optional[int] = None,
+    #     end_nanos: Optional[int] = None,
+    # ) -> list[str]:
+    #     folder = (
+    #         self.path
+    #         if instrument_id is None
+    #         else self.make_path(cls=cls, instrument_id=instrument_id)
+    #     )
+    #
+    #     if not os.path.exists(folder):
+    #         return []
+    #
+    #     paths = self.fs.glob(f"{folder}/**")
+    #
+    #     files = []
+    #     for path in paths:
+    #         fn = pathlib.PurePosixPath(path).name
+    #         matched = is_filename_in_time_range(fn, start_nanos, end_nanos)
+    #         if matched:
+    #             files.append(str(path))
+    #
+    #     files = sorted(files, key=lambda x: Path(x).stem)
+    #
+    #     return files
 
-        if isinstance(end, int) or end is None:
-            end_nanos = end
-        else:
-            end_nanos = dt_to_unix_nanos(end)  # datetime > nanos
-
-        use_rust = kwargs.get("use_rust") and cls in (QuoteTick, TradeTick)
-        if use_rust and kwargs.get("as_nautilus"):
-            assert instrument_ids is not None
-            assert len(instrument_ids) > 0
-
-            to_merge = []
-            for instrument_id in instrument_ids:
-                files = self.get_files(cls, instrument_id, start_nanos, end_nanos)
-
-                if raise_on_empty and not files:
-                    raise RuntimeError("No files found.")
-
-                batches = generate_batches_rust(
-                    files=files,
-                    cls=cls,
-                    batch_size=sys.maxsize,
-                    start_nanos=start_nanos,
-                    end_nanos=end_nanos,
-                )
-                objs = list(itertools.chain.from_iterable(batches))
-                if len(instrument_ids) == 1:
-                    return objs  # skip merge, only 1 instrument
-                to_merge.append(objs)
-
-            return list(heapq.merge(*to_merge, key=lambda x: x.ts_init))
-
-        dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
-
-        table_kwargs = table_kwargs or {}
-        if projections:
-            projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
-            table_kwargs.update(columns=projected)
-
-        try:
-            table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
-        except Exception as e:
-            print(e)
-            raise e
-
-        if use_rust:
-            df = int_to_float_dataframe(table.to_pandas())
-            if start_nanos and end_nanos is None:
-                return df
-            if start_nanos is None:
-                start_nanos = 0
-            if end_nanos is None:
-                end_nanos = sys.maxsize
-            df = df[(df["ts_init"] >= start_nanos) & (df["ts_init"] <= end_nanos)]
-            return df
-
-        mappings = self.load_inverse_mappings(path=full_path)
-
-        if "as_nautilus" in kwargs:
-            as_dataframe = not kwargs.pop("as_nautilus")
-
-        if as_dataframe:
-            return self._handle_table_dataframe(
-                table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
-            )
-        else:
-            return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
-
-    def make_path(self, cls: type, instrument_id: Optional[str] = None) -> str:
-        path = f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
-        if instrument_id is not None:
-            path += f"/instrument_id={clean_key(instrument_id)}"
-        return path
-
-    def get_files(
-        self,
-        cls: type,
-        instrument_id: Optional[str] = None,
-        start_nanos: Optional[int] = None,
-        end_nanos: Optional[int] = None,
-        bar_spec: Optional[BarSpecification] = None,
-    ) -> list[str]:
-        folder = self.make_path(cls=cls, instrument_id=instrument_id)
-
-        if not self.fs.isdir(folder):
-            return []
-
-        paths = self.fs.glob(f"{folder}/**")
-
-        file_paths = []
-        for path in paths:
-            # Filter by BarType
-            bar_spec_matched = False
-            if cls is Bar:
-                bar_spec_matched = bar_spec and str(bar_spec) in path
-                if not bar_spec_matched:
-                    continue
-
-            # Filter by time range
-            file_path = pathlib.PurePosixPath(path).name
-            matched = is_filename_in_time_range(file_path, start_nanos, end_nanos)
-            if matched:
-                file_paths.append(str(path))
-
-        file_paths = sorted(file_paths, key=lambda x: Path(x).stem)
-
-        return file_paths
-
-    def _get_files(
-        self,
-        cls: type,
-        instrument_id: Optional[str] = None,
-        start_nanos: Optional[int] = None,
-        end_nanos: Optional[int] = None,
-    ) -> list[str]:
-        folder = (
-            self.path
-            if instrument_id is None
-            else self.make_path(cls=cls, instrument_id=instrument_id)
-        )
-
-        if not os.path.exists(folder):
-            return []
-
-        paths = self.fs.glob(f"{folder}/**")
-
-        files = []
-        for path in paths:
-            fn = pathlib.PurePosixPath(path).name
-            matched = is_filename_in_time_range(fn, start_nanos, end_nanos)
-            if matched:
-                files.append(str(path))
-
-        files = sorted(files, key=lambda x: Path(x).stem)
-
-        return files
-
-    def load_inverse_mappings(self, path):
-        mappings = load_mappings(fs=self.fs, path=path)
-        for key in mappings:
-            mappings[key] = {v: k for k, v in mappings[key].items()}
-        return mappings
+    # def load_inverse_mappings(self, path):
+    #     mappings = load_mappings(fs=self.fs, path=path)
+    #     for key in mappings:
+    #         mappings[key] = {v: k for k, v in mappings[key].items()}
+    #     return mappings
 
     @staticmethod
     def _handle_table_dataframe(
@@ -405,7 +393,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         filter_expr: Optional[Callable] = None,
         **kwargs,
     ):
-        data = self._query(
+        data = self.query(
             cls=cls,
             filter_expr=filter_expr,
             as_dataframe=not as_nautilus,
@@ -511,13 +499,3 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
-
-
-def int_to_float_dataframe(df: pd.DataFrame):
-    cols = [
-        col
-        for col, dtype in dict(df.dtypes).items()
-        if dtype == np.int64 or dtype == np.uint64 and (col != "ts_event" and col != "ts_init")
-    ]
-    df[cols] = df[cols] / FIXED_SCALAR
-    return df
