@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
@@ -59,6 +62,18 @@ impl TradeTick {
             ts_event,
             ts_init,
         }
+    }
+
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata.insert("size_precision".to_string(), size_precision.to_string());
+        metadata
     }
 }
 
