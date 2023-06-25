@@ -37,7 +37,7 @@ use pyo3_asyncio::tokio::get_runtime;
 use crate::{
     kmerge_batch::{KMerge, PeekElementBatchStream},
     parquet::{
-        DataSchemaProvider, DataStreamingError, DecodeFromRecordBatch, EncodeToRecordBatch,
+        ArrowSchemaProvider, DataStreamingError, DecodeFromRecordBatch, EncodeToRecordBatch,
         NautilusDataType, WriteStream,
     },
 };
@@ -253,15 +253,10 @@ impl DataBackendSession {
 
         // Take first element and extract metadata
         let first = data.first().unwrap();
-        let mut metadata = HashMap::new();
-        metadata.insert("instrument_id".to_string(), first.instrument_id.to_string());
-        metadata.insert(
-            "price_precision".to_string(),
-            first.bid.precision.to_string(),
-        );
-        metadata.insert(
-            "size_precision".to_string(),
-            first.bid_size.precision.to_string(),
+        let metadata = QuoteTick::get_metadata(
+            &first.instrument_id,
+            first.bid.precision,
+            first.bid_size.precision,
         );
 
         // Encode QuoteTick data to record batches
@@ -271,6 +266,33 @@ impl DataBackendSession {
             .collect();
 
         let schema = QuoteTick::get_schema(metadata);
+
+        DataBackendSession::record_batches_to_pybytes(batches, schema)
+    }
+
+    pub fn trade_ticks_to_batches_bytes(
+        _slf: PyRefMut<'_, Self>,
+        data: Vec<TradeTick>,
+    ) -> PyResult<Py<PyBytes>> {
+        if data.is_empty() {
+            return Err(PyErr::new::<PyValueError, _>("Data vector was empty."));
+        }
+
+        // Take first element and extract metadata
+        let first = data.first().unwrap();
+        let metadata = TradeTick::get_metadata(
+            &first.instrument_id,
+            first.price.precision,
+            first.size.precision,
+        );
+
+        // Encode TradeTick data to record batches
+        let batches: Vec<RecordBatch> = data
+            .into_iter()
+            .map(|trade| TradeTick::encode_batch(&metadata, &[trade]))
+            .collect();
+
+        let schema = TradeTick::get_schema(metadata);
 
         DataBackendSession::record_batches_to_pybytes(batches, schema)
     }

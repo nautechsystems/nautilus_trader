@@ -51,20 +51,20 @@ pub enum DataStreamingError {
     PythonError(#[from] PyErr),
 }
 
-pub trait DataSchemaProvider {
+pub trait ArrowSchemaProvider {
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
 }
 
 pub trait EncodeToRecordBatch
 where
-    Self: Sized + DataSchemaProvider,
+    Self: Sized + ArrowSchemaProvider,
 {
     fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch;
 }
 
 pub trait DecodeFromRecordBatch
 where
-    Self: Sized + Into<Data> + DataSchemaProvider,
+    Self: Sized + Into<Data> + ArrowSchemaProvider,
 {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
 }

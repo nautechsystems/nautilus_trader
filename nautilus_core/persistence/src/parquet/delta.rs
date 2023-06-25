@@ -27,9 +27,9 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{Data, DataSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
-impl DataSchemaProvider for OrderBookDelta {
+impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef {
         let fields = vec![
             Field::new("action", DataType::UInt8, false),

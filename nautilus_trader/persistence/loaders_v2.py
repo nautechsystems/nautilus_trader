@@ -26,13 +26,13 @@ class QuoteTickDataFrameLoader:
     """
 
     @staticmethod
-    def read_csv(file_path: str | Path) -> pl.DataFrame:
+    def read_csv(path: str | Path) -> pl.DataFrame:
         """
         Return the tick data read from the CSV file.
 
         Parameters
         ----------
-        file_path : str | Path
+        path : str | Path
             The path to the CSV file.
 
         Returns
@@ -45,7 +45,7 @@ class QuoteTickDataFrameLoader:
             # Specify other column types here
         }
         columns = ["timestamp", "bid", "ask"]
-        df = pl.read_csv(file_path, dtypes=dtypes, columns=columns)
+        df = pl.read_csv(path, dtypes=dtypes, columns=columns)
         return df
 
 
@@ -55,13 +55,13 @@ class BarDataFrameLoader:
     """
 
     @staticmethod
-    def read_csv(file_path: str | Path) -> pl.DataFrame:
+    def read_csv(path: str | Path) -> pl.DataFrame:
         """
         Return the bar data read from the CSV file.
 
         Parameters
         ----------
-        file_path : str | Path
+        path : str | Path
             The path to the CSV file.
 
         Returns
@@ -69,5 +69,5 @@ class BarDataFrameLoader:
         pl.DataFrame
 
         """
-        df = pl.read_csv(file_path)
+        df = pl.read_csv(path)
         return df
