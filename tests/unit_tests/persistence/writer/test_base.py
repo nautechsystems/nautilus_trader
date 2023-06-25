@@ -6,9 +6,9 @@ from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.parquet.writer import ParquetWriter
+from nautilus_trader.persistence.catalog.parquet.writer import objects_to_table
 from nautilus_trader.persistence.wranglers import list_from_capsule
-from nautilus_trader.persistence.writer.base import ParquetWriter
-from nautilus_trader.persistence.writer.base import objects_to_table
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
