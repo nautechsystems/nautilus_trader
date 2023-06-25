@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_get_schema() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let metadata = QuoteTick::get_metadata(instrument_id, 2, 0);
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
         let schema = QuoteTick::get_schema(metadata.clone());
         let expected_fields = vec![
             Field::new("bid", DataType::Int64, false),
@@ -233,7 +233,8 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let metadata = create_metadata();
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
         let bid = Int64Array::from(vec![10000, 9900]);
         let ask = Int64Array::from(vec![10100, 10000]);
