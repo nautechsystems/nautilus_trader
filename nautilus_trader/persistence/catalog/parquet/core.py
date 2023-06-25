@@ -28,12 +28,15 @@ from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.reader import ParquetReader
 from nautilus_trader.persistence.catalog.parquet.writer import ParquetWriter
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -82,8 +85,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             path = "/" + path
 
         self.path = str(path)
-        self.reader = ParquetReader(fs=self.fs)
-        self.writer = ParquetWriter(fs=self.fs)
+        self._reader = ParquetReader(fs=self.fs)
+        self._writer = ParquetWriter(fs=self.fs)
 
     @classmethod
     def from_env(cls):
@@ -100,25 +103,60 @@ class ParquetDataCatalog(BaseDataCatalog):
         storage_options = parsed.copy()
         return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
+    # -- WRITING -----------------------------------------------------------------------------------
+
+    @staticmethod
+    def _objects_to_table(data: list[Data]) -> pa.Table:
+        assert len(data) > 0
+        cls = type(data[0])
+        assert issubclass(cls, Data)
+        assert all(type(obj) is cls for obj in data)  # same type
+
+        # Check schema
+        expected_schema = NAUTILUS_PARQUET_SCHEMA.get(cls)
+        if expected_schema is None:
+            raise RuntimeError(f"Schema not found for class {cls}")
+
+        # serializer = RECORD_BATCH_SERIALIZERS.get(cls)
+        # if serializer is None:
+        #     raise KeyError(
+        #         f"Not serializer registered for type={cls}, register in {RECORD_BATCH_SERIALIZERS.__module__}",
+        #     )
+
+        # TODO - Add rust BatchEncoder
+        def serializer(x):
+            return data
+
+        batch = serializer(data)
+        assert batch.schema == expected_schema
+        assert batch is not None
+        return pa.Table.from_batches([batch])
+
+    def write_data(self, data: list[Data]):
+        table = self._objects_to_table(data)
+
+        # Make path
+        path = ""
+
+        # Write parquet file
+        self.fs.makedirs(self.fs._parent(str(path)), exist_ok=True)
+        with pq.ParquetWriter(path, table.schema, version="2.6") as writer:
+            writer.write_table(table)
+
     # -- QUERIES -----------------------------------------------------------------------------------
 
     def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
+        # TODO - Query with datafusion
+        session = DataBackendSession()
+        data = session.quote_ticks_to_batches_bytes(None)
+
         if not is_nautilus_class(cls):
             # Special handling for generic data
-            return self.generic_data(
-                cls=cls,
-                filter_expr=filter_expr,
-                instrument_ids=instrument_ids,
-                as_nautilus=as_nautilus,
-                **kwargs,
-            )
-        else:
-            return self.reader.query(
-                cls=cls,
-                filter_expr=filter_expr,
-                instrument_ids=instrument_ids,
-                **kwargs,
-            )
+            data = [
+                GenericData(data_type=DataType(cls, metadata=kwargs.get("metadata")), data=d)
+                for d in data
+            ]
+        return data
 
     # def _query(  # (too complex)
     #     self,
@@ -385,26 +423,6 @@ class ParquetDataCatalog(BaseDataCatalog):
             return objects
 
     # ---  OVERLOADED BASE METHODS ------------------------------------------------
-    def generic_data(
-        self,
-        cls: type,
-        as_nautilus: bool = False,
-        metadata: Optional[dict] = None,
-        filter_expr: Optional[Callable] = None,
-        **kwargs,
-    ):
-        data = self.query(
-            cls=cls,
-            filter_expr=filter_expr,
-            as_dataframe=not as_nautilus,
-            **kwargs,
-        )
-        if as_nautilus:
-            if data is None:
-                return []
-            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
-        return data
-
     def instruments(
         self,
         instrument_type: Optional[type] = None,
