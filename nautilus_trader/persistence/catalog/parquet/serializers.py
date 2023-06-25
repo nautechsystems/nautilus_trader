@@ -20,7 +20,10 @@ import pyarrow as pa
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.persistence.catalog.parquet.schema import NAUTILUS_PARQUET_SCHEMA
 
 
 _PARQUET_SERIALIZER: dict[type, Callable] = {}
@@ -53,6 +56,7 @@ def register_parquet(
     schema: Optional[pa.Schema],
     serializer: Optional[Callable],
     deserializer: Optional[Callable] = None,
+    # partition_keys: Optional[tuple[str]] = None,
     # table: Optional[type] = None
 ):
     """
@@ -163,7 +167,7 @@ class ParquetSerializer:
 
 def make_dict_serializer(schema: pa.Schema):
     def inner(data: list[DATA_OR_EVENTS]):
-        dicts = [d.to_dict() for d in data]
+        dicts = [d.to_dict(d) for d in data]
         return dicts_to_table(dicts, schema=schema)
 
     return inner
@@ -171,3 +175,16 @@ def make_dict_serializer(schema: pa.Schema):
 
 def dicts_to_table(data: list[dict], schema: pa.Schema) -> pa.Table:
     return pa.Table.from_pylist(data, schema=schema)
+
+
+RUST_SERIALIZERS = {
+    QuoteTick,
+    TradeTick,
+}
+
+assert not set(NAUTILUS_PARQUET_SCHEMA).intersection(RUST_SERIALIZERS)
+assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_PARQUET_SCHEMA))
+
+for cls in NAUTILUS_PARQUET_SCHEMA:
+    schema = NAUTILUS_PARQUET_SCHEMA[cls]
+    register_parquet(cls=cls, schema=schema, serializer=make_dict_serializer(schema))

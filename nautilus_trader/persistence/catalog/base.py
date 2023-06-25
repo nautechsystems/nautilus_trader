@@ -29,7 +29,9 @@ from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.singleton import Singleton
-from nautilus_trader.serialization.arrow_old.util import GENERIC_DATA_PREFIX
+
+
+GENERIC_DATA_PREFIX = "genericdata_"
 
 
 class _CombinedMeta(Singleton, ABCMeta):

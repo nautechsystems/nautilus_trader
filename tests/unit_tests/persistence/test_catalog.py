@@ -43,13 +43,7 @@ class _TestPersistenceCatalog:
     def test_list_data_types(self, data_catalog, load_betfair_data):
         data_types = data_catalog.list_data_types()
 
-        expected = [
-            "betfair_ticker",
-            "betting_instrument",
-            "instrument_status_update",
-            "order_book_delta",
-            "trade_tick",
-        ]
+        expected = ["BetfairTicker", "InstrumentStatusUpdate", "OrderBookDeltas", "TradeTick"]
         assert data_types == expected
 
     def test_list_partitions(self):

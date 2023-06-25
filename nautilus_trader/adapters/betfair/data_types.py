@@ -137,7 +137,8 @@ class BetfairTicker(Ticker):
             else None,
         )
 
-    def to_dict(self):
+    @staticmethod
+    def to_dict(self: "BetfairTicker"):
         return {
             "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
