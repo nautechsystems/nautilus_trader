@@ -14,27 +14,36 @@
 # -------------------------------------------------------------------------------------------------
 
 import pathlib
+import random
 from datetime import date
 from decimal import Decimal
 from typing import Optional
 
 import fsspec
+import numpy as np
 import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CryptoFuture
@@ -601,3 +610,91 @@ class TestDataProvider:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return ParquetBarDataLoader.load(file_path=f)
+
+
+class TestDataGenerator:
+    @staticmethod
+    def simulate_value_diffs(
+        count: int,
+        max_diff: float = 10,
+        prob_increase: float = 0.25,
+        prob_decrease: float = 0.25,
+    ) -> pd.Series:
+        gen = np.random.default_rng()
+
+        def sim():
+            if random.random() <= prob_increase:  # noqa: S311
+                return gen.uniform(0, max_diff)
+            elif random.random() <= prob_decrease:  # noqa: S311
+                return -gen.uniform(0, max_diff)
+            else:
+                return 0
+
+        return pd.Series([sim() for _ in range(count)])
+
+    @staticmethod
+    def generate_time_series_index(
+        start_timestamp: str = "2020-01-01",
+        max_freq: str = "1s",
+        count: int = 100_000,
+    ) -> pd.DatetimeIndex:
+        gen = np.random.default_rng()
+        start = dt_to_unix_nanos(pd.Timestamp(start_timestamp))
+        freq_in_nanos = secs_to_nanos(pd.Timedelta(max_freq).total_seconds())
+        diffs = gen.uniform(0, freq_in_nanos, size=count - 1)
+        srs = pd.Series([start, *diffs.tolist()])
+        return pd.to_datetime(srs.cumsum(), unit="us")
+
+    @staticmethod
+    def generate_time_series(
+        start_timestamp: str = "2020-01-01",
+        start_price: float = 100.0,
+        default_quantity: int = 10,
+        max_freq: str = "1s",
+        count: int = 100_000,
+    ) -> pd.DataFrame:
+        gen = np.random.default_rng()
+        price_diffs = gen.uniform(-1, 1, size=count - 1)
+        prices = pd.Series([start_price, *price_diffs.tolist()]).cumsum()
+
+        quantity_diffs = TestDataGenerator.simulate_value_diffs(count)
+        quantity = pd.Series(default_quantity + quantity_diffs).astype(int)
+
+        index = TestDataGenerator.generate_time_series_index(start_timestamp, max_freq, count)
+        return pd.DataFrame(index=index, data={"price": prices.values, "quantity": quantity.values})
+
+    @staticmethod
+    def generate_quote_ticks(
+        instrument_id: str, price_prec: int = 4, quantity_prec: int = 4, **kwargs
+    ) -> list[QuoteTick]:
+        df: pd.DataFrame = TestDataGenerator.generate_time_series(**kwargs)
+        return [
+            QuoteTick(
+                InstrumentId.from_str(instrument_id),
+                Price(row["price"] + 1, price_prec),
+                Price(row["price"] - 1, price_prec),
+                Quantity(row["quantity"], quantity_prec),
+                Quantity(row["quantity"], quantity_prec),
+                dt_to_unix_nanos(idx),
+                dt_to_unix_nanos(idx),
+            )
+            for idx, row in df.iterrows()
+        ]
+
+    @staticmethod
+    def generate_trade_ticks(
+        instrument_id: str, price_prec: int = 4, quantity_prec: int = 4, **kwargs
+    ) -> list[TradeTick]:
+        df: pd.DataFrame = TestDataGenerator.generate_time_series(**kwargs)
+        return [
+            TradeTick(
+                InstrumentId.from_str(instrument_id),
+                Price(row["price"], price_prec),
+                Quantity(row["quantity"], quantity_prec),
+                AggressorSide.NO_AGGRESSOR,
+                TradeId(UUID4().value),
+                dt_to_unix_nanos(idx),
+                dt_to_unix_nanos(idx),
+            )
+            for idx, row in df.iterrows()
+        ]
