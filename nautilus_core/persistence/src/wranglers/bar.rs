@@ -17,9 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::time::UnixNanos;
 use nautilus_model::{
-    data::trade::TradeTick,
-    enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    data::bar::{Bar, BarType},
     types::{price::Price, quantity::Quantity},
 };
 use polars::{
@@ -30,26 +28,26 @@ use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 
 #[pyclass]
-pub struct TradeTickDataWrangler {
-    instrument_id: InstrumentId,
+pub struct BarDataWrangler {
+    bar_type: BarType,
     price_precision: u8,
     size_precision: u8,
 }
 
 #[pymethods]
-impl TradeTickDataWrangler {
+impl BarDataWrangler {
     #[new]
-    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> Self {
+    fn py_new(bar_type: &str, price_precision: u8, size_precision: u8) -> Self {
         Self {
-            instrument_id: InstrumentId::from_str(instrument_id).unwrap(),
+            bar_type: BarType::from_str(bar_type).unwrap(),
             price_precision,
             size_precision,
         }
     }
 
     #[getter]
-    fn instrument_id(&self) -> String {
-        self.instrument_id.to_string()
+    fn bar_type(&self) -> String {
+        self.bar_type.to_string()
     }
 
     #[getter]
@@ -66,14 +64,17 @@ impl TradeTickDataWrangler {
         &self,
         _py: Python,
         data: PyDataFrame,
+        default_volume: f64,
         ts_init_delta: u64,
-    ) -> PyResult<Vec<TradeTick>> {
+    ) -> PyResult<Vec<Bar>> {
         // Convert DataFrame to Series per column
         let data: DataFrame = data.into();
-        let price: &Series = data.column("price").unwrap();
-        let size: &Series = data.column("quantity").unwrap(); // TODO: Change to 'size'
-        let aggressor_side: &Series = data.column("side").unwrap();
-        let trade_id: &Series = data.column("trade_id").unwrap();
+        let open: &Series = data.column("open").unwrap();
+        let high: &Series = data.column("high").unwrap(); // TODO: Change to 'size'
+        let low: &Series = data.column("low").unwrap();
+        let close: &Series = data.column("close").unwrap();
+        let volume: &Series = &Series::new("volume", vec![default_volume; data.height()]);
+        let volume: &Series = data.column("volume").unwrap_or(volume);
         let ts_event: Series = data
             .column("timestamp")
             .unwrap()
@@ -86,29 +87,30 @@ impl TradeTickDataWrangler {
             .into_series();
 
         // Convert Series to Rust native types
-        let price_values: Vec<f64> = price
+        let open_values: Vec<f64> = open
             .f64()
             .unwrap()
             .into_iter()
             .map(Option::unwrap)
             .collect();
-        let size_values: Vec<f64> = size
+        let high_values: Vec<f64> = high
             .f64()
             .unwrap()
             .into_iter()
             .map(Option::unwrap)
             .collect();
-        let aggressor_side_values: Vec<AggressorSide> = aggressor_side
-            .utf8()
+        let low_values: Vec<f64> = low.f64().unwrap().into_iter().map(Option::unwrap).collect();
+        let close_values: Vec<f64> = close
+            .f64()
             .unwrap()
             .into_iter()
-            .map(|val| AggressorSide::from_str(val.unwrap()).unwrap())
+            .map(Option::unwrap)
             .collect();
-        let trade_id_values: Vec<TradeId> = trade_id
-            .utf8()
+        let volume_values: Vec<f64> = volume
+            .f64()
             .unwrap()
             .into_iter()
-            .map(|val| TradeId::from_str(val.unwrap()).unwrap())
+            .map(Option::unwrap)
             .collect();
         let ts_event_values: Vec<i64> = ts_event
             .i64()
@@ -118,25 +120,27 @@ impl TradeTickDataWrangler {
             .collect();
 
         // Map Series to Nautilus objects
-        let ticks: Vec<TradeTick> = price_values
+        let bars: Vec<Bar> = open_values
             .into_iter()
-            .zip(size_values.into_iter())
-            .zip(aggressor_side_values.into_iter())
-            .zip(trade_id_values.into_iter())
+            .zip(high_values.into_iter())
+            .zip(low_values.into_iter())
+            .zip(close_values.into_iter())
+            .zip(volume_values.into_iter())
             .zip(ts_event_values.into_iter())
-            .map(|((((price, size), aggressor_side), trade_id), ts_event)| {
-                TradeTick::new(
-                    self.instrument_id.clone(),
-                    Price::new(price, self.price_precision),
-                    Quantity::new(size, self.size_precision),
-                    aggressor_side,
-                    trade_id,
+            .map(|(((((open, high), low), close), volume), ts_event)| {
+                Bar::new(
+                    self.bar_type.clone(),
+                    Price::new(open, self.price_precision),
+                    Price::new(high, self.price_precision),
+                    Price::new(low, self.price_precision),
+                    Price::new(close, self.price_precision),
+                    Quantity::new(volume, self.size_precision),
                     ts_event as UnixNanos,
                     (ts_event as u64 + ts_init_delta) as UnixNanos,
                 )
             })
             .collect();
 
-        Ok(ticks)
+        Ok(bars)
     }
 }
