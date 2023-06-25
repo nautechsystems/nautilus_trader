@@ -152,7 +152,7 @@ impl DecodeFromRecordBatch for TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+    use std::sync::Arc;
 
     use datafusion::arrow::{
         array::{Int64Array, StringArray, UInt64Array, UInt8Array},
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn test_get_schema() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let metadata = TradeTick::get_metadata(instrument_id, 2, 0);
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
         let schema = TradeTick::get_schema(metadata.clone());
         let expected_fields = vec![
             Field::new("price", DataType::Int64, false),
@@ -182,6 +182,8 @@ mod tests {
     fn test_encode_trade_tick() {
         // Create test data
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+
         let tick1 = TradeTick {
             instrument_id: instrument_id.clone(),
             price: Price::new(100.10, 2),
@@ -203,7 +205,6 @@ mod tests {
         };
 
         let data = vec![tick1, tick2];
-        let metadata: HashMap<String, String> = HashMap::new();
         let record_batch = TradeTick::encode_batch(&metadata, &data);
 
         // Verify the encoded data
@@ -238,7 +239,8 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let metadata = create_metadata();
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let price = Int64Array::from(vec![1000000000000, 1010000000000]);
         let size = UInt64Array::from(vec![1000, 900]);

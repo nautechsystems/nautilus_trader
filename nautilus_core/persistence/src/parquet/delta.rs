@@ -22,7 +22,7 @@ use datafusion::arrow::{
 };
 use nautilus_model::{
     data::{delta::OrderBookDelta, order::BookOrder},
-    enums::{BookAction, BookType, FromU8, OrderSide},
+    enums::{BookAction, FromU8, OrderSide},
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
@@ -50,9 +50,6 @@ impl ArrowSchemaProvider for OrderBookDelta {
 fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
     let instrument_id =
         InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
-    // BookType is unused for now: clarifies data
-    let _book_type =
-        BookType::from_u8(metadata.get("book_type").unwrap().parse::<u8>().unwrap()).unwrap();
     let price_precision = metadata
         .get("price_precision")
         .unwrap()
@@ -183,24 +180,16 @@ impl DecodeFromRecordBatch for OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+    use std::sync::Arc;
 
     use datafusion::arrow::record_batch::RecordBatch;
 
     use super::*;
 
-    fn create_metadata() -> HashMap<String, String> {
-        let mut metadata = HashMap::new();
-        metadata.insert("instrument_id".to_string(), "AAPL.NASDAQ".to_string());
-        metadata.insert("book_type".to_string(), "2".to_string());
-        metadata.insert("price_precision".to_string(), "2".to_string());
-        metadata.insert("size_precision".to_string(), "0".to_string());
-        metadata
-    }
-
     #[test]
     fn test_get_schema() {
-        let metadata = create_metadata();
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
         let schema = OrderBookDelta::get_schema(metadata.clone());
         let expected_fields = vec![
             Field::new("action", DataType::UInt8, false),
@@ -220,6 +209,8 @@ mod tests {
     #[test]
     fn test_encode_batch() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+
         let delta1 = OrderBookDelta {
             instrument_id: instrument_id.clone(),
             action: BookAction::Add,
@@ -251,7 +242,6 @@ mod tests {
         };
 
         let data = vec![delta1, delta2];
-        let metadata = create_metadata();
         let record_batch = OrderBookDelta::encode_batch(&metadata, &data);
 
         let columns = record_batch.columns();
@@ -297,7 +287,8 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let metadata = create_metadata();
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let action = UInt8Array::from(vec![1, 2]);
         let side = UInt8Array::from(vec![1, 1]);
