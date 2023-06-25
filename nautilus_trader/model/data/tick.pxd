@@ -14,10 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.mem cimport PyMem_Free
-from cpython.mem cimport PyMem_Malloc
-from cpython.pycapsule cimport PyCapsule_Destructor
 from cpython.pycapsule cimport PyCapsule_GetPointer
-from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -78,8 +75,6 @@ cdef class QuoteTick(Data):
     cpdef Price extract_price(self, PriceType price_type)
     cpdef Quantity extract_volume(self, PriceType price_type)
 
-    @staticmethod
-    cdef dict to_raw_c(QuoteTick obj)
 
 cdef class TradeTick(Data):
     cdef TradeTick_t _mem
