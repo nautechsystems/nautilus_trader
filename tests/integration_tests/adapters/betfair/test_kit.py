@@ -38,10 +38,8 @@ from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
-from nautilus_trader.adapters.betfair.historic import make_betfair_reader
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -54,7 +52,6 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
 
@@ -249,13 +246,6 @@ class BetfairTestStubs:
             ],
         )
         return run_config
-
-    @staticmethod
-    def betfair_reader(
-        instrument_provider: Optional[InstrumentProvider] = None,
-        line_preprocessor: Optional[LinePreprocessor] = None,
-    ):
-        return make_betfair_reader(instrument_provider, line_preprocessor)
 
 
 class BetfairRequests:

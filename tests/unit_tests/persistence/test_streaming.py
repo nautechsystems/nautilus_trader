@@ -32,17 +32,11 @@ from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.streaming.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
-from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-
-
-pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
@@ -56,13 +50,13 @@ class TestPersistenceStreaming:
 
     def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        result = process_files(
-            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-            reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
-            instrument_provider=self.instrument_provider,
-            catalog=self.catalog,
-        )
-        assert result
+        raise NotImplementedError("Needs new record batch loader")
+        # result = process_files(
+        #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
+        #     reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
+        #     instrument_provider=self.instrument_provider,
+        #     catalog=self.catalog,
+        # )
         data = (
             self.catalog.instruments(as_nautilus=True)
             + self.catalog.instrument_status_updates(as_nautilus=True)
@@ -119,11 +113,12 @@ class TestPersistenceStreaming:
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
 
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        raise NotImplementedError("Needs new record batch loader")
+        # process_files(
+        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
+        #     catalog=self.catalog,
+        # )
 
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,

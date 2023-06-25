@@ -14,13 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import os
 from decimal import Decimal
 
-import fsspec
 import pyarrow.dataset as ds
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import QuoteTick
@@ -34,21 +31,12 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.external.core import dicts_to_dataframes
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.core import split_and_serialize
-from nautilus_trader.persistence.external.core import write_objects
-from nautilus_trader.persistence.external.core import write_tables
-from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
-from tests import TEST_DATA_DIR
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 # TODO: Implement with new Rust datafusion backend
@@ -367,58 +355,8 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class _TestPersistenceCatalog:
-    def setup(self) -> None:
-        self.catalog = data_catalog_setup(protocol=self.fs_protocol)  # type: ignore
-        self._load_data_into_catalog()
-        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-
-    def teardown(self):
-        # Cleanup
-        path = self.catalog.path
-        fs = self.catalog.fs
-        if fs.exists(path):
-            fs.rm(path, recursive=True)
-
-    def _load_data_into_catalog(self):
-        self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        # Write some betfair trades and orderbook
-        process_files(
-            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-            reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
-            instrument_provider=self.instrument_provider,
-            catalog=self.catalog,
-        )
-
-    def test_partition_key_correctly_remapped(self):
-        # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        tick = QuoteTick(
-            instrument_id=instrument.id,
-            bid=Price(10, 1),
-            ask=Price(11, 1),
-            bid_size=Quantity(10, 1),
-            ask_size=Quantity(10, 1),
-            ts_init=0,
-            ts_event=0,
-        )
-        tables = dicts_to_dataframes(split_and_serialize([tick]))
-
-        write_tables(catalog=self.catalog, tables=tables)
-
-        # Act
-        df = self.catalog.quote_ticks()
-
-        # Assert
-        assert len(df) == 1
-        self.fs.isdir(
-            os.path.join(self.catalog.path, "data", "quote_tick.parquet/instrument_id=AUD-USD.SIM"),
-        )
-        # Ensure we "unmap" the keys that we write the partition filenames as;
-        # this instrument_id should be AUD/USD not AUD-USD
-        assert df.iloc[0]["instrument_id"] == instrument.id.value
-
-    def test_list_data_types(self):
-        data_types = self.catalog.list_data_types()
+    def test_list_data_types(self, data_catalog, load_betfair_data):
+        data_types = data_catalog.list_data_types()
 
         expected = [
             "betfair_ticker",
@@ -432,7 +370,7 @@ class _TestPersistenceCatalog:
     def test_list_partitions(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        tick = QuoteTick(
+        QuoteTick(
             instrument_id=instrument.id,
             bid=Price(10, 1),
             ask=Price(11, 1),
@@ -441,8 +379,8 @@ class _TestPersistenceCatalog:
             ts_init=0,
             ts_event=0,
         )
-        tables = dicts_to_dataframes(split_and_serialize([tick]))
-        write_tables(catalog=self.catalog, tables=tables)
+        raise NotImplementedError("Needs new record batch loader")
+        # write_tables(catalog=self.catalog, tables=tables)
 
         # Act
         self.catalog.list_partitions(QuoteTick)
@@ -478,17 +416,25 @@ class _TestPersistenceCatalog:
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 
-    def test_writing_instruments_doesnt_overwrite(self):
+    def test_writing_instruments_doesnt_overwrite(self, data_catalog):
         instruments = self.catalog.instruments(as_nautilus=True)
-        write_objects(catalog=self.catalog, chunk=[instruments[0]])
-        write_objects(catalog=self.catalog, chunk=[instruments[1]])
+        data_catalog.write_data(catalog=self.catalog, chunk=[instruments[0]])
+        data_catalog.write_data(catalog=self.catalog, chunk=[instruments[1]])
         instruments = self.catalog.instruments(as_nautilus=True)
         assert len(instruments) == 2
 
-    def test_writing_instruments_overwrite(self):
+    def test_writing_instruments_overwrite(self, data_catalog):
         instruments = self.catalog.instruments(as_nautilus=True)
-        write_objects(catalog=self.catalog, chunk=[instruments[0]], merge_existing_data=False)
-        write_objects(catalog=self.catalog, chunk=[instruments[1]], merge_existing_data=False)
+        data_catalog.write_data(
+            catalog=self.catalog,
+            chunk=[instruments[0]],
+            merge_existing_data=False,
+        )
+        data_catalog.write_data(
+            catalog=self.catalog,
+            chunk=[instruments[1]],
+            merge_existing_data=False,
+        )
         instruments = self.catalog.instruments(as_nautilus=True)
         assert len(instruments) == 1
 
@@ -502,10 +448,10 @@ class _TestPersistenceCatalog:
         instruments = self.catalog.instruments(as_nautilus=True)
         assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
-    def test_data_catalog_currency_with_null_max_price_loads(self):
+    def test_data_catalog_currency_with_null_max_price_loads(self, data_catalog):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-        write_objects(catalog=self.catalog, chunk=[instrument])
+        data_catalog.write_data(catalog=self.catalog, chunk=[instrument])
 
         # Act
         instrument = self.catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
@@ -513,7 +459,7 @@ class _TestPersistenceCatalog:
         # Assert
         assert instrument.max_price is None
 
-    def test_data_catalog_instrument_ids_correctly_unmapped(self):
+    def test_data_catalog_instrument_ids_correctly_unmapped(self, data_catalog):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
@@ -525,7 +471,7 @@ class _TestPersistenceCatalog:
             ts_event=0,
             ts_init=0,
         )
-        write_objects(catalog=self.catalog, chunk=[instrument, trade_tick])
+        data_catalog.write_data(catalog=self.catalog, chunk=[instrument, trade_tick])
 
         # Act
         self.catalog.instruments()
@@ -545,14 +491,15 @@ class _TestPersistenceCatalog:
         assert len(deltas) == 2384
         assert len(filtered_deltas) == 351
 
-    def test_data_catalog_generic_data(self):
+    def test_data_catalog_generic_data(self, data_catalog):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        raise NotImplementedError("Needs new record batch loader")
+        # process_files(
+        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
+        #     catalog=self.catalog,
+        # )
 
         # Act
         df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
@@ -569,7 +516,7 @@ class _TestPersistenceCatalog:
         assert len(data) == 2745
         assert isinstance(data[0], GenericData)
 
-    def test_data_catalog_bars(self):
+    def test_data_catalog_bars(self, data_catalog):
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -580,37 +527,23 @@ class _TestPersistenceCatalog:
             bars = wrangler.process(data.set_index("timestamp"))
             return bars
 
-        binance_spot_header = [
-            "timestamp",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "ts_close",
-            "quote_volume",
-            "n_trades",
-            "taker_buy_base_volume",
-            "taker_buy_quote_volume",
-            "ignore",
-        ]
-        reader = CSVReader(block_parser=parser, header=binance_spot_header)
-
         # Act
-        _ = process_files(
-            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
-            reader=reader,
-            catalog=self.catalog,
-        )
+        raise NotImplementedError("Needs new record batch loader")
+        # reader = CSVReader(block_parser=parser, header=binance_spot_header)
+        # _ = process_files(
+        #     glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
+        #     reader=reader,
+        #     catalog=self.catalog,
+        # )
 
         # Assert
         bars = self.catalog.bars()
         assert len(bars) == 21
 
-    def test_catalog_bar_query_instrument_id(self):
+    def test_catalog_bar_query_instrument_id(self, data_catalog):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
-        write_objects(catalog=self.catalog, chunk=[bar])
+        data_catalog.write_data(catalog=self.catalog, chunk=[bar])
 
         # Act
         objs = self.catalog.bars(instrument_ids=[TestIdStubs.audusd_id().value], as_nautilus=True)
@@ -627,7 +560,7 @@ class _TestPersistenceCatalog:
         assert "tid" in trades.columns
         assert trades["trade_id"].equals(trades["tid"])
 
-    def test_catalog_persists_equity(self):
+    def test_catalog_persists_equity(self, data_catalog):
         # Arrange
         instrument = Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
@@ -657,7 +590,7 @@ class _TestPersistenceCatalog:
         )
 
         # Act
-        write_objects(catalog=self.catalog, chunk=[instrument, quote_tick])
+        data_catalog.write_data(catalog=self.catalog, chunk=[instrument, quote_tick])
         instrument_from_catalog = self.catalog.instruments(
             as_nautilus=True,
             instrument_ids=[instrument.id.value],

@@ -37,7 +37,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -113,7 +112,7 @@ class TestParquetSerializer:
         if isinstance(deserialized, list) and not isinstance(expected, list):
             expected = [expected]
         assert deserialized == expected
-        write_objects(catalog=self.catalog, chunk=[obj])
+        self.catalog.write_data([obj])
         df = self.catalog._query(cls=cls)
         assert len(df) in (1, 2)
         nautilus = self.catalog._query(cls=cls, as_dataframe=False)[0]
@@ -154,7 +153,7 @@ class TestParquetSerializer:
             deltas=[delta],
         )
         assert deserialized == expected
-        write_objects(catalog=self.catalog, chunk=[delta])
+        self.catalog.write_data([delta])
 
     @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas(self):
@@ -193,7 +192,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [deltas]
-        write_objects(catalog=self.catalog, chunk=[deltas])
+        self.catalog.write_data([deltas])
 
     @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas_grouped(self):
@@ -242,7 +241,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == deltas
-        write_objects(catalog=self.catalog, chunk=[deserialized])
+        self.catalog.write_data([deserialized])
         assert [d.action for d in deserialized.deltas] == [
             BookAction.ADD,
             BookAction.CLEAR,
@@ -259,7 +258,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [book]
-        write_objects(catalog=self.catalog, chunk=[book])
+        self.catalog.write_data([book])
 
     def test_serialize_and_deserialize_component_state_changed(self):
         event = TestEventStubs.component_state_changed()
@@ -273,7 +272,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == event
 
-        write_objects(catalog=self.catalog, chunk=[event])
+        self.catalog.write_data([event])
 
     def test_serialize_and_deserialize_trading_state_changed(self):
         event = TestEventStubs.trading_state_changed()
@@ -284,7 +283,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == event
 
-        write_objects(catalog=self.catalog, chunk=[event])
+        self.catalog.write_data([event])
 
     @pytest.mark.parametrize(
         "event",
@@ -300,7 +299,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == event
 
-        write_objects(catalog=self.catalog, chunk=[event])
+        self.catalog.write_data([event])
 
     @pytest.mark.parametrize(
         "event_func",
@@ -428,8 +427,8 @@ class TestParquetSerializer:
             TestInstrumentProvider.xbtusd_bitmex(),
             TestInstrumentProvider.btcusdt_future_binance(),
             TestInstrumentProvider.btcusdt_binance(),
-            TestInstrumentProvider.aapl_equity(),
-            TestInstrumentProvider.es_future(),
+            TestInstrumentProvider.equity(),
+            TestInstrumentProvider.future(),
             TestInstrumentProvider.aapl_option(),
         ],
     )
@@ -440,7 +439,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [instrument]
-        write_objects(catalog=self.catalog, chunk=[instrument])
+        self.catalog.write_data([instrument])
         df = self.catalog.instruments()
         assert len(df) == 1
 

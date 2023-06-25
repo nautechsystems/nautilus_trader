@@ -36,8 +36,6 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -45,8 +43,6 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
-from tests import TEST_DATA_DIR
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class _TestBacktestConfig:
@@ -94,11 +90,12 @@ class _TestBacktestConfig:
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
 
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        raise NotImplementedError("Needs convert to new loader")
+        # process_files(
+        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
+        #     catalog=self.catalog,
+        # )
 
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
@@ -117,11 +114,12 @@ class _TestBacktestConfig:
     def test_backtest_data_config_filters(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        raise NotImplementedError("Needs convert to new loader")
+        # process_files(
+        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
+        #     catalog=self.catalog,
+        # )
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs.protocol,
@@ -133,13 +131,13 @@ class _TestBacktestConfig:
         result = c.load()
         assert len(result["data"]) == 2745
 
-    @pytest.mark.skip(reason="Requires new datafusion streaming")
     def test_backtest_data_config_status_updates(self):
-        process_files(
-            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-            reader=BetfairTestStubs.betfair_reader(),
-            catalog=self.catalog,
-        )
+        raise NotImplementedError("Needs convert to new loader")
+        # process_files(
+        #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
+        #     reader=BetfairTestStubs.betfair_reader(),
+        #     catalog=self.catalog,
+        # )
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs.protocol,

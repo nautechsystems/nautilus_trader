@@ -44,7 +44,7 @@ from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AAPL_NASDAQ = TestInstrumentProvider.aapl_equity()
+AAPL_NASDAQ = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

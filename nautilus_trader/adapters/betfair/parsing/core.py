@@ -20,6 +20,7 @@ from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import MarketDefinition
+from betfair_parser.util import iter_file
 
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
@@ -48,3 +49,17 @@ class BetfairParser:
             mc_updates = market_change_to_updates(mc, ts_event, ts_init)
             updates.extend(mc_updates)
         return updates
+
+
+def parse_betfair_file(uri: str):  # noqa
+    """
+    Parse a file of streaming data.
+
+    Parameters
+    ----------
+        uri: fsspec-compatible URI.
+
+    """
+    parser = BetfairParser()
+    for mcm in iter_file(uri):
+        yield from parser.parse(mcm)

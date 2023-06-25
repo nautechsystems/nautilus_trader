@@ -49,7 +49,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-AAPL_NASDAQ = TestInstrumentProvider.aapl_equity()
+AAPL_NASDAQ = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
 
 class TestCashAccount:

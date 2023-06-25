@@ -16,6 +16,7 @@
 import os
 import pathlib
 import platform
+from itertools import groupby
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -30,13 +31,11 @@ from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.parquet.reader import ParquetReader
-from nautilus_trader.persistence.catalog.parquet.writer import ParquetWriter
-from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -85,8 +84,6 @@ class ParquetDataCatalog(BaseDataCatalog):
             path = "/" + path
 
         self.path = str(path)
-        self._reader = ParquetReader(fs=self.fs)
-        self._writer = ParquetWriter(fs=self.fs)
 
     @classmethod
     def from_env(cls):
@@ -113,9 +110,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         assert all(type(obj) is cls for obj in data)  # same type
 
         # Check schema
-        expected_schema = NAUTILUS_PARQUET_SCHEMA.get(cls)
-        if expected_schema is None:
-            raise RuntimeError(f"Schema not found for class {cls}")
+        # expected_schema = NAUTILUS_PARQUET_SCHEMA.get(cls)
+        # if expected_schema is None:
+        #     raise RuntimeError(f"Schema not found for class {cls}")
 
         # serializer = RECORD_BATCH_SERIALIZERS.get(cls)
         # if serializer is None:
@@ -128,11 +125,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             return data
 
         batch = serializer(data)
-        assert batch.schema == expected_schema
         assert batch is not None
         return pa.Table.from_batches([batch])
 
-    def write_data(self, data: list[Data]):
+    def write_data_type(self, data: list[Data]):
         table = self._objects_to_table(data)
 
         # Make path
@@ -142,6 +138,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.fs.makedirs(self.fs._parent(str(path)), exist_ok=True)
         with pq.ParquetWriter(path, table.schema, version="2.6") as writer:
             writer.write_table(table)
+
+    def write_data(self, data: list[Union[Data, Event]]):
+        for cls, single_type in groupby(
+            sorted(data, key=lambda x: type(x).__name__),
+            key=lambda x: type(x).__name__,
+        ):
+            self.write_data_type(list(single_type))
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
@@ -453,7 +456,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         #     partitions[level.name] = level.keys
         return dataset.partitioning
 
-    def list_backtests(self) -> list[str]:
+    def list_backtest_runs(self) -> list[str]:
         glob_path = f"{self.path}/backtest/*.feather"
         return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
@@ -461,16 +464,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         glob_path = f"{self.path}/live/*.feather"
         return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
-    def read_live_run(self, live_run_id: str, **kwargs):
-        return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
+    def read_live_run(self, instance_id: str, **kwargs):
+        return self._read_feather(kind="live", instance_id=instance_id, **kwargs)
 
-    def read_backtest(self, backtest_run_id: str, **kwargs):
-        return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
+    def read_backtest(self, instance_id: str, **kwargs):
+        return self._read_feather(kind="backtest", instance_id=instance_id, **kwargs)
 
-    def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
+    def _read_feather(self, kind: str, instance_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        glob_path = f"{self.path}/{kind}/{run_id}.feather/*.feather"
+        glob_path = f"{self.path}/{kind}/{instance_id}.feather/*.feather"
 
         for path in list(self.fs.glob(glob_path)):
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")

@@ -29,7 +29,6 @@ from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.persistence.external.util import py_type_to_parquet_type
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 
@@ -92,7 +91,7 @@ def _generate_batches_rust(
         session.add_file(
             "data",
             file,
-            py_type_to_parquet_type(cls),
+            {QuoteTick: "quote", TradeTick: "trade"}[cls],
         )
 
     result = session.to_query_result()
