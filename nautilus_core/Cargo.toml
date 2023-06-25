@@ -23,15 +23,15 @@ documentation = "https://docs.nautilustrader.io"
 anyhow = "1.0.71"
 chrono = "0.4.26"
 futures = "0.3.28"
-pyo3 = "0.18.3"
-pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
-pyo3-macros = "0.18.3"
+pyo3 = "0.19.0"
+pyo3-asyncio = { git = "https://github.com/nautechsystems/pyo3-asyncio.git", features = ["tokio-runtime", "tokio", "attributes"] }
+pyo3-macros = "0.19.0"
 rand = "0.8.5"
 rmp-serde = "1.1.1"
 rust_decimal = "1.30.0"
 rust_decimal_macros = "1.29.1"
 serde = { version = "1.0.164", features = ["derive"] }
-serde_json = "1.0.97"
+serde_json = "1.0.99"
 strum = { version = "0.24.1", features = ["derive"] }
 thiserror = "1.0.40"
 tracing = "0.1.37"

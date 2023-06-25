@@ -82,7 +82,7 @@ cdef class QuoteTickDataWrangler:
         ts_init_delta: int=0,
     ):
         """
-        Process the give tick dataset into Nautilus `QuoteTick` objects.
+        Process the given tick dataset into Nautilus `QuoteTick` objects.
 
         Expects columns ['bid', 'ask'] with 'timestamp' index.
         Note: The 'bid_size' and 'ask_size' columns are optional, will then use
