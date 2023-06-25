@@ -13,18 +13,90 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 import pandas as pd
 import polars as pl
 
+from nautilus_trader.core.nautilus_pyo3.model import Bar as RustBar
+
 # fmt: off
+from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
 from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
+from nautilus_trader.core.nautilus_pyo3.persistence import BarDataWrangler as RustBarDataWrangler
+from nautilus_trader.core.nautilus_pyo3.persistence import OrderBookDeltaDataWrangler as RustOrderBookDeltaDataWrangler
 from nautilus_trader.core.nautilus_pyo3.persistence import QuoteTickDataWrangler as RustQuoteTickDataWrangler
 from nautilus_trader.core.nautilus_pyo3.persistence import TradeTickDataWrangler as RustTradeTickDataWrangler
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.instruments import Instrument
 
 
 # fmt: on
+
+
+class OrderBookDeltaDataWrangler:
+    """
+    Provides a means of building lists of Nautilus `OrderBookDelta` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
+
+    Warnings
+    --------
+    This wrangler is used to build the PyO3 exposed version of `OrderBookDelta` and
+    will not work the same way of the current wranglers which build the main `Cython` trade ticks.
+
+    """
+
+    def __init__(self, instrument: Instrument) -> None:
+        self.instrument = instrument
+        self._inner_wrangler = RustOrderBookDeltaDataWrangler(
+            instrument_id=instrument.id.value,
+            price_precision=instrument.price_precision,
+            size_precision=instrument.size_precision,
+        )
+
+    def process(self, data: pl.DataFrame) -> list[RustOrderBookDelta]:
+        """
+        Process the given `data` into Nautilus `OrderBookDelta` objects.
+
+        Parameters
+        ----------
+        data : polars.DataFrame
+            The order book delta data frame to process.
+
+        Returns
+        -------
+        list[RustOrderBookDelta]
+            A list of PyO3 [pyclass] `OrderBookDelta` objects.
+
+        """
+        return self._inner_wrangler.process(data=data)
+
+    def process_from_pandas(self, data: pd.DataFrame) -> list[RustOrderBookDelta]:
+        """
+        Process the given `data` into Nautilus `OrderBookDelta` objects.
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            The order book delta data frame to process.
+
+        Returns
+        -------
+        list[RustOrderBookDelta]
+            A list of PyO3 [pyclass] `OrderBookDelta` objects.
+
+        """
+        # Convert Pandas to Polars
+        df_pl = pl.from_pandas(data)
+        index_column = pl.Series("timestamp", data.index)
+        df_pl = pl.DataFrame({"timestamp": index_column, **data})
+
+        return self.process(data=df_pl)
 
 
 class QuoteTickDataWrangler:
@@ -58,7 +130,7 @@ class QuoteTickDataWrangler:
         ts_init_delta: int = 0,
     ) -> list[RustQuoteTick]:
         """
-        Process the given quote tick data into Nautilus `QuoteTick` objects.
+        Process the given `data` into Nautilus `QuoteTick` objects.
 
         Expects columns ['bid', 'ask'] with 'timestamp' index.
         Note: The 'bid_size' and 'ask_size' columns are optional, will then use
@@ -94,7 +166,7 @@ class QuoteTickDataWrangler:
         ts_init_delta: int = 0,
     ) -> list[RustQuoteTick]:
         """
-        Process the given quote tick data into Nautilus `QuoteTick` objects.
+        Process the given `data` into Nautilus `QuoteTick` objects.
 
         Expects columns ['bid', 'ask'] with 'timestamp' index.
         Note: The 'bid_size' and 'ask_size' columns are optional, will then use
@@ -154,7 +226,7 @@ class TradeTickDataWrangler:
         ts_init_delta: int = 0,
     ) -> list[RustTradeTick]:
         """
-        Process the given trade tick data into Nautilus `TradeTick` objects.
+        Process the given `data` into Nautilus `TradeTick` objects.
 
         Parameters
         ----------
@@ -182,7 +254,7 @@ class TradeTickDataWrangler:
         ts_init_delta: int = 0,
     ) -> list[RustTradeTick]:
         """
-        Process the given trade tick data into Nautilus `TradeTick` objects.
+        Process the given `data` into Nautilus `TradeTick` objects.
 
         Parameters
         ----------
@@ -214,5 +286,100 @@ class TradeTickDataWrangler:
             ts_init_delta=ts_init_delta,
         )
 
-    def _normalize_aggressor_side(self, value) -> str:
+    def _normalize_aggressor_side(self, value: Any) -> str:
         return "BUYER" if str(value).upper() == "BUY" else "SELLER"
+
+
+class BarDataWrangler:
+    """
+    Provides a means of building lists of Nautilus `Bar` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
+
+    Warnings
+    --------
+    This wrangler is used to build the PyO3 exposed version of `Bar` and
+    will not work the same way of the current wranglers which build the main `Cython` trade ticks.
+
+    """
+
+    def __init__(self, instrument: Instrument, bar_type: BarType) -> None:
+        self.instrument = instrument
+        self.bar_type = bar_type
+        self._inner_wrangler = RustBarDataWrangler(
+            bar_type=bar_type.instrument_id.value,
+            price_precision=instrument.price_precision,
+            size_precision=instrument.size_precision,
+        )
+
+    def process(
+        self,
+        data: pl.DataFrame,
+        default_volume: float = 1_000_000.0,
+        ts_init_delta: int = 0,
+    ) -> list[RustBar]:
+        """
+        Process the given `data` into Nautilus `Bar` objects.
+
+        Parameters
+        ----------
+        data : polars.DataFrame
+            The bar data frame to process.
+        default_volume : float, default 1_000_000.0
+            The default volume for each bar (if not provided).
+        ts_init_delta : int, default 0
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system. Cannot be negative.
+
+        Returns
+        -------
+        list[RustBar]
+            A list of PyO3 [pyclass] `Bar` objects.
+
+        """
+        return self._inner_wrangler.process(
+            data=data,
+            default_volume=default_volume,
+            ts_init_delta=ts_init_delta,
+        )
+
+    def process_from_pandas(
+        self,
+        data: pd.DataFrame,
+        default_volume: float = 1_000_000.0,
+        ts_init_delta: int = 0,
+    ) -> list[RustBar]:
+        """
+        Process the given `data` into Nautilus `Bar` objects.
+
+        Parameters
+        ----------
+        data : pandas.DataFrame
+            The bar data frame to process.
+        default_volume : float, default 1_000_000.0
+            The default volume for each bar (if not provided).
+        ts_init_delta : int, default 0
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system. Cannot be negative.
+
+        Returns
+        -------
+        list[RustBar]
+            A list of PyO3 [pyclass] `Bar` objects.
+
+        """
+        # Convert Pandas to Polars
+        df_pl = pl.from_pandas(data)
+        index_column = pl.Series("timestamp", data.index)
+        df_pl = pl.DataFrame({"timestamp": index_column, **data})
+
+        return self.process(
+            data=df_pl,
+            default_volume=default_volume,
+            ts_init_delta=ts_init_delta,
+        )

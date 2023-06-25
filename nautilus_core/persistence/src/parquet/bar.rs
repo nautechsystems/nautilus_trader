@@ -25,9 +25,9 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{Data, DataSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
-impl DataSchemaProvider for Bar {
+impl ArrowSchemaProvider for Bar {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
         let fields = vec![
             Field::new("open", DataType::Int64, false),
@@ -156,26 +156,16 @@ impl DecodeFromRecordBatch for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+    use std::sync::Arc;
 
     use datafusion::arrow::record_batch::RecordBatch;
 
     use super::*;
 
-    fn create_metadata() -> HashMap<String, String> {
-        let mut metadata = HashMap::new();
-        metadata.insert(
-            "bar_type".to_string(),
-            "AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL".to_string(),
-        );
-        metadata.insert("price_precision".to_string(), "2".to_string());
-        metadata.insert("size_precision".to_string(), "0".to_string());
-        metadata
-    }
-
     #[test]
     fn test_get_schema() {
-        let metadata = create_metadata();
+        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let metadata = Bar::get_metadata(&bar_type, 2, 0);
         let schema = Bar::get_schema(metadata.clone());
         let expected_fields = vec![
             Field::new("open", DataType::Int64, false),
@@ -193,6 +183,8 @@ mod tests {
     #[test]
     fn test_encode_batch() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let metadata = Bar::get_metadata(&bar_type, 2, 0);
+
         let bar1 = Bar::new(
             bar_type.clone(),
             Price::new(100.10, 2),
@@ -215,7 +207,6 @@ mod tests {
         );
 
         let data = vec![bar1, bar2];
-        let metadata = create_metadata();
         let record_batch = Bar::encode_batch(&metadata, &data);
 
         let columns = record_batch.columns();
@@ -253,7 +244,8 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let metadata = create_metadata();
+        let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
+        let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let open = Int64Array::from(vec![100100000000, 10000000000]);
         let high = Int64Array::from(vec![102000000000, 10000000000]);

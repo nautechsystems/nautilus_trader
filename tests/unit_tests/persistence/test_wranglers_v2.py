@@ -31,8 +31,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 def test_quote_tick_data_wrangler() -> None:
     # Arrange
-    file_path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
-    tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(file_path)
+    path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+    tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(path)
 
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
 

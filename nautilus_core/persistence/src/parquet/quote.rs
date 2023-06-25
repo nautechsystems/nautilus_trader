@@ -16,26 +16,25 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
+    array::{Array, Int64Array, UInt64Array},
     datatypes::{DataType, Field, Schema, SchemaRef},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::trade::TradeTick,
-    enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    data::quote::QuoteTick,
+    identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{Data, DataSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
-impl DataSchemaProvider for TradeTick {
+impl ArrowSchemaProvider for QuoteTick {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
         let fields = vec![
-            Field::new("price", DataType::Int64, false),
-            Field::new("size", DataType::UInt64, false),
-            Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Utf8, false),
+            Field::new("bid", DataType::Int64, false),
+            Field::new("ask", DataType::Int64, false),
+            Field::new("bid_size", DataType::UInt64, false),
+            Field::new("ask_size", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -61,31 +60,31 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) 
     (instrument_id, price_precision, size_precision)
 }
 
-impl EncodeToRecordBatch for TradeTick {
+impl EncodeToRecordBatch for QuoteTick {
     fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
         // Create array builders
-        let mut price_builder = Int64Array::builder(data.len());
-        let mut size_builder = UInt64Array::builder(data.len());
-        let mut aggressor_side_builder = UInt8Array::builder(data.len());
-        let mut trade_id_builder = StringBuilder::new();
+        let mut bid_builder = Int64Array::builder(data.len());
+        let mut ask_builder = Int64Array::builder(data.len());
+        let mut bid_size_builder = UInt64Array::builder(data.len());
+        let mut ask_size_builder = UInt64Array::builder(data.len());
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
         // Iterate over data
         for tick in data {
-            price_builder.append_value(tick.price.raw);
-            size_builder.append_value(tick.size.raw);
-            aggressor_side_builder.append_value(tick.aggressor_side as u8);
-            trade_id_builder.append_value(tick.trade_id.to_string());
+            bid_builder.append_value(tick.bid.raw);
+            ask_builder.append_value(tick.ask.raw);
+            bid_size_builder.append_value(tick.bid_size.raw);
+            ask_size_builder.append_value(tick.ask_size.raw);
             ts_event_builder.append_value(tick.ts_event);
             ts_init_builder.append_value(tick.ts_init);
         }
 
         // Build arrays
-        let price_array = price_builder.finish();
-        let size_array = size_builder.finish();
-        let aggressor_side_array = aggressor_side_builder.finish();
-        let trade_id_array = trade_id_builder.finish();
+        let bid_array = bid_builder.finish();
+        let ask_array = ask_builder.finish();
+        let bid_size_array = bid_size_builder.finish();
+        let ask_size_array = ask_size_builder.finish();
         let ts_event_array = ts_event_builder.finish();
         let ts_init_array = ts_init_builder.finish();
 
@@ -93,10 +92,10 @@ impl EncodeToRecordBatch for TradeTick {
         RecordBatch::try_new(
             Self::get_schema(metadata.clone()),
             vec![
-                Arc::new(price_array),
-                Arc::new(size_array),
-                Arc::new(aggressor_side_array),
-                Arc::new(trade_id_array),
+                Arc::new(bid_array),
+                Arc::new(ask_array),
+                Arc::new(bid_size_array),
+                Arc::new(ask_size_array),
                 Arc::new(ts_event_array),
                 Arc::new(ts_init_array),
             ],
@@ -105,37 +104,36 @@ impl EncodeToRecordBatch for TradeTick {
     }
 }
 
-impl DecodeFromRecordBatch for TradeTick {
+impl DecodeFromRecordBatch for QuoteTick {
     fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
         // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let size_values = cols[1].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let aggressor_side_values = cols[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values_values = cols[3].as_any().downcast_ref::<StringArray>().unwrap();
+        let bid_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_size_values = cols[2].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let bid_size_values = cols[3].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
         // Construct iterator of values from arrays
-        let values = price_values
+        let values = bid_values
             .into_iter()
-            .zip(size_values.into_iter())
-            .zip(aggressor_side_values.into_iter())
-            .zip(trade_id_values_values.into_iter())
-            .zip(ts_event_values.into_iter())
-            .zip(ts_init_values.into_iter())
+            .zip(ask_values.iter())
+            .zip(ask_size_values.iter())
+            .zip(bid_size_values.iter())
+            .zip(ts_event_values.iter())
+            .zip(ts_init_values.iter())
             .map(
-                |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| {
+                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| {
                     Self {
                         instrument_id: instrument_id.clone(),
-                        price: Price::from_raw(price.unwrap(), price_precision),
-                        size: Quantity::from_raw(size.unwrap(), size_precision),
-                        aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)
-                            .expect("cannot parse enum value"),
-                        trade_id: TradeId::new(trade_id.unwrap()),
+                        bid: Price::from_raw(bid.unwrap(), price_precision),
+                        ask: Price::from_raw(ask.unwrap(), price_precision),
+                        bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
+                        ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
                         ts_event: ts_event.unwrap(),
                         ts_init: ts_init.unwrap(),
                     }
@@ -154,30 +152,20 @@ impl DecodeFromRecordBatch for TradeTick {
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
-    use datafusion::arrow::{
-        array::{Int64Array, StringArray, UInt64Array, UInt8Array},
-        record_batch::RecordBatch,
-    };
+    use datafusion::arrow::record_batch::RecordBatch;
 
     use super::*;
 
-    fn create_metadata() -> HashMap<String, String> {
-        let mut metadata = HashMap::new();
-        metadata.insert("instrument_id".to_string(), "AAPL.NASDAQ".to_string());
-        metadata.insert("price_precision".to_string(), "2".to_string());
-        metadata.insert("size_precision".to_string(), "0".to_string());
-        metadata
-    }
-
     #[test]
     fn test_get_schema() {
-        let metadata = create_metadata();
-        let schema = TradeTick::get_schema(metadata.clone());
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
+        let schema = QuoteTick::get_schema(metadata.clone());
         let expected_fields = vec![
-            Field::new("price", DataType::Int64, false),
-            Field::new("size", DataType::UInt64, false),
-            Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Utf8, false),
+            Field::new("bid", DataType::Int64, false),
+            Field::new("ask", DataType::Int64, false),
+            Field::new("bid_size", DataType::UInt64, false),
+            Field::new("ask_size", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -186,55 +174,55 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_trade_tick() {
+    fn test_encode_quote_tick() {
         // Create test data
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
-        let tick1 = TradeTick {
+        let tick1 = QuoteTick {
             instrument_id: instrument_id.clone(),
-            price: Price::new(100.10, 2),
-            size: Quantity::new(1000.0, 0),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("1"),
+            bid: Price::new(100.10, 2),
+            ask: Price::new(101.50, 2),
+            bid_size: Quantity::new(1000.0, 0),
+            ask_size: Quantity::new(500.0, 0),
             ts_event: 1,
             ts_init: 3,
         };
 
-        let tick2 = TradeTick {
+        let tick2 = QuoteTick {
             instrument_id,
-            price: Price::new(100.50, 2),
-            size: Quantity::new(500.0, 0),
-            aggressor_side: AggressorSide::Seller,
-            trade_id: TradeId::new("2"),
+            bid: Price::new(100.75, 2),
+            ask: Price::new(100.20, 2),
+            bid_size: Quantity::new(750.0, 0),
+            ask_size: Quantity::new(300.0, 0),
             ts_event: 2,
             ts_init: 4,
         };
 
         let data = vec![tick1, tick2];
         let metadata: HashMap<String, String> = HashMap::new();
-        let record_batch = TradeTick::encode_batch(&metadata, &data);
+        let record_batch = QuoteTick::encode_batch(&metadata, &data);
 
         // Verify the encoded data
         let columns = record_batch.columns();
-        let price_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let size_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values = columns[3].as_any().downcast_ref::<StringArray>().unwrap();
+        let bid_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
+        let ask_values = columns[1].as_any().downcast_ref::<Int64Array>().unwrap();
+        let bid_size_values = columns[2].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ask_size_values = columns[3].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_event_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
         assert_eq!(columns.len(), 6);
-        assert_eq!(price_values.len(), 2);
-        assert_eq!(price_values.value(0), 100100000000);
-        assert_eq!(price_values.value(1), 100500000000);
-        assert_eq!(size_values.len(), 2);
-        assert_eq!(size_values.value(0), 1000000000000);
-        assert_eq!(size_values.value(1), 500000000000);
-        assert_eq!(aggressor_side_values.len(), 2);
-        assert_eq!(aggressor_side_values.value(0), 1);
-        assert_eq!(aggressor_side_values.value(1), 2);
-        assert_eq!(trade_id_values.len(), 2);
-        assert_eq!(trade_id_values.value(0), "1");
-        assert_eq!(trade_id_values.value(1), "2");
+        assert_eq!(bid_values.len(), 2);
+        assert_eq!(bid_values.value(0), 100100000000);
+        assert_eq!(bid_values.value(1), 100750000000);
+        assert_eq!(ask_values.len(), 2);
+        assert_eq!(ask_values.value(0), 101500000000);
+        assert_eq!(ask_values.value(1), 100200000000);
+        assert_eq!(bid_size_values.len(), 2);
+        assert_eq!(bid_size_values.value(0), 1000000000000);
+        assert_eq!(bid_size_values.value(1), 750000000000);
+        assert_eq!(ask_size_values.len(), 2);
+        assert_eq!(ask_size_values.value(0), 500000000000);
+        assert_eq!(ask_size_values.value(1), 300000000000);
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
         assert_eq!(ts_event_values.value(1), 2);
@@ -245,29 +233,30 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let metadata = create_metadata();
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
-        let price = Int64Array::from(vec![1000000000000, 1010000000000]);
-        let size = UInt64Array::from(vec![1000, 900]);
-        let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
-        let trade_id = StringArray::from(vec!["1", "2"]);
+        let bid = Int64Array::from(vec![10000, 9900]);
+        let ask = Int64Array::from(vec![10100, 10000]);
+        let bid_size = UInt64Array::from(vec![100, 90]);
+        let ask_size = UInt64Array::from(vec![110, 100]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(metadata.clone()),
+            QuoteTick::get_schema(metadata.clone()),
             vec![
-                Arc::new(price),
-                Arc::new(size),
-                Arc::new(aggressor_side),
-                Arc::new(trade_id),
+                Arc::new(bid),
+                Arc::new(ask),
+                Arc::new(bid_size),
+                Arc::new(ask_size),
                 Arc::new(ts_event),
                 Arc::new(ts_init),
             ],
         )
         .unwrap();
 
-        let decoded_data = TradeTick::decode_batch(&metadata, record_batch);
+        let decoded_data = QuoteTick::decode_batch(&metadata, record_batch);
         assert_eq!(decoded_data.len(), 2);
     }
 }
