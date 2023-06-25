@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod implementations;
+pub mod bar;
+pub mod delta;
+pub mod quote;
+pub mod trade;
 
 use std::{
     collections::HashMap,
