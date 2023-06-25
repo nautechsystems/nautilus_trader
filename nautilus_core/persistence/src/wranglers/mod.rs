@@ -13,20 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod kmerge_batch;
-pub mod parquet;
-pub mod session;
-pub mod wranglers;
-
-use pyo3::prelude::*;
-
-/// Loaded as nautilus_pyo3.persistence
-#[pymodule]
-pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
-    m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
-    m.add_class::<parquet::NautilusDataType>()?;
-    m.add_class::<session::DataBackendSession>()?;
-    m.add_class::<session::DataQueryResult>()?;
-    Ok(())
-}
+pub mod quote;
+pub mod trade;

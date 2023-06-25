@@ -13,40 +13,49 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from io import BytesIO
-from pathlib import Path
-
+import pandas as pd
 import polars as pl
-import pyarrow as pa
+from fsspec.utils import pathlib
 
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
+from nautilus_trader.persistence.loaders import TardisTradeDataLoader
 from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
+from tests import TESTS_PACKAGE_ROOT
 
 
+TEST_DATA_DIR = pathlib.Path(TESTS_PACKAGE_ROOT).joinpath("test_data")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-def test_quote_ticks_to_record_batch_reader() -> None:
+def test_quote_tick_data_wrangler() -> None:
     # Arrange
-    file_path = Path(TEST_DATA_DIR) / "truefx-audusd-ticks.csv"
+    file_path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
     tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(file_path)
 
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
+
+    # Act
     ticks = wrangler.process(tick_data)
 
-    # Act
-    session = DataBackendSession()
+    # Assert
+    assert len(ticks) == 100_000
+    assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000"
+    assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000"
+
+
+def test_trade_tick_data_wrangler() -> None:
+    # Arrange
+    path = TEST_DATA_DIR / "tardis_trades.csv"
+    tick_data: pd.DataFrame = TardisTradeDataLoader.load(path)
+
+    wrangler = TradeTickDataWrangler(instrument=AUDUSD_SIM)
 
     # Act
-    batches_bytes = session.quote_ticks_to_batches_bytes(ticks)
-    batches_stream = BytesIO(batches_bytes)
-    reader = pa.ipc.open_stream(batches_stream)
+    ticks = wrangler.process_from_pandas(tick_data)
 
     # Assert
-    assert len(reader.read_all()) == len(ticks)
-    assert len(ticks) == 100_000
-
-    reader.close()
+    assert len(ticks) == 9999
+    assert str(ticks[0]) == "AUD/USD.SIM,9682.00000,0,BUYER,42377944,1582329602418379000"
+    assert str(ticks[-1]) == "AUD/USD.SIM,9666.84000,0,SELLER,42387942,1582337147852384000"
