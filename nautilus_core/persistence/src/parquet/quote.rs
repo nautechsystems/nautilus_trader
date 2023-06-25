@@ -26,9 +26,9 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{Data, DataSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
-impl DataSchemaProvider for QuoteTick {
+impl ArrowSchemaProvider for QuoteTick {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
         let fields = vec![
             Field::new("bid", DataType::Int64, false),
@@ -156,17 +156,10 @@ mod tests {
 
     use super::*;
 
-    fn create_metadata() -> HashMap<String, String> {
-        let mut metadata = HashMap::new();
-        metadata.insert("instrument_id".to_string(), "AAPL.NASDAQ".to_string());
-        metadata.insert("price_precision".to_string(), "2".to_string());
-        metadata.insert("size_precision".to_string(), "0".to_string());
-        metadata
-    }
-
     #[test]
     fn test_get_schema() {
-        let metadata = create_metadata();
+        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let metadata = QuoteTick::get_metadata(instrument_id, 2, 0);
         let schema = QuoteTick::get_schema(metadata.clone());
         let expected_fields = vec![
             Field::new("bid", DataType::Int64, false),

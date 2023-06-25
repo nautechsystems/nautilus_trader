@@ -16,12 +16,15 @@
 from io import BytesIO
 from pathlib import Path
 
+import pandas as pd
 import polars as pl
 import pyarrow as pa
 
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
+from nautilus_trader.persistence.loaders import TardisTradeDataLoader
 from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
@@ -31,13 +34,12 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 def test_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
-    file_path = Path(TEST_DATA_DIR) / "truefx-audusd-ticks.csv"
-    tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(file_path)
+    path = Path(TEST_DATA_DIR) / "truefx-audusd-ticks.csv"
+    tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(path)
 
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
     ticks = wrangler.process(tick_data)
 
-    # Act
     session = DataBackendSession()
 
     # Act
@@ -46,7 +48,27 @@ def test_quote_ticks_to_record_batch_reader() -> None:
     reader = pa.ipc.open_stream(batches_stream)
 
     # Assert
-    assert len(reader.read_all()) == len(ticks)
     assert len(ticks) == 100_000
+    assert len(reader.read_all()) == len(ticks)
+    reader.close()
 
+
+def test_trade_ticks_to_record_batch_reader() -> None:
+    # Arrange
+    path = Path(TEST_DATA_DIR) / "tardis_trades.csv"
+    tick_data: pd.DataFrame = TardisTradeDataLoader.load(path)
+
+    wrangler = TradeTickDataWrangler(instrument=AUDUSD_SIM)
+    ticks = wrangler.process_from_pandas(tick_data)
+
+    session = DataBackendSession()
+
+    # Act
+    batches_bytes = session.trade_ticks_to_batches_bytes(ticks)
+    batches_stream = BytesIO(batches_bytes)
+    reader = pa.ipc.open_stream(batches_stream)
+
+    # Assert
+    assert len(ticks) == 9999
+    assert len(reader.read_all()) == len(ticks)
     reader.close()
