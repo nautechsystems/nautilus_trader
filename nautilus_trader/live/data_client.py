@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `LiveDataClient` class is responsible for interfacing with a particular API
 which may be presented directly by an exchange, or broker intermediary. It
@@ -36,8 +35,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -71,6 +70,7 @@ class LiveDataClient(DataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -123,8 +123,8 @@ class LiveDataClient(DataClient):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -165,7 +165,7 @@ class LiveDataClient(DataClient):
     ) -> None:
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
             )
         else:
             if actions:
@@ -174,7 +174,7 @@ class LiveDataClient(DataClient):
                 except Exception as e:
                     self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
-                        f"{repr(e)}",
+                        f"{e!r}",
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)
@@ -283,6 +283,7 @@ class LiveMarketDataClient(MarketDataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -339,8 +340,8 @@ class LiveMarketDataClient(MarketDataClient):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -381,7 +382,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
             )
         else:
             if actions:
@@ -390,7 +391,7 @@ class LiveMarketDataClient(MarketDataClient):
                 except Exception as e:
                     self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
-                        f"{repr(e)}",
+                        f"{e!r}",
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)
@@ -606,13 +607,13 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: {data_type}",
         )
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
         self.create_task(
             self._request_instrument(instrument_id, correlation_id),
             log_msg=f"request: instrument {instrument_id}",
         )
 
-    def request_instruments(self, venue: Venue, correlation_id: UUID4):
+    def request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
         self._log.debug(f"Request instruments for {venue} {correlation_id}.")
         self.create_task(
             self._request_instruments(venue, correlation_id),
@@ -815,12 +816,12 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
         )

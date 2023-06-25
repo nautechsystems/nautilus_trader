@@ -4,7 +4,7 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
-    cdef struct Rc_String:
+    cdef struct Arc_String:
         pass
 
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
@@ -23,7 +23,7 @@ cdef extern from "../includes/core.h":
         uintptr_t cap;
 
     cdef struct UUID4_t:
-        Rc_String *value;
+        Arc_String *value;
 
     void cvec_drop(CVec cvec);
 
@@ -53,16 +53,22 @@ cdef extern from "../includes/core.h":
     # Return the decimal precision inferred from the given C string.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
+    #
     # - If `ptr` is null.
     uint8_t precision_from_cstr(const char *ptr);
 
     # Drops the C string memory at the pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
+    #
     # - If `ptr` is null.
     void cstr_drop(const char *ptr);
 
@@ -87,8 +93,11 @@ cdef extern from "../includes/core.h":
     # Returns a [`UUID4`] from C string pointer.
     #
     # # Safety
+    #
     # - Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
+    #
     # - If `ptr` cannot be cast to a valid C string.
     UUID4_t uuid4_from_cstr(const char *ptr);
 

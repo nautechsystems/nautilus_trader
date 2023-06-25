@@ -28,6 +28,7 @@ from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import Strategy
@@ -41,6 +42,7 @@ class MockCacheDatabase(CacheDatabase):
     ----------
     logger : Logger
         The logger for the database.
+
     """
 
     def __init__(self, logger: Logger):
@@ -49,6 +51,7 @@ class MockCacheDatabase(CacheDatabase):
         self.general: dict[str, bytes] = {}
         self.currencies: dict[str, Currency] = {}
         self.instruments: dict[InstrumentId, Instrument] = {}
+        self.synthetics: dict[InstrumentId, SyntheticInstrument] = {}
         self.accounts: dict[AccountId, Account] = {}
         self.orders: dict[ClientOrderId, Order] = {}
         self.positions: dict[PositionId, Position] = {}
@@ -59,6 +62,7 @@ class MockCacheDatabase(CacheDatabase):
         self.general.clear()
         self.currencies.clear()
         self.instruments.clear()
+        self.synthetics.clear()
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
@@ -73,6 +77,9 @@ class MockCacheDatabase(CacheDatabase):
 
     def load_instruments(self) -> dict:
         return self.instruments.copy()
+
+    def load_synthetics(self) -> dict:
+        return self.synthetics.copy()
 
     def load_accounts(self) -> dict:
         return self.accounts.copy()
@@ -92,8 +99,11 @@ class MockCacheDatabase(CacheDatabase):
     def load_currency(self, code: str) -> Currency:
         return self.currencies.get(code)
 
-    def load_instrument(self, instrument_id: InstrumentId) -> Optional[InstrumentId]:
+    def load_instrument(self, instrument_id: InstrumentId) -> Optional[Instrument]:
         return self.instruments.get(instrument_id)
+
+    def load_synthetic(self, instrument_id: InstrumentId) -> Optional[SyntheticInstrument]:
+        return self.synthetics.get(instrument_id)
 
     def load_account(self, account_id: AccountId) -> Optional[Account]:
         return self.accounts.get(account_id)
@@ -124,6 +134,9 @@ class MockCacheDatabase(CacheDatabase):
 
     def add_instrument(self, instrument: Instrument) -> None:
         self.instruments[instrument.id] = instrument
+
+    def add_synthetic(self, synthetic: SyntheticInstrument) -> None:
+        self.synthetics[synthetic.id] = synthetic
 
     def add_account(self, account: Account) -> None:
         self.accounts[account.id] = account

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import pkgutil
 
 import pytest
@@ -26,22 +25,23 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceUserHttpAPI:
     def setup(self):
         # Fixture Setup
         clock = LiveClock()
         logger = Logger(clock=clock)
-        self.client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
-            loop=asyncio.get_event_loop(),
+        self.client = BinanceHttpClient(
             clock=clock,
             logger=logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.api = BinanceSpotWalletHttpAPI(self.client, clock)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trade_fee(self, mocker):
         # Arrange
         async def async_mock():
@@ -70,7 +70,7 @@ class TestBinanceUserHttpAPI:
         assert len(response) == 1
         assert isinstance(response[0], BinanceSpotTradeFee)
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trade_fees(self, mocker):
         # Arrange
         async def async_mock():

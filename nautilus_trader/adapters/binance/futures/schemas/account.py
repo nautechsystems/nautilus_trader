@@ -38,7 +38,8 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
+    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC
+    SHA256).
     """
 
     asset: str  # asset name

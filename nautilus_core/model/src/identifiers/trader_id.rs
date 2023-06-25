@@ -13,25 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
-use std::rc::Rc;
+use std::{
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::{correctness, string::str_to_cstr};
+use pyo3::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[derive(Clone, Hash, PartialEq, Eq)]
+#[pyclass]
 pub struct TraderId {
-    pub value: Box<Rc<String>>,
-}
-
-impl Display for TraderId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
-    }
+    pub value: Box<Arc<String>>,
 }
 
 impl TraderId {
@@ -40,9 +35,29 @@ impl TraderId {
         correctness::valid_string(s, "`TraderId` value");
         correctness::string_contains(s, "-", "`TraderId` value");
 
-        TraderId {
-            value: Box::new(Rc::new(s.to_string())),
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
         }
+    }
+}
+
+impl Default for TraderId {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("TRADER-000"))),
+        }
+    }
+}
+
+impl Debug for TraderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl Display for TraderId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -52,6 +67,7 @@ impl TraderId {
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
@@ -72,7 +88,7 @@ pub extern "C" fn trader_id_drop(trader_id: TraderId) {
 /// Returns a [`TraderId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn trader_id_to_cstr(trader_id: &TraderId) -> *const c_char {
-    string_to_cstr(&trader_id.value)
+    str_to_cstr(&trader_id.value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

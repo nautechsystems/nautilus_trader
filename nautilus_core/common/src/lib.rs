@@ -14,8 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod clock;
+pub mod clock_api;
 pub mod enums;
 pub mod logging;
+pub mod logging_api;
 pub mod msgbus;
 pub mod testing;
 pub mod timer;
+pub mod timer_api;

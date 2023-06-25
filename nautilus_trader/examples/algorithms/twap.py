@@ -68,6 +68,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
     ----------
     config : TWAPExecAlgorithmConfig, optional
         The configuration for the instance.
+
     """
 
     def __init__(self, config: Optional[TWAPExecAlgorithmConfig] = None) -> None:
@@ -78,15 +79,21 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         self._scheduled_sizes: dict[ClientOrderId, list[Quantity]] = {}
 
     def on_start(self) -> None:
-        """Actions to be performed when the algorithm component is started."""
+        """
+        Actions to be performed when the algorithm component is started.
+        """
         # Optionally implement
 
     def on_stop(self) -> None:
-        """Actions to be performed when the algorithm component is stopped."""
+        """
+        Actions to be performed when the algorithm component is stopped.
+        """
         self.clock.cancel_timers()
 
     def on_reset(self) -> None:
-        """Actions to be performed when the algorithm component is reset."""
+        """
+        Actions to be performed when the algorithm component is reset.
+        """
         self._scheduled_sizes.clear()
 
     def on_save(self) -> dict[str, bytes]:
@@ -160,7 +167,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
         if not exec_params:
             self.log.error(
                 f"Cannot execute order: "
-                f"`exec_algorithm_params` not found for primary order {repr(order)}.",
+                f"`exec_algorithm_params` not found for primary order {order!r}.",
             )
             return
 

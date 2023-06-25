@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AssetClass
@@ -76,6 +78,10 @@ cdef class Instrument(Data):
     """The tick scheme name.\n\n:returns: `str` or ``None``"""
     cdef readonly dict info
     """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef Instrument base_from_dict_c(dict values)
@@ -89,4 +95,5 @@ cdef class Instrument(Data):
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint inverse_as_quote=*)
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*)
+    cpdef Quantity calculate_base_quantity(self, Quantity quantity, Price last_px)

@@ -24,9 +24,12 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
@@ -40,7 +43,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -83,6 +85,8 @@ cdef class SimulatedExchange:
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
     """If orders with GTD time in force will be supported by the venue.\n\n:returns: `bool`"""
+    cdef readonly bint use_random_ids
+    """If venue order and position IDs will be randomly generated UUID4s.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
@@ -119,7 +123,8 @@ cdef class SimulatedExchange:
     cpdef void adjust_account(self, Money adjustment)
     cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command)
-    cpdef void process_order_book(self, OrderBookData data)
+    cpdef void process_order_book_delta(self, OrderBookDelta delta)
+    cpdef void process_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)

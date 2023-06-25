@@ -13,7 +13,13 @@ header = '"../includes/model.h"'
     "uint8_t",
     "uint16_t",
     "uint64_t",
+    "uintptr_t",
     "int64_t",
+]
+
+"nautilus_trader.core.rust.core" = [
+    "CVec",
+    "UUID4_t",
 ]
 
 [enum]
@@ -25,32 +31,34 @@ exclude = [
 ]
 
 [export.rename]
-"BarAggregation" = "uint8_t"
-
-"UnixNanos" = "uint64_t"
-"TimedeltaNanos" = "int64_t"
-"TimeEvent" = "TimeEvent_t"
-"Currency" = "Currency_t"
-"Money" = "Money_t"
-"Price" = "Price_t"
-"Quantity" = "Quantity_t"
-"QuoteTick" = "QuoteTick_t"
-"TradeTick" = "TradeTick_t"
-"Data" = "Data_t"
 "AccountId" = "AccountId_t"
+"Bar" = "Bar_t"
+"BarAggregation" = "uint8_t"
+"BarSpecification" = "BarSpecification_t"
+"BarType" = "BarType_t"
+"BookOrder" = "BookOrder_t"
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
 "ComponentId" = "ComponentId_t"
+"Currency" = "Currency_t"
+"Data" = "Data_t"
 "ExecAlgorithmId" = "ExecAlgorithmId_t"
 "InstrumentId" = "InstrumentId_t"
+"Money" = "Money_t"
+"OrderBookDelta" = "OrderBookDelta_t"
+"OrderDenied" = "OrderDenied_t"
 "OrderListId" = "OrderListId_t"
 "PositionId" = "PositionId_t"
+"Price" = "Price_t"
+"Quantity" = "Quantity_t"
+"QuoteTick" = "QuoteTick_t"
 "StrategyId" = "StrategyId_t"
 "Symbol" = "Symbol_t"
+"TimedeltaNanos" = "int64_t"
 "TradeId" = "TradeId_t"
+"TradeTick" = "TradeTick_t"
 "TraderId" = "TraderId_t"
+"UnixNanos" = "uint64_t"
+"UUID4" = "UUID4_t"
 "Venue" = "Venue_t"
 "VenueOrderId" = "VenueOrderId_t"
-"BarSpecification" = "BarSpecification_t"
-"BarType" = "BarType_t"
-"Bar" = "Bar_t"

@@ -57,9 +57,10 @@ cdef inline list capsule_to_data_list(object capsule):
 
     return ticks
 
-@staticmethod
+
 def list_from_capsule(capsule) -> list[Data]:
     return capsule_to_data_list(capsule)
+
 
 cdef class QuoteTickDataWrangler:
     """

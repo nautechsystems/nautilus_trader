@@ -61,6 +61,8 @@ cdef class FuturesContract(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    info : dict[str, object], optional
+        The additional instrument information.
 
     Raises
     ------
@@ -88,6 +90,7 @@ cdef class FuturesContract(Instrument):
         date expiry_date,
         uint64_t ts_event,
         uint64_t ts_init,
+        dict info = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -114,7 +117,7 @@ cdef class FuturesContract(Instrument):
             taker_fee=Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
-            info={},
+            info=info,
         )
         self.underlying = underlying
         self.expiry_date = expiry_date

@@ -65,27 +65,27 @@ class TestWeightedMovingAverage:
         # Arrange
         indicator = WeightedMovingAverage(10, self.w, PriceType.MID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00002
+        assert indicator.value == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = WeightedMovingAverage(10, self.w)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00001
+        assert indicator.value == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -102,15 +102,15 @@ class TestWeightedMovingAverage:
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.wma.update_raw(1.00000)
+        self.wma.update_raw(1.0)
 
         # Act, Assert
         assert self.wma.value == 1.0
 
     def test_value_with_two_input_returns_expected_value(self):
         # Arrange
-        self.wma.update_raw(1.00000)
-        self.wma.update_raw(10.00000)
+        self.wma.update_raw(1.0)
+        self.wma.update_raw(10.0)
 
         # 10 * 1.0, 1 * 0.9
 
@@ -119,50 +119,50 @@ class TestWeightedMovingAverage:
 
     def test_value_with_no_weights(self):
         # Arrange
-        self.wma_noweights.update_raw(1.00000)
-        self.wma_noweights.update_raw(2.00000)
+        self.wma_noweights.update_raw(1.0)
+        self.wma_noweights.update_raw(2.0)
 
         # Act, Assert
         assert self.wma_noweights.value == 1.5
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
-        self.wma.update_raw(1.00000)
-        self.wma.update_raw(2.00000)
-        self.wma.update_raw(3.00000)
-        self.wma.update_raw(4.00000)
-        self.wma.update_raw(5.00000)
-        self.wma.update_raw(6.00000)
-        self.wma.update_raw(7.00000)
-        self.wma.update_raw(8.00000)
-        self.wma.update_raw(9.00000)
-        self.wma.update_raw(10.00000)
+        self.wma.update_raw(1.0)
+        self.wma.update_raw(2.0)
+        self.wma.update_raw(3.0)
+        self.wma.update_raw(4.0)
+        self.wma.update_raw(5.0)
+        self.wma.update_raw(6.0)
+        self.wma.update_raw(7.0)
+        self.wma.update_raw(8.0)
+        self.wma.update_raw(9.0)
+        self.wma.update_raw(10.0)
 
         # Act, Assert
         assert self.wma.value == pytest.approx(7.00, 2)
 
     def test_value_at_returns_expected_value(self):
         # Arrange
-        self.wma.update_raw(1.00000)
-        self.wma.update_raw(2.00000)
-        self.wma.update_raw(3.00000)
-        self.wma.update_raw(4.00000)
-        self.wma.update_raw(5.00000)
-        self.wma.update_raw(6.00000)
-        self.wma.update_raw(7.00000)
-        self.wma.update_raw(8.00000)
-        self.wma.update_raw(9.00000)
-        self.wma.update_raw(10.00000)
-        self.wma.update_raw(11.00000)
+        self.wma.update_raw(1.0)
+        self.wma.update_raw(2.0)
+        self.wma.update_raw(3.0)
+        self.wma.update_raw(4.0)
+        self.wma.update_raw(5.0)
+        self.wma.update_raw(6.0)
+        self.wma.update_raw(7.0)
+        self.wma.update_raw(8.0)
+        self.wma.update_raw(9.0)
+        self.wma.update_raw(10.0)
+        self.wma.update_raw(11.0)
 
         # Act, Assert
         assert self.wma.value == 8.0
 
     def test_reset(self):
         # Arrange
-        self.wma.update_raw(1.00000)
-        self.wma.update_raw(2.00000)
-        self.wma.update_raw(3.00000)
+        self.wma.update_raw(1.0)
+        self.wma.update_raw(2.0)
+        self.wma.update_raw(3.0)
 
         # Act
         self.wma.reset()

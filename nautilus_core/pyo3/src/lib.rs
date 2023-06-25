@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::model;
-use nautilus_persistence::persistence;
 use pyo3::{prelude::*, types::PyDict};
 
 /// Need to modify sys modules so that submodule can be loaded directly as
@@ -23,8 +21,38 @@ use pyo3::{prelude::*, types::PyDict};
 /// refer: https://github.com/PyO3/pyo3/issues/2644
 #[pymodule]
 fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // Indicators
+    let submodule = pyo3::wrap_pymodule!(nautilus_indicators::indicators);
+    m.add_wrapped(submodule)?;
+    let sys = PyModule::import(py, "sys")?;
+    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    sys_modules.set_item(
+        "nautilus_trader.core.nautilus_pyo3.indicators",
+        m.getattr("indicators")?,
+    )?;
+
+    // Model
+    let submodule = pyo3::wrap_pymodule!(nautilus_model::model);
+    m.add_wrapped(submodule)?;
+    let sys = PyModule::import(py, "sys")?;
+    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    sys_modules.set_item(
+        "nautilus_trader.core.nautilus_pyo3.model",
+        m.getattr("model")?,
+    )?;
+
+    // Network
+    let submodule = pyo3::wrap_pymodule!(nautilus_network::network);
+    m.add_wrapped(submodule)?;
+    let sys = PyModule::import(py, "sys")?;
+    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    sys_modules.set_item(
+        "nautilus_trader.core.nautilus_pyo3.network",
+        m.getattr("network")?,
+    )?;
+
     // Persistence
-    let submodule = pyo3::wrap_pymodule!(persistence);
+    let submodule = pyo3::wrap_pymodule!(nautilus_persistence::persistence);
     m.add_wrapped(submodule)?;
     let sys = PyModule::import(py, "sys")?;
     let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
@@ -33,14 +61,5 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
         m.getattr("persistence")?,
     )?;
 
-    // Model
-    let submodule = pyo3::wrap_pymodule!(model);
-    m.add_wrapped(submodule)?;
-    let sys = PyModule::import(py, "sys")?;
-    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
-    sys_modules.set_item(
-        "nautilus_trader.core.nautilus_pyo3.model",
-        m.getattr("model")?,
-    )?;
     Ok(())
 }

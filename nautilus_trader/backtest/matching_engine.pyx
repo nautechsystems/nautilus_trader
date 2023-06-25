@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 from typing import Optional
 
-from nautilus_trader.backtest.auction import default_auction_match
 
-from libc.limits cimport INT_MAX
-from libc.limits cimport INT_MIN
+# from nautilus_trader.backtest.auction import default_auction_match
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FillModel
@@ -27,19 +27,24 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
+from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
+from nautilus_trader.core.rust.model cimport orderbook_has_ask
+from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
+from nautilus_trader.model.data.book cimport BookOrder
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport DepthType
 from nautilus_trader.model.enums_c cimport LiquiditySide
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
@@ -71,7 +76,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
@@ -94,8 +98,8 @@ cdef class OrderMatchingEngine:
     ----------
     instrument : Instrument
         The market instrument for the matching engine.
-    product_id : int
-        The product ID for the instrument.
+    raw_id : uint32_t
+        The raw integer ID for the instrument.
     fill_model : FillModel
         The fill model for the matching engine.
     book_type : BookType
@@ -117,6 +121,8 @@ cdef class OrderMatchingEngine:
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_random_ids : bool, default False
+        If venue order and position IDs will be randomly generated UUID4s.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
     """
@@ -124,7 +130,7 @@ cdef class OrderMatchingEngine:
     def __init__(
         self,
         Instrument instrument not None,
-        int product_id,
+        uint32_t raw_id,
         FillModel fill_model not None,
         BookType book_type,
         OmsType oms_type,
@@ -135,7 +141,8 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
-        auction_match_algo = default_auction_match
+        bint use_random_ids = False,
+        # auction_match_algo = default_auction_match
     ):
         self._clock = clock
         self._log = LoggerAdapter(
@@ -147,7 +154,7 @@ cdef class OrderMatchingEngine:
 
         self.venue = instrument.id.venue
         self.instrument = instrument
-        self.product_id = product_id
+        self.raw_id = raw_id
         self.book_type = book_type
         self.oms_type = oms_type
         self.market_status = MarketStatus.OPEN
@@ -155,22 +162,20 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
-        self._auction_match_algo = auction_match_algo
+        self._use_random_ids = use_random_ids
+        # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
-        self._book = OrderBook.create(
-            instrument=instrument,
+        self._book = OrderBook(
+            instrument_id=instrument.id,
             book_type=book_type,
-            simulated=True,
         )
-        self._opening_auction_book = OrderBook.create(
-            instrument=instrument,
+        self._opening_auction_book = OrderBook(
+            instrument_id=instrument.id,
             book_type=BookType.L3_MBO,
-            simulated=True,
         )
-        self._closing_auction_book = OrderBook.create(
-            instrument=instrument,
+        self._closing_auction_book = OrderBook(
+            instrument_id=instrument.id,
             book_type=BookType.L3_MBO,
-            simulated=True,
         )
 
         self._account_ids: dict[TraderId, AccountId]  = {}
@@ -199,13 +204,13 @@ cdef class OrderMatchingEngine:
             f"{type(self).__name__}("
             f"venue={self.venue.value}, "
             f"instrument_id={self.instrument.id.value}, "
-            f"product_id={self.product_id})"
+            f"raw_id={self.raw_id})"
         )
 
     cpdef void reset(self):
         self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}...")
 
-        self._book.clear()
+        self._book.clear(0, 0)
         self._account_ids.clear()
         self._core.reset()
         self._target_bid = 0
@@ -248,10 +253,7 @@ cdef class OrderMatchingEngine:
         Price or ``None``
 
         """
-        best_bid_price = self._book.best_bid_price()
-        if best_bid_price is None:
-            return None
-        return Price(best_bid_price, self.instrument.price_precision)
+        return self._book.best_bid_price()
 
     cpdef Price best_ask_price(self):
         """
@@ -262,10 +264,7 @@ cdef class OrderMatchingEngine:
         Price or ``None``
 
         """
-        best_ask_price = self._book.best_ask_price()
-        if best_ask_price is None:
-            return None
-        return Price(best_ask_price, self.instrument.price_precision)
+        return self._book.best_ask_price()
 
     cpdef OrderBook get_book(self):
         """
@@ -316,31 +315,63 @@ cdef class OrderMatchingEngine:
 
 # -- DATA PROCESSING ------------------------------------------------------------------------------
 
-    cpdef void process_order_book(self, OrderBookData data):
+    cpdef void process_order_book_delta(self, OrderBookDelta delta):
         """
-        Process the exchanges market for the given order book data.
+        Process the exchanges market for the given order book delta.
 
         Parameters
         ----------
-        data : OrderBookData
-            The order book data to process.
+        delta : OrderBookDelta
+            The order book delta to process.
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(delta, "delta")
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processing {repr(data)}...")
+            self._log.debug(f"Processing {repr(delta)}...")
 
-        if data.time_in_force == TimeInForce.GTC:
-            self._book.apply(data)
-        elif data.time_in_force == TimeInForce.AT_THE_OPEN:
-            self._opening_auction_book.apply(data)
-        elif data.time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._closing_auction_book.apply(data)
-        else:
-            raise RuntimeError(data.time_in_force)
+        self._book.apply_delta(delta)
 
-        self.iterate(data.ts_init)
+        # TODO(cs): WIP to introduce flags
+        # if data.flags == TimeInForce.GTC:
+        #     self._book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_OPEN:
+        #     self._opening_auction_book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_CLOSE:
+        #     self._closing_auction_book.apply(data)
+        # else:
+        #     raise RuntimeError(data.time_in_force)
+
+        self.iterate(delta.ts_init)
+
+    cpdef void process_order_book_deltas(self, OrderBookDeltas deltas):
+        """
+        Process the exchanges market for the given order book deltas.
+
+        Parameters
+        ----------
+        delta : OrderBookDeltas
+            The order book deltas to process.
+
+        """
+        Condition.not_none(deltas, "deltas")
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(deltas)}...")
+
+        self._book.apply_deltas(deltas)
+
+        # TODO(cs): WIP to introduce flags
+        # if data.flags == TimeInForce.GTC:
+        #     self._book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_OPEN:
+        #     self._opening_auction_book.apply(data)
+        # elif data.flags == TimeInForce.AT_THE_CLOSE:
+        #     self._closing_auction_book.apply(data)
+        # else:
+        #     raise RuntimeError(data.time_in_force)
+
+        self.iterate(deltas.ts_init)
 
     cpdef void process_quote_tick(self, QuoteTick tick) :
         """
@@ -463,28 +494,28 @@ cdef class OrderMatchingEngine:
             list traded_bids
             list traded_asks
         # Perform an auction match on this auction order book
-        traded_bids, traded_asks = self._auction_match_algo(book.bids, book.asks)
+        # traded_bids, traded_asks = self._auction_match_algo(book.bids, book.asks)
 
         cdef set client_order_ids = {c.value for c in self.cache.client_order_ids()}
 
-        cdef:
-            BookOrder order
-            Order real_order
-            PositionId venue_position_id
-        # Check filled orders from auction for any client orders and emit fills
-        for order in traded_bids + traded_asks:
-            if order.order_id in client_order_ids:
-                real_order = self.cache.order(ClientOrderId(order.order_id))
-                venue_position_id = self._get_position_id(real_order)
-                self._generate_order_filled(
-                    real_order,
-                    venue_position_id,
-                    Quantity(order.size, self.instrument.size_precision),
-                    Price(order.price, self.instrument.price_precision),
-                    self.instrument.quote_currency,
-                    Money(0.0, self.instrument.quote_currency),
-                    LiquiditySide.NO_LIQUIDITY_SIDE,
-                )
+        # cdef:
+        #     BookOrder order
+        #     Order real_order
+        #     PositionId venue_position_id
+        # # Check filled orders from auction for any client orders and emit fills
+        # for order in traded_bids + traded_asks:
+        #     if order.order_id in client_order_ids:
+        #         real_order = self.cache.order(ClientOrderId(order.order_id))
+        #         venue_position_id = self._get_position_id(real_order)
+        #         self._generate_order_filled(
+        #             real_order,
+        #             venue_position_id,
+        #             Quantity(order.size, self.instrument.size_precision),
+        #             Price(order.price, self.instrument.price_precision),
+        #             self.instrument.quote_currency,
+        #             Money(0.0, self.instrument.quote_currency),
+        #             LiquiditySide.NO_LIQUIDITY_SIDE,
+        #         )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar):
         cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
@@ -603,7 +634,7 @@ cdef class OrderMatchingEngine:
 
         # Check reduce-only instruction
         cdef Position position
-        if order.is_reduce_only:
+        if order.is_reduce_only and not order.is_closed_c():
             position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
@@ -857,12 +888,11 @@ cdef class OrderMatchingEngine:
     cdef void _process_auction_market_order(self, MarketOrder order):
         cdef:
             Instrument instrument = self.instrument
-            double price = instrument.max_price.as_double() if order.is_buy_c() else instrument.min_price.as_double()
             BookOrder book_order = BookOrder(
-                price=price,
-                size=order.quantity.as_double(),
                 side=order.side,
-                order_id=order.client_order_id.to_str(),
+                price=instrument.max_price if order.is_buy_c() else instrument.min_price,
+                size=order.quantity,
+                order_id=self._clock.timestamp_ns(),
             )
         self._process_auction_book_order(book_order, time_in_force=order.time_in_force)
 
@@ -870,18 +900,18 @@ cdef class OrderMatchingEngine:
         cdef:
             Instrument instrument = self.instrument
             BookOrder book_order = BookOrder(
-                price=order.price.as_double(),
-                size=order.quantity.as_double(),
+                price=order.price,
+                size=order.quantity,
                 side=order.side,
-                order_id=order.client_order_id.to_str(),
+                order_id=self._clock.timestamp_ns(),
             )
         self._process_auction_book_order(book_order, time_in_force=order.time_in_force)
 
     cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force):
         if time_in_force == TimeInForce.AT_THE_OPEN:
-            self._opening_auction_book.add(order)
+            self._opening_auction_book.add(order, 0, 0)
         elif time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._closing_auction_book.add(order)
+            self._closing_auction_book.add(order, 0, 0)
         else:
             raise RuntimeError(time_in_force)
 
@@ -1092,18 +1122,14 @@ cdef class OrderMatchingEngine:
         """
         self._clock.set_time(timestamp_ns)
 
-        # TODO: Convert order book to use ints rather than doubles
-        cdef list bid_levels = self._book.bids.levels
-        cdef list ask_levels = self._book.asks.levels
-
         cdef Price_t bid
         cdef Price_t ask
 
-        if bid_levels:
-            bid = price_new(bid_levels[0].price, self.instrument.price_precision)
+        if orderbook_has_bid(&self._book._mem):
+            bid = orderbook_best_bid_price(&self._book._mem)
             self._core.set_bid_raw(bid.raw)
-        if ask_levels:
-            ask = price_new(ask_levels[0].price, self.instrument.price_precision)
+        if orderbook_has_ask(&self._book._mem):
+            ask = orderbook_best_ask_price(&self._book._mem)
             self._core.set_ask_raw(ask.raw)
 
         self._core.iterate(timestamp_ns)
@@ -1156,14 +1182,11 @@ cdef class OrderMatchingEngine:
         """
         Condition.true(order.has_price_c(), "order has no limit `price`")
 
-        cdef list fills
-        cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
-        if order.side == OrderSide.BUY:
-            fills = self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
-        elif order.side == OrderSide.SELL:
-            fills = self._book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
-        else:
-            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+        cdef list fills = self._book.simulate_fills(
+            order,
+            price_prec=self.instrument.price_precision,
+            is_aggressive=False,
+        )
 
         cdef Price triggered_price = order.get_triggered_price_c()
         cdef Price price = order.price
@@ -1171,7 +1194,7 @@ cdef class OrderMatchingEngine:
         if (
             fills
             and triggered_price is not None
-            and self._book.type == BookType.L1_TBBO
+            and self._book.book_type == BookType.L1_TBBO
             and order.liquidity_side == LiquiditySide.TAKER
         ):
             ########################################################################
@@ -1198,7 +1221,7 @@ cdef class OrderMatchingEngine:
         cdef Price initial_fill_price
         if (
             fills
-            and self._book.type == BookType.L1_TBBO
+            and self._book.book_type == BookType.L1_TBBO
             and order.liquidity_side == LiquiditySide.MAKER
         ):
             ########################################################################
@@ -1241,7 +1264,7 @@ cdef class OrderMatchingEngine:
     cpdef list determine_market_price_and_volume(self, Order order):
         """
         Return the projected fills for the given *marketable* order filling
-        aggressively into its order side.
+        aggressively into the opposite order side.
 
         The list may be empty if no fills.
 
@@ -1255,18 +1278,15 @@ cdef class OrderMatchingEngine:
         list[tuple[Price, Quantity]]
 
         """
-        cdef list fills
-        cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
-        if order.side == OrderSide.BUY:
-            fills = self._book.asks.simulate_order_fills(order=submit_order)
-        elif order.side == OrderSide.SELL:
-            fills = self._book.bids.simulate_order_fills(order=submit_order)
-        else:
-            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+        cdef list fills = self._book.simulate_fills(
+            order,
+            price_prec=self.instrument.price_precision,
+            is_aggressive=True,
+        )
 
+        cdef Price price
         cdef Price triggered_price
-        if self._book.type == BookType.L1_TBBO and fills:
+        if self._book.book_type == BookType.L1_TBBO and fills:
             triggered_price = order.get_triggered_price_c()
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 if order.side == OrderSide.BUY:
@@ -1335,10 +1355,11 @@ cdef class OrderMatchingEngine:
             return  # Order canceled
 
         order.liquidity_side = LiquiditySide.TAKER
+        cdef list fills = self.determine_market_price_and_volume(order)
 
         self.apply_fills(
             order=order,
-            fills=self.determine_market_price_and_volume(order),
+            fills=fills,
             liquidity_side=order.liquidity_side,
             venue_position_id=venue_position_id,
             position=position,
@@ -1380,9 +1401,11 @@ cdef class OrderMatchingEngine:
             self.cancel_order(order)
             return  # Order canceled
 
+        cdef list fills = self.determine_limit_price_and_volume(order)
+
         self.apply_fills(
             order=order,
-            fills=self.determine_limit_price_and_volume(order),
+            fills=fills,
             liquidity_side=order.liquidity_side,
             venue_position_id=venue_position_id,
             position=position,
@@ -1483,8 +1506,7 @@ cdef class OrderMatchingEngine:
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
                 # Adjust fill to honor reduce only execution
                 raw_org_qty = fill_qty._mem.raw
-                raw_adj_qty = fill_qty._mem.raw - (
-                            fill_qty._mem.raw - position.quantity._mem.raw)
+                raw_adj_qty = fill_qty._mem.raw - (fill_qty._mem.raw - position.quantity._mem.raw)
                 fill_qty = Quantity.from_raw_c(raw_adj_qty, fill_qty._mem.precision)
                 updated_qty = Quantity.from_raw_c(
                     order.quantity._mem.raw - (raw_org_qty - raw_adj_qty),
@@ -1592,7 +1614,7 @@ cdef class OrderMatchingEngine:
         cdef double notional = self.instrument.notional_value(
             quantity=last_qty,
             price=last_px,
-            inverse_as_quote=False,
+            use_quote_for_inverse=False,
         ).as_f64_c()
 
         cdef double commission_f64
@@ -1606,7 +1628,7 @@ cdef class OrderMatchingEngine:
             )
 
         cdef Money commission
-        if self.instrument.is_inverse:  # and not inverse_as_quote:
+        if self.instrument.is_inverse:  # Not using quote for inverse (see above):
             commission = Money(commission_f64, self.instrument.base_currency)
         else:
             commission = Money(commission_f64, self.instrument.quote_currency)
@@ -1632,7 +1654,7 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
-                if child_order.position_id is None:
+                if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
                         venue=self.venue,
@@ -1713,32 +1735,41 @@ cdef class OrderMatchingEngine:
 
     cdef PositionId _generate_venue_position_id(self):
         self._position_count += 1
-        return PositionId(
-            f"{self.venue.to_str()}-{self.product_id}-{self._position_count:03d}")
+        if self._use_random_ids:
+            return PositionId(str(uuid.uuid4()))
+        else:
+            return PositionId(f"{self.venue.to_str()}-{self.raw_id}-{self._position_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self):
         self._order_count += 1
-        return VenueOrderId(
-            f"{self.venue.to_str()}-{self.product_id}-{self._order_count:03d}")
+        if self._use_random_ids:
+            return VenueOrderId(str(uuid.uuid4()))
+        else:
+            return VenueOrderId(f"{self.venue.to_str()}-{self.raw_id}-{self._order_count:03d}")
 
     cdef TradeId _generate_trade_id(self):
         self._execution_count += 1
         return TradeId(self._generate_trade_id_str())
 
     cdef str _generate_trade_id_str(self):
-        return f"{self.venue.to_str()}-{self.product_id}-{self._execution_count:03d}"
+        if self._use_random_ids:
+            return str(uuid.uuid4())
+        else:
+            return f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}"
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void accept_order(self, Order order):
-        self._generate_order_accepted(order)
+        # Check if order already accepted (being added back into the matching engine)
+        if not order.status_c() == OrderStatus.ACCEPTED:
+            self._generate_order_accepted(order)
 
-        if (
-            order.order_type == OrderType.TRAILING_STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            if order.trigger_price is None:
-                self._update_trailing_stop_order(order)
+            if (
+                order.order_type == OrderType.TRAILING_STOP_MARKET
+                or order.order_type == OrderType.TRAILING_STOP_LIMIT
+            ):
+                if order.trigger_price is None:
+                    self._update_trailing_stop_order(order)
 
         self._core.add_order(order)
 

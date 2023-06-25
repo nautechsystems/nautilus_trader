@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data import Bar
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 

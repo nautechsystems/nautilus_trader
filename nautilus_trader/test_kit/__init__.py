@@ -12,8 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
-The test kit contains test doubles and helpers to support the NautilusTrader
-test suite, as well as supporting testing for downstream projects and packages.
+The test kit contains test doubles and helpers to support the NautilusTrader test suite,
+as well as supporting testing for downstream projects and packages.
 """

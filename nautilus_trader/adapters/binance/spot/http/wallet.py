@@ -36,6 +36,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
+
     """
 
     def __init__(
@@ -66,6 +67,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
             Optional number of milliseconds after timestamp the request is valid
         timestamp : str
             Millisecond timestamp of the request
+
         """
 
         timestamp: str
@@ -89,6 +91,7 @@ class BinanceSpotWalletHttpAPI:
     ----------
     client : BinanceHttpClient
         The Binance REST API client.
+
     """
 
     def __init__(
@@ -103,13 +106,15 @@ class BinanceSpotWalletHttpAPI:
 
         if not account_type.is_spot_or_margin:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT, MARGIN_CROSS or MARGIN_ISOLATED, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not SPOT, MARGIN or ISOLATED_MARGIN, was {account_type}",  # pragma: no cover
             )
 
         self._endpoint_spot_trade_fee = BinanceSpotTradeFeeHttp(client, self.base_endpoint)
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock."""
+        """
+        Create Binance timestamp from internal clock.
+        """
         return str(self._clock.timestamp_ms())
 
     async def query_spot_trade_fees(

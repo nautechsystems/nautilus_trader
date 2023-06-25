@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import pickle
 from decimal import Decimal
 from typing import Optional, Union
 
 import pandas as pd
 
+from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
 from nautilus_trader.config import BacktestEngineConfig
@@ -66,6 +68,8 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.data.book cimport OrderBookDelta
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
@@ -82,7 +86,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
@@ -358,6 +361,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
+        use_random_ids: bool = False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -397,6 +401,8 @@ cdef class BacktestEngine:
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
+        use_random_ids : bool, default False
+            If venue order and position IDs will be randomly generated UUID4s.
 
         Raises
         ------
@@ -442,6 +448,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
+            use_random_ids=use_random_ids,
         )
 
         self._venues[venue] = exchange
@@ -721,6 +728,10 @@ cdef class BacktestEngine:
         Reset the backtest engine.
 
         All stateful fields are reset to their initial value.
+
+        Note: instruments and data are not dropped/reset, this can be done through a
+        separate call to `.clear_data()` if desired.
+
         """
         self._log.debug(f"Resetting...")
 
@@ -778,12 +789,33 @@ cdef class BacktestEngine:
         self._data_len = 0
         self._index = 0
 
+    def clear_actors(self) -> None:
+        """
+        Clear all actors from the engines internal trader.
+
+        """
+        self._trader.clear_actors()
+
+    def clear_strategies(self) -> None:
+        """
+        Clear all trading strategies from the engines internal trader.
+
+        """
+        self._trader.clear_strategies()
+
+    def clear_exec_algorthms(self) -> None:
+        """
+        Clear all execution algorithms from the engines internal trader.
+
+        """
+        self._trader.clear_exec_algorthms()
+
     def dispose(self) -> None:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
 
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
+        Calling this method multiple times has the same effect as calling it once (it is idempotent).
+        Once called, it cannot be reversed, and no other methods should be called on this instance.
 
         """
         self.clear_data()
@@ -857,9 +889,12 @@ cdef class BacktestEngine:
         if self.kernel.emulator.is_running:
             self.kernel.emulator.stop()
 
-        # Process remaining messages
-        for exchange in self._venues.values():
-            exchange.process(self.kernel.clock.timestamp_ns())
+        try:
+            # Process remaining messages
+            for exchange in self._venues.values():
+                exchange.process(self.kernel.clock.timestamp_ns())
+        except AccountError:
+            pass
 
         self._run_finished = self._clock.utc_now()
         self._backtest_end = self.kernel.clock.utc_now()
@@ -946,11 +981,24 @@ cdef class BacktestEngine:
             self._backtest_start = start
             for exchange in self._venues.values():
                 exchange.initialize_account()
-            self._kernel.data_engine.start()
-            self._kernel.risk_engine.start()
-            self._kernel.exec_engine.start()
-            self._kernel.emulator.start()
-            self._kernel.trader.start()
+                ###################################################################################
+                open_orders = self._kernel.cache.orders_open(venue=exchange.id)
+                for order in open_orders:
+                    if order.is_emulated:
+                        # Order should be loaded in the emulator already
+                        continue
+                    matching_engine = exchange.get_matching_engine(order.instrument_id)
+                    if matching_engine is None:
+                        self._log.error(
+                            f"No matching engine for {order.instrument_id} to process {order}.",
+                        )
+                        continue
+                    matching_engine.process_order(order, order.account_id)
+                ###################################################################################
+
+            # Common kernel start-up sequence
+            asyncio.run(self._kernel.start())
+
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
             self._log_pre_run()
@@ -968,56 +1016,66 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
+        cdef bint force_stop = False
         cdef uint64_t last_ns = 0
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
-        while data is not None:
-            if data.ts_init > end_ns:
-                # End of backtest
-                break
-            if data.ts_init > last_ns:
-                # Advance clocks to the next data time
-                raw_handlers = self._advance_time(data.ts_init, clocks)
-                raw_handlers_count = raw_handlers.len
+        try:
+            while data is not None:
+                if data.ts_init > end_ns:
+                    # End of backtest
+                    break
+                if data.ts_init > last_ns:
+                    # Advance clocks to the next data time
+                    raw_handlers = self._advance_time(data.ts_init, clocks)
+                    raw_handlers_count = raw_handlers.len
 
-            # Process data through venue
-            if isinstance(data, OrderBookData):
-                self._venues[data.instrument_id.venue].process_order_book(data)
-            elif isinstance(data, QuoteTick):
-                self._venues[data.instrument_id.venue].process_quote_tick(data)
-            elif isinstance(data, TradeTick):
-                self._venues[data.instrument_id.venue].process_trade_tick(data)
-            elif isinstance(data, Bar):
-                self._venues[data.bar_type.instrument_id.venue].process_bar(data)
-            elif isinstance(data, VenueStatusUpdate):
-                self._venues[data.venue].process_venue_status(data)
-            elif isinstance(data, InstrumentStatusUpdate):
-                self._venues[data.instrument_id.venue].process_instrument_status(data)
+                # Process data through venue
+                if isinstance(data, OrderBookDelta):
+                    self._venues[data.instrument_id.venue].process_order_book_delta(data)
+                elif isinstance(data, OrderBookDeltas):
+                    self._venues[data.instrument_id.venue].process_order_book_deltas(data)
+                elif isinstance(data, QuoteTick):
+                    self._venues[data.instrument_id.venue].process_quote_tick(data)
+                elif isinstance(data, TradeTick):
+                    self._venues[data.instrument_id.venue].process_trade_tick(data)
+                elif isinstance(data, Bar):
+                    self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+                elif isinstance(data, VenueStatusUpdate):
+                    self._venues[data.venue].process_venue_status(data)
+                elif isinstance(data, InstrumentStatusUpdate):
+                    self._venues[data.instrument_id.venue].process_instrument_status(data)
 
-            self._data_engine.process(data)
+                self._data_engine.process(data)
 
-            # Process all exchange messages
-            for exchange in self._venues.values():
-                exchange.process(data.ts_init)
+                # Process all exchange messages
+                for exchange in self._venues.values():
+                    exchange.process(data.ts_init)
 
-            last_ns = data.ts_init
-            data = self._next()
-            if data is None or data.ts_init > last_ns:
-                # Finally process the time events
-                self._process_raw_time_event_handlers(
-                    raw_handlers,
-                    clocks,
-                    last_ns,
-                    only_now=True,
-                )
+                last_ns = data.ts_init
+                data = self._next()
+                if data is None or data.ts_init > last_ns:
+                    # Finally process the time events
+                    self._process_raw_time_event_handlers(
+                        raw_handlers,
+                        clocks,
+                        last_ns,
+                        only_now=True,
+                    )
 
-                # Drop processed event handlers
-                vec_time_event_handlers_drop(raw_handlers)
-                raw_handlers_count = 0
+                    # Drop processed event handlers
+                    vec_time_event_handlers_drop(raw_handlers)
+                    raw_handlers_count = 0
 
-            self._iteration += 1
+                self._iteration += 1
+        except AccountError as e:
+            force_stop = True
+            self._log.error(f"Stopping backtest from {e}.")
         # ---------------------------------------------------------------------#
+
+        if force_stop:
+            return
 
         # Process remaining messages
         for exchange in self._venues.values():
@@ -1077,10 +1135,12 @@ cdef class BacktestEngine:
         cdef:
             uint64_t i
             uint64_t ts_event_init
+            uint64_t ts_last_init = 0
             TimeEventHandler_t raw_handler
             TimeEvent event
             TestClock clock
             object callback
+            SimulatedExchange exchange
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
@@ -1093,6 +1153,12 @@ cdef class BacktestEngine:
             # Cast raw `PyObject *` to a `PyObject`
             callback = <object>raw_handler.callback_ptr
             callback(event)
+
+            if ts_event_init != ts_last_init:
+                # Process exchange messages
+                ts_last_init = ts_event_init
+                for exchange in self._venues.values():
+                    exchange.process(ts_event_init)
 
     def _log_pre_run(self):
         log_memory(self._log)
@@ -1239,7 +1305,7 @@ cdef class BacktestEngine:
             self._kernel.data_engine.register_client(client)
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
-        cdef ClientId client_id = ClientId(venue.to_str())
+        cdef ClientId client_id = ClientId(venue.value)
         if client_id not in self._kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,

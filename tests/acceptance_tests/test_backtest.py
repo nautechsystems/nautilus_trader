@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -44,15 +42,16 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
@@ -63,7 +62,6 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
@@ -121,7 +119,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            996_798.21,
+            996_814.33,
             USD,
         )
 
@@ -183,7 +181,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1_023_449.90,
+            1_023_530.50,
             USD,
         )
 
@@ -247,7 +245,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            961_323.91,
+            961_069.95,
             GBP,
         )
 
@@ -275,7 +273,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            1_009_220.90,
+            1_008_966.94,
             GBP,
         )
 
@@ -303,7 +301,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 41761
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            963_946.75,
+            241_080.17,
             GBP,
         )
 
@@ -523,7 +521,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
         assert btc_ending_balance == Money(5.71250000, BTC)
-        assert usdt_ending_balance == Money(10_176_062.78093484, USDT)
+        assert usdt_ending_balance == Money(10_176_033.01433484, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -559,7 +557,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
         assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10_017_571.72928400, USDT)
+        assert usdt_ending_balance == Money(10_017_571.74970600, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -616,7 +614,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert strategy.fast_ema.count == 1771
         assert self.engine.iteration == 100_000
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
-            991_360.15,
+            991_881.44,
             AUD,
         )
 
@@ -732,7 +730,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
-                d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+                d
+                for d in data
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
+                and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
             self.engine.add_data(trade_ticks)
@@ -787,7 +788,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
-                d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+                d
+                for d in data
+                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
+                and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
             self.engine.add_data(trade_ticks)
@@ -813,6 +817,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9862.39",
+            "9861.76",
             GBP,
         )

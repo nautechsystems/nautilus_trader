@@ -23,17 +23,17 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
@@ -95,8 +95,8 @@ class EMACrossTrailingStopConfig(StrategyConfig, frozen=True):
 
 class EMACrossTrailingStop(Strategy):
     """
-    A simple moving average cross example strategy with a stop-market entry and
-    trailing stop.
+    A simple moving average cross example strategy with a stop-market entry and trailing
+    stop.
 
     When the fast EMA crosses the slow EMA then submits a stop-market order one
     tick above the current bar for BUY, or one tick below the current bar
@@ -116,6 +116,7 @@ class EMACrossTrailingStop(Strategy):
     ------
     ValueError
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
+
     """
 
     def __init__(self, config: EMACrossTrailingStopConfig) -> None:
@@ -148,7 +149,9 @@ class EMACrossTrailingStop(Strategy):
         self.position_id = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -191,8 +194,7 @@ class EMACrossTrailingStop(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -200,7 +202,6 @@ class EMACrossTrailingStop(Strategy):
             The instrument received.
 
         """
-        pass
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
@@ -224,7 +225,6 @@ class EMACrossTrailingStop(Strategy):
             The tick received.
 
         """
-        pass
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -236,7 +236,6 @@ class EMACrossTrailingStop(Strategy):
             The tick received.
 
         """
-        pass
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -248,7 +247,7 @@ class EMACrossTrailingStop(Strategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        # self.log.info(f"Received {bar!r}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -356,7 +355,6 @@ class EMACrossTrailingStop(Strategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event) -> None:
         """
@@ -369,18 +367,16 @@ class EMACrossTrailingStop(Strategy):
 
         """
         if isinstance(event, OrderFilled):
-            if self.trailing_stop:
-                if event.client_order_id == self.trailing_stop.client_order_id:
-                    self.trailing_stop = None
+            if self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
+                self.trailing_stop = None
         elif isinstance(event, (PositionOpened, PositionChanged)):
-            if self.entry:
-                if event.opening_order_id == self.entry.client_order_id:
-                    if event.entry == OrderSide.BUY:
-                        self.position_id = event.position_id
-                        self.trailing_stop_sell()
-                    elif event.entry == OrderSide.SELL:
-                        self.position_id = event.position_id
-                        self.trailing_stop_buy()
+            if self.entry and event.opening_order_id == self.entry.client_order_id:
+                if event.entry == OrderSide.BUY:
+                    self.position_id = event.position_id
+                    self.trailing_stop_sell()
+                elif event.entry == OrderSide.SELL:
+                    self.position_id = event.position_id
+                    self.trailing_stop_buy()
         elif isinstance(event, PositionClosed):
             self.position_id = None
 
@@ -410,7 +406,6 @@ class EMACrossTrailingStop(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -419,4 +414,3 @@ class EMACrossTrailingStop(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

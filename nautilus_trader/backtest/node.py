@@ -28,8 +28,8 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
@@ -57,13 +57,14 @@ class BacktestNode:
         If `configs` is ``None`` or empty.
     ValueError
         If `configs` contains a type other than `BacktestRunConfig`.
+
     """
 
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
         PyCondition.true(
-            all([isinstance(config, BacktestRunConfig) for config in configs]),
+            all(isinstance(config, BacktestRunConfig) for config in configs),
             "configs",
         )
 
@@ -87,8 +88,7 @@ class BacktestNode:
 
     def get_engine(self, run_config_id: str) -> Optional[BacktestEngine]:
         """
-        Return the backtest engine associated with the given run config ID
-        (if found).
+        Return the backtest engine associated with the given run config ID (if found).
 
         Parameters
         ----------
@@ -113,7 +113,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> list[BacktestResult]:  # noqa (kwargs for extensibility)
+    def run(self) -> list[BacktestResult]:
         """
         Execute a group of backtest run configs synchronously.
 
@@ -166,12 +166,11 @@ class BacktestNode:
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
-            if config.leverages:
-                leverages = {
-                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
-                }
-            else:
-                leverages = {}
+            leverages = (
+                {InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()}
+                if config.leverages
+                else {}
+            )
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],

@@ -53,6 +53,7 @@ class LiveDataEngine(DataEngine):
     ------
     TypeError
         If `config` is not of type `LiveDataEngineConfig`.
+
     """
 
     _sentinel = None
@@ -204,19 +205,19 @@ class LiveDataEngine(DataEngine):
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
-            self._cmd_queue_task.done()
+            self._cmd_queue_task = None
         if self._req_queue_task:
             self._log.debug(f"Canceling {self._req_queue_task.get_name()}...")
             self._req_queue_task.cancel()
-            self._req_queue_task.done()
+            self._req_queue_task = None
         if self._res_queue_task:
             self._log.debug(f"Canceling {self._res_queue_task.get_name()}...")
             self._res_queue_task.cancel()
-            self._res_queue_task.done()
+            self._res_queue_task = None
         if self._data_queue_task:
             self._log.debug(f"Canceling {self._data_queue_task.get_name()}...")
             self._data_queue_task.cancel()
-            self._data_queue_task.done()
+            self._data_queue_task = None
 
     def execute(self, command: DataCommand) -> None:
         """

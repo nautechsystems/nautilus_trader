@@ -80,7 +80,7 @@ impl Position {
         assert!(fill.position_id.is_some());
         assert!(fill.order_side != OrderSide::NoOrderSide);
 
-        Position {
+        Self {
             events: Vec::<OrderFilled>::new(),
             client_order_ids: Vec::<ClientOrderId>::new(),
             venue_order_ids: Vec::<VenueOrderId>::new(),
@@ -98,11 +98,11 @@ impl Position {
             entry: fill.order_side,
             side: PositionSide::Flat,
             signed_qty: 0.0,
-            quantity: fill.last_qty.clone(),
-            peak_qty: fill.last_qty.clone(),
+            quantity: fill.last_qty,
+            peak_qty: fill.last_qty,
             price_precision: instrument.price_precision,
             size_precision: instrument.size_precision,
-            multiplier: instrument.multiplier.clone(),
+            multiplier: instrument.multiplier,
             is_inverse: instrument.is_inverse,
             quote_currency: instrument.quote_currency.clone(),
             base_currency: instrument.base_currency.clone(),
@@ -196,3 +196,7 @@ impl PartialEq<Self> for Position {
 }
 
 impl Eq for Position {}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -20,6 +22,11 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class Ticker(Data):
     cdef readonly InstrumentId instrument_id
     """The ticker instrument ID.\n\n:returns: `InstrumentId`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+
 
     @staticmethod
     cdef Ticker from_dict_c(dict values)

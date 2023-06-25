@@ -15,10 +15,8 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::clock::{TestClock, TestClockAPI};
-use nautilus_common::timer::TimeEventHandler;
-use nautilus_core::cvec::CVec;
-use nautilus_core::time::UnixNanos;
+use nautilus_common::{clock::TestClock, clock_api::TestClock_API, timer::TimeEventHandler};
+use nautilus_core::{cvec::CVec, time::UnixNanos};
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
@@ -53,7 +51,7 @@ impl TimeEventAccumulator {
 
 impl Default for TimeEventAccumulator {
     fn default() -> Self {
-        TimeEventAccumulator::new()
+        Self::new()
     }
 }
 
@@ -91,7 +89,7 @@ pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorA
 #[no_mangle]
 pub extern "C" fn time_event_accumulator_advance_clock(
     accumulator: &mut TimeEventAccumulatorAPI,
-    clock: &mut TestClockAPI,
+    clock: &mut TestClock_API,
     to_time_ns: UnixNanos,
     set_time: u8,
 ) {
@@ -108,12 +106,11 @@ pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumu
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
-    use pyo3::types::PyList;
-    use pyo3::{AsPyPointer, Py, Python};
+    use pyo3::{types::PyList, AsPyPointer, Py, Python};
+
+    use super::*;
 
     #[test]
     fn test_accumulator_drain_sorted() {

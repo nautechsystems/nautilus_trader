@@ -52,12 +52,9 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceUserTrade(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Spot/Margin`
-        `GET /api/v3/myTrades`
-    HTTP response from `Binance USD-M Futures`
-        `GET /fapi/v1/userTrades`
-    HTTP response from `Binance COIN-M Futures`
-        `GET /dapi/v1/userTrades`
+    HTTP response from `Binance Spot/Margin` `GET /api/v3/myTrades` HTTP response from
+    `Binance USD-M Futures` `GET /fapi/v1/userTrades` HTTP response from `Binance COIN-M
+    Futures` `GET /dapi/v1/userTrades`
     """
 
     commission: str
@@ -121,12 +118,9 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
 
 class BinanceOrder(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Spot/Margin`
-        `GET /api/v3/order`
-    HTTP response from `Binance USD-M Futures`
-        `GET /fapi/v1/order`
-    HTTP response from `Binance COIN-M Futures`
-        `GET /dapi/v1/order`
+    HTTP response from `Binance Spot/Margin` `GET /api/v3/order` HTTP response from
+    `Binance USD-M Futures` `GET /fapi/v1/order` HTTP response from `Binance COIN-M
+    Futures` `GET /dapi/v1/order`
     """
 
     symbol: str
@@ -240,7 +234,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
 
 class BinanceStatusCode(msgspec.Struct, frozen=True):
     """
-    HTTP response status code
+    HTTP response status code.
     """
 
     code: int

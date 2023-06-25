@@ -20,7 +20,7 @@ import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
@@ -37,7 +37,7 @@ def instrument_setup(data_client, instrument, contract_details):
     data_client.instrument_provider.add(instrument)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_connect(data_client):
     data_client.connect()
     await asyncio.sleep(0)
@@ -45,7 +45,7 @@ async def test_connect(data_client):
     assert data_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_subscribe_trade_ticks(data_client):
     # Arrange
     instrument_aapl = IBTestProviderStubs.aapl_instrument()
@@ -74,7 +74,7 @@ async def test_subscribe_trade_ticks(data_client):
     assert kwargs == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_subscribe_order_book_deltas(data_client, instrument):
     # Arrange
     instrument = IBTestProviderStubs.aapl_instrument()
@@ -105,7 +105,7 @@ async def test_subscribe_order_book_deltas(data_client, instrument):
     assert kwargs == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_book_update(data_client):
     # Arrange
     instrument_setup(
@@ -119,7 +119,7 @@ async def test_on_book_update(data_client):
         data_client._on_order_book_snapshot(ticker=ticker, book_type=BookType.L2_MBP)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_ticker_update(data_client):
     # Arrange
     instrument_setup(
@@ -133,7 +133,7 @@ async def test_on_ticker_update(data_client):
         data_client._on_trade_ticker_update(ticker=ticker)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_quote_tick_update(data_client):
     # Arrange
     instrument_setup(
@@ -154,7 +154,7 @@ async def test_on_quote_tick_update(data_client):
     data_client._on_quote_tick_update(tick=ticker, contract=contract)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_quote_tick_update_nans(data_client, instrument):
     # Arrange
     instrument_setup(data_client, instrument, IBTestProviderStubs.aapl_equity_contract_details())
@@ -176,7 +176,7 @@ async def test_on_quote_tick_update_nans(data_client, instrument):
     expected = QuoteTick.from_dict(
         {
             "type": "QuoteTick",
-            "instrument_id": "AAPL.AMEX",
+            "instrument_id": "AAPL.NASDAQ",
             "bid": "0.00",
             "ask": "0.00",
             "bid_size": "44600",

@@ -27,22 +27,20 @@ from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterTyp
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 ################################################################################
@@ -124,6 +122,7 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     Schema of a binance orderbook depth.
 
     GET response of `depth`.
+
     """
 
     lastUpdateId: int
@@ -140,20 +139,35 @@ class BinanceDepth(msgspec.Struct, frozen=True):
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-    ) -> OrderBookSnapshot:
-        return OrderBookSnapshot(
-            instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
-            bids=[[float(o[0]), float(o[1])] for o in self.bids or []],
-            asks=[[float(o[0]), float(o[1])] for o in self.asks or []],
-            ts_event=ts_init,
-            ts_init=ts_init,
-            sequence=self.lastUpdateId or 0,
-        )
+    ) -> OrderBookDeltas:
+        bids = [
+            BookOrder(OrderSide.BUY, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
+            for o in self.bids or []
+        ]
+        asks = [
+            BookOrder(OrderSide.SELL, Price.from_str(o[0]), Quantity.from_str(o[1]), 0)
+            for o in self.asks or []
+        ]
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId)]
+        deltas += [
+            OrderBookDelta(
+                instrument_id,
+                BookAction.ADD,
+                o,
+                ts_init,
+                ts_init,
+                sequence=self.lastUpdateId or 0,
+            )
+            for o in bids + asks
+        ]
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 class BinanceTrade(msgspec.Struct, frozen=True):
-    """Schema of a single trade."""
+    """
+    Schema of a single trade.
+    """
 
     id: int
     price: str
@@ -168,7 +182,9 @@ class BinanceTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> TradeTick:
-        """Parse Binance trade to internal TradeTick."""
+        """
+        Parse Binance trade to internal TradeTick.
+        """
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.price),
@@ -181,7 +197,9 @@ class BinanceTrade(msgspec.Struct, frozen=True):
 
 
 class BinanceAggTrade(msgspec.Struct, frozen=True):
-    """Schema of a single compressed aggregate trade."""
+    """
+    Schema of a single compressed aggregate trade.
+    """
 
     a: int  # Aggregate tradeId
     p: str  # Price
@@ -197,7 +215,9 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> TradeTick:
-        """Parse Binance trade to internal TradeTick"""
+        """
+        Parse Binance trade to internal TradeTick.
+        """
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.p),
@@ -210,7 +230,9 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
 
 
 class BinanceKline(msgspec.Struct, array_like=True):
-    """Array-like schema of single Binance kline."""
+    """
+    Array-like schema of single Binance kline.
+    """
 
     open_time: int
     open: str
@@ -230,7 +252,9 @@ class BinanceKline(msgspec.Struct, array_like=True):
         bar_type: BarType,
         ts_init: int,
     ) -> BinanceBar:
-        """Parse kline to BinanceBar."""
+        """
+        Parse kline to BinanceBar.
+        """
         return BinanceBar(
             bar_type=bar_type,
             open=Price.from_str(self.open),
@@ -248,7 +272,9 @@ class BinanceKline(msgspec.Struct, array_like=True):
 
 
 class BinanceTicker24hr(msgspec.Struct, frozen=True):
-    """Schema of single Binance 24hr ticker (FULL/MINI)."""
+    """
+    Schema of single Binance 24hr ticker (FULL/MINI).
+    """
 
     symbol: Optional[str]
     lastPrice: Optional[str]
@@ -280,7 +306,9 @@ class BinanceTicker24hr(msgspec.Struct, frozen=True):
 
 
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
-    """Schema of single Binance Price Ticker."""
+    """
+    Schema of single Binance Price Ticker.
+    """
 
     symbol: Optional[str]
     price: Optional[str]
@@ -289,7 +317,9 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
 
 
 class BinanceTickerBook(msgspec.Struct, frozen=True):
-    """Schema of a single Binance Order Book Ticker."""
+    """
+    Schema of a single Binance Order Book Ticker.
+    """
 
     symbol: Optional[str]
     bidPrice: Optional[str]
@@ -314,7 +344,9 @@ class BinanceDataMsgWrapper(msgspec.Struct):
 
 
 class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
-    """Schema of single ask/bid delta."""
+    """
+    Schema of single ask/bid delta.
+    """
 
     price: str
     size: str
@@ -327,23 +359,22 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
         ts_init: int,
         update_id: int,
     ) -> OrderBookDelta:
-        price = float(self.price)
-        size = float(self.size)
-
+        size = Quantity.from_str(self.size)
         order = BookOrder(
-            price=price,
-            size=size,
             side=side,
+            price=Price.from_str(self.price),
+            size=Quantity.from_str(self.size),
+            order_id=0,
         )
 
         return OrderBookDelta(
             instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
-            action=BookAction.UPDATE if size > 0.0 else BookAction.DELETE,
+            action=BookAction.UPDATE if size > 0 else BookAction.DELETE,
             order=order,
             ts_event=ts_event,
             ts_init=ts_init,
             sequence=update_id,
+            flags=0,
         )
 
 
@@ -360,7 +391,6 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
 
     T: Optional[int] = None  # FUTURES only, transaction time
     pu: Optional[int] = None  # FUTURES only, previous final update ID
-
     ps: Optional[str] = None  # COIN-M FUTURES only, pair
 
     def parse_to_order_book_deltas(
@@ -371,7 +401,13 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
         ts_event: int = millis_to_nanos(self.T) if self.T is not None else millis_to_nanos(self.E)
 
         bid_deltas: list[OrderBookDelta] = [
-            delta.parse_to_order_book_delta(instrument_id, OrderSide.BUY, ts_event, ts_init, self.u)
+            delta.parse_to_order_book_delta(
+                instrument_id,
+                OrderSide.BUY,
+                ts_event,
+                ts_init,
+                self.u,
+            )
             for delta in self.b
         ]
         ask_deltas: list[OrderBookDelta] = [
@@ -385,29 +421,28 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
             for delta in self.a
         ]
 
-        return OrderBookDeltas(
-            instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
-            deltas=bid_deltas + ask_deltas,
-            ts_event=ts_event,
-            ts_init=ts_init,
-            sequence=self.u,
-        )
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=bid_deltas + ask_deltas)
 
     def parse_to_order_book_snapshot(
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-    ) -> OrderBookSnapshot:
-        return OrderBookSnapshot(
-            instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
-            bids=[[float(o.price), float(o.size)] for o in self.b],
-            asks=[[float(o.price), float(o.size)] for o in self.a],
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
-            sequence=self.u,
-        )
+    ) -> OrderBookDeltas:
+        ts_event: int = millis_to_nanos(self.T)
+        bids: list[BookOrder] = [
+            BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.b
+        ]
+        asks: list[BookOrder] = [
+            BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.a
+        ]
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_event)]
+        deltas += [
+            OrderBookDelta(instrument_id, BookAction.ADD, o, ts_event, ts_init) for o in bids + asks
+        ]
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 class BinanceOrderBookMsg(msgspec.Struct, frozen=True):
@@ -481,7 +516,9 @@ class BinanceAggregatedTradeData(msgspec.Struct, frozen=True):
 
 
 class BinanceAggregatedTradeMsg(msgspec.Struct, frozen=True):
-    """WebSocket message."""
+    """
+    WebSocket message.
+    """
 
     stream: str
     data: BinanceAggregatedTradeData
@@ -575,7 +612,9 @@ class BinanceTickerData(msgspec.Struct, kw_only=True, frozen=True):
 
 
 class BinanceTickerMsg(msgspec.Struct, frozen=True):
-    """WebSocket message."""
+    """
+    WebSocket message.
+    """
 
     stream: str
     data: BinanceTickerData
@@ -652,7 +691,9 @@ class BinanceCandlestick(msgspec.Struct, frozen=True):
 
 
 class BinanceCandlestickData(msgspec.Struct, frozen=True):
-    """WebSocket message 'inner struct'."""
+    """
+    WebSocket message 'inner struct'.
+    """
 
     e: str
     E: int

@@ -13,15 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::ffi::c_char;
-use std::fmt;
-use std::rc::Rc;
+use std::{
+    cmp::Ordering,
+    fmt::{Display, Formatter},
+    rc::Rc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::{cstr_to_string, string_to_cstr};
-use nautilus_core::time::{TimedeltaNanos, UnixNanos};
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{
+    correctness,
+    time::{TimedeltaNanos, UnixNanos},
+    uuid::UUID4,
+};
 use pyo3::ffi;
 
 #[repr(C)]
@@ -53,8 +55,8 @@ impl TimeEvent {
     }
 }
 
-impl fmt::Display for TimeEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for TimeEvent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "TimeEvent(name={}, event_id={}, ts_event={}, ts_init={})",
@@ -97,42 +99,6 @@ impl Ord for TimeEventHandler {
     fn cmp(&self, other: &Self) -> Ordering {
         self.event.ts_event.cmp(&other.event.ts_event)
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn time_event_new(
-    name: *const c_char,
-    event_id: UUID4,
-    ts_event: u64,
-    ts_init: u64,
-) -> TimeEvent {
-    TimeEvent::new(cstr_to_string(name), event_id, ts_event, ts_init)
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_clone(event: &TimeEvent) -> TimeEvent {
-    event.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_drop(event: TimeEvent) {
-    drop(event); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_name_to_cstr(event: &TimeEvent) -> *const c_char {
-    string_to_cstr(&event.name)
-}
-
-/// Returns a [`TimeEvent`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {
-    string_to_cstr(&event.to_string())
 }
 
 pub trait Timer {

@@ -193,8 +193,6 @@ cdef class Instrument(Data):
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
 
-        super().__init__(ts_event, ts_init)
-
         self.id = instrument_id
         self.native_symbol = native_symbol
         self.asset_class = asset_class
@@ -219,6 +217,8 @@ cdef class Instrument(Data):
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
         self.info = info
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
         # Assign tick scheme if named
         if self.tick_scheme_name is not None:
@@ -495,7 +495,7 @@ cdef class Instrument(Data):
         self,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the notional value.
@@ -509,7 +509,7 @@ cdef class Instrument(Data):
             The total quantity.
         price : Price
             The price for the calculation.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -521,9 +521,33 @@ cdef class Instrument(Data):
         Condition.not_none(price, "price")
 
         if self.is_inverse:
-            if inverse_as_quote:
-                # Quantity is notional
+            if use_quote_for_inverse:
+                # Quantity is notional in quote currency
                 return Money(quantity, self.quote_currency)
-            return Money(quantity.as_f64_c() * float(self.multiplier) * (1 / price.as_f64_c()), self.base_currency)
+            return Money(quantity.as_f64_c() * float(self.multiplier) * (1.0 / price.as_f64_c()), self.base_currency)
         else:
             return Money(quantity.as_f64_c() * float(self.multiplier) * price.as_f64_c(), self.quote_currency)
+
+    cpdef Quantity calculate_base_quantity(
+        self,
+        Quantity quantity,
+        Price last_px,
+    ):
+        """
+        Calculate the base asset quantity from the given quote asset `quantity` and last price.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The quantity to convert from.
+        last_px : Price
+            The last price for the instrument.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        Condition.not_none(quantity, "quantity")
+
+        return Quantity(quantity.as_f64_c() * (1.0 / last_px.as_f64_c()), self.size_precision)

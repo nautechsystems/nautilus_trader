@@ -16,18 +16,18 @@
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -49,12 +49,14 @@ class SubscribeStrategyConfig(StrategyConfig, frozen=True):
 
 class SubscribeStrategy(Strategy):
     """
-    A strategy that simply subscribes to data and logs it (typically for testing adapters)
+    A strategy that simply subscribes to data and logs it (typically for testing
+    adapters)
 
     Parameters
     ----------
     config : OrderbookImbalanceConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: SubscribeStrategyConfig) -> None:
@@ -63,7 +65,9 @@ class SubscribeStrategy(Strategy):
         self.book: Optional[OrderBook] = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -71,8 +75,8 @@ class SubscribeStrategy(Strategy):
             return
 
         if self.config.book_type:
-            self.book = OrderBook.create(
-                instrument=self.instrument,
+            self.book = OrderBook(
+                instrument_id=self.instrument.id,
                 book_type=self.config.book_type,
             )
             if self.config.snapshots:
@@ -102,12 +106,12 @@ class SubscribeStrategy(Strategy):
             )
             self.subscribe_bars(bar_type)
 
-    def on_order_book_delta(self, data: OrderBookData) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         if not self.book:
             self.log.error("No book being maintained.")
             return
 
-        self.book.apply(data)
+        self.book.apply_deltas(deltas)
         self.log.info(str(self.book))
 
     def on_order_book(self, order_book: OrderBook) -> None:

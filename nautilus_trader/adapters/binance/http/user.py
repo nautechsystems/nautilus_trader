@@ -55,6 +55,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
     https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
     https://binance-docs.github.io/apidocs/delivery/en/#start-user-data-stream-user_stream
+
     """
 
     def __init__(
@@ -84,6 +85,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         ----------
         symbol : BinanceSymbol
             The trading pair. Only required for ISOLATED MARGIN accounts!
+
         """
 
         symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
@@ -98,6 +100,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
             The trading pair. Only required for ISOLATED MARGIN accounts!
         listenKey : str
             The listen key to manage. Only required for SPOT/MARGIN accounts!
+
         """
 
         symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
@@ -147,21 +150,21 @@ class BinanceUserDataHttpAPI:
         if account_type == BinanceAccountType.SPOT:
             self.base_endpoint = "/api/v3/"
             listen_key_url = self.base_endpoint + "userDataStream"
-        elif account_type == BinanceAccountType.MARGIN_CROSS:
+        elif account_type == BinanceAccountType.MARGIN:
             self.base_endpoint = "/sapi/v1/"
             listen_key_url = self.base_endpoint + "userDataStream"
-        elif account_type == BinanceAccountType.MARGIN_ISOLATED:
+        elif account_type == BinanceAccountType.ISOLATED_MARGIN:
             self.base_endpoint = "/sapi/v1/"
             listen_key_url = self.base_endpoint + "userDataStream/isolated"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
             listen_key_url = self.base_endpoint + "listenKey"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
             listen_key_url = self.base_endpoint + "listenKey"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)  # noqa
+                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)
             )
 
         self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
@@ -170,7 +173,9 @@ class BinanceUserDataHttpAPI:
         self,
         symbol: Optional[str] = None,
     ) -> BinanceListenKey:
-        """Create Binance ListenKey."""
+        """
+        Create Binance ListenKey.
+        """
         key = await self._endpoint_listenkey._post(
             parameters=self._endpoint_listenkey.PostParameters(
                 symbol=BinanceSymbol(symbol),
@@ -183,7 +188,9 @@ class BinanceUserDataHttpAPI:
         symbol: Optional[str] = None,
         listen_key: Optional[str] = None,
     ):
-        """Ping/Keepalive Binance ListenKey."""
+        """
+        Ping/Keepalive Binance ListenKey.
+        """
         await self._endpoint_listenkey._put(
             parameters=self._endpoint_listenkey.PutDeleteParameters(
                 symbol=BinanceSymbol(symbol),
@@ -196,7 +203,9 @@ class BinanceUserDataHttpAPI:
         symbol: Optional[str] = None,
         listen_key: Optional[str] = None,
     ):
-        """Delete Binance ListenKey."""
+        """
+        Delete Binance ListenKey.
+        """
         await self._endpoint_listenkey._delete(
             parameters=self._endpoint_listenkey.PutDeleteParameters(
                 symbol=BinanceSymbol(symbol),

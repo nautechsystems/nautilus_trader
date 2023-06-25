@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Literal, Union
+from typing import Literal, Optional, Union
 
 import pandas as pd
 import pytz
@@ -29,11 +29,11 @@ from ib_insync import HistoricalTickLast
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import bar_aggregation_to_str
@@ -90,6 +90,7 @@ def back_fill_catalog(
         - BID_ASK
         - TRADES
         - A bar specification, i.e. BARS-1-MINUTE-LAST or BARS-5-SECOND-MID
+
     """
     for date in pd.bdate_range(start_date, end_date, tz=tz_name):
         for contract in contracts:
@@ -130,7 +131,7 @@ def request_data(
     date: datetime.date,
     kind: str,
     tz_name: str,
-    ib: IB = None,
+    ib: Optional[IB] = None,
 ):
     if kind in ("TRADES", "BID_ASK"):
         raw = request_tick_data(contract=contract, date=date, kind=kind, tz_name=tz_name, ib=ib)
@@ -305,8 +306,9 @@ def _request_historical_bars(ib: IB, contract: Contract, end_time: str, bar_spec
 
 def _determine_next_timestamp(timestamps: list[pd.Timestamp], date: datetime.date, tz_name: str):
     """
-    While looping over available data, it is possible for very liquid products that a 1s period may contain 1000 ticks,
-    at which point we need to step the time forward to avoid getting stuck when iterating.
+    While looping over available data, it is possible for very liquid products that a 1s
+    period may contain 1000 ticks, at which point we need to step the time forward to
+    avoid getting stuck when iterating.
     """
     if not timestamps:
         return pd.Timestamp(date, tz=tz_name).tz_convert("UTC")

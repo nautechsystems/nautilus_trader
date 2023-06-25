@@ -28,6 +28,7 @@ class LongRatio(PortfolioStatistic):
     ----------
     precision : int, default 2
         The decimal precision for the output.
+
     """
 
     def __init__(self, precision: int = 2):

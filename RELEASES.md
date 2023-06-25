@@ -1,6 +1,90 @@
-# NautilusTrader 1.173.0 Beta
+# NautilusTrader 1.176.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.175.0 Beta
+
+Released on 16th July 2023 (UTC).
+
+The Betfair adapter is broken for this release pending integration with the new Rust order book.
+We recommend you do not upgrade to this version if you're using the Betfair adapter.
+
+### Enhancements
+- Integrated Interactive Brokers adapter v2 into platform, thanks @rsmb7z
+- Integrated core Rust `OrderBook` into platform
+- Integrated core Rust `OrderBookDelta` data type
+- Added core Rust `HttpClient` based on `hyper`, thanks @twitu
+- Added core Rust `WebSocketClient` based on `tokio-tungstenite`, thanks @twitu
+- Added core Rust `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
+- Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
+- Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
+- Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behaviour)
+- Added `ExecEngineConfig.filter_unclaimed_external_orders` options, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
+- Changed `BinanceHttpClient` to use new core HTTP client
+- Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
+- Defined public API for events, can now import directly from `nautilus_trader.model.events` (denest namespace)
+
+### Breaking Changes
+- Upgraded `pandas` to v2
+- Removed `OrderBookSnapshot` (redundant as can be represented as an initial CLEAR followed by deltas)
+- Removed `OrderBookData` (redundant)
+- Renamed `Actor.handle_order_book_delta` to `handle_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
+- Renamed `Actor.on_order_book_delta` to `on_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
+- Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional calcs on inverse instruments)
+- Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
+- Renamed core `LogMessage` to `LogEvent` to more clearly distinguish between the `message` field and the event struct itself (aligns with [vector](https://vector.dev/docs/about/under-the-hood/architecture/data-model/log/) language)
+- Renamed core `LogEvent.timestamp_ns` to `LogEvent.timestamp` (affects field name for JSON format)
+- Renamed core `LogEvent.msg` to `LogEvent.message` (affects field name for JSON format)
+
+### Fixes
+- Updated `BinanceAccountType` enum members and associated docs
+- Fixed `BinanceCommonExecutionClient` iteration of `OrderList` orders
+- Fixed heartbeats for `BinanceWebSocketClient` (new Rust client now responds with `pong` frames)
+- Fixed Binance adapter typing for `orderId`, `fromId`, `startTime` and `endTime` (all are ints), thanks for reporting @davidsblom
+- Fixed `Currency` equality to be based on the `code` field (avoiding equality issues over FFI), thanks for reporting @Otlk
+- Fixed `BinanceInstrumentProvider` parsing of initial and maintenance margin values
+
+---
+
+# NautilusTrader 1.174.0 Beta
+
+Released on 19th May 2023 (UTC).
+
+### Breaking Changes
+- Parquet schemas are now shifting towards catalog v2 (we recommend you don't upgrade if using legacy catalog)
+- Moved order book data from `model.orderbook.data` into the `model.data.book` namespace
+
+### Enhancements
+- Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
+- Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
+- Various improvements to `Binance` clients error handling and logging
+- Improve Binance HTTP error messages
+
+### Fixes
+- Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
+- Fixed sending execution algorithm commands from strategy
+- Fixed `OrderEmulator` releasing of already closed orders
+- Fixed `MatchingEngine` processing of reduce only for child contingency orders
+- Fixed `MatchingEngine` position ID assignment for child contingency orders
+- Fixed `Actor` handling of historical data from requests (will now call `on_historical_data` regardless of state), thanks for reporting @miller-moore
+- Fixed pyarrow schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
+
+---
+
+# NautilusTrader 1.173.0 Beta
+
+Released on 5th May 2023 (UTC).
 
 ### Breaking Changes
 None
@@ -9,9 +93,11 @@ None
 None
 
 ### Fixes
-- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string)
-- Fixed trailing stop type order updates for `reduce_only` instruction
+- Fixed `BacktestEngine` processing of venue(s) message queue based off time event `ts_init`
+- Fixed `Position.signed_decimal_qty` (incorrect format precision in f-string), thanks for reporting @rsmb7z
+- Fixed trailing stop type order updates for `reduce_only` instruction, thanks for reporting @Otlk
 - Fixed updating of active execution algorithm orders (events weren't being cached)
+- Fixed condition check for applying pending events (do not apply to orders at `INITIALIZED` status)
 
 ---
 
@@ -38,9 +124,9 @@ Released on 30th April 2023 (UTC).
 - Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
-- Define public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
-- Define public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
-- Define public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
+- Defined public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
+- Defined public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
+- Defined public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
 - Now stripping debug symbols after build (reduced binary sizes)
 - Refined build and added additional `debug` Makefile convenience targets
 

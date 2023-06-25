@@ -26,11 +26,11 @@ PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
-PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
+PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true") == "true"
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
-COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
+COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true") == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
-PYO3_ONLY = False if os.getenv("PYO3_ONLY", "") == "" else True
+PYO3_ONLY = os.getenv("PYO3_ONLY", "") != ""
 
 if PROFILE_MODE:
     # For subsequent debugging, the C source needs to be in the same tree as
@@ -44,10 +44,13 @@ else:
 ################################################################################
 #  RUST BUILD
 ################################################################################
-if platform.system() != "Darwin":
+if platform.system() == "Linux":
     # Use clang as the default compiler
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
+# elif platform.system() == "Windows":
+#     os.environ["CC"] = "cl"
+#     os.environ["CXX"] = "cl"
 
 TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
@@ -158,10 +161,13 @@ def _build_extensions() -> list[Extension]:
 
     if platform.system() == "Windows":
         extra_link_args += [
-            "WS2_32.Lib",
             "AdvAPI32.Lib",
-            "UserEnv.Lib",
             "bcrypt.lib",
+            "Kernel32.lib",
+            "ntdll.lib",
+            "User32.Lib",
+            "UserEnv.Lib",
+            "WS2_32.Lib",
         ]
 
     print("Creating C extension modules...")
@@ -189,17 +195,17 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
     print(f"nthreads={nthreads}")
 
     distribution = Distribution(
-        dict(
-            name="nautilus_trader",
-            ext_modules=cythonize(
+        {
+            "name": "nautilus_trader",
+            "ext_modules": cythonize(
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
                 nthreads=nthreads,
                 build_dir=BUILD_DIR,
                 gdb_debug=PROFILE_MODE,
             ),
-            zip_safe=False,
-        ),
+            "zip_safe": False,
+        },
     )
     return distribution
 
@@ -245,10 +251,11 @@ def _get_clang_version() -> str:
             .lstrip("clang version ")
         )
         return output
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()
         raise RuntimeError(
             "You are installing from source which requires the Clang compiler to be installed.\n"
-            f"Error running clang: {e.stderr.decode()}",
+            f"Error running clang: {err_msg}",
         ) from e
 
 
@@ -259,13 +266,14 @@ def _get_rustc_version() -> str:
             check=True,
             capture_output=True,
         )
-        output = result.stdout.decode().lstrip("rustc ")[:-1]
+        output = result.stdout.decode().lstrip("rustc ").strip()
         return output
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()
         raise RuntimeError(
             "You are installing from source which requires the Rust compiler to be installed.\n"
             "Find more information at https://www.rust-lang.org/tools/install\n"
-            f"Error running rustc: {e.stderr.decode()}",
+            f"Error running rustc: {err_msg}",
         ) from e
 
 
@@ -280,7 +288,7 @@ def _strip_unneeded_symbols() -> None:
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
-                strip_cmd,  # noqa
+                strip_cmd,
                 check=True,
                 shell=True,  # noqa
                 capture_output=True,
@@ -290,9 +298,11 @@ def _strip_unneeded_symbols() -> None:
 
 
 def build() -> None:
-    """Construct the extensions and distribution."""
-    # _build_rust_libs()
-    # _copy_rust_dylibs_to_project()
+    """
+    Construct the extensions and distribution.
+    """
+    _build_rust_libs()
+    _copy_rust_dylibs_to_project()
 
     if not PYO3_ONLY:
         # Create C Extensions to feed into cythonize()

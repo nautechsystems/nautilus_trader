@@ -16,17 +16,14 @@
 
 from decimal import Decimal
 
-import msgspec
-
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
@@ -36,22 +33,20 @@ from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImb
 from nautilus_trader.live.node import TradingNode
 
 
+# fmt: on
+
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
-instrument_filters = [
-    {
-        "secType": "CASH",
-        "primaryExchange": "IDEALPRO",
-        "localSymbol": "EUR.USD",
-    },
-]
-provider_config = InstrumentProviderConfig(
-    load_all=True,
-    filters=msgspec.json.encode(instrument_filters),  # type: ignore
+gateway = InteractiveBrokersGatewayConfig(
+    start=False,
+    username=None,
+    password=None,
+    trading_mode="paper",
+    read_only_api=True,
 )
 
 # Configure the trading node
@@ -61,24 +56,50 @@ config_node = TradingNodeConfig(
     risk_engine=LiveRiskEngineConfig(bypass=True),
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            instrument_provider=provider_config,
-            read_only_api=False,
-            start_gateway=False,
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=1,
+            handle_revised_bars=False,
+            use_regular_trading_hours=True,
+            instrument_provider=InteractiveBrokersInstrumentProviderConfig(
+                build_futures_chain=False,
+                build_options_chain=False,
+                min_expiry_days=10,
+                max_expiry_days=60,
+                load_ids=frozenset(
+                    [
+                        "EUR/USD.IDEALPRO",
+                        "BTC/USD.PAXOS",
+                        "SPY.ARCA",
+                        "ABC.NYSE",
+                        "YMH24.CBOT",
+                        "CLZ27.NYMEX",
+                        "ESZ27.CME",
+                    ],
+                ),
+            ),
+            gateway=gateway,
         ),
     },
     exec_clients={
         "IB": InteractiveBrokersExecClientConfig(
+            ibg_host="127.0.0.1",
+            ibg_port=7497,
+            ibg_client_id=1,
+            account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
+            gateway=gateway,
             routing=RoutingConfig(default=True, venues=frozenset({"IDEALPRO"})),
-            instrument_provider=provider_config,
-            read_only_api=False,
-            start_gateway=False,
         ),
     },
+    data_engine=LiveDataEngineConfig(
+        time_bars_timestamp_on_close=False,  # Will use opening time as `ts_event` (same like IB)
+        validate_data_sequence=True,  # Will make sure DataEngine discards any Bars received out of sequence
+    ),
     timeout_connection=90.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=2.0,
 )
 
 # Instantiate the node with a configuration

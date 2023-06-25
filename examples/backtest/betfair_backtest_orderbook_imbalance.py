@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     engine.add_instrument(instruments[1])
 
     # Add data
-    raw = [msg for msg in BetfairDataProvider.market_updates()]
+    raw = list(BetfairDataProvider.market_updates())
     parser = BetfairParser()
     updates = [upd for update in raw for upd in parser.parse(update)]
     engine.add_data(updates, client_id=ClientId("BETFAIR"))
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     engine.add_strategies(strategies)
 
     time.sleep(0.1)
-    input("Press Enter to continue...")  # noqa (always Python 3)
+    input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
     engine.run()

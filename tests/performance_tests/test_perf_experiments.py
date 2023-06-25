@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.test_kit.performance import PerformanceHarness
 
 

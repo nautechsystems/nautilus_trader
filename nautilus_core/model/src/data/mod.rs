@@ -14,4 +14,71 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod bar;
-pub mod tick;
+pub mod bar_api;
+pub mod delta;
+pub mod delta_api;
+pub mod order;
+pub mod order_api;
+pub mod quote;
+pub mod quote_api;
+pub mod trade;
+pub mod trade_api;
+
+use nautilus_core::time::UnixNanos;
+
+use self::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub enum Data {
+    Delta(OrderBookDelta),
+    Quote(QuoteTick),
+    Trade(TradeTick),
+    Bar(Bar),
+}
+
+impl Data {
+    #[must_use]
+    pub fn get_ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Delta(d) => d.ts_init,
+            Self::Quote(q) => q.ts_init,
+            Self::Trade(t) => t.ts_init,
+            Self::Bar(b) => b.ts_init,
+        }
+    }
+}
+
+impl From<OrderBookDelta> for Data {
+    fn from(value: OrderBookDelta) -> Self {
+        Self::Delta(value)
+    }
+}
+
+impl From<QuoteTick> for Data {
+    fn from(value: QuoteTick) -> Self {
+        Self::Quote(value)
+    }
+}
+
+impl From<TradeTick> for Data {
+    fn from(value: TradeTick) -> Self {
+        Self::Trade(value)
+    }
+}
+
+impl From<Bar> for Data {
+    fn from(value: Bar) -> Self {
+        Self::Bar(value)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn data_drop(data: Data) {
+    drop(data); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn data_clone(data: &Data) -> Data {
+    data.clone()
+}

@@ -12,17 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from enum import Enum
-from enum import unique
-
-from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
-from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.orders import Order
-
-
 """
 Defines `Binance` Spot/Margin specific enums.
 
@@ -30,11 +19,22 @@ References
 ----------
 https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
 """
+from enum import Enum
+from enum import unique
+
+from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.orders import Order
 
 
 @unique
 class BinanceSpotPermissions(Enum):
-    """Represents `Binance Spot/Margin` trading permissions."""
+    """
+    Represents `Binance Spot/Margin` trading permissions.
+    """
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
@@ -51,7 +51,9 @@ class BinanceSpotPermissions(Enum):
 
 @unique
 class BinanceSpotSymbolStatus(Enum):
-    """Represents a `Binance Spot/Margin` symbol status."""
+    """
+    Represents a `Binance Spot/Margin` symbol status.
+    """
 
     PRE_TRADING = "PRE_TRADING"
     TRADING = "TRADING"
@@ -64,7 +66,9 @@ class BinanceSpotSymbolStatus(Enum):
 
 @unique
 class BinanceSpotEventType(Enum):
-    """Represents a `Binance Spot/Margin` event type."""
+    """
+    Represents a `Binance Spot/Margin` event type.
+    """
 
     outboundAccountPosition = "outboundAccountPosition"
     balanceUpdate = "balanceUpdate"
@@ -128,5 +132,5 @@ class BinanceSpotEnumParser(BinanceEnumParser):
             return BinanceOrderType.TAKE_PROFIT_LIMIT
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid or unsupported `OrderType`, was {order.order_type}",  # pragma: no cover
+                f"invalid or unsupported `OrderType`, was {order_type_to_str(order.order_type)}",  # pragma: no cover
             )

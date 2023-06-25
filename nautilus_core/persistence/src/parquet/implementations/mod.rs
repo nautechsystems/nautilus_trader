@@ -13,5 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod quote_tick;
-mod trade_tick;
+mod bar;
+mod delta;
+mod quote;
+mod trade;

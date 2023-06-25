@@ -18,7 +18,6 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -29,11 +28,11 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -56,7 +55,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 SIM = Venue("SIM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
-BETFAIR = BETFAIR_VENUE
+BETFAIR = Venue("BETFAIR")
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -195,7 +194,7 @@ class TestPortfolio:
 
     def test_update_tick(self):
         # Arrange
-        tick = TestDataStubs.quote_tick_5decimal(GBPUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         self.portfolio.update_quote_tick(tick)

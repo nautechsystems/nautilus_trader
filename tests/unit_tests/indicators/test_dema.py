@@ -70,7 +70,7 @@ class TestDoubleExponentialMovingAverage:
         # Arrange
         indicator = DoubleExponentialMovingAverage(10, PriceType.MID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -79,20 +79,20 @@ class TestDoubleExponentialMovingAverage:
         print(Decimal(1.00002))
         print(Decimal(indicator.value))
         assert indicator.has_inputs
-        assert indicator.value == 1.00002
+        assert indicator.value == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = DoubleExponentialMovingAverage(10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00001
+        assert indicator.value == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange

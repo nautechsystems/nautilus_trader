@@ -20,15 +20,15 @@ import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -66,12 +66,12 @@ class TestBinanceSpotDataClient:
 
         self.cache = TestComponentStubs.cache()
 
-        self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
-            loop=asyncio.get_event_loop(),
+        self.http_client = BinanceHttpClient(
             clock=self.clock,
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.provider = BinanceSpotInstrumentProvider(
@@ -88,7 +88,7 @@ class TestBinanceSpotDataClient:
             logger=self.logger,
         )
 
-        self.data_client = BinanceSpotDataClient(
+        self.data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,
@@ -98,7 +98,7 @@ class TestBinanceSpotDataClient:
             instrument_provider=self.provider,
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_connect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
@@ -115,10 +115,10 @@ class TestBinanceSpotDataClient:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -136,7 +136,7 @@ class TestBinanceSpotDataClient:
         # Assert
         assert self.data_client.is_connected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_disconnect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
@@ -153,10 +153,10 @@ class TestBinanceSpotDataClient:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -177,7 +177,7 @@ class TestBinanceSpotDataClient:
         # Assert
         assert not self.data_client.is_connected
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_subscribe_instruments(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
@@ -194,10 +194,10 @@ class TestBinanceSpotDataClient:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -219,7 +219,7 @@ class TestBinanceSpotDataClient:
         ethusdt = InstrumentId.from_str("ETHUSDT.BINANCE")
         assert self.data_client.subscribed_instruments() == [btcusdt, ethusdt]
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_subscribe_instrument(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
@@ -236,10 +236,10 @@ class TestBinanceSpotDataClient:
 
         # Mock coroutine for patch
         async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: dict[str, str],  # noqa (needed for mock)
+            self,  # (needed for mock)
+            http_method: str,  # (needed for mock)
+            url_path: str,  # (needed for mock)
+            payload: dict[str, str],  # (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -261,7 +261,7 @@ class TestBinanceSpotDataClient:
         # Assert
         assert self.data_client.subscribed_instruments() == [ethusdt]
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_subscribe_quote_ticks(self, monkeypatch):
         handler = []
         self.msgbus.subscribe(
@@ -293,7 +293,7 @@ class TestBinanceSpotDataClient:
             ts_init=handler[0].ts_init,
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_subscribe_trade_ticks(self, monkeypatch):
         handler = []
         self.msgbus.subscribe(
@@ -325,7 +325,7 @@ class TestBinanceSpotDataClient:
             ts_init=handler[0].ts_init,
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_subscribe_agg_trade_ticks(self, monkeypatch):
         handler = []
         self.msgbus.subscribe(

@@ -22,7 +22,7 @@ import pandas as pd
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -40,9 +40,9 @@ class MockReader(Reader):
 
 
 class NewsEventData(NewsEvent):
-    """Generic data NewsEvent"""
-
-    pass
+    """
+    Generic data NewsEvent.
+    """
 
 
 def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
@@ -51,21 +51,17 @@ def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    if path is None:
-        path = Path.cwd() / "data_catalog"
-    else:
-        path = Path(path).resolve()
+    path = Path.cwd() / "data_catalog" if path is None else Path(path).resolve()
 
-    path = str(path)
-    catalog = ParquetDataCatalog(path=path, fs_protocol=protocol)
+    catalog = ParquetDataCatalog(path=path.as_posix(), fs_protocol=protocol)
 
-    if catalog.fs.exists(path):
-        catalog.fs.rm(path, recursive=True)
+    if catalog.fs.exists(catalog.path):
+        catalog.fs.rm(catalog.path, recursive=True)
 
-    catalog.fs.mkdir(path, create_parents=True)
+    catalog.fs.mkdir(catalog.path, create_parents=True)
 
-    assert catalog.fs.isdir(path)
-    assert not catalog.fs.glob(f"{path}/**")
+    assert catalog.fs.isdir(catalog.path)
+    assert not catalog.fs.glob(f"{catalog.path}/**")
 
     return catalog
 
@@ -73,7 +69,7 @@ def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
 def aud_usd_data_loader(catalog: ParquetDataCatalog):
     from nautilus_trader.test_kit.providers import TestInstrumentProvider
     from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-    from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
+    from tests.unit_tests.backtest.test_config import TEST_DATA_DIR
 
     venue = Venue("SIM")
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)

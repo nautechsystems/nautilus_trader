@@ -353,11 +353,19 @@ cdef class NewsEvent(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(ts_event, ts_init)
-
         self.impact = impact
         self.name = name
         self.currency = currency
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
 
 
 cdef class EconomicNewsEventFilter:

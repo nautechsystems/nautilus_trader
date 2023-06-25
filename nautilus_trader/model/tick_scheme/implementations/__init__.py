@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 # Required to register tick schemes
-from nautilus_trader.model.tick_scheme.implementations.fixed import (  # noqa: F401
-    FOREX_3DECIMAL_TICK_SCHEME,
-)
-from nautilus_trader.model.tick_scheme.implementations.fixed import (  # noqa: F401
-    FOREX_5DECIMAL_TICK_SCHEME,
-)
+# fmt: off
+from nautilus_trader.model.tick_scheme.implementations.fixed import FOREX_3DECIMAL_TICK_SCHEME  # noqa: F401
+from nautilus_trader.model.tick_scheme.implementations.fixed import FOREX_5DECIMAL_TICK_SCHEME  # noqa: F401
+
+
+# fmt: on

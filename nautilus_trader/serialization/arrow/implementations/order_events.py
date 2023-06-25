@@ -17,10 +17,10 @@ import json
 
 import msgspec
 
-from nautilus_trader.model.events.order import OrderEvent
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
@@ -42,7 +42,7 @@ def serialize_order_initialized(event: OrderInitialized):
         "price": float,
     }
     data = event.to_dict(event)
-    data.update(json.loads(data.pop("options", "{}")))  # noqa: P103
+    data.update(json.loads(data.pop("options", "{}")))
     data = {k: caster[k](v) if (k in caster and v is not None) else v for k, v in data.items()}
     return data
 

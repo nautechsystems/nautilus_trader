@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
@@ -24,8 +23,8 @@ class TestBetfairCommon:
         self.tick_scheme = BETFAIR_TICK_SCHEME
 
     def test_min_max_bet(self):
-        assert MAX_BET_PRICE == betfair_float_to_price(1000)
-        assert MIN_BET_PRICE == betfair_float_to_price(1.01)
+        assert betfair_float_to_price(1000) == MAX_BET_PRICE
+        assert betfair_float_to_price(1.01) == MIN_BET_PRICE
 
     def test_betfair_ticks(self):
         assert self.tick_scheme.min_price == betfair_float_to_price(1.01)

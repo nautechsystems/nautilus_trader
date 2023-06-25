@@ -84,8 +84,14 @@ cdef class LimitOrder(Order):
         If the order will only provide liquidity (make a market).
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
+    quote_quantity : bool, default False
+        If the order quantity is denominated in the quote currency.
     display_qty : Quantity, optional
         The quantity of the order to display on the public book (iceberg).
+    emulation_trigger : EmulationTrigger, default ``NO_TRIGGER``
+        The emulation trigger for the order.
+    trigger_instrument_id : InstrumentId, optional
+        The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
@@ -135,8 +141,10 @@ cdef class LimitOrder(Order):
         uint64_t expire_time_ns = 0,
         bint post_only = False,
         bint reduce_only = False,
+        bint quote_quantity = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        InstrumentId trigger_instrument_id = None,
         ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
@@ -177,8 +185,10 @@ cdef class LimitOrder(Order):
             time_in_force=time_in_force,
             post_only=post_only,
             reduce_only=reduce_only,
+            quote_quantity=quote_quantity,
             options=options,
             emulation_trigger=emulation_trigger,
+            trigger_instrument_id=trigger_instrument_id,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
@@ -281,8 +291,10 @@ cdef class LimitOrder(Order):
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
+            "is_quote_quantity": self.is_quote_quantity,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "emulation_trigger": trigger_type_to_str(self.emulation_trigger),
+            "trigger_instrument_id": self.trigger_instrument_id.to_str() if self.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
@@ -334,8 +346,10 @@ cdef class LimitOrder(Order):
             expire_time_ns=init.options["expire_time_ns"],
             post_only=init.post_only,
             reduce_only=init.reduce_only,
+            quote_quantity=init.quote_quantity,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
             emulation_trigger=init.emulation_trigger,
+            trigger_instrument_id=init.trigger_instrument_id,
             contingency_type=init.contingency_type,
             order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,
@@ -347,7 +361,7 @@ cdef class LimitOrder(Order):
         )
 
     @staticmethod
-    cdef LimitOrder transform(Order order, uint64_t ts_init):
+    cdef LimitOrder transform(Order order, uint64_t ts_init, Price price = None):
         """
         Transform the given order to a `limit` order.
 
@@ -360,13 +374,21 @@ cdef class LimitOrder(Order):
             The order to transform from.
         ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
+        price : Price, optional
+            The price to assign to the order (will override any existing price on `order`).
 
         Returns
         -------
         LimitOrder
 
+        Raises
+        ------
+        ValueError
+            If `price` is ``None`` and `order` does not have a `price` attribute.
+
         """
         Condition.not_none(order, "order")
+        Condition.true(price or hasattr(order, "price"), "`order` has no price")
 
         cdef LimitOrder transformed = LimitOrder(
             trader_id=order.trader_id,
@@ -375,14 +397,15 @@ cdef class LimitOrder(Order):
             client_order_id=order.client_order_id,
             order_side=order.side,
             quantity=order.quantity,
-            price=order.price,
+            price=price or order.price,
             time_in_force=order.time_in_force,
-            expire_time_ns=order.expire_time_ns,
+            expire_time_ns=order.expire_time_ns if hasattr(order, "expire_time_ns") else 0,
             init_id=UUID4(),
             ts_init=ts_init,
-            post_only=order.is_post_only,
+            post_only=order.is_post_only if hasattr(order, "is_post_only") else False,
             reduce_only=order.is_reduce_only,
-            display_qty=order.display_qty,
+            quote_quantity=order.is_quote_quantity,
+            display_qty=order.display_qty if hasattr(order, "display_qty") else None,
             contingency_type=order.contingency_type,
             order_list_id=order.order_list_id,
             linked_order_ids=order.linked_order_ids,
@@ -402,5 +425,5 @@ cdef class LimitOrder(Order):
         return transformed
 
     @staticmethod
-    def transform_py(Order order, uint64_t ts_init) -> LimitOrder:
-        return LimitOrder.transform(order, ts_init)
+    def transform_py(Order order, uint64_t ts_init, Price price = None) -> LimitOrder:
+        return LimitOrder.transform(order, ts_init, price)

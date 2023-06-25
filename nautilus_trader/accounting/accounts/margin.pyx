@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.error import AccountMarginExceeded
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
@@ -415,9 +417,7 @@ cdef class MarginAccount(Account):
     cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            # TODO(cs): Temporary pending reimplementation of accounting
-            print("Cannot recalculate balance when no current balance")
-            return
+            raise RuntimeError("cannot recalculate balance when no current balance")
 
         cdef double total_margin = 0.0
 
@@ -428,10 +428,19 @@ cdef class MarginAccount(Account):
             total_margin += margin.initial.as_f64_c()
             total_margin += margin.maintenance.as_f64_c()
 
+        cdef double total_free = current_balance.total.as_f64_c() - total_margin
+
+        if total_free <= 0.0:
+            raise AccountMarginExceeded(
+                balance=current_balance.total.as_decimal(),
+                margin=Money(total_margin, currency).as_decimal(),
+                currency=currency,
+            )
+
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
             Money(total_margin, currency),
-            Money(current_balance.total.as_f64_c() - total_margin, currency),
+            Money(total_free, currency),
         )
 
         self._balances[currency] = new_balance
@@ -442,7 +451,7 @@ cdef class MarginAccount(Account):
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -461,7 +470,7 @@ cdef class MarginAccount(Account):
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -482,7 +491,7 @@ cdef class MarginAccount(Account):
         cdef double notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         ).as_f64_c()
 
         cdef double commission
@@ -495,7 +504,7 @@ cdef class MarginAccount(Account):
                 f"invalid `LiquiditySide`, was {liquidity_side_to_str(liquidity_side)}"
             )
 
-        if instrument.is_inverse and not inverse_as_quote:
+        if instrument.is_inverse and not use_quote_for_inverse:
             return Money(commission, instrument.base_currency)
         else:
             return Money(commission, instrument.quote_currency)
@@ -505,7 +514,7 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the initial (order) margin.
@@ -521,7 +530,7 @@ cdef class MarginAccount(Account):
             The order quantity.
         price : Price
             The order price.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -536,7 +545,7 @@ cdef class MarginAccount(Account):
         cdef double notional = instrument.notional_value(
             quantity=quantity,
             price=price,
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         ).as_f64_c()
 
         cdef double leverage = self._leverages.get(instrument.id, 0.0)
@@ -548,7 +557,7 @@ cdef class MarginAccount(Account):
         cdef double margin = adjusted_notional * float(instrument.margin_init)
         margin += (adjusted_notional * float(instrument.taker_fee) * 2.0)
 
-        if instrument.is_inverse and not inverse_as_quote:
+        if instrument.is_inverse and not use_quote_for_inverse:
             return Money(margin, instrument.base_currency)
         else:
             return Money(margin, instrument.quote_currency)
@@ -559,7 +568,7 @@ cdef class MarginAccount(Account):
         PositionSide side,
         Quantity quantity,
         Price price,
-        bint inverse_as_quote=False,
+        bint use_quote_for_inverse=False,
     ):
         """
         Calculate the maintenance (position) margin.
@@ -577,7 +586,7 @@ cdef class MarginAccount(Account):
             The currency position quantity.
         price : Price
             The positions current price.
-        inverse_as_quote : bool
+        use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
 
         Returns
@@ -591,7 +600,7 @@ cdef class MarginAccount(Account):
         cdef double notional = instrument.notional_value(
             quantity=quantity,
             price=price,
-            inverse_as_quote=inverse_as_quote,
+            use_quote_for_inverse=use_quote_for_inverse,
         ).as_f64_c()
 
         cdef double leverage = float(self._leverages.get(instrument.id, 0.0))
@@ -603,7 +612,7 @@ cdef class MarginAccount(Account):
         cdef double margin = adjusted_notional * float(instrument.margin_maint)
         margin += adjusted_notional * float(instrument.taker_fee)
 
-        if instrument.is_inverse and not inverse_as_quote:
+        if instrument.is_inverse and not use_quote_for_inverse:
             return Money(margin, instrument.base_currency)
         else:
             return Money(margin, instrument.quote_currency)
@@ -630,7 +639,7 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        list[Money] or ``None``
+        list[Money]
 
         """
         Condition.not_none(instrument, "instrument")

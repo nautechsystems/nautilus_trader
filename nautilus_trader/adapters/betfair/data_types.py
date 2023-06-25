@@ -15,29 +15,28 @@
 
 import copy
 from enum import Enum
+from typing import Optional
 
 import pyarrow as pa
 
+# fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
-from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.serialization.arrow.implementations.order_book import (
-    deserialize as deserialize_orderbook,
-)
-from nautilus_trader.serialization.arrow.implementations.order_book import (
-    serialize as serialize_orderbook,
-)
+from nautilus_trader.serialization.arrow.implementations.order_book import deserialize as deserialize_orderbook
+from nautilus_trader.serialization.arrow.implementations.order_book import serialize as serialize_orderbook
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
+
+
+# fmt: on
 
 
 class SubscriptionStatus(Enum):
@@ -65,23 +64,20 @@ class BSPOrderBookDelta(OrderBookDelta):
     def from_dict(values) -> "BSPOrderBookDelta":
         PyCondition.not_none(values, "values")
         action: BookAction = book_action_from_str(values["action"])
-        order: BookOrder = (
-            BookOrder.from_dict(
-                {
-                    "price": values["price"],
-                    "size": values["size"],
-                    "side": values["side"],
-                    "order_id": values["order_id"],
-                },
-            )
-            if values["action"] != "CLEAR"
-            else None
-        )
+        if action != BookAction.CLEAR:
+            book_dict = {
+                "price": str(values["price"]),
+                "size": str(values["size"]),
+                "side": values["side"],
+                "order_id": values["order_id"],
+            }
+            book_order = BookOrder.from_dict(book_dict)
+        else:
+            book_order = None
         return BSPOrderBookDelta(
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
-            book_type=book_type_from_str(values["book_type"]),
             action=action,
-            order=order,
+            order=book_order,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -103,10 +99,10 @@ class BetfairTicker(Ticker):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        last_traded_price: float = None,
-        traded_volume: float = None,
-        starting_price_near: float = None,
-        starting_price_far: float = None,
+        last_traded_price: Optional[float] = None,
+        traded_volume: Optional[float] = None,
+        starting_price_near: Optional[float] = None,
+        starting_price_far: Optional[float] = None,
     ):
         super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
         self.last_traded_price = last_traded_price
@@ -168,11 +164,21 @@ class BetfairStartingPrice(Data):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        bsp: float = None,
+        bsp: Optional[float] = None,
     ):
-        super().__init__(ts_event=ts_event, ts_init=ts_init)
+        super().__init__()
+        self._ts_event = ts_event
+        self._ts_init = ts_init
         self.instrument_id: InstrumentId = instrument_id
         self.bsp = bsp
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
 
     @classmethod
     def schema(cls):
@@ -218,7 +224,7 @@ register_serializable_object(
 register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
 
 # Register serialization/parquet BSPOrderBookDeltas
-BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookData])
+BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDelta])
 BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
 
 register_serializable_object(

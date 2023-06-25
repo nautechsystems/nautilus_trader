@@ -13,22 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::c_char;
-use std::fmt::{Debug, Display, Formatter, Result};
-use std::hash::{Hash, Hasher};
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter},
+    hash::Hash,
+    str::FromStr,
+};
 
-use nautilus_core::string::string_to_cstr;
-use nautilus_core::time::UnixNanos;
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
+use serde::{Deserialize, Serialize};
+use thiserror;
 
-use crate::enums::{AggregationSource, BarAggregation, PriceType};
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+use crate::{
+    enums::{AggregationSource, BarAggregation, PriceType},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[pyclass]
 pub struct BarSpecification {
     pub step: u64,
     pub aggregation: BarAggregation,
@@ -36,7 +41,7 @@ pub struct BarSpecification {
 }
 
 impl Display for BarSpecification {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
     }
 }
@@ -63,80 +68,78 @@ impl PartialOrd for BarSpecification {
     }
 }
 
-/// Returns a [`BarSpecification`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
-    string_to_cstr(&bar_spec.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar_spec.hash(&mut h);
-    h.finish()
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_new(
-    step: u64,
-    aggregation: u8,
-    price_type: u8,
-) -> BarSpecification {
-    let aggregation =
-        BarAggregation::from_repr(aggregation as usize).expect("cannot parse enum value");
-    let price_type = PriceType::from_repr(price_type as usize).expect("cannot parse enum value");
-    BarSpecification {
-        step,
-        aggregation,
-        price_type,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_eq(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_lt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs < rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_le(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs <= rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_gt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs > rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    u8::from(lhs >= rhs)
-}
-
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[pyclass]
 pub struct BarType {
     pub instrument_id: InstrumentId,
     pub spec: BarSpecification,
     pub aggregation_source: AggregationSource,
 }
 
-impl PartialEq for BarType {
-    fn eq(&self, other: &Self) -> bool {
-        self.instrument_id == other.instrument_id
-            && self.spec == other.spec
-            && self.aggregation_source == other.aggregation_source
-    }
+#[derive(thiserror::Error, Debug)]
+#[error("Error parsing `BarType` from '{input}', invalid token: '{token}' at position {position}")]
+pub struct BarTypeParseError {
+    input: String,
+    token: String,
+    position: usize,
 }
 
-impl Hash for BarType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.spec.hash(state);
-        self.instrument_id.hash(state);
+impl FromStr for BarType {
+    type Err = BarTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO: Requires handling some trait related thing
+        #[allow(clippy::needless_collect)]
+        let pieces: Vec<&str> = s.rsplitn(5, '-').collect();
+        let rev_pieces: Vec<&str> = pieces.into_iter().rev().collect();
+        if rev_pieces.len() != 5 {
+            return Err(BarTypeParseError {
+                input: s.to_string(),
+                token: "".to_string(),
+                position: 0,
+            });
+        }
+
+        let instrument_id =
+            InstrumentId::from_str(rev_pieces[0]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[0].to_string(),
+                position: 0,
+            })?;
+
+        let step = rev_pieces[1].parse().map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: rev_pieces[1].to_string(),
+            position: 1,
+        })?;
+        let aggregation =
+            BarAggregation::from_str(rev_pieces[2]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[2].to_string(),
+                position: 2,
+            })?;
+        let price_type = PriceType::from_str(rev_pieces[3]).map_err(|_| BarTypeParseError {
+            input: s.to_string(),
+            token: rev_pieces[3].to_string(),
+            position: 3,
+        })?;
+        let aggregation_source =
+            AggregationSource::from_str(rev_pieces[4]).map_err(|_| BarTypeParseError {
+                input: s.to_string(),
+                token: rev_pieces[4].to_string(),
+                position: 4,
+            })?;
+
+        Ok(BarType {
+            instrument_id,
+            spec: BarSpecification {
+                step,
+                aggregation,
+                price_type,
+            },
+            aggregation_source,
+        })
     }
 }
 
@@ -163,7 +166,7 @@ impl PartialOrd for BarType {
 }
 
 impl Display for BarType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}-{}-{}",
@@ -172,71 +175,9 @@ impl Display for BarType {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn bar_type_new(
-    instrument_id: InstrumentId,
-    spec: BarSpecification,
-    aggregation_source: u8,
-) -> BarType {
-    let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
-        .expect("error converting enum from integer");
-    BarType {
-        instrument_id,
-        spec,
-        aggregation_source,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
-    bar_type.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_lt(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs < rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_le(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs <= rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_gt(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs > rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_ge(lhs: &BarType, rhs: &BarType) -> u8 {
-    u8::from(lhs >= rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar_type.hash(&mut h);
-    h.finish()
-}
-
-/// Returns a [`BarType`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
-    string_to_cstr(&bar_type.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_drop(bar_type: BarType) {
-    drop(bar_type); // Memory freed here
-}
-
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Debug, Serialize, Deserialize)]
+#[pyclass]
 pub struct Bar {
     pub bar_type: BarType,
     pub open: Price,
@@ -248,8 +189,36 @@ pub struct Bar {
     pub ts_init: UnixNanos,
 }
 
+impl Bar {
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event,
+            ts_init,
+        }
+    }
+}
+
+impl Serializable for Bar {}
+
 impl Display for Bar {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{},{}",
@@ -258,80 +227,112 @@ impl Display for Bar {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn bar_new(
-    bar_type: BarType,
-    open: Price,
-    high: Price,
-    low: Price,
-    close: Price,
-    volume: Quantity,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> Bar {
-    Bar {
-        bar_type,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        ts_event,
-        ts_init,
+#[pymethods]
+#[allow(clippy::too_many_arguments)]
+impl Bar {
+    #[new]
+    fn py_new(
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
     }
-}
 
-#[no_mangle]
-pub extern "C" fn bar_new_from_raw(
-    bar_type: BarType,
-    open: i64,
-    high: i64,
-    low: i64,
-    close: i64,
-    price_prec: u8,
-    volume: u64,
-    size_prec: u8,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> Bar {
-    Bar {
-        bar_type,
-        open: Price::from_raw(open, price_prec),
-        high: Price::from_raw(high, price_prec),
-        low: Price::from_raw(low, price_prec),
-        close: Price::from_raw(close, price_prec),
-        volume: Quantity::from_raw(volume, size_prec),
-        ts_event,
-        ts_init,
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
     }
-}
 
-/// Returns a [`Bar`] as a C string.
-#[no_mangle]
-pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
-    string_to_cstr(&bar.to_string())
-}
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 
-#[no_mangle]
-pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
-    bar.clone()
-}
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
 
-#[no_mangle]
-pub extern "C" fn bar_drop(bar: Bar) {
-    drop(bar); // Memory freed here
-}
+    #[getter]
+    fn bar_type(&self) -> BarType {
+        self.bar_type.clone()
+    }
 
-#[no_mangle]
-pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
-    u8::from(lhs == rhs)
-}
+    #[getter]
+    fn open(&self) -> Price {
+        self.open
+    }
 
-#[no_mangle]
-pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
-    let mut h = DefaultHasher::new();
-    bar.hash(&mut h);
-    h.finish()
+    #[getter]
+    fn high(&self) -> Price {
+        self.high
+    }
+
+    #[getter]
+    fn low(&self) -> Price {
+        self.low
+    }
+
+    #[getter]
+    fn close(&self) -> Price {
+        self.close
+    }
+
+    #[getter]
+    fn volume(&self) -> Quantity {
+        self.volume
+    }
+
+    #[getter]
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    #[getter]
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+
+    #[staticmethod]
+    fn from_json(data: Vec<u8>) -> PyResult<Self> {
+        match Self::from_json_bytes(data) {
+            Ok(quote) => Ok(quote),
+            Err(err) => Err(PyValueError::new_err(format!(
+                "Failed to deserializing JSON: {}",
+                err
+            ))),
+        }
+    }
+
+    #[staticmethod]
+    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
+        match Self::from_msgpack_bytes(data) {
+            Ok(quote) => Ok(quote),
+            Err(err) => Err(PyValueError::new_err(format!(
+                "Failed to deserialize MsgPack: {}",
+                err
+            ))),
+        }
+    }
+
+    /// Return JSON encoded bytes representation of the object.
+    fn as_json(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+    }
+
+    /// Return MsgPack encoded bytes representation of the object.
+    fn as_msgpack(&self) -> Py<PyAny> {
+        // Unwrapping is safe when serializing a valid object
+        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -340,9 +341,10 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::BarAggregation;
-    use crate::identifiers::symbol::Symbol;
-    use crate::identifiers::venue::Venue;
+    use crate::{
+        enums::BarAggregation,
+        identifiers::{symbol::Symbol, venue::Venue},
+    };
 
     #[test]
     fn test_bar_spec_equality() {
@@ -402,6 +404,90 @@ mod tests {
         };
         assert_eq!(bar_spec.to_string(), "1-MINUTE-BID");
         assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
+    }
+
+    #[test]
+    fn test_bar_type_parse_valid() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+        let bar_type = BarType::from_str(input).unwrap();
+
+        assert_eq!(
+            bar_type.instrument_id,
+            InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+        );
+        assert_eq!(
+            bar_type.spec,
+            BarSpecification {
+                step: 1,
+                aggregation: BarAggregation::Minute,
+                price_type: PriceType::Last,
+            }
+        );
+        assert_eq!(bar_type.aggregation_source, AggregationSource::External);
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_0() {
+        let input = "BTCUSDT-PERP-1-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Error parsing `BarType` from '{input}', invalid token: 'BTCUSDT-PERP' at position 0")
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_1() {
+        let input = "BTCUSDT-PERP.BINANCE-INVALID-MINUTE-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 1"
+            )
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_2() {
+        let input = "BTCUSDT-PERP.BINANCE-1-INVALID-LAST-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 2"
+            )
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_3() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-INVALID-INTERNAL";
+        let result = BarType::from_str(input);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 3"
+            )
+        );
+    }
+
+    #[test]
+    fn test_bar_type_parse_invalid_token_pos_4() {
+        let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-BID-INVALID";
+        let result = BarType::from_str(input);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 4"
+            )
+        );
     }
 
     #[test]
@@ -476,6 +562,7 @@ mod tests {
         assert!(bar_type3 > bar_type1);
         assert!(bar_type3 >= bar_type1);
     }
+
     #[test]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {

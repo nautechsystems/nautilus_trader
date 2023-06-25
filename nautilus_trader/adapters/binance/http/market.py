@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from typing import Optional
 
 import msgspec
@@ -35,10 +36,10 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 class BinancePingHttp(BinanceHttpEndpoint):
@@ -54,6 +55,7 @@ class BinancePingHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
     https://binance-docs.github.io/apidocs/futures/en/#test-connectivity
     https://binance-docs.github.io/apidocs/delivery/en/#test-connectivity
+
     """
 
     def __init__(
@@ -91,6 +93,7 @@ class BinanceTimeHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#check-server-time
     https://binance-docs.github.io/apidocs/futures/en/#check-server-time
     https://binance-docs.github.io/apidocs/delivery/en/#check-server-time
+
     """
 
     def __init__(
@@ -124,6 +127,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#order-book
     https://binance-docs.github.io/apidocs/futures/en/#order-book
     https://binance-docs.github.io/apidocs/delivery/en/#order-book
+
     """
 
     def __init__(
@@ -157,6 +161,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
             FUTURES (GET /*api/v1/depth)
                 Default 500; max 1000.
                 Valid limits:[5, 10, 20, 50, 100, 500, 1000].
+
         """
 
         symbol: BinanceSymbol
@@ -181,6 +186,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
     https://binance-docs.github.io/apidocs/futures/en/#recent-trades-list
     https://binance-docs.github.io/apidocs/delivery/en/#recent-trades-list
+
     """
 
     def __init__(
@@ -201,7 +207,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET parameters for recent trades
+        GET parameters for recent trades.
 
         Parameters
         ----------
@@ -209,6 +215,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
             The trading pair.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
+
         """
 
         symbol: BinanceSymbol
@@ -222,7 +229,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
 
 class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
     """
-    Endpoint of older market historical trades
+    Endpoint of older market historical trades.
 
     `GET /api/v3/historicalTrades`
     `GET /fapi/v1/historicalTrades`
@@ -233,6 +240,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup-market_data
     https://binance-docs.github.io/apidocs/futures/en/#old-trades-lookup-market_data
     https://binance-docs.github.io/apidocs/delivery/en/#old-trades-lookup-market_data
+
     """
 
     def __init__(
@@ -253,7 +261,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
 
     class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        GET parameters for historical trades
+        GET parameters for historical trades.
 
         Parameters
         ----------
@@ -261,13 +269,14 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
             The trading pair.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
-        fromId : str, optional
+        fromId : int, optional
             Trade id to fetch from. Default gets most recent trades
+
         """
 
         symbol: BinanceSymbol
         limit: Optional[int] = None
-        fromId: Optional[str] = None
+        fromId: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = BinanceMethodType.GET
@@ -277,9 +286,8 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
 
 class BinanceAggTradesHttp(BinanceHttpEndpoint):
     """
-    Endpoint of compressed and aggregated market trades.
-    Market trades that fill in 100ms with the same price and same taking side
-    will have the quantity aggregated.
+    Endpoint of compressed and aggregated market trades. Market trades that fill in
+    100ms with the same price and same taking side will have the quantity aggregated.
 
     `GET /api/v3/aggTrades`
     `GET /fapi/v1/aggTrades`
@@ -290,6 +298,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
     https://binance-docs.github.io/apidocs/futures/en/#compressed-aggregate-trades-list
     https://binance-docs.github.io/apidocs/delivery/en/#compressed-aggregate-trades-list
+
     """
 
     def __init__(
@@ -318,19 +327,20 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
             The trading pair.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
-        fromId : str, optional
+        fromId : int, optional
             Trade id to fetch from INCLUSIVE.
-        startTime : str, optional
+        startTime : int, optional
             Timestamp in ms to get aggregate trades from INCLUSIVE.
-        endTime : str, optional
+        endTime : int, optional
             Timestamp in ms to get aggregate trades until INCLUSIVE.
+
         """
 
         symbol: BinanceSymbol
         limit: Optional[int] = None
-        fromId: Optional[str] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
+        fromId: Optional[int] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
         method_type = BinanceMethodType.GET
@@ -340,8 +350,8 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
 
 class BinanceKlinesHttp(BinanceHttpEndpoint):
     """
-    Endpoint of Kline/candlestick bars for a symbol.
-    Klines are uniquely identified by their open time.
+    Endpoint of Kline/candlestick bars for a symbol. Klines are uniquely identified by
+    their open time.
 
     `GET /api/v3/klines`
     `GET /fapi/v1/klines`
@@ -352,6 +362,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
     https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
     https://binance-docs.github.io/apidocs/delivery/en/#kline-candlestick-data
+
     """
 
     def __init__(
@@ -382,17 +393,18 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
             The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
-        startTime : str, optional
+        startTime : int, optional
             Timestamp in ms to get klines from INCLUSIVE.
-        endTime : str, optional
+        endTime : int, optional
             Timestamp in ms to get klines until INCLUSIVE.
+
         """
 
         symbol: BinanceSymbol
         interval: BinanceKlineInterval
         limit: Optional[int] = None
-        startTime: Optional[str] = None
-        endTime: Optional[str] = None
+        startTime: Optional[int] = None
+        endTime: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceKline]:
         method_type = BinanceMethodType.GET
@@ -418,6 +430,7 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
     https://binance-docs.github.io/apidocs/futures/en/#24hr-ticker-price-change-statistics
     https://binance-docs.github.io/apidocs/delivery/en/#24hr-ticker-price-change-statistics
+
     """
 
     def __init__(
@@ -452,6 +465,7 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         type : str
             SPOT/MARGIN only!
             Select between FULL and MINI 24hr ticker responses to save bandwidth.
+
         """
 
         symbol: Optional[BinanceSymbol] = None
@@ -480,6 +494,7 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
     https://binance-docs.github.io/apidocs/futures/en/#symbol-price-ticker
     https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
+
     """
 
     def __init__(
@@ -511,6 +526,7 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         symbols : str
             SPOT/MARGIN only!
             List of trading pairs. When given, endpoint will return a list of BinanceTickerPrice.
+
         """
 
         symbol: Optional[BinanceSymbol] = None
@@ -538,6 +554,7 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
     https://binance-docs.github.io/apidocs/futures/en/#symbol-order-book-ticker
     https://binance-docs.github.io/apidocs/delivery/en/#symbol-order-book-ticker
+
     """
 
     def __init__(
@@ -569,6 +586,7 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         symbols : str
             SPOT/MARGIN only!
             List of trading pairs. When given, endpoint will return a list of BinanceTickerBook.
+
         """
 
         symbol: Optional[BinanceSymbol] = None
@@ -597,6 +615,7 @@ class BinanceMarketHttpAPI:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -609,9 +628,9 @@ class BinanceMarketHttpAPI:
 
         if account_type.is_spot_or_margin:
             self.base_endpoint = "/api/v3/"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
@@ -631,11 +650,15 @@ class BinanceMarketHttpAPI:
         self._endpoint_ticker_book = BinanceTickerBookHttp(client, self.base_endpoint)
 
     async def ping(self) -> dict:
-        """Ping Binance REST API."""
+        """
+        Ping Binance REST API.
+        """
         return await self._endpoint_ping._get()
 
     async def request_server_time(self) -> int:
-        """Request server time from Binance."""
+        """
+        Request server time from Binance.
+        """
         response = await self._endpoint_time._get()
         return response.serverTime
 
@@ -644,7 +667,9 @@ class BinanceMarketHttpAPI:
         symbol: str,
         limit: Optional[int] = None,
     ) -> BinanceDepth:
-        """Query order book depth for a symbol."""
+        """
+        Query order book depth for a symbol.
+        """
         return await self._endpoint_depth._get(
             parameters=self._endpoint_depth.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -657,8 +682,10 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: Optional[int] = None,
-    ) -> OrderBookSnapshot:
-        """Request snapshot of order book depth."""
+    ) -> OrderBookDeltas:
+        """
+        Request snapshot of order book depth.
+        """
         depth = await self.query_depth(instrument_id.symbol.value, limit)
         return depth.parse_to_order_book_snapshot(
             instrument_id=instrument_id,
@@ -670,7 +697,9 @@ class BinanceMarketHttpAPI:
         symbol: str,
         limit: Optional[int] = None,
     ) -> list[BinanceTrade]:
-        """Query trades for symbol."""
+        """
+        Query trades for symbol.
+        """
         return await self._endpoint_trades._get(
             parameters=self._endpoint_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -684,7 +713,9 @@ class BinanceMarketHttpAPI:
         ts_init: int,
         limit: Optional[int] = None,
     ) -> list[TradeTick]:
-        """Request TradeTicks from Binance."""
+        """
+        Request TradeTicks from Binance.
+        """
         trades = await self.query_trades(instrument_id.symbol.value, limit)
         return [
             trade.parse_to_trade_tick(
@@ -698,11 +729,13 @@ class BinanceMarketHttpAPI:
         self,
         symbol: str,
         limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        from_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        from_id: Optional[int] = None,
     ) -> list[BinanceAggTrade]:
-        """Query aggregated trades for symbol."""
+        """
+        Query aggregated trades for symbol.
+        """
         return await self._endpoint_agg_trades._get(
             parameters=self._endpoint_agg_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -718,14 +751,16 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: int = 1000,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        from_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        from_id: Optional[int] = None,
     ) -> list[TradeTick]:
         """
         Request TradeTicks from Binance aggregated trades.
-        If start_time and end_time are both specified, will fetch *all* TradeTicks
-        in the interval, making multiple requests if necessary.
+
+        If start_time and end_time are both specified, will fetch *all* TradeTicks in
+        the interval, making multiple requests if necessary.
+
         """
         ticks: list[TradeTick] = []
         next_start_time = start_time
@@ -740,10 +775,10 @@ class BinanceMarketHttpAPI:
         last_id = 0
         interval_limited = False
 
-        def _calculate_next_end_time(start_time: str, end_time: str):
-            next_interval = int(start_time) + max_interval
-            interval_limited = next_interval < int(end_time)
-            next_end_time = str(next_interval) if interval_limited is True else end_time
+        def _calculate_next_end_time(start_time: int, end_time: int) -> tuple[int, bool]:
+            next_interval = start_time + max_interval
+            interval_limited = next_interval < end_time
+            next_end_time = next_interval if interval_limited is True else end_time
             return next_end_time, interval_limited
 
         if start_time is not None and end_time is not None:
@@ -779,7 +814,7 @@ class BinanceMarketHttpAPI:
             else:
                 last = response[-1]
                 last_id = last.a
-                next_start_time = str(last.T)
+                next_start_time = last.T
                 next_end_time, interval_limited = _calculate_next_end_time(
                     next_start_time,
                     end_time,
@@ -792,9 +827,11 @@ class BinanceMarketHttpAPI:
         self,
         symbol: str,
         limit: Optional[int] = None,
-        from_id: Optional[str] = None,
+        from_id: Optional[int] = None,
     ) -> list[BinanceTrade]:
-        """Query historical trades for symbol."""
+        """
+        Query historical trades for symbol.
+        """
         return await self._endpoint_historical_trades._get(
             parameters=self._endpoint_historical_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -808,9 +845,11 @@ class BinanceMarketHttpAPI:
         instrument_id: InstrumentId,
         ts_init: int,
         limit: Optional[int] = None,
-        from_id: Optional[str] = None,
+        from_id: Optional[int] = None,
     ) -> list[TradeTick]:
-        """Request historical TradeTicks from Binance."""
+        """
+        Request historical TradeTicks from Binance.
+        """
         historical_trades = await self.query_historical_trades(
             symbol=instrument_id.symbol.value,
             limit=limit,
@@ -829,10 +868,12 @@ class BinanceMarketHttpAPI:
         symbol: str,
         interval: BinanceKlineInterval,
         limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> list[BinanceKline]:
-        """Query klines for a symbol over an interval."""
+        """
+        Query klines for a symbol over an interval.
+        """
         return await self._endpoint_klines._get(
             parameters=self._endpoint_klines.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -849,19 +890,41 @@ class BinanceMarketHttpAPI:
         ts_init: int,
         interval: BinanceKlineInterval,
         limit: Optional[int] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> list[BinanceBar]:
-        """Request Binance Bars from Klines."""
-        klines = await self.query_klines(
-            symbol=bar_type.instrument_id.symbol.value,
-            interval=interval,
-            limit=limit,
-            start_time=start_time,
-            end_time=end_time,
-        )
-        bars: list[BinanceBar] = [kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines]
-        return bars
+        """
+        Request Binance Bars from Klines.
+        """
+        end_time_ms = int(end_time) if end_time is not None else sys.maxsize
+        all_bars: list[BinanceBar] = []
+        while True:
+            klines = await self.query_klines(
+                symbol=bar_type.instrument_id.symbol.value,
+                interval=interval,
+                limit=limit,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            bars: list[BinanceBar] = [
+                kline.parse_to_binance_bar(bar_type, ts_init) for kline in klines
+            ]
+            all_bars.extend(bars)
+
+            # Update the start_time to fetch the next set of bars
+            if klines:
+                next_start_time = klines[-1].open_time + 1
+            else:
+                # Handle the case when klines is empty
+                break
+
+            # No more bars to fetch
+            if (limit and len(klines) < limit) or next_start_time >= end_time_ms:
+                break
+
+            start_time = next_start_time
+
+        return all_bars
 
     async def query_ticker_24hr(
         self,
@@ -869,7 +932,9 @@ class BinanceMarketHttpAPI:
         symbols: Optional[list[str]] = None,
         response_type: Optional[str] = None,
     ) -> list[BinanceTicker24hr]:
-        """Query 24hr ticker for symbol or symbols."""
+        """
+        Query 24hr ticker for symbol or symbols.
+        """
         if symbol is not None and symbols is not None:
             raise RuntimeError(
                 "Cannot specify both symbol and symbols parameters.",
@@ -887,7 +952,9 @@ class BinanceMarketHttpAPI:
         symbol: Optional[str] = None,
         symbols: Optional[list[str]] = None,
     ) -> list[BinanceTickerPrice]:
-        """Query price ticker for symbol or symbols."""
+        """
+        Query price ticker for symbol or symbols.
+        """
         if symbol is not None and symbols is not None:
             raise RuntimeError(
                 "Cannot specify both symbol and symbols parameters.",
@@ -904,7 +971,9 @@ class BinanceMarketHttpAPI:
         symbol: Optional[str] = None,
         symbols: Optional[list[str]] = None,
     ) -> list[BinanceTickerBook]:
-        """Query book ticker for symbol or symbols."""
+        """
+        Query book ticker for symbol or symbols.
+        """
         if symbol is not None and symbols is not None:
             raise RuntimeError(
                 "Cannot specify both symbol and symbols parameters.",

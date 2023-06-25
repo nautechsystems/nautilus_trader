@@ -17,6 +17,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -86,8 +87,16 @@ class TestIdStubs:
         )
 
     @staticmethod
-    def client_order_id() -> ClientOrderId:
-        return ClientOrderId("O-20210410-022422-001-001-1")
+    def synthetic_id():
+        return InstrumentId(Symbol("BTC-ETH"), Venue("SYNTH"))
+
+    @staticmethod
+    def client_order_id(counter: int = 1) -> ClientOrderId:
+        return ClientOrderId(f"O-20210410-022422-001-001-{counter}")
+
+    @staticmethod
+    def order_list_id(counter: int = 1) -> OrderListId:
+        return OrderListId(f"OL-20210410-022422-001-001-{counter}")
 
     @staticmethod
     def venue_order_id() -> VenueOrderId:

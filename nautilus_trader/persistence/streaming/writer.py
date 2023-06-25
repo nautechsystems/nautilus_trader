@@ -1,5 +1,20 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import datetime
-from typing import BinaryIO, Optional
+from typing import Any, BinaryIO, Optional
 
 import fsspec
 import pyarrow as pa
@@ -9,11 +24,9 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -38,6 +51,7 @@ class StreamingFeatherWriter:
         The flush interval (milliseconds) for writing chunks.
     replace : bool, default False
         If existing files at the given `path` should be replaced.
+
     """
 
     def __init__(
@@ -69,9 +83,8 @@ class StreamingFeatherWriter:
         self._schemas = list_schemas()
         self._schemas.update(
             {
-                OrderBookDelta: self._schemas[OrderBookData],
-                OrderBookDeltas: self._schemas[OrderBookData],
-                OrderBookSnapshot: self._schemas[OrderBookData],
+                OrderBookDelta: self._schemas[OrderBookDelta],
+                OrderBookDeltas: self._schemas[OrderBookDelta],
             },
         )
         self.logger = logger
@@ -105,11 +118,7 @@ class StreamingFeatherWriter:
 
     @property
     def closed(self) -> bool:
-        for cls in self._files:
-            if not self._files[cls].closed:
-                return False
-
-        return True
+        return all(self._files[cls].closed for cls in self._files)
 
     def write(self, obj: object) -> None:
         """
@@ -190,9 +199,21 @@ class StreamingFeatherWriter:
             self._files[cls].close()
 
 
-def generate_signal_class(name: str, value_type: type):
+def generate_signal_class(name: str, value_type: type) -> type:
     """
     Dynamically create a Data subclass for this signal.
+
+    Parameters
+    ----------
+    name : str
+        The name of the signal data.
+    value_type : type
+        The type for the signal data value.
+
+    Returns
+    -------
+    SignalData
+
     """
 
     class SignalData(Data):
@@ -200,14 +221,38 @@ def generate_signal_class(name: str, value_type: type):
         Represents generic signal data.
         """
 
-        def __init__(self, value, ts_event: int, ts_init: int):
-            super().__init__(ts_event=ts_event, ts_init=ts_init)
+        def __init__(self, value: Any, ts_event: int, ts_init: int) -> None:
             self.value = value
+            self._ts_event = ts_event
+            self._ts_init = ts_init
+
+        @property
+        def ts_event(self) -> int:
+            """
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+
+            Returns
+            -------
+            int
+
+            """
+            return self._ts_event
+
+        @property
+        def ts_init(self) -> int:
+            """
+            The UNIX timestamp (nanoseconds) when the object was initialized.
+
+            Returns
+            -------
+            int
+
+            """
+            return self._ts_init
 
     SignalData.__name__ = f"Signal{name.title()}"
 
     # Parquet serialization
-
     def serialize_signal(self):
         return {
             "ts_init": self.ts_init,

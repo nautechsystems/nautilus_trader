@@ -45,6 +45,7 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#change-position-mode-trade
     https://binance-docs.github.io/apidocs/delivery/en/#change-position-mode-trade
+
     """
 
     def __init__(
@@ -75,6 +76,7 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
             The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -93,6 +95,7 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
             `true`: Hedge Mode, `false`: One-way mode.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -121,6 +124,7 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#cancel-all-open-orders-trade
     https://binance-docs.github.io/apidocs/delivery/en/#cancel-all-open-orders-trade
+
     """
 
     def __init__(
@@ -151,6 +155,7 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
             The symbol of the request
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -174,6 +179,7 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#account-information-v2-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#account-information-user_data
+
     """
 
     def __init__(
@@ -202,6 +208,7 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
             The millisecond timestamp of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -224,6 +231,7 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#position-information-v2-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#position-information-user_data
+
     """
 
     def __init__(
@@ -254,6 +262,7 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
             The symbol of the request.
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -276,13 +285,14 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         The Binance REST API client.
     account_type : BinanceAccountType
         The Binance account type.
+
     """
 
     def __init__(
         self,
         client: BinanceHttpClient,
         clock: LiveClock,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
     ):
         super().__init__(
             client=client,
@@ -291,10 +301,10 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         )
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not USDT_FUTURE or COIN_FUTURE, was {account_type}",  # pragma: no cover
             )
         v2_endpoint_base = self.base_endpoint
-        if account_type == BinanceAccountType.FUTURES_USDT:
+        if account_type == BinanceAccountType.USDT_FUTURE:
             v2_endpoint_base = "/fapi/v2/"
 
         # Create endpoints
@@ -316,7 +326,9 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         self,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesDualSidePosition:
-        """Check Binance Futures hedge mode (dualSidePosition)."""
+        """
+        Check Binance Futures hedge mode (dualSidePosition).
+        """
         return await self._endpoint_futures_position_mode._get(
             parameters=self._endpoint_futures_position_mode.GetParameters(
                 timestamp=self._timestamp(),
@@ -329,7 +341,9 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         dual_side_position: bool,
         recv_window: Optional[str] = None,
     ) -> BinanceStatusCode:
-        """Set Binance Futures hedge mode (dualSidePosition)."""
+        """
+        Set Binance Futures hedge mode (dualSidePosition).
+        """
         return await self._endpoint_futures_position_mode._post(
             parameters=self._endpoint_futures_position_mode.PostParameters(
                 timestamp=self._timestamp(),
@@ -343,7 +357,12 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         symbol: str,
         recv_window: Optional[str] = None,
     ) -> bool:
-        """Delete all Futures open orders. Returns whether successful."""
+        """
+        Delete all Futures open orders.
+
+        Returns whether successful.
+
+        """
         response = await self._endpoint_futures_all_open_orders._delete(
             parameters=self._endpoint_futures_all_open_orders.DeleteParameters(
                 timestamp=self._timestamp(),
@@ -357,7 +376,9 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         self,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesAccountInfo:
-        """Check Binance Futures account information."""
+        """
+        Check Binance Futures account information.
+        """
         return await self._endpoint_futures_account._get(
             parameters=self._endpoint_futures_account.GetParameters(
                 timestamp=self._timestamp(),
@@ -370,7 +391,9 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         symbol: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceFuturesPositionRisk]:
-        """Check all Futures position's info for a symbol."""
+        """
+        Check all Futures position's info for a symbol.
+        """
         return await self._endpoint_futures_position_risk._get(
             parameters=self._endpoint_futures_position_risk.GetParameters(
                 timestamp=self._timestamp(),

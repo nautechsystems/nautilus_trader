@@ -17,7 +17,9 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -25,8 +27,6 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookData
-from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -70,8 +70,8 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
 
 class OrderBookImbalance(Strategy):
     """
-    A simple strategy that sends FOK limit orders when there is a bid/ask
-    imbalance in the order book.
+    A simple strategy that sends FOK limit orders when there is a bid/ask imbalance in
+    the order book.
 
     Cancels all orders and closes all positions on stop.
 
@@ -79,6 +79,7 @@ class OrderBookImbalance(Strategy):
     ----------
     config : OrderbookImbalanceConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
@@ -97,7 +98,9 @@ class OrderBookImbalance(Strategy):
         self._book = None  # type: Optional[OrderBook]
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -112,20 +115,27 @@ class OrderBookImbalance(Strategy):
             self.subscribe_order_book_deltas(self.instrument.id, book_type)
         if self.config.subscribe_ticker:
             self.subscribe_ticker(self.instrument.id)
-        self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
+        self._book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=book_type,
+        )
 
-    def on_order_book_delta(self, data: OrderBookData) -> None:
-        """Actions to be performed when a delta is received."""
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """
+        Actions to be performed when order book deltas are received.
+        """
         if not self._book:
             self.log.error("No book being maintained.")
             return
 
-        self._book.apply(data)
+        self._book.apply_deltas(deltas)
         if self._book.spread():
             self.check_trigger()
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
-        """Actions to be performed when a delta is received."""
+        """
+        Actions to be performed when a delta is received.
+        """
         bid = BookOrder(
             price=tick.bid.as_double(),
             size=tick.bid_size.as_double(),
@@ -144,13 +154,17 @@ class OrderBookImbalance(Strategy):
             self.check_trigger()
 
     def on_order_book(self, order_book: OrderBook) -> None:
-        """Actions to be performed when an order book update is received."""
+        """
+        Actions to be performed when an order book update is received.
+        """
         self._book = order_book
         if self._book.spread():
             self.check_trigger()
 
     def check_trigger(self) -> None:
-        """Check for trigger conditions."""
+        """
+        Check for trigger conditions.
+        """
         if not self._book:
             self.log.error("No book being maintained.")
             return
@@ -159,8 +173,8 @@ class OrderBookImbalance(Strategy):
             self.log.error("No instrument loaded.")
             return
 
-        bid_size = self._book.best_bid_qty()
-        ask_size = self._book.best_ask_qty()
+        bid_size = self._book.best_bid_size()
+        ask_size = self._book.best_ask_size()
         if not (bid_size and ask_size):
             return
 
@@ -195,7 +209,9 @@ class OrderBookImbalance(Strategy):
                 self.submit_order(order)
 
     def on_stop(self) -> None:
-        """Actions to be performed when the strategy is stopped."""
+        """
+        Actions to be performed when the strategy is stopped.
+        """
         if self.instrument is None:
             return
         self.cancel_all_orders(self.instrument.id)

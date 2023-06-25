@@ -13,27 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::hash_map::DefaultHasher;
-use std::ffi::{c_char, CStr};
-use std::fmt::{Debug, Display, Formatter, Result};
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
-use nautilus_core::correctness;
-use nautilus_core::string::string_to_cstr;
+use nautilus_core::{correctness, string::str_to_cstr};
+use pyo3::prelude::*;
+
+pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-#[allow(clippy::box_collection)] // C ABI compatibility
-#[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[derive(Clone, Hash, PartialEq, Eq)]
+#[pyclass]
 pub struct Venue {
-    pub value: Box<Rc<String>>,
-}
-
-impl Display for Venue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
-    }
+    pub value: Box<Arc<String>>,
 }
 
 impl Venue {
@@ -41,9 +38,38 @@ impl Venue {
     pub fn new(s: &str) -> Self {
         correctness::valid_string(s, "`Venue` value");
 
-        Venue {
-            value: Box::new(Rc::new(s.to_string())),
+        Self {
+            value: Box::new(Arc::new(s.to_string())),
         }
+    }
+
+    #[must_use]
+    pub fn synthetic() -> Self {
+        Self::new(SYNTHETIC_VENUE)
+    }
+
+    pub fn is_synthetic(&self) -> bool {
+        self.value.as_ref().as_str() == SYNTHETIC_VENUE
+    }
+}
+
+impl Default for Venue {
+    fn default() -> Self {
+        Self {
+            value: Box::new(Arc::new(String::from("SIM"))),
+        }
+    }
+}
+
+impl Debug for Venue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl Display for Venue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -53,6 +79,7 @@ impl Venue {
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
+///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
@@ -73,7 +100,7 @@ pub extern "C" fn venue_drop(venue: Venue) {
 /// Returns a [`Venue`] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
-    string_to_cstr(&venue.value)
+    str_to_cstr(&venue.value)
 }
 
 #[no_mangle]
@@ -86,6 +113,11 @@ pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
     let mut h = DefaultHasher::new();
     venue.hash(&mut h);
     h.finish()
+}
+
+#[no_mangle]
+pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
+    u8::from(venue.is_synthetic())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

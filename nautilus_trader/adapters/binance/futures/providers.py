@@ -63,6 +63,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         The logger for the provider.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
+
     """
 
     def __init__(
@@ -70,7 +71,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         logger: Logger,
         clock: LiveClock,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
@@ -209,7 +210,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             fee=fee,
         )
 
-    def _parse_instrument(  # noqa (C901 too complex)
+    def _parse_instrument(
         self,
         symbol_info: BinanceFuturesSymbolInfo,
         ts_event: int,
@@ -297,8 +298,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     min_notional=min_notional,
                     max_price=max_price,
                     min_price=min_price,
-                    margin_init=Decimal(float(symbol_info.requiredMarginPercent) / 100),
-                    margin_maint=Decimal(float(symbol_info.maintMarginPercent) / 100),
+                    margin_init=Decimal(symbol_info.requiredMarginPercent) / 100,
+                    margin_maint=Decimal(symbol_info.maintMarginPercent) / 100,
                     maker_fee=maker_fee,
                     taker_fee=taker_fee,
                     ts_event=ts_event,
@@ -329,8 +330,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     min_notional=min_notional,
                     max_price=max_price,
                     min_price=min_price,
-                    margin_init=Decimal(float(symbol_info.requiredMarginPercent) / 100),
-                    margin_maint=Decimal(float(symbol_info.maintMarginPercent) / 100),
+                    margin_init=Decimal(symbol_info.requiredMarginPercent) / 100,
+                    margin_maint=Decimal(symbol_info.maintMarginPercent) / 100,
                     maker_fee=maker_fee,
                     taker_fee=taker_fee,
                     ts_event=ts_event,

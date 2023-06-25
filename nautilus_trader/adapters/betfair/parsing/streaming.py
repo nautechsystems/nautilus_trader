@@ -13,25 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 from collections import defaultdict
+from datetime import datetime
 from typing import Literal, Optional, Union
 
 import pandas as pd
+from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
 from betfair_parser.spec.streaming.mcm import MarketChange
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 from betfair_parser.spec.streaming.mcm import Runner
 from betfair_parser.spec.streaming.mcm import RunnerChange
 from betfair_parser.spec.streaming.mcm import RunnerStatus
+from betfair_parser.spec.streaming.mcm import _PriceVolume
 
-from nautilus_trader.adapters.betfair.client.spec import ClearedOrder
-from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
-from nautilus_trader.adapters.betfair.constants import BETFAIR_BOOK_TYPE
+from nautilus_trader.adapters.betfair.common import B2N_MARKET_SIDE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
-from nautilus_trader.adapters.betfair.constants import STRICT_MARKET_DATA_HANDLING
-from nautilus_trader.adapters.betfair.constants import MarketDataKind
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -41,14 +39,15 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.common.functions import one
 from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatus
@@ -58,16 +57,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.orderbook.data import BookOrder
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.objects import Price
 
 
 PARSE_TYPES = Union[
     InstrumentStatusUpdate,
     InstrumentClose,
-    OrderBookSnapshot,
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
@@ -85,21 +80,21 @@ def market_change_to_updates(  # noqa: C901
     updates: list[PARSE_TYPES] = []
 
     # Handle instrument status and close updates first
-    if mc.marketDefinition is not None:
+    if mc.market_definition is not None:
         updates.extend(
             market_definition_to_instrument_status_updates(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
             ),
         )
         updates.extend(
-            market_definition_to_instrument_closes(mc.marketDefinition, mc.id, ts_event, ts_init),
+            market_definition_to_instrument_closes(mc.market_definition, mc.id, ts_event, ts_init),
         )
         updates.extend(
             market_definition_to_betfair_starting_prices(
-                mc.marketDefinition,
+                mc.market_definition,
                 mc.id,
                 ts_event,
                 ts_init,
@@ -107,8 +102,8 @@ def market_change_to_updates(  # noqa: C901
         )
 
     # Handle market data updates
-    book_updates: list[Union[OrderBookSnapshot, OrderBookDeltas]] = []
-    bsp_book_updates: list[Union[BSPOrderBookDeltas]] = []
+    book_updates: list[OrderBookDeltas] = []
+    bsp_book_updates: list[BSPOrderBookDeltas] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
@@ -173,7 +168,7 @@ def market_definition_to_instrument_status_updates(
             selection_id=str(runner.runner_id),
             selection_handicap=parse_handicap(runner.handicap),
         )
-        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.inPlay)
+        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
         if runner.status == RunnerStatus.REMOVED:
             status = MarketStatus.CLOSED
         else:
@@ -181,10 +176,10 @@ def market_definition_to_instrument_status_updates(
                 status = MARKET_STATUS_MAPPING[key]
             except KeyError:
                 raise ValueError(
-                    f"{runner.status=} {market_definition.status=} {market_definition.inPlay=}",
+                    f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
         status = InstrumentStatusUpdate(
-            instrument_id=instrument_id,
+            instrument_id,
             status=status,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -213,7 +208,7 @@ def runner_to_instrument_close(
     ts_event: int,
     ts_init: int,
 ) -> Optional[InstrumentClose]:
-    instrument_id = betfair_instrument_id(
+    instrument_id: InstrumentId = betfair_instrument_id(
         market_id=market_id,
         selection_id=str(runner.runner_id),
         selection_handicap=parse_handicap(runner.handicap),
@@ -221,7 +216,7 @@ def runner_to_instrument_close(
 
     if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED):
         return InstrumentClose(
-            instrument_id=instrument_id,
+            instrument_id,
             close_price=CLOSE_PRICE_LOSER,
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
@@ -229,7 +224,7 @@ def runner_to_instrument_close(
         )
     elif runner.status in (RunnerStatus.WINNER, RunnerStatus.PLACED):
         return InstrumentClose(
-            instrument_id=instrument_id,
+            instrument_id,
             close_price=CLOSE_PRICE_WINNER,
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
@@ -277,21 +272,17 @@ def runner_to_betfair_starting_price(
         return None
 
 
-def runner_change_to_market_data_kind(rc: RunnerChange) -> MarketDataKind:
-    if rc.atb or rc.atl:
-        if STRICT_MARKET_DATA_HANDLING:
-            assert not any((rc.batb, rc.batl, rc.bdatb, rc.bdatl)), "Mixed market data kinds"
-        return MarketDataKind.ALL
-    elif rc.batl or rc.batb:
-        if STRICT_MARKET_DATA_HANDLING:
-            assert not any((rc.atb, rc.atl, rc.bdatb, rc.bdatl)), "Mixed market data kinds"
-        return MarketDataKind.BEST
-    elif rc.bdatb or rc.bdatl:
-        if STRICT_MARKET_DATA_HANDLING:
-            assert not any((rc.atb, rc.atl, rc.batb, rc.batl)), "Mixed market data kinds"
-        return MarketDataKind.DISPLAY
-    else:
-        raise ValueError("rc contains no valid market data")
+def _price_volume_to_book_order(pv: _PriceVolume, side: OrderSide, order_id: int) -> BookOrder:
+    return BookOrder(
+        side,
+        betfair_float_to_price(pv.price),
+        betfair_float_to_quantity(pv.volume),
+        order_id,
+    )
+
+
+def price_to_order_id(price: Price) -> int:
+    return int(price.as_double() * 10**price.precision)
 
 
 def runner_change_to_order_book_snapshot(
@@ -299,116 +290,57 @@ def runner_change_to_order_book_snapshot(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookSnapshot]:
-    try:
-        market_data_kind = runner_change_to_market_data_kind(rc)
-    except ValueError:
-        return None
-    if market_data_kind == MarketDataKind.ALL:
-        return runner_change_all_depth_to_order_book_snapshot(rc, instrument_id, ts_event, ts_init)
-    elif market_data_kind == MarketDataKind.BEST:
-        return runner_change_best_depth_to_order_book_snapshot(rc, instrument_id, ts_event, ts_init)
-    elif market_data_kind == MarketDataKind.DISPLAY:
-        return runner_change_display_depth_to_order_book_snapshot(
-            rc,
+) -> OrderBookDeltas:
+    """
+    Convert a RunnerChange to a OrderBookDeltas snapshot.
+    """
+    # Check for incorrect data types
+    assert not (
+        rc.bdatb or rc.bdatl
+    ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    assert not (
+        rc.batb or rc.batl
+    ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+
+    deltas: list[OrderBookDelta] = [
+        OrderBookDelta(
             instrument_id,
+            BookAction.CLEAR,
+            None,
+            ts_event,
+            ts_init,
+        ),
+    ]
+
+    # Bids are available to back (atb)
+    for bid in rc.atb:
+        bid_price = betfair_float_to_price(bid.price)
+        bid_volume = betfair_float_to_quantity(bid.volume)
+        bid_order_id = price_to_order_id(bid_price)
+        delta = OrderBookDelta(
+            instrument_id,
+            BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
+            BookOrder(OrderSide.BUY, bid_price, bid_volume, bid_order_id),
             ts_event,
             ts_init,
         )
-    else:
-        raise ValueError("Unknown market data kind")
+        deltas.append(delta)
 
+    # Asks are available to back (atl)
+    for ask in rc.atl:
+        ask_price = betfair_float_to_price(ask.price)
+        ask_volume = betfair_float_to_quantity(ask.volume)
+        ask_order_id = price_to_order_id(ask_price)
+        delta = OrderBookDelta(
+            instrument_id,
+            BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
+            BookOrder(OrderSide.SELL, ask_price, ask_volume, ask_order_id),
+            ts_event,
+            ts_init,
+        )
+        deltas.append(delta)
 
-def runner_change_all_depth_to_order_book_snapshot(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> Optional[OrderBookSnapshot]:
-    # ATL = Available To Lay = Back orders
-    if rc.atl:
-        asks = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.atl if order.price
-        ]
-    else:
-        asks = []
-    # Asks are available to back (atb)
-    if rc.atb:
-        bids: list = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.atb if order.price
-        ]
-    else:
-        bids = []
-
-    return OrderBookSnapshot(
-        book_type=BookType.L2_MBP,
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
-
-
-def runner_change_best_depth_to_order_book_snapshot(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> Optional[OrderBookSnapshot]:
-    # Bids are best available to lay (batl)
-    if rc.batl:
-        asks: list = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.batl if order.price
-        ]
-    else:
-        asks = []
-
-    # Asks are best available to back (batb)
-    if rc.batb:
-        bids: list = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.batb if order.price
-        ]
-    else:
-        bids = []
-    return OrderBookSnapshot(
-        book_type=BookType.L2_MBP,
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
-
-
-def runner_change_display_depth_to_order_book_snapshot(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> Optional[OrderBookSnapshot]:
-    # Bids are best display available to lay (bdatl)
-    if rc.bdatl:
-        asks = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.bdatl if order.price
-        ]
-    else:
-        asks = []
-    # Asks are best display available to back (bdatb)
-    if rc.bdatb:
-        bids: list = [
-            (betfair_float_to_price(order.price), order.volume) for order in rc.bdatb if order.price
-        ]
-    else:
-        bids = []
-    return OrderBookSnapshot(
-        book_type=BookType.L2_MBP,
-        instrument_id=instrument_id,
-        bids=bids,
-        asks=asks,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return OrderBookDeltas(instrument_id, deltas)
 
 
 def runner_change_to_order_book_deltas(
@@ -417,173 +349,50 @@ def runner_change_to_order_book_deltas(
     ts_event: int,
     ts_init: int,
 ) -> Optional[OrderBookDeltas]:
-    try:
-        market_data_kind = runner_change_to_market_data_kind(rc)
-    except ValueError:
-        return None
-    if market_data_kind == MarketDataKind.ALL:
-        return runner_change_all_depth_to_order_book_deltas(rc, instrument_id, ts_event, ts_init)
-    elif market_data_kind == MarketDataKind.BEST:
-        return runner_change_best_depth_to_deltas(rc, instrument_id, ts_event, ts_init)
-    elif market_data_kind == MarketDataKind.DISPLAY:
-        return runner_change_display_depth_to_deltas(
-            rc,
+    """
+    Convert a RunnerChange to a list of OrderBookDeltas.
+    """
+    assert not (
+        rc.bdatb or rc.bdatl
+    ), "Incorrect orderbook data found (best display), should only be `atb` and `atl`"
+    assert not (
+        rc.batb or rc.batl
+    ), "Incorrect orderbook data found (best) should only be `atb` and `atl`"
+
+    deltas: list[OrderBookDelta] = []
+
+    # Bids are available to back (atb)
+    for bid in rc.atb:
+        bid_price = betfair_float_to_price(bid.price)
+        bid_volume = betfair_float_to_quantity(bid.volume)
+        bid_order_id = price_to_order_id(bid_price)
+        delta = OrderBookDelta(
             instrument_id,
+            BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
+            BookOrder(OrderSide.BUY, bid_price, bid_volume, bid_order_id),
             ts_event,
             ts_init,
         )
-    else:
-        raise ValueError("Unknown market data kind")
+        deltas.append(delta)
 
-
-def runner_change_all_depth_to_order_book_deltas(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> Optional[OrderBookDeltas]:
-    deltas: list[OrderBookDelta] = []
-
-    # Bids are available to lay (atl)
-    if rc.atl:
-        deltas.extend(
-            [
-                OrderBookDelta(
-                    instrument_id,
-                    BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.SELL),
-                    ts_event,
-                    ts_init,
-                )
-                for back in rc.atl
-            ],
+    # Asks are available to back (atl)
+    for ask in rc.atl:
+        ask_price = betfair_float_to_price(ask.price)
+        ask_volume = betfair_float_to_quantity(ask.volume)
+        ask_order_id = price_to_order_id(ask_price)
+        delta = OrderBookDelta(
+            instrument_id,
+            BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
+            BookOrder(OrderSide.SELL, ask_price, ask_volume, ask_order_id),
+            ts_event,
+            ts_init,
         )
+        deltas.append(delta)
 
-    # Asks are available to back (atb)
-    if rc.atb:
-        deltas.extend(
-            [
-                OrderBookDelta(
-                    instrument_id,
-                    BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
-                    ts_event,
-                    ts_init,
-                )
-                for lay in rc.atb
-            ],
-        )
     if not deltas:
         return None
-    return OrderBookDeltas(
-        book_type=BookType.L2_MBP,
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
 
-
-def runner_change_best_depth_to_deltas(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> Optional[OrderBookDeltas]:
-    deltas: list[OrderBookDelta] = []
-
-    # Bids are best available to lay (batl)
-    if rc.batl:
-        deltas.extend(
-            [
-                OrderBookDelta(
-                    instrument_id,
-                    BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.SELL),
-                    ts_event,
-                    ts_init,
-                )
-                for back in rc.batl
-            ],
-        )
-
-    # Asks are best available to back (batb)
-    if rc.batb:
-        deltas.extend(
-            [
-                OrderBookDelta(
-                    instrument_id,
-                    BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
-                    ts_event,
-                    ts_init,
-                )
-                for lay in rc.batb
-            ],
-        )
-    if not deltas:
-        return None
-    return OrderBookDeltas(
-        book_type=BookType.L2_MBP,
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
-
-
-def runner_change_display_depth_to_deltas(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> Optional[OrderBookDeltas]:
-    deltas: list[OrderBookDelta] = []
-
-    # Bids are best display available to lay (bdatl)
-    if rc.bdatl:
-        deltas.extend(
-            [
-                OrderBookDelta(
-                    instrument_id,
-                    BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if back.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(back.price, back.volume, OrderSide.SELL),
-                    ts_event,
-                    ts_init,
-                )
-                for back in rc.bdatl
-            ],
-        )
-
-    # Asks are best display available to back (bdatb)
-    if rc.bdatb:
-        deltas.extend(
-            [
-                OrderBookDelta(
-                    instrument_id,
-                    BETFAIR_BOOK_TYPE,
-                    BookAction.UPDATE if lay.volume != 0.0 else BookAction.DELETE,
-                    BookOrder(lay.price, lay.volume, OrderSide.BUY),
-                    ts_event,
-                    ts_init,
-                )
-                for lay in rc.bdatb
-            ],
-        )
-    if not deltas:
-        return None
-    return OrderBookDeltas(
-        book_type=BookType.L2_MBP,
-        instrument_id=instrument_id,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return OrderBookDeltas(instrument_id, deltas)
 
 
 def runner_change_to_trade_ticks(
@@ -598,13 +407,13 @@ def runner_change_to_trade_ticks(
             continue
         trade_id = hash_market_trade(timestamp=ts_event, price=trd.price, volume=trd.volume)
         tick = TradeTick(
-            instrument_id=instrument_id,
-            price=betfair_float_to_price(trd.price),
-            size=betfair_float_to_quantity(trd.volume),
-            aggressor_side=AggressorSide.NO_AGGRESSOR,
-            trade_id=TradeId(trade_id),
-            ts_event=ts_event,
-            ts_init=ts_init,
+            instrument_id,
+            betfair_float_to_price(trd.price),
+            betfair_float_to_quantity(trd.volume),
+            AggressorSide.NO_AGGRESSOR,
+            TradeId(trade_id),
+            ts_event,
+            ts_init,
         )
         trade_ticks.append(tick)
     return trade_ticks
@@ -649,17 +458,19 @@ def _create_bsp_order_book_delta(
     ts_event: int,
     ts_init: int,
 ) -> BSPOrderBookDelta:
+    price = betfair_float_to_price(price)
+    order_id = price_to_order_id(price)
     return BSPOrderBookDelta(
-        instrument_id=bsp_instrument_id,
-        book_type=BookType.L2_MBP,
-        action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-        order=BookOrder(
-            price=betfair_float_to_price(price),
+        bsp_instrument_id,
+        BookAction.DELETE if volume == 0 else BookAction.UPDATE,
+        BookOrder(
+            price=price,
             size=betfair_float_to_quantity(volume),
-            side=B2N_MARKET_STREAM_SIDE[side],
+            side=B2N_MARKET_SIDE[side],
+            order_id=order_id,
         ),
-        ts_event=ts_event,
-        ts_init=ts_init,
+        ts_event,
+        ts_init,
     )
 
 
@@ -696,21 +507,12 @@ def runner_change_to_bsp_order_book_deltas(
             ),
         )
 
-    return BSPOrderBookDeltas(
-        instrument_id=bsp_instrument_id,
-        book_type=BookType.L2_MBP,
-        deltas=deltas,
-        ts_event=ts_event,
-        ts_init=ts_init,
-    )
+    return BSPOrderBookDeltas(bsp_instrument_id, deltas)
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     cls = type(all_deltas[0])
     per_instrument_deltas = defaultdict(list)
-    book_type = one({deltas.book_type for deltas in all_deltas})
-    ts_event = one({deltas.ts_event for deltas in all_deltas})
-    ts_init = one({deltas.ts_init for deltas in all_deltas})
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -718,9 +520,6 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
         cls(
             instrument_id=instrument_id,
             deltas=deltas,
-            book_type=book_type,
-            ts_event=ts_event,
-            ts_init=ts_init,
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]
@@ -730,9 +529,11 @@ async def generate_trades_list(
     self,
     venue_order_id: VenueOrderId,
     symbol: Symbol,
-    since: datetime = None,  # type: ignore
+    since: Optional[datetime] = None,
 ) -> list[TradeReport]:
-    filled: list[ClearedOrder] = self.client().betting.list_cleared_orders(bet_ids=[venue_order_id])
+    filled: list[ClearedOrderSummary] = self.client().betting.list_cleared_orders(
+        bet_ids=[venue_order_id],
+    )
     if not filled:
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []

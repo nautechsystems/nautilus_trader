@@ -43,15 +43,15 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderEvent
-from nautilus_trader.model.events.order import OrderExpired
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -89,6 +89,7 @@ class LiveExecutionEngine(ExecutionEngine):
     ------
     TypeError
         If `config` is not of type `LiveExecEngineConfig`.
+
     """
 
     _sentinel = None
@@ -118,7 +119,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._evt_queue: Queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.reconciliation: bool = config.reconciliation
+        self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
@@ -136,6 +137,18 @@ class LiveExecutionEngine(ExecutionEngine):
             endpoint="ExecEngine.reconcile_mass_status",
             handler=self.reconcile_mass_status,
         )
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        Return whether the reconciliation process will be run on start.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._reconciliation
 
     def connect(self) -> None:
         """
@@ -220,11 +233,11 @@ class LiveExecutionEngine(ExecutionEngine):
         if self._cmd_queue_task:
             self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}...")
             self._cmd_queue_task.cancel()
-            self._cmd_queue_task.done()
+            self._cmd_queue_task = None
         if self._evt_queue_task:
             self._log.debug(f"Canceling {self._evt_queue_task.get_name()}...")
             self._evt_queue_task.cancel()
-            self._evt_queue_task.done()
+            self._evt_queue_task = None
 
     def execute(self, command: TradingCommand) -> None:
         """
@@ -384,7 +397,8 @@ class LiveExecutionEngine(ExecutionEngine):
 
     async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
         """
-        Reconcile the internal execution state with all execution clients (external state).
+        Reconcile the internal execution state with all execution clients (external
+        state).
 
         Parameters
         ----------
@@ -532,6 +546,9 @@ class LiveExecutionEngine(ExecutionEngine):
         order: Order = self._cache.order(client_order_id)
         if order is None:
             order = self._generate_external_order(report)
+            if order is None:
+                # External order dropped
+                return True  # No further reconciliation
             # Add to cache without determining any position ID initially
             self._cache.add_order(order, position_id=None)
 
@@ -749,9 +766,9 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.warning(f"Generated inferred {filled}.")
         return filled
 
-    def _generate_external_order(self, report: OrderStatusReport) -> Order:
+    def _generate_external_order(self, report: OrderStatusReport) -> Optional[Order]:
         self._log.info(
-            f"Generating external order {repr(report.client_order_id)}",
+            f"Generating external order {report.client_order_id!r}",
             color=LogColor.BLUE,
         )
 
@@ -786,6 +803,15 @@ class LiveExecutionEngine(ExecutionEngine):
         else:
             tags = None
 
+        # Check if filtering
+        if self.filter_unclaimed_external_orders:
+            if strategy_id.value == "EXTERNAL":
+                # Experimental: will call this out with a warning log for now
+                self._log.warning(
+                    f"Filtering report for unclaimed EXTERNAL order, {report}.",
+                )
+                return None  # No further reconciliation
+
         initialized = OrderInitialized(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
@@ -797,8 +823,10 @@ class LiveExecutionEngine(ExecutionEngine):
             time_in_force=report.time_in_force,
             post_only=report.post_only,
             reduce_only=report.reduce_only,
+            quote_quantity=False,
             options=options,
             emulation_trigger=TriggerType.NO_TRIGGER,
+            trigger_instrument_id=None,
             contingency_type=report.contingency_type,
             order_list_id=report.order_list_id,
             linked_order_ids=None,
@@ -961,7 +989,6 @@ class LiveExecutionEngine(ExecutionEngine):
         elif (
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            if report.trigger_price != order.trigger_price or report.price != order.price:
-                return True
+        ) and (report.trigger_price != order.trigger_price or report.price != order.price):
+            return True
         return False

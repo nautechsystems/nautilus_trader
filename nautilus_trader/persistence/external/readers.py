@@ -91,7 +91,7 @@ class Reader:
     def __init__(
         self,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update: Callable = None,
+        instrument_provider_update: Optional[Callable] = None,
     ):
         self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
@@ -141,7 +141,7 @@ class ByteReader(Reader):
         self,
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update: Callable = None,
+        instrument_provider_update: Optional[Callable] = None,
     ):
         super().__init__(
             instrument_provider_update=instrument_provider_update,
@@ -184,7 +184,7 @@ class TextReader(ByteReader):
     def __init__(
         self,
         line_parser: Callable,
-        line_preprocessor: LinePreprocessor = None,
+        line_preprocessor: Optional[LinePreprocessor] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
         newline: bytes = b"\n",
@@ -241,6 +241,7 @@ class CSVReader(Reader):
         passed will potentially contain many lines (a block).
     as_dataframe: bool, default False
         If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`.
+
     """
 
     def __init__(
@@ -321,11 +322,12 @@ class ParquetReader(ByteReader):
     instrument_provider_update : Callable , optional
         An optional hook/callable to update instrument provider before data is passed to `byte_parser`
         (in many cases instruments need to be known ahead of parsing).
+
     """
 
     def __init__(
         self,
-        parser: Callable = None,
+        parser: Optional[Callable] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
     ):

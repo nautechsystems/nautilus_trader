@@ -13,19 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::ffi::c_char;
-use std::ops::{Deref, DerefMut};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use nautilus_core::correctness;
-use nautilus_core::cvec::CVec;
-use nautilus_core::datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs};
-use nautilus_core::string::cstr_to_string;
-use nautilus_core::time::{duration_since_unix_epoch, UnixNanos};
-use pyo3::prelude::*;
-use pyo3::types::{PyList, PyString};
-use pyo3::{ffi, AsPyPointer};
+use nautilus_core::{
+    correctness,
+    datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs},
+    time::{duration_since_unix_epoch, UnixNanos},
+};
+use pyo3::{prelude::*, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 
@@ -92,7 +87,7 @@ impl Default for MonotonicClock {
 ///
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
-trait Clock {
+pub trait Clock {
     /// Return a new [Clock].
     fn new() -> Self;
 
@@ -156,8 +151,11 @@ pub struct TestClock {
 }
 
 impl TestClock {
-    #[allow(dead_code)] // Temporary
-    fn set_time(&mut self, to_time_ns: UnixNanos) {
+    pub fn get_timers(&self) -> &HashMap<String, TestTimer> {
+        &self.timers
+    }
+
+    pub fn set_time(&mut self, to_time_ns: UnixNanos) {
         self.time_ns = to_time_ns
     }
 
@@ -466,245 +464,12 @@ impl Clock for LiveClock {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API - TestClock
-////////////////////////////////////////////////////////////////////////////////
-
-#[repr(C)]
-pub struct TestClockAPI(Box<TestClock>);
-
-impl Deref for TestClockAPI {
-    type Target = TestClock;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for TestClockAPI {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_new() -> TestClockAPI {
-    TestClockAPI(Box::new(TestClock::new()))
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_drop(clock: TestClockAPI) {
-    drop(clock); // Memory freed here
-}
-
-/// # Safety
-/// - Assumes `callback_ptr` is a valid PyCallable pointer.
-#[no_mangle]
-pub unsafe extern "C" fn test_clock_register_default_handler(
-    clock: &mut TestClockAPI,
-    callback_ptr: *mut ffi::PyObject,
-) {
-    assert!(!callback_ptr.is_null());
-    assert!(ffi::Py_None() != callback_ptr);
-
-    let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    clock.register_default_handler_py(callback_py);
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_set_time(clock: &mut TestClockAPI, to_time_ns: u64) {
-    clock.set_time(to_time_ns);
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_timestamp(clock: &mut TestClockAPI) -> f64 {
-    clock.timestamp()
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_timestamp_ms(clock: &mut TestClockAPI) -> u64 {
-    clock.timestamp_ms()
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_timestamp_us(clock: &mut TestClockAPI) -> u64 {
-    clock.timestamp_us()
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_timestamp_ns(clock: &mut TestClockAPI) -> u64 {
-    clock.timestamp_ns()
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_timer_names(clock: &TestClockAPI) -> *mut ffi::PyObject {
-    Python::with_gil(|py| -> Py<PyList> {
-        let names: Vec<Py<PyString>> = clock
-            .timers
-            .keys()
-            .map(|k| PyString::new(py, k).into())
-            .collect();
-        PyList::new(py, names).into()
-    })
-    .as_ptr()
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_timer_count(clock: &mut TestClockAPI) -> usize {
-    clock.timer_count()
-}
-
-/// # Safety
-/// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid PyCallable pointer.
-#[no_mangle]
-pub unsafe extern "C" fn test_clock_set_time_alert_ns(
-    clock: &mut TestClockAPI,
-    name_ptr: *const c_char,
-    alert_time_ns: UnixNanos,
-    callback_ptr: *mut ffi::PyObject,
-) {
-    assert!(!callback_ptr.is_null());
-
-    let name = cstr_to_string(name_ptr);
-    let callback_py = Python::with_gil(|py| match callback_ptr {
-        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
-        _ => None,
-    });
-    clock.set_time_alert_ns_py(name, alert_time_ns, callback_py);
-}
-
-/// # Safety
-/// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid PyCallable pointer.
-#[no_mangle]
-pub unsafe extern "C" fn test_clock_set_timer_ns(
-    clock: &mut TestClockAPI,
-    name_ptr: *const c_char,
-    interval_ns: u64,
-    start_time_ns: UnixNanos,
-    stop_time_ns: UnixNanos,
-    callback_ptr: *mut ffi::PyObject,
-) {
-    assert!(!callback_ptr.is_null());
-
-    let name = cstr_to_string(name_ptr);
-    let stop_time_ns = match stop_time_ns {
-        0 => None,
-        _ => Some(stop_time_ns),
-    };
-    let callback_py = Python::with_gil(|py| match callback_ptr {
-        ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
-        _ => None,
-    });
-    clock.set_timer_ns_py(name, interval_ns, start_time_ns, stop_time_ns, callback_py);
-}
-
-/// # Safety
-/// - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
-#[no_mangle]
-pub unsafe extern "C" fn test_clock_advance_time(
-    clock: &mut TestClockAPI,
-    to_time_ns: u64,
-    set_time: u8,
-) -> CVec {
-    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
-    clock.match_handlers_py(events).into()
-}
-
-// TODO: This struct implementation potentially leaks memory
-// TODO: Skip clippy check for now since it requires large modification
-#[allow(clippy::drop_non_drop)]
-#[no_mangle]
-pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
-    let CVec { ptr, len, cap } = v;
-    let data: Vec<TimeEventHandler> =
-        unsafe { Vec::from_raw_parts(ptr as *mut TimeEventHandler, len, cap) };
-    drop(data); // Memory freed here
-}
-
-/// # Safety
-/// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn test_clock_next_time_ns(
-    clock: &mut TestClockAPI,
-    name_ptr: *const c_char,
-) -> UnixNanos {
-    let name = cstr_to_string(name_ptr);
-    clock.next_time_ns(&name)
-}
-
-/// # Safety
-/// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn test_clock_cancel_timer(
-    clock: &mut TestClockAPI,
-    name_ptr: *const c_char,
-) {
-    let name = cstr_to_string(name_ptr);
-    clock.cancel_timer(&name);
-}
-
-#[no_mangle]
-pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClockAPI) {
-    clock.cancel_timers();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API - LiveClock
-////////////////////////////////////////////////////////////////////////////////
-
-#[repr(C)]
-pub struct LiveClockAPI(Box<LiveClock>);
-
-impl Deref for LiveClockAPI {
-    type Target = LiveClock;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for LiveClockAPI {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn live_clock_new() -> LiveClockAPI {
-    LiveClockAPI(Box::new(LiveClock::new()))
-}
-
-#[no_mangle]
-pub extern "C" fn live_clock_drop(clock: LiveClockAPI) {
-    drop(clock); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn live_clock_timestamp(clock: &mut LiveClockAPI) -> f64 {
-    clock.timestamp()
-}
-
-#[no_mangle]
-pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClockAPI) -> u64 {
-    clock.timestamp_ms()
-}
-
-#[no_mangle]
-pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClockAPI) -> u64 {
-    clock.timestamp_us()
-}
-
-#[no_mangle]
-pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClockAPI) -> u64 {
-    clock.timestamp_ns()
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use pyo3::types::PyList;
+
     use super::*;
 
     #[test]

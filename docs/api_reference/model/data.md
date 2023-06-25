@@ -13,7 +13,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.data.bet
+.. automodule:: nautilus_trader.model.data.book
    :show-inheritance:
    :inherited-members:
    :members:

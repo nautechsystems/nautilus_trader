@@ -20,7 +20,7 @@ import msgspec
 import pandas as pd
 
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
@@ -80,12 +80,12 @@ def _deserialize(values):
         if total is None:
             continue
         balances.append(
-            dict(
-                total=total,
-                locked=v["balance_locked"],
-                free=v["balance_free"],
-                currency=v["balance_currency"],
-            ),
+            {
+                "total": total,
+                "locked": v["balance_locked"],
+                "free": v["balance_free"],
+                "currency": v["balance_currency"],
+            },
         )
 
     margins = []
@@ -94,12 +94,12 @@ def _deserialize(values):
         if pd.isnull(initial):
             continue
         margins.append(
-            dict(
-                initial=initial,
-                maintenance=v["margin_maintenance"],
-                currency=v["margin_currency"],
-                instrument_id=v["margin_instrument_id"],
-            ),
+            {
+                "initial": initial,
+                "maintenance": v["margin_maintenance"],
+                "currency": v["margin_currency"],
+                "instrument_id": v["margin_instrument_id"],
+            },
         )
 
     state = {

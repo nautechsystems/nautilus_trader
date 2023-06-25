@@ -38,6 +38,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#user-commission-rate-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#user-commission-rate-user_data
+
     """
 
     def __init__(
@@ -67,6 +68,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
             Millisecond timestamp of the request.
         recvWindow : str, optional
             The number of milliseconds after timestamp the request is valid.
+
         """
 
         timestamp: str
@@ -87,25 +89,26 @@ class BinanceFuturesWalletHttpAPI:
     ----------
     client : BinanceHttpClient
         The Binance REST API client.
+
     """
 
     def __init__(
         self,
         client: BinanceHttpClient,
         clock: LiveClock,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
     ):
         self.client = client
         self._clock = clock
 
-        if account_type == BinanceAccountType.FUTURES_USDT:
+        if account_type == BinanceAccountType.USDT_FUTURE:
             self.base_endpoint = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.COIN_FUTURE:
             self.base_endpoint = "/dapi/v1/"
 
         if not account_type.is_futures:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not USDT_FUTURE or COIN_FUTURE, was {account_type}",  # pragma: no cover
             )
 
         self._endpoint_futures_commission_rate = BinanceFuturesCommissionRateHttp(
@@ -114,7 +117,9 @@ class BinanceFuturesWalletHttpAPI:
         )
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock."""
+        """
+        Create Binance timestamp from internal clock.
+        """
         return str(self._clock.timestamp_ms())
 
     async def query_futures_commission_rate(
@@ -122,7 +127,9 @@ class BinanceFuturesWalletHttpAPI:
         symbol: str,
         recv_window: Optional[str] = None,
     ) -> BinanceFuturesCommissionRate:
-        """Get Futures commission rates for a given symbol."""
+        """
+        Get Futures commission rates for a given symbol.
+        """
         rate = await self._endpoint_futures_commission_rate._get(
             parameters=self._endpoint_futures_commission_rate.GetParameters(
                 timestamp=self._timestamp(),

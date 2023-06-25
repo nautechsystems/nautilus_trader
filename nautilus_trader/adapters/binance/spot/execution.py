@@ -71,6 +71,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         The base URL for the WebSocket client.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
+
     """
 
     def __init__(
@@ -88,7 +89,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     ):
         PyCondition.true(
             account_type.is_spot_or_margin,
-            "account_type was not SPOT, MARGIN_CROSS or MARGIN_ISOLATED",
+            "account_type was not SPOT, MARGIN or ISOLATED_MARGIN",
         )
 
         # Spot HTTP API
@@ -172,7 +173,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _check_order_validity(self, order: Order):
+    def _check_order_validity(self, order: Order) -> None:
         # Check order type valid
         if order.order_type not in self._spot_enum_parser.spot_valid_order_types:
             self._log.error(
@@ -208,7 +209,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         try:
             self._spot_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
-            self._log.exception(f"Error on handling {repr(raw)}", e)
+            self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
         account_msg = self._decoder_spot_account_update_wrapper.decode(raw)

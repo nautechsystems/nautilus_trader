@@ -143,7 +143,7 @@ cdef class BettingInstrument(Instrument):
         return {
             "type": "BettingInstrument",
             "id": obj.id.to_str(),
-            "venue_name": obj.id.venue.to_str(),
+            "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
             "competition_id": obj.competition_id,
@@ -194,7 +194,7 @@ cdef class BettingInstrument(Instrument):
         """
         return BettingInstrument.to_dict_c(obj)
 
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint inverse_as_quote=False):
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
         Condition.not_none(quantity, "quantity")
         cdef double bet_price = 1.0 / price.as_f64_c()
         return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)

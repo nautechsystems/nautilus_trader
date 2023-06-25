@@ -25,12 +25,12 @@ repos:
       - id: check-yaml
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.4
+    rev: v2.2.5
     hooks:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        args: ["-L", "ot,zar,warmup"]
+        args: ["-L", "ot,zar"]
 
   ##############################################################################
   #  Rust formatting and linting
@@ -60,19 +60,11 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v2.4.0
+    rev: v2.5.1
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
         types: [python]
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        types_or: [python, cython]
-        entry: "isort"
-        args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/psf/black
     rev: 23.3.0
@@ -83,21 +75,44 @@ repos:
         args: ["--config", "pyproject.toml"]
         exclude: "docs/_pygments/monokai.py"
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.263
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.275
     hooks:
       - id: ruff
         args: ["--fix"]
 
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (cython)
+        types_or: [cython]
+        entry: "isort"
+        args: ["--settings-file", "pyproject.toml"]
+
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.3
+    hooks:
+      - id: docformatter
+        additional_dependencies: [tomli]
+        args: [
+          "--black",
+          "--make-summary-multi-line",
+          "--pre-summary-newline",
+          "--blank",
+          "--recursive",
+          "--in-place",
+        ]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.2.0
+    rev: v1.4.0
     hooks:
       - id: mypy
         args: [
-          --ignore-missing-imports,
-          --allow-incomplete-defs,
-          --no-strict-optional,  # Fixing in progress
-          --warn-no-return,
+          "--ignore-missing-imports",
+          "--allow-incomplete-defs",
+          "--no-strict-optional",  # Fixing in progress
+          "--warn-no-return",
         ]
         additional_dependencies: [
           msgspec,

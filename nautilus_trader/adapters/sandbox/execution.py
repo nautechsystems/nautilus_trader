@@ -15,7 +15,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
+from typing import ClassVar, Optional
 
 import pandas as pd
 
@@ -34,9 +34,11 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
@@ -47,7 +49,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -67,9 +68,10 @@ class SandboxExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
-    INSTRUMENTS: list[Instrument] = []
+    INSTRUMENTS: ClassVar[list[Instrument]] = []
 
     def __init__(
         self,
@@ -83,7 +85,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         balance: int,
         oms_type: OmsType = OmsType.NETTING,
         account_type: AccountType = AccountType.MARGIN,
-    ):
+    ) -> None:
         self._currency = Currency.from_str(currency)
         money = Money(value=balance, currency=self._currency)
         self.balance = AccountBalance(total=money, locked=Money(0, money.currency), free=money)
@@ -131,7 +133,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         )
         self.exchange.register_client(self._client)
 
-    def connect(self):
+    def connect(self) -> None:
         """
         Connect the client.
         """
@@ -141,7 +143,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         self._set_connected(True)
         self._log.info("Connected.")
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """
         Disconnect the client.
         """
@@ -195,10 +197,12 @@ class SandboxExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command):
         return self._client.cancel_all_orders(command)
 
-    def on_data(self, data: Data):
+    def on_data(self, data: Data) -> None:
         # Taken from main backtest loop of BacktestEngine
-        if isinstance(data, OrderBookData):
-            self.exchange.process_order_book(data)
+        if isinstance(data, (OrderBookDelta)):
+            self.exchange.process_order_book_delta(data)
+        elif isinstance(data, (OrderBookDeltas)):
+            self.exchange.process_order_book_deltas(data)
         elif isinstance(data, QuoteTick):
             self.exchange.process_quote_tick(data)
         elif isinstance(data, TradeTick):

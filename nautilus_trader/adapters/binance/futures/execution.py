@@ -70,12 +70,13 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         The logger for the client.
     instrument_provider : BinanceFuturesInstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
+
     """
 
     def __init__(
@@ -87,13 +88,13 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceFuturesInstrumentProvider,
-        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
-        base_url_ws: Optional[str] = None,
+        base_url_ws: str,
+        account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         warn_gtd_to_gtc: bool = True,
     ):
         PyCondition.true(
             account_type.is_futures,
-            "account_type was not FUTURES_USDT or FUTURES_COIN",
+            "account_type was not USDT_FUTURE or COIN_FUTURE",
         )
 
         # Futures HTTP API
@@ -207,7 +208,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def _check_order_validity(self, order: Order):
+    def _check_order_validity(self, order: Order) -> None:
         # Check order type valid
         if order.order_type not in self._futures_enum_parser.futures_valid_order_types:
             self._log.error(
@@ -242,7 +243,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         try:
             self._futures_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
-            self._log.exception(f"Error on handling {repr(raw)}", e)
+            self._log.exception(f"Error on handling {raw!r}", e)
 
     def _handle_account_update(self, raw: bytes) -> None:
         account_update = self._decoder_futures_account_update_wrapper.decode(raw)

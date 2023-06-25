@@ -18,12 +18,14 @@ from typing import Optional
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import OrderList
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -35,6 +37,17 @@ class TestCommandStubs:
             strategy_id=TestIdStubs.strategy_id(),
             position_id=TestIdStubs.position_id(),
             order=order,
+            command_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+
+    @staticmethod
+    def submit_order_list_command(order_list: OrderList) -> SubmitOrderList:
+        return SubmitOrderList(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            order_list=order_list,
+            position_id=TestIdStubs.position_id(),
             command_id=TestIdStubs.uuid(),
             ts_init=0,
         )

@@ -15,35 +15,30 @@
 
 #![allow(dead_code)]
 
-use std::rc::Rc;
-
-use nautilus_core::time::UnixNanos;
-use nautilus_core::uuid::UUID4;
-use rust_fsm::*;
-use thiserror::Error;
-
-use crate::enums::{
-    ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-    TriggerType,
-};
-use crate::events::order::{
-    OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
-    OrderFilled, OrderIdentifiers, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-    OrderPendingUpdate, OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
-};
-use crate::identifiers::account_id::AccountId;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::order_list_id::OrderListId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::trade_id::TradeId;
-use crate::identifiers::venue_order_id::VenueOrderId;
-use crate::types::fixed::fixed_i64_to_f64;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
-
 pub mod limit;
 
-#[derive(Error, Debug)]
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use thiserror;
+
+use crate::{
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
+    },
+    events::order::{
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
+        OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
+    },
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
+        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    types::{fixed::fixed_i64_to_f64, price::Price, quantity::Quantity},
+};
+
+#[derive(thiserror::Error, Debug)]
 pub enum OrderError {
     #[error("Invalid state transition")]
     InvalidStateTransition,
@@ -51,135 +46,66 @@ pub enum OrderError {
     UnrecognizedEvent,
 }
 
-impl From<TransitionImpossibleError> for OrderError {
-    fn from(_: TransitionImpossibleError) -> Self {
-        OrderError::InvalidStateTransition
-    }
-}
-
-#[derive(Debug)]
-struct OrderFsm;
-
-impl StateMachineImpl for OrderFsm {
-    type Input = OrderEvent;
-    type State = OrderStatus;
-    type Output = OrderStatus;
-    const INITIAL_STATE: Self::State = OrderStatus::Initialized;
-
+impl OrderStatus {
     #[rustfmt::skip]
-    fn transition(state: &Self::State, input: &Self::Input) -> Option<Self::State> {
-        match (state, input) {
-            (OrderStatus::Initialized, OrderEvent::OrderDenied(_)) => Some(OrderStatus::Denied),
-            (OrderStatus::Initialized, OrderEvent::OrderSubmitted(_)) => Some(OrderStatus::Submitted),
-            (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),  // Covers external orders
-            (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),  // Covers external orders
-            (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),  // Covers emulated and external orders
-            (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),  // Covers emulated and external orders
-            (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered), // Covers emulated and external orders
-            (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
-            (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),  // Covers FOK and IOC cases
-            (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
-            (OrderStatus::Submitted, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),  // Covers emulated StopLimit order
-            (OrderStatus::Submitted, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Submitted, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::Accepted, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),  // Covers StopLimit order
-            (OrderStatus::Accepted, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::Accepted, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::Accepted, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::Accepted, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
-            (OrderStatus::Accepted, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::Accepted, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Accepted, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::Canceled, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),  // Real world possibility
-            (OrderStatus::Canceled, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),  // Real world possibility
-            (OrderStatus::PendingUpdate, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),  // Allow multiple requests
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::PendingCancel, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),  // Allow multiple requests
-            (OrderStatus::PendingCancel, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::PendingCancel, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),  // Allow failed cancel requests
-            (OrderStatus::PendingCancel, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::PendingCancel, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::Triggered, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
-            (OrderStatus::Triggered, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::Triggered, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::Triggered, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::Triggered, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::Triggered, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Triggered, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            _ => None,
-        }
-    }
-
-    #[rustfmt::skip]
-    fn output(state: &Self::State, input: &Self::Input) -> Option<Self::Output> {
-        match (state, input) {
-            (OrderStatus::Initialized, OrderEvent::OrderDenied(_)) => Some(OrderStatus::Denied),
-            (OrderStatus::Initialized, OrderEvent::OrderSubmitted(_)) => Some(OrderStatus::Submitted),
-            (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
-            (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
-            (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
-            (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
-            (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
-            (OrderStatus::Submitted, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
-            (OrderStatus::Submitted, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Submitted, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::Accepted, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
-            (OrderStatus::Accepted, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::Accepted, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::Accepted, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::Accepted, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
-            (OrderStatus::Accepted, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::Accepted, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Accepted, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::Canceled, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Canceled, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderTriggered(_)) => Some(OrderStatus::Triggered),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::PendingUpdate, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::PendingCancel, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::PendingCancel, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::PendingCancel, OrderEvent::OrderAccepted(_)) => Some(OrderStatus::Accepted),
-            (OrderStatus::PendingCancel, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::PendingCancel, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::Triggered, OrderEvent::OrderRejected(_)) => Some(OrderStatus::Rejected),
-            (OrderStatus::Triggered, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::Triggered, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::Triggered, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::Triggered, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::Triggered, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::Triggered, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingUpdate(_)) => Some(OrderStatus::PendingUpdate),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingCancel(_)) => Some(OrderStatus::PendingCancel),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderCanceled(_)) => Some(OrderStatus::Canceled),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderExpired(_)) => Some(OrderStatus::Expired),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderPartiallyFilled(_)) => Some(OrderStatus::PartiallyFilled),
-            (OrderStatus::PartiallyFilled, OrderEvent::OrderFilled(_)) => Some(OrderStatus::Filled),
-            _ => None,
-        }
+    pub fn transition(&mut self, event: &OrderEvent) -> Result<OrderStatus, OrderError> {
+        let new_state = match (self, event) {
+            (OrderStatus::Initialized, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,
+            (OrderStatus::Initialized, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,
+            (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // Covers external orders
+            (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // Covers external orders
+            (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Covers emulated and external orders
+            (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // Covers emulated and external orders
+            (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered, // Covers emulated and external orders
+            (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
+            (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
+            (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
+            (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Covers FOK and IOC cases
+            (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,
+            (OrderStatus::Submitted, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered,  // Covers emulated StopLimit order
+            (OrderStatus::Submitted, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
+            (OrderStatus::Submitted, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            (OrderStatus::Accepted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // Covers StopLimit order
+            (OrderStatus::Accepted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
+            (OrderStatus::Accepted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
+            (OrderStatus::Accepted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
+            (OrderStatus::Accepted, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered,
+            (OrderStatus::Accepted, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
+            (OrderStatus::Accepted, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
+            (OrderStatus::Accepted, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            (OrderStatus::Canceled, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,  // Real world possibility
+            (OrderStatus::Canceled, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,  // Real world possibility
+            (OrderStatus::PendingUpdate, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,  // Allow multiple requests
+            (OrderStatus::PendingUpdate, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
+            (OrderStatus::PendingUpdate, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            (OrderStatus::PendingCancel, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
+            (OrderStatus::PendingCancel, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,  // Allow multiple requests
+            (OrderStatus::PendingCancel, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
+            (OrderStatus::PendingCancel, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // Allow failed cancel requests
+            (OrderStatus::PendingCancel, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
+            (OrderStatus::PendingCancel, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            (OrderStatus::Triggered, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
+            (OrderStatus::Triggered, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
+            (OrderStatus::Triggered, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
+            (OrderStatus::Triggered, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
+            (OrderStatus::Triggered, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
+            (OrderStatus::Triggered, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
+            (OrderStatus::Triggered, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
+            (OrderStatus::PartiallyFilled, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
+            (OrderStatus::PartiallyFilled, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
+            (OrderStatus::PartiallyFilled, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,
+            (OrderStatus::PartiallyFilled, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
+            (OrderStatus::PartiallyFilled, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
+            _ => return Err(OrderError::InvalidStateTransition),
+        };
+        Ok(new_state)
     }
 }
 
@@ -187,11 +113,13 @@ struct Order {
     events: Vec<OrderEvent>,
     venue_order_ids: Vec<VenueOrderId>, // TODO(cs): Should be `Vec<&VenueOrderId>` or similar
     trade_ids: Vec<TradeId>,            // TODO(cs): Should be `Vec<&TradeId>` or similar
-    fsm: StateMachine<OrderFsm>,
     previous_status: Option<OrderStatus>,
     triggered_price: Option<Price>,
     pub status: OrderStatus,
-    pub ids: Rc<OrderIdentifiers>,
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub position_id: Option<PositionId>,
     pub account_id: Option<AccountId>,
@@ -207,6 +135,7 @@ struct Order {
     pub liquidity_side: Option<LiquiditySide>,
     pub is_post_only: bool,
     pub is_reduce_only: bool,
+    pub is_quote_quantity: bool,
     pub display_qty: Option<Quantity>,
     pub limit_offset: Option<Price>,
     pub trailing_offset: Option<Price>,
@@ -229,8 +158,7 @@ struct Order {
 
 impl PartialEq<Self> for Order {
     fn eq(&self, other: &Self) -> bool {
-        // TODO: can implement deref and deref mut for order metadata here too
-        self.ids.client_order_id == other.ids.client_order_id
+        self.client_order_id == other.client_order_id
     }
 }
 
@@ -242,18 +170,20 @@ impl From<OrderInitialized> for Order {
             events: Vec::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
-            fsm: StateMachine::new(),
             previous_status: None,
             triggered_price: None,
             status: OrderStatus::Initialized,
-            ids: value.ids,
+            trader_id: value.trader_id,
+            strategy_id: value.strategy_id,
+            instrument_id: value.instrument_id,
+            client_order_id: value.client_order_id,
             venue_order_id: None,
             position_id: None,
             account_id: None,
             last_trade_id: None,
             side: value.order_side,
             order_type: value.order_type,
-            quantity: value.quantity.clone(),
+            quantity: value.quantity,
             price: value.price,
             trigger_price: value.trigger_price,
             trigger_type: value.trigger_type,
@@ -262,6 +192,7 @@ impl From<OrderInitialized> for Order {
             liquidity_side: None,
             is_post_only: value.post_only,
             is_reduce_only: value.reduce_only,
+            is_quote_quantity: value.quote_quantity,
             display_qty: None,
             limit_offset: None,
             trailing_offset: None,
@@ -273,7 +204,7 @@ impl From<OrderInitialized> for Order {
             parent_order_id: value.parent_order_id,
             tags: value.tags,
             filled_qty: Quantity::new(0.0, 0),
-            leaves_qty: value.quantity.clone(),
+            leaves_qty: value.quantity,
             avg_px: None,
             slippage: None,
             init_id: value.event_id,
@@ -287,20 +218,24 @@ impl From<OrderInitialized> for Order {
 impl From<&Order> for OrderInitialized {
     fn from(value: &Order) -> Self {
         Self {
-            ids: value.ids.clone(),
+            trader_id: value.trader_id.clone(),
+            strategy_id: value.strategy_id.clone(),
+            instrument_id: value.instrument_id.clone(),
+            client_order_id: value.client_order_id.clone(),
             order_side: value.side,
             order_type: value.order_type,
-            quantity: value.quantity.clone(),
-            price: value.price.clone(),
-            trigger_price: value.triggered_price.clone(),
+            quantity: value.quantity,
+            price: value.price,
+            trigger_price: value.triggered_price,
             trigger_type: value.trigger_type,
             time_in_force: value.time_in_force,
             expire_time: value.expire_time,
             post_only: value.is_post_only,
             reduce_only: value.is_reduce_only,
-            display_qty: value.display_qty.clone(),
-            limit_offset: value.limit_offset.clone(),
-            trailing_offset: value.trailing_offset.clone(),
+            quote_quantity: value.is_quote_quantity,
+            display_qty: value.display_qty,
+            limit_offset: value.limit_offset,
+            trailing_offset: value.trailing_offset,
             trailing_offset_type: value.trailing_offset_type,
             emulation_trigger: value.emulation_trigger,
             contingency_type: value.contingency_type,
@@ -440,15 +375,9 @@ impl Order {
     }
 
     pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
-        let status = self
-            .fsm
-            .consume(&event)?
-            .map(|status| {
-                self.previous_status.replace(self.status);
-                status
-            })
-            .ok_or(OrderError::InvalidStateTransition)?;
-        self.status = status;
+        let new_status = self.status.transition(&event)?;
+        self.previous_status = Some(self.status);
+        self.status = new_status;
 
         match &event {
             OrderEvent::OrderDenied(event) => self.denied(event),
@@ -522,7 +451,7 @@ impl Order {
         }
         if let Some(price) = &event.price {
             if self.price.is_some() {
-                self.price.replace(price.clone());
+                self.price.replace(*price);
             } else {
                 panic!("invalid update of `price` when None")
             }
@@ -530,7 +459,7 @@ impl Order {
 
         if let Some(trigger_price) = &event.trigger_price {
             if self.trigger_price.is_some() {
-                self.trigger_price.replace(trigger_price.clone());
+                self.trigger_price.replace(*trigger_price);
             } else {
                 panic!("invalid update of `trigger_price` when None")
             }
@@ -564,7 +493,10 @@ impl Order {
         let filled_qty = self.filled_qty.as_f64();
         let total_qty = filled_qty + last_qty.as_f64();
 
-        let avg_px = ((self.avg_px.unwrap() * filled_qty) + (last_px.as_f64() * last_qty.as_f64()))
+        let avg_px = self
+            .avg_px
+            .unwrap()
+            .mul_add(filled_qty, last_px.as_f64() * last_qty.as_f64())
             / total_qty;
         self.avg_px = Some(avg_px);
     }
@@ -574,12 +506,11 @@ impl Order {
             self.price
                 .as_ref()
                 .map(|price| fixed_i64_to_f64(price.raw))
-                .map(|price| match self.side {
+                .and_then(|price| match self.side {
                     OrderSide::Buy if avg_px > price => Some(avg_px - price),
                     OrderSide::Sell if avg_px < price => Some(price - avg_px),
                     _ => None,
                 })
-                .unwrap_or(None)
         })
     }
 }
@@ -589,11 +520,16 @@ impl Order {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use rstest::*;
+    use rstest::rstest;
 
     use super::*;
-    use crate::enums::*;
-    use crate::events::order::*;
+    use crate::{
+        enums::{OrderSide, OrderStatus, PositionSide},
+        events::order::{
+            OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderInitializedBuilder,
+            OrderSubmittedBuilder,
+        },
+    };
 
     #[test]
     fn test_order_initialized() {
@@ -695,24 +631,8 @@ mod tests {
     fn test_buy_order_life_cyle_to_filled() {
         // TODO: We should be able to derive defaults for the below?
         let init = OrderInitializedBuilder::default().build().unwrap();
-        let submitted = OrderSubmittedBuilder::default()
-            .ids(init.ids.clone())
-            .account_id(AccountId::default())
-            .event_id(UUID4::default())
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .build()
-            .unwrap();
-        let accepted = OrderAcceptedBuilder::default()
-            .ids(init.ids.clone())
-            .account_id(AccountId::default())
-            .venue_order_id(VenueOrderId::default())
-            .event_id(UUID4::default())
-            .ts_event(UnixNanos::default())
-            .ts_init(UnixNanos::default())
-            .reconciliation(false)
-            .build()
-            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
         // let filled = OrderFilledBuilder::default()
         //     .ids(init.ids.clone())
         //     .account_id(AccountId::default())
@@ -732,6 +652,6 @@ mod tests {
         let _ = order.apply(OrderEvent::OrderAccepted(accepted));
         // let _ = order.apply(OrderEvent::OrderFilled(filled));
 
-        assert_eq!(order.ids.client_order_id, client_order_id);
+        assert_eq!(order.client_order_id, client_order_id);
     }
 }

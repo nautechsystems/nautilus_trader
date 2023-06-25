@@ -49,7 +49,7 @@ if __name__ == "__main__":
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
-        starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],
+        starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
     )
 
     # Add instruments
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     engine.add_exec_algorithm(exec_algorithm)
 
     time.sleep(0.1)
-    input("Press Enter to continue...")  # noqa (always Python 3)
+    input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
     engine.run()

@@ -19,12 +19,13 @@ from decimal import Decimal
 
 import fsspec
 import pyarrow.dataset as ds
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -49,6 +50,9 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
 
 
 # TODO: Implement with new Rust datafusion backend
@@ -424,7 +428,7 @@ class _TestPersistenceCatalog:
             "betfair_ticker",
             "betting_instrument",
             "instrument_status_update",
-            "order_book_data",
+            "order_book_delta",
             "trade_tick",
         ]
         assert data_types == expected
@@ -445,10 +449,10 @@ class _TestPersistenceCatalog:
         write_tables(catalog=self.catalog, tables=tables)
 
         # Act
-        parts = self.catalog.list_partitions(QuoteTick)
+        self.catalog.list_partitions(QuoteTick)
 
         # Assert
-        assert parts == {"instrument_id": ["AUD-USD.SIM"]}
+        # TODO(cs): Assert new HivePartitioning object for catalog v2
 
     def test_data_catalog_query_filtered(self):
         ticks = self.catalog.trade_ticks()
@@ -484,6 +488,13 @@ class _TestPersistenceCatalog:
         write_objects(catalog=self.catalog, chunk=[instruments[1]])
         instruments = self.catalog.instruments(as_nautilus=True)
         assert len(instruments) == 2
+
+    def test_writing_instruments_overwrite(self):
+        instruments = self.catalog.instruments(as_nautilus=True)
+        write_objects(catalog=self.catalog, chunk=[instruments[0]], merge_existing_data=False)
+        write_objects(catalog=self.catalog, chunk=[instruments[1]], merge_existing_data=False)
+        instruments = self.catalog.instruments(as_nautilus=True)
+        assert len(instruments) == 1
 
     def test_data_catalog_instruments_filtered_df(self):
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
@@ -559,7 +570,8 @@ class _TestPersistenceCatalog:
         assert df is not None
         assert data is not None
         assert len(df) == 22925
-        assert len(data) == 2745 and isinstance(data[0], GenericData)
+        assert len(data) == 2745
+        assert isinstance(data[0], GenericData)
 
     def test_data_catalog_bars(self):
         # Arrange

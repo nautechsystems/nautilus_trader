@@ -43,6 +43,7 @@ class MyExecAlgorithm(ExecAlgorithm):
     ----------
     config : MyExecAlgorithmConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: MyExecAlgorithmConfig) -> None:
@@ -50,15 +51,21 @@ class MyExecAlgorithm(ExecAlgorithm):
         # Optionally implement further initialization
 
     def on_start(self) -> None:
-        """Actions to be performed when the algorithm component is started."""
+        """
+        Actions to be performed when the algorithm component is started.
+        """
         # Optionally implement
 
     def on_stop(self) -> None:
-        """Actions to be performed when the algorithm component is stopped."""
+        """
+        Actions to be performed when the algorithm component is stopped.
+        """
         # Optionally implement
 
     def on_reset(self) -> None:
-        """Actions to be performed when the algorithm component is reset."""
+        """
+        Actions to be performed when the algorithm component is reset.
+        """
         # Optionally implement
 
     def on_dispose(self) -> None:

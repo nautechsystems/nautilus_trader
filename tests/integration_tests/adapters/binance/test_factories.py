@@ -68,7 +68,7 @@ class TestBinanceFactories:
         )
 
     @pytest.mark.parametrize(
-        "account_type, is_testnet, is_us, expected",
+        ("account_type", "is_testnet", "is_us", "expected"),
         [
             [
                 BinanceAccountType.SPOT,
@@ -77,25 +77,25 @@ class TestBinanceFactories:
                 "https://api.binance.com",
             ],
             [
-                BinanceAccountType.MARGIN_CROSS,
+                BinanceAccountType.MARGIN,
                 False,
                 False,
                 "https://sapi.binance.com",
             ],
             [
-                BinanceAccountType.MARGIN_ISOLATED,
+                BinanceAccountType.ISOLATED_MARGIN,
                 False,
                 False,
                 "https://sapi.binance.com",
             ],
             [
-                BinanceAccountType.FUTURES_USDT,
+                BinanceAccountType.USDT_FUTURE,
                 False,
                 False,
                 "https://fapi.binance.com",
             ],
             [
-                BinanceAccountType.FUTURES_COIN,
+                BinanceAccountType.COIN_FUTURE,
                 False,
                 False,
                 "https://dapi.binance.com",
@@ -107,25 +107,25 @@ class TestBinanceFactories:
                 "https://api.binance.us",
             ],
             [
-                BinanceAccountType.MARGIN_CROSS,
+                BinanceAccountType.MARGIN,
                 False,
                 True,
                 "https://sapi.binance.us",
             ],
             [
-                BinanceAccountType.MARGIN_ISOLATED,
+                BinanceAccountType.ISOLATED_MARGIN,
                 False,
                 True,
                 "https://sapi.binance.us",
             ],
             [
-                BinanceAccountType.FUTURES_USDT,
+                BinanceAccountType.USDT_FUTURE,
                 False,
                 True,
                 "https://fapi.binance.us",
             ],
             [
-                BinanceAccountType.FUTURES_COIN,
+                BinanceAccountType.COIN_FUTURE,
                 False,
                 True,
                 "https://dapi.binance.us",
@@ -137,19 +137,19 @@ class TestBinanceFactories:
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN_CROSS,
+                BinanceAccountType.MARGIN,
                 True,
                 False,
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN_ISOLATED,
+                BinanceAccountType.ISOLATED_MARGIN,
                 True,
                 False,
                 "https://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.FUTURES_USDT,
+                BinanceAccountType.USDT_FUTURE,
                 True,
                 False,
                 "https://testnet.binancefuture.com",
@@ -164,7 +164,7 @@ class TestBinanceFactories:
         assert base_url == expected
 
     @pytest.mark.parametrize(
-        "account_type, is_testnet, is_us, expected",
+        ("account_type", "is_testnet", "is_us", "expected"),
         [
             [
                 BinanceAccountType.SPOT,
@@ -173,25 +173,25 @@ class TestBinanceFactories:
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.MARGIN_CROSS,
+                BinanceAccountType.MARGIN,
                 False,
                 False,
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.MARGIN_ISOLATED,
+                BinanceAccountType.ISOLATED_MARGIN,
                 False,
                 False,
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceAccountType.FUTURES_USDT,
+                BinanceAccountType.USDT_FUTURE,
                 False,
                 False,
                 "wss://fstream.binance.com",
             ],
             [
-                BinanceAccountType.FUTURES_COIN,
+                BinanceAccountType.COIN_FUTURE,
                 False,
                 False,
                 "wss://dstream.binance.com",
@@ -203,25 +203,25 @@ class TestBinanceFactories:
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.MARGIN_CROSS,
+                BinanceAccountType.MARGIN,
                 False,
                 True,
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.MARGIN_ISOLATED,
+                BinanceAccountType.ISOLATED_MARGIN,
                 False,
                 True,
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceAccountType.FUTURES_USDT,
+                BinanceAccountType.USDT_FUTURE,
                 False,
                 True,
                 "wss://fstream.binance.us",
             ],
             [
-                BinanceAccountType.FUTURES_COIN,
+                BinanceAccountType.COIN_FUTURE,
                 False,
                 True,
                 "wss://dstream.binance.us",
@@ -233,19 +233,19 @@ class TestBinanceFactories:
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN_CROSS,
+                BinanceAccountType.MARGIN,
                 True,
                 False,
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.MARGIN_ISOLATED,
+                BinanceAccountType.ISOLATED_MARGIN,
                 True,
                 False,
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceAccountType.FUTURES_USDT,
+                BinanceAccountType.USDT_FUTURE,
                 True,
                 False,
                 "wss://stream.binancefuture.com",
@@ -264,7 +264,7 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -282,10 +282,10 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
-                account_type=BinanceAccountType.FUTURES_USDT,
+                account_type=BinanceAccountType.USDT_FUTURE,
             ),
             msgbus=self.msgbus,
             cache=self.cache,
@@ -300,7 +300,7 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -318,10 +318,10 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
                 api_key="SOME_BINANCE_API_KEY",
                 api_secret="SOME_BINANCE_API_SECRET",
-                account_type=BinanceAccountType.FUTURES_USDT,
+                account_type=BinanceAccountType.USDT_FUTURE,
             ),
             msgbus=self.msgbus,
             cache=self.cache,

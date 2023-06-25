@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import signal
 import time
 from datetime import timedelta
 from typing import Optional
@@ -41,21 +42,27 @@ class TradingNode:
     ----------
     config : TradingNodeConfig, optional
         The configuration for the instance.
+    loop : asyncio.AbstractEventLoop, optional
+        The event loop for the node.
+        If ``None`` then will get the running event loop internally.
+
     """
 
-    def __init__(self, config: Optional[TradingNodeConfig] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[TradingNodeConfig] = None,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ) -> None:
         if config is None:
             config = TradingNodeConfig()
         PyCondition.not_none(config, "config")
         PyCondition.type(config, TradingNodeConfig, "config")
 
-        # Configuration
         self._config: TradingNodeConfig = config
 
-        # Setup loop
-        loop = asyncio.get_event_loop()
+        # Determine loop
+        loop = loop or asyncio.get_event_loop()
 
-        # Build core system kernel
         self.kernel = NautilusKernel(
             name=type(self).__name__,
             config=config,
@@ -67,6 +74,7 @@ class TradingNode:
             loop=loop,
             data_engine=self.kernel.data_engine,
             exec_engine=self.kernel.exec_engine,
+            portfolio=self.kernel.portfolio,
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             clock=self.kernel.clock,
@@ -268,6 +276,7 @@ class TradingNode:
         After a specified delay the internal `Trader` residual state will be checked.
 
         If save strategy is configured, then strategy states will be saved.
+
         """
         try:
             if self.kernel.loop.is_running():
@@ -277,11 +286,12 @@ class TradingNode:
         except RuntimeError as e:
             self.kernel.log.exception("Error on stop", e)
 
-    def dispose(self) -> None:  # noqa C901 'TradingNode.dispose' is too complex (11)
+    def dispose(self) -> None:  # noqa: C901
         """
         Dispose of the trading node.
 
         Gracefully shuts down the executor and event loop.
+
         """
         try:
             timeout = self.kernel.clock.utc_now() + timedelta(
@@ -361,7 +371,7 @@ class TradingNode:
 
             self.kernel.log.info("DISPOSED.")
 
-    def _loop_sig_handler(self, sig) -> None:
+    def _loop_sig_handler(self, sig: signal.Signals) -> None:
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
@@ -376,73 +386,8 @@ class TradingNode:
                     "Run `node.build()` prior to start.",
                 )
 
-            self.kernel.log.info("STARTING...")
             self._is_running = True
-
-            # Start system
-            self.kernel.data_engine.start()
-            self.kernel.risk_engine.start()
-            self.kernel.exec_engine.start()
-
-            # Connect all clients
-            self.kernel.data_engine.connect()
-            self.kernel.exec_engine.connect()
-
-            # Await engine connection and initialization
-            self.kernel.log.info(
-                f"Awaiting engine connections and initializations "
-                f"({self._config.timeout_connection}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            if not await self._await_engines_connected():
-                self.kernel.log.warning(
-                    f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
-                    f"\nStatus"
-                    f"\n------"
-                    f"\nDataEngine.check_connected() == {self.kernel.data_engine.check_connected()}"
-                    f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}",
-                )
-                return
-
-            # Await execution state reconciliation
-            self.kernel.log.info(
-                f"Awaiting execution state reconciliation "
-                f"({self._config.timeout_reconciliation}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            if not await self.kernel.exec_engine.reconcile_state(
-                timeout_secs=self._config.timeout_reconciliation,
-            ):
-                self.kernel.log.error("Execution state could not be reconciled.")
-                return
-
-            if self.kernel.exec_engine.reconciliation:
-                self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
-
-            self.kernel.emulator.start()
-
-            # Initialize portfolio
-            self.kernel.portfolio.initialize_orders()
-            self.kernel.portfolio.initialize_positions()
-
-            # Await portfolio initialization
-            self.kernel.log.info(
-                "Awaiting portfolio initialization "
-                f"({self._config.timeout_portfolio}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            if not await self._await_portfolio_initialized():
-                self.kernel.log.warning(
-                    f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
-                    f"\nStatus"
-                    f"\n------"
-                    f"\nPortfolio.initialized == {self.kernel.portfolio.initialized}",
-                )
-                return
-            self.kernel.log.info("Portfolio initialized.", color=LogColor.GREEN)
-
-            # Start trader and strategies
-            self.kernel.trader.start()
+            await self.kernel.start()
 
             if self.kernel.loop.is_running():
                 self.kernel.log.info("RUNNING.")
@@ -464,43 +409,6 @@ class TradingNode:
         except asyncio.CancelledError as e:
             self.kernel.log.error(str(e))
 
-    async def _await_engines_connected(self) -> bool:
-        # - The data engine clients will be set connected when all
-        # instruments are received and updated with the data engine.
-        # - The execution engine clients will be set connected when all
-        # accounts are updated and the current order and position status is
-        # reconciled.
-        # Thus any delay here will be due to blocking network I/O.
-        seconds = self._config.timeout_connection
-        timeout: timedelta = self.kernel.clock.utc_now() + timedelta(seconds=seconds)
-        while True:
-            await asyncio.sleep(0)
-            if self.kernel.clock.utc_now() >= timeout:
-                return False
-            if not self.kernel.data_engine.check_connected():
-                continue
-            if not self.kernel.exec_engine.check_connected():
-                continue
-            break
-
-        return True  # Engines connected
-
-    async def _await_portfolio_initialized(self) -> bool:
-        # - The portfolio will be set initialized when all margin and unrealized
-        # PnL calculations are completed (maybe waiting on first quotes).
-        # Thus any delay here will be due to blocking network I/O.
-        seconds = self._config.timeout_portfolio
-        timeout: timedelta = self.kernel.clock.utc_now() + timedelta(seconds=seconds)
-        while True:
-            await asyncio.sleep(0)
-            if self.kernel.clock.utc_now() >= timeout:
-                return False
-            if not self.kernel.portfolio.initialized:
-                continue
-            break
-
-        return True  # Portfolio initialized
-
     async def stop_async(self) -> None:
         """
         Stop the trading node gracefully, asynchronously.
@@ -508,6 +416,7 @@ class TradingNode:
         After a specified delay the internal `Trader` residual state will be checked.
 
         If save strategy is configured, then strategy states will be saved.
+
         """
         self.kernel.log.info("STOPPING...")
 

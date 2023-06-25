@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport OrderDenied_t
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport LiquiditySide
@@ -66,10 +67,14 @@ cdef class OrderInitialized(OrderEvent):
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint reduce_only
     """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
+    cdef readonly bint quote_quantity
+    """If the order quantity is denominated in the quote currency.\n\n:returns: `bool`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
     cdef readonly TriggerType emulation_trigger
     """The order emulation trigger type.\n\n:returns: `TriggerType`"""
+    cdef readonly InstrumentId trigger_instrument_id
+    """The order emulation trigger instrument ID (will be `instrument_id` if ``None``).\n\n:returns: `InstrumentId` or ``None``"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly OrderListId order_list_id
@@ -95,14 +100,14 @@ cdef class OrderInitialized(OrderEvent):
 
 
 cdef class OrderDenied(OrderEvent):
-    cdef readonly str reason
-    """The reason the order was denied.\n\n:returns: `str`"""
+    cdef OrderDenied_t _mem
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(OrderDenied obj)
+
 
 
 cdef class OrderSubmitted(OrderEvent):

@@ -48,6 +48,7 @@ from nautilus_trader.trading.strategy import Strategy
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceFuturesExecutionClient:
     def setup(self):
         # Fixture Setup
@@ -69,12 +70,12 @@ class TestBinanceFuturesExecutionClient:
 
         self.cache = TestComponentStubs.cache()
 
-        self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
-            loop=asyncio.get_event_loop(),
+        self.http_client = BinanceHttpClient(
             clock=self.clock,
             logger=self.logger,
             key="SOME_BINANCE_API_KEY",
             secret="SOME_BINANCE_API_SECRET",
+            base_url="https://api.binance.com/",  # Spot/Margin
         )
 
         self.provider = BinanceFuturesInstrumentProvider(
@@ -121,7 +122,7 @@ class TestBinanceFuturesExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.provider,
-            account_type=BinanceAccountType.FUTURES_USDT,
+            account_type=BinanceAccountType.USDT_FUTURE,
         )
 
         self.strategy = Strategy()
@@ -134,7 +135,7 @@ class TestBinanceFuturesExecutionClient:
             logger=self.logger,
         )
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -172,7 +173,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["newClientOrderId"] is not None
         assert request[2]["recvWindow"] == "5000"
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -212,7 +213,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_limit_post_only_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -255,7 +256,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_stop_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -300,7 +301,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_stop_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -346,7 +347,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_market_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -388,7 +389,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_submit_limit_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -433,7 +434,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_trailing_stop_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(

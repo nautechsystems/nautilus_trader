@@ -21,19 +21,19 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook import OrderBookDelta
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -79,8 +79,8 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
 
 class VolatilityMarketMaker(Strategy):
     """
-    A very dumb market maker which brackets the current market based on
-    volatility measured by an ATR indicator.
+    A very dumb market maker which brackets the current market based on volatility
+    measured by an ATR indicator.
 
     Cancels all orders and closes all positions on stop.
 
@@ -88,6 +88,7 @@ class VolatilityMarketMaker(Strategy):
     ----------
     config : VolatilityMarketMakerConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: VolatilityMarketMakerConfig) -> None:
@@ -110,7 +111,9 @@ class VolatilityMarketMaker(Strategy):
         self.sell_order: Union[LimitOrder, None] = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -136,15 +139,15 @@ class VolatilityMarketMaker(Strategy):
         # )  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
-        #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+        #         BinanceFuturesMarkPriceUpdate,
+        #         metadata={"instrument_id": self.instrument.id},
         #     ),
         #     client_id=ClientId("BINANCE"),
         # )
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic
-        data.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
@@ -157,8 +160,7 @@ class VolatilityMarketMaker(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -180,20 +182,21 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(order_book), LogColor.CYAN)
+        self.log.info(repr(order_book), LogColor.CYAN)
 
-    def on_order_book_delta(self, delta: OrderBookDelta) -> None:
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives an order book delta.
+        Actions to be performed when the strategy is running and receives order book
+        deltas.
 
         Parameters
         ----------
-        delta : OrderBookDelta
-            The order book delta received.
+        deltas : OrderBookDeltas
+            The order book deltas received.
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(delta), LogColor.CYAN)
+        self.log.info(repr(deltas), LogColor.CYAN)
 
     def on_ticker(self, ticker: Ticker) -> None:
         """
@@ -335,9 +338,10 @@ class VolatilityMarketMaker(Strategy):
             if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:
                     self.create_buy_order(last)
-            elif self.sell_order and event.order_side == OrderSide.SELL:
-                if self.sell_order.is_closed:
-                    self.create_sell_order(last)
+            elif (
+                self.sell_order and event.order_side == OrderSide.SELL and self.sell_order.is_closed
+            ):
+                self.create_sell_order(last)
 
     def on_stop(self) -> None:
         """
@@ -383,7 +387,6 @@ class VolatilityMarketMaker(Strategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self) -> None:
         """
@@ -392,4 +395,3 @@ class VolatilityMarketMaker(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

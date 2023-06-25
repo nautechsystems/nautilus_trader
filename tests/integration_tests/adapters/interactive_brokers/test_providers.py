@@ -18,15 +18,10 @@ from unittest.mock import AsyncMock
 
 import msgspec.structs
 import pytest
-from ib_insync import CFD
-from ib_insync import Bond
-from ib_insync import ContractDetails
-from ib_insync import Crypto
-from ib_insync import Forex
-from ib_insync import Future
-from ib_insync import Option
-from ib_insync import Stock
+from ibapi.contract import ContractDetails
 
+# fmt: off
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import OptionKind
@@ -37,85 +32,23 @@ from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
+# fmt: on
+
 pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 def mock_ib_contract_calls(mocker, instrument_provider, contract_details: ContractDetails):
     mocker.patch.object(
         instrument_provider._client,
-        "reqContractDetailsAsync",
-        side_effect=AsyncMock(return_value=[contract_details]),
-    )
-    mocker.patch.object(
-        instrument_provider._client,
-        "qualifyContractsAsync",
+        "get_contract_details",
         side_effect=AsyncMock(return_value=[contract_details]),
     )
 
 
-@pytest.mark.parametrize(
-    "filters, expected",
-    [
-        (
-            {"secType": "STK", "symbol": "AMD", "exchange": "SMART", "currency": "USD"},
-            Stock("AMD", "SMART", "USD"),
-        ),
-        (
-            {
-                "secType": "STK",
-                "symbol": "INTC",
-                "exchange": "SMART",
-                "primaryExchange": "NASDAQ",
-                "currency": "USD",
-            },
-            Stock("INTC", "SMART", "USD", primaryExchange="NASDAQ"),
-        ),
-        (
-            {"secType": "CASH", "symbol": "EUR", "currency": "USD", "exchange": "IDEALPRO"},
-            Forex(symbol="EUR", currency="USD"),
-        ),  # EUR/USD,
-        ({"secType": "CFD", "symbol": "IBUS30"}, CFD("IBUS30")),
-        (
-            {
-                "secType": "FUT",
-                "symbol": "ES",
-                "exchange": "GLOBEX",
-                "lastTradeDateOrContractMonth": "20180921",
-            },
-            Future("ES", "20180921", "GLOBEX"),
-        ),
-        (
-            {
-                "secType": "OPT",
-                "symbol": "SPY",
-                "exchange": "SMART",
-                "lastTradeDateOrContractMonth": "20170721",
-                "strike": 240,
-                "right": "C",
-            },
-            Option("SPY", "20170721", 240, "C", "SMART"),
-        ),
-        (
-            {"secType": "BOND", "secIdType": "ISIN", "secId": "US03076KAA60"},
-            Bond(secIdType="ISIN", secId="US03076KAA60"),
-        ),
-        (
-            {"secType": "CRYPTO", "symbol": "BTC", "exchange": "PAXOS", "currency": "USD"},
-            Crypto("BTC", "PAXOS", "USD"),
-        ),
-    ],
-)
-def test_parse_contract(filters, expected, instrument_provider):
-    result = instrument_provider._parse_contract(**filters)
-    fields = [f.name for f in expected.__dataclass_fields__.values() if getattr(expected, f.name)]
-    for f in fields:
-        assert getattr(result, f) == getattr(expected, f)
-
-
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_equity_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("AAPL.AMEX")
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -123,11 +56,13 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(secType="STK", symbol="AAPL", exchange="AMEX")
+    await instrument_provider.load_async(
+        IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
+    )
     equity = instrument_provider.find(instrument_id)
 
     # Assert
-    assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("AMEX")) == equity.id
+    assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
     assert equity.asset_class == AssetClass.EQUITY
     assert equity.asset_type == AssetType.SPOT
     assert 1 == equity.multiplier
@@ -135,10 +70,10 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     assert 2, equity.price_precision
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("CLZ3.NYMEX")
+    instrument_id = InstrumentId.from_str("CLZ23.NYMEX")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -146,7 +81,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(symbol="CLZ3", exchange="NYMEX")
+    await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
     future = instrument_provider.find(instrument_id)
 
     # Assert
@@ -157,7 +92,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     assert future.price_precision == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_options_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
@@ -168,7 +103,9 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX")
+    await instrument_provider.load_async(
+        IBContract(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX"),
+    )
     option = instrument_provider.find(instrument_id)
 
     # Assert
@@ -182,7 +119,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
     assert option.price_precision == 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_load_forex_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
@@ -193,7 +130,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
+    await instrument_provider.load_async(instrument_id)
     fx = instrument_provider.find(instrument_id)
 
     # Assert
@@ -204,7 +141,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -214,20 +151,41 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load(symbol="CLZ3", exchange="NYMEX")
+    await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
 
     # Assert
-    expected = {174230596: InstrumentId.from_str("CLZ3.NYMEX")}
+    expected = {174230596: InstrumentId.from_str("CLZ23.NYMEX")}
     assert instrument_provider.contract_id_to_instrument_id == expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
+async def test_load_instrument_using_contract_id(mocker, instrument_provider):
+    # Arrange
+    instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
+    mock_ib_contract_calls(
+        mocker=mocker,
+        instrument_provider=instrument_provider,
+        contract_details=IBTestProviderStubs.eurusd_forex_contract_details(),
+    )
+
+    # Act
+    fx = await instrument_provider.find_with_contract_id(12087792)
+
+    # Assert
+    assert fx.id == instrument_id
+    assert fx.asset_class == AssetClass.FX
+    assert fx.multiplier == 1
+    assert fx.price_increment == Price.from_str("0.00005")
+    assert fx.price_precision == 5
+
+
+@pytest.mark.asyncio()
 async def test_none_filters(instrument_provider):
     # Act, Arrange, Assert
     instrument_provider.load_all(None)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_instrument_filter_callable_none(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -237,13 +195,15 @@ async def test_instrument_filter_callable_none(mocker, instrument_provider):
     )
 
     # Act
-    await instrument_provider.load()
+    await instrument_provider.load_async(
+        IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
+    )
 
     # Assert
     assert len(instrument_provider.get_all()) == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_instrument_filter_callable_option_filter(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -258,7 +218,7 @@ async def test_instrument_filter_callable_option_filter(mocker, instrument_provi
         instrument_provider.config,
         filter_callable=new_cb,
     )
-    await instrument_provider.load()
+    await instrument_provider.load_async(instrument_id=None)
     option_instruments = instrument_provider.get_all()
 
     # Assert

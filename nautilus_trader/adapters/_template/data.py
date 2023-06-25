@@ -20,8 +20,8 @@ import pandas as pd
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -159,7 +159,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -168,7 +168,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import os
 
 import pytest
@@ -25,12 +24,11 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_binance_spot_instrument_provider():
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=asyncio.get_event_loop(),
         clock=clock,
         logger=Logger(clock=clock),
         account_type=BinanceAccountType.SPOT,
@@ -38,7 +36,6 @@ async def test_binance_spot_instrument_provider():
         secret=os.getenv("BINANCE_API_SECRET"),
         is_testnet=True,  # <-- add this argument to use the testnet
     )
-    await client.connect()
 
     provider = BinanceSpotInstrumentProvider(
         client=client,
@@ -48,5 +45,3 @@ async def test_binance_spot_instrument_provider():
     await provider.load_all_async()
 
     print(provider.count)
-
-    await client.disconnect()

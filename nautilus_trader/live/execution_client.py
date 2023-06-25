@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `LiveExecutionClient` class is responsible for interfacing with a particular
 API which may be presented directly by an exchange, or broker intermediary.
@@ -93,6 +92,7 @@ class LiveExecutionClient(ExecutionClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -157,8 +157,8 @@ class LiveExecutionClient(ExecutionClient):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -199,7 +199,7 @@ class LiveExecutionClient(ExecutionClient):
     ) -> None:
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
             )
         else:
             if actions:
@@ -208,7 +208,7 @@ class LiveExecutionClient(ExecutionClient):
                 except Exception as e:
                     self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
-                        f"{repr(e)}",
+                        f"{e!r}",
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)

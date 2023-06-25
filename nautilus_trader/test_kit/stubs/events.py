@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
@@ -25,30 +26,34 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import TradingState
-from nautilus_trader.model.events.account import AccountState
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCanceled
-from nautilus_trader.model.events.order import OrderExpired
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderPendingCancel
-from nautilus_trader.model.events.order import OrderPendingUpdate
-from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -78,7 +83,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def cash_account_state(account_id=None) -> AccountState:
+    def cash_account_state(account_id: Optional[AccountId] = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.CASH,
@@ -99,7 +104,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def margin_account_state(account_id=None) -> AccountState:
+    def margin_account_state(account_id: Optional[AccountId] = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.MARGIN,
@@ -126,7 +131,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def betting_account_state(account_id=None) -> AccountState:
+    def betting_account_state(account_id: Optional[AccountId] = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.BETTING,
@@ -163,7 +168,11 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_accepted(order, account_id=None, venue_order_id=None) -> OrderAccepted:
+    def order_accepted(
+        order: Order,
+        account_id: Optional[AccountId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+    ) -> OrderAccepted:
         return OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -177,7 +186,10 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_rejected(order, account_id=None) -> OrderRejected:
+    def order_rejected(
+        order: Order,
+        account_id: Optional[AccountId] = None,
+    ) -> OrderRejected:
         return OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -191,7 +203,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_pending_update(order) -> OrderPendingUpdate:
+    def order_pending_update(order: Order) -> OrderPendingUpdate:
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -206,7 +218,7 @@ class TestEventStubs:
 
     @staticmethod
     def order_updated(
-        order,
+        order: Order,
         quantity: Optional[Quantity] = None,
         price: Optional[Price] = None,
         trigger_price: Optional[Price] = None,
@@ -227,7 +239,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_pending_cancel(order) -> OrderPendingCancel:
+    def order_pending_cancel(order: Order) -> OrderPendingCancel:
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -242,18 +254,18 @@ class TestEventStubs:
 
     @staticmethod
     def order_filled(
-        order,
-        instrument,
-        strategy_id=None,
-        account_id=None,
-        venue_order_id=None,
-        trade_id=None,
-        position_id=None,
-        last_qty=None,
-        last_px=None,
-        liquidity_side=LiquiditySide.TAKER,
-        ts_filled_ns=0,
-        account=None,
+        order: Order,
+        instrument: Instrument,
+        strategy_id: Optional[StrategyId] = None,
+        account_id: Optional[AccountId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+        trade_id: Optional[TradeId] = None,
+        position_id: Optional[PositionId] = None,
+        last_qty: Optional[Quantity] = None,
+        last_px: Optional[Price] = None,
+        liquidity_side: LiquiditySide = LiquiditySide.TAKER,
+        ts_filled_ns: int = 0,
+        account: Optional[Account] = None,
     ) -> OrderFilled:
         if strategy_id is None:
             strategy_id = order.strategy_id
@@ -272,9 +284,11 @@ class TestEventStubs:
         if last_qty is None:
             last_qty = order.quantity
         if account is None:
+            # Causes circular import if moved to the top
             from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
             account = TestExecStubs.cash_account()
+        assert account is not None  # Type checking
 
         commission = account.calculate_commission(
             instrument=instrument,
@@ -305,7 +319,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_canceled(order) -> OrderCanceled:
+    def order_canceled(order: Order) -> OrderCanceled:
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -319,7 +333,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_expired(order) -> OrderExpired:
+    def order_expired(order: Order) -> OrderExpired:
         return OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -333,7 +347,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_triggered(order) -> OrderTriggered:
+    def order_triggered(order: Order) -> OrderTriggered:
         return OrderTriggered(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -347,7 +361,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def position_opened(position) -> PositionOpened:
+    def position_opened(position: Position) -> PositionOpened:
         return PositionOpened.create(
             position=position,
             fill=position.last_event,
@@ -356,7 +370,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def position_changed(position) -> PositionChanged:
+    def position_changed(position: Position) -> PositionChanged:
         return PositionChanged.create(
             position=position,
             fill=position.last_event,
@@ -365,7 +379,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def position_closed(position) -> PositionClosed:
+    def position_closed(position: Position) -> PositionClosed:
         return PositionClosed.create(
             position=position,
             fill=position.last_event,

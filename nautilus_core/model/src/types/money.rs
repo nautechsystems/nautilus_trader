@@ -13,21 +13,29 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
-use std::fmt::{Display, Formatter, Result};
-use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::{
+    cmp::Ordering,
+    fmt::{Display, Formatter},
+    hash::{Hash, Hasher},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    str::FromStr,
+};
 
 use nautilus_core::correctness;
+use pyo3::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::types::currency::Currency;
-use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use crate::types::{
+    currency::Currency,
+    fixed::{f64_to_fixed_i64, fixed_i64_to_f64},
+};
 
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Debug)]
+#[pyclass]
 pub struct Money {
     raw: i64,
     pub currency: Currency,
@@ -38,19 +46,22 @@ impl Money {
     pub fn new(amount: f64, currency: Currency) -> Self {
         correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
 
-        Money {
+        Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
         }
     }
 
-    pub fn from_raw(raw: i64, currency: Currency) -> Money {
+    #[must_use]
+    pub fn from_raw(raw: i64, currency: Currency) -> Self {
         Self { raw, currency }
     }
 
+    #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
@@ -105,7 +116,7 @@ impl Ord for Money {
 impl Neg for Money {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        Money {
+        Self {
             raw: -self.raw,
             currency: self.currency,
         }
@@ -114,9 +125,9 @@ impl Neg for Money {
 
 impl Add for Money {
     type Output = Self;
-    fn add(self, rhs: Money) -> Self::Output {
+    fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.currency, rhs.currency);
-        Money {
+        Self {
             raw: self.raw + rhs.raw,
             currency: self.currency,
         }
@@ -125,9 +136,9 @@ impl Add for Money {
 
 impl Sub for Money {
     type Output = Self;
-    fn sub(self, rhs: Money) -> Self::Output {
+    fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.currency, rhs.currency);
-        Money {
+        Self {
             raw: self.raw - rhs.raw,
             currency: self.currency,
         }
@@ -136,9 +147,9 @@ impl Sub for Money {
 
 impl Mul for Money {
     type Output = Self;
-    fn mul(self, rhs: Money) -> Self {
+    fn mul(self, rhs: Self) -> Self {
         assert_eq!(self.currency, rhs.currency);
-        Money {
+        Self {
             raw: self.raw * rhs.raw,
             currency: self.currency,
         }
@@ -187,7 +198,7 @@ impl Mul<f64> for Money {
 }
 
 impl Display for Money {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:.*} {}",
@@ -195,6 +206,41 @@ impl Display for Money {
             self.as_f64(),
             self.currency.code
         )
+    }
+}
+
+impl Serialize for Money {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+
+impl<'de> Deserialize<'de> for Money {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let money_str: &str = Deserialize::deserialize(deserializer)?;
+
+        let parts: Vec<&str> = money_str.splitn(2, ' ').collect();
+        if parts.len() != 2 {
+            return Err(serde::de::Error::custom("Invalid Money format"));
+        }
+
+        let amount_str = parts[0];
+        let currency_str = parts[1];
+
+        let amount = amount_str
+            .parse::<f64>()
+            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))?;
+
+        let currency = Currency::from_str(currency_str)
+            .map_err(|_| serde::de::Error::custom("Invalid currency"))?;
+
+        Ok(Money::new(amount, currency))
     }
 }
 

@@ -23,15 +23,18 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbol
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 ################################################################################
@@ -40,7 +43,9 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
-    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
+    """
+    HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo.
+    """
 
     symbol: str
     status: str
@@ -79,7 +84,9 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
-    """HTTP response from `Binance Spot/Margin` GET /api/v3/exchangeInfo."""
+    """
+    HTTP response from `Binance Spot/Margin` GET /api/v3/exchangeInfo.
+    """
 
     timezone: str
     serverTime: int
@@ -89,7 +96,9 @@ class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
-    """HTTP response from `Binance Spot/Margin` GET /api/v3/avgPrice."""
+    """
+    HTTP response from `Binance Spot/Margin` GET /api/v3/avgPrice.
+    """
 
     mins: int
     price: str
@@ -101,7 +110,10 @@ class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
-    """Websocket message 'inner struct' for 'Binance Spot/Margin Partial Book Depth Streams.'"""
+    """
+    Websocket message 'inner struct' for 'Binance Spot/Margin Partial Book Depth
+    Streams.'.
+    """
 
     lastUpdateId: int
     bids: list[BinanceOrderBookDelta]
@@ -111,20 +123,35 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-    ) -> OrderBookSnapshot:
-        return OrderBookSnapshot(
-            instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
-            bids=[[float(o.price), float(o.size)] for o in self.bids],
-            asks=[[float(o.price), float(o.size)] for o in self.asks],
-            ts_event=ts_init,
-            ts_init=ts_init,
-            sequence=self.lastUpdateId,
-        )
+    ) -> OrderBookDeltas:
+        bids = [
+            BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.bids
+        ]
+        asks = [
+            BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
+            for o in self.asks
+        ]
+
+        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId)]
+        deltas += [
+            OrderBookDelta(
+                instrument_id,
+                BookAction.ADD,
+                o,
+                ts_init,
+                ts_init,
+                sequence=self.lastUpdateId,
+            )
+            for o in bids + asks
+        ]
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 class BinanceSpotOrderBookPartialDepthMsg(msgspec.Struct):
-    """WebSocket message for 'Binance Spot/Margin' Partial Book Depth Streams."""
+    """
+    WebSocket message for 'Binance Spot/Margin' Partial Book Depth Streams.
+    """
 
     stream: str
     data: BinanceSpotOrderBookPartialDepthData
@@ -146,6 +173,7 @@ class BinanceSpotTradeData(msgspec.Struct):
     - a: Seller order ID
     - T: Trade time
     - m: Is the buyer the market maker?
+
     """
 
     e: str  # Event type

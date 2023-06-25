@@ -540,6 +540,7 @@ cdef class Trader(Component):
             actor.dispose()
 
         self._actors.clear()
+        self._log.info(f"Cleared all actors.")
 
     cpdef void clear_strategies(self):
         """
@@ -559,6 +560,7 @@ cdef class Trader(Component):
             strategy.dispose()
 
         self._strategies.clear()
+        self._log.info(f"Cleared all trading strategies.")
 
     cpdef void clear_exec_algorithms(self):
         """
@@ -578,6 +580,7 @@ cdef class Trader(Component):
             exec_algorithm.dispose()
 
         self._exec_algorithms.clear()
+        self._log.info(f"Cleared all execution algorithms.")
 
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]):
         """

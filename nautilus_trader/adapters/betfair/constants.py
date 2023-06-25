@@ -13,23 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-from enum import Enum
-
 from betfair_parser.spec.streaming.mcm import MarketStatus as BetfairMarketStatus
 
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 
 
+BETFAIR_VENUE = Venue("BETFAIR")
 BETFAIR_PRICE_PRECISION = 6
 BETFAIR_QUANTITY_PRECISION = 6
 BETFAIR_BOOK_TYPE = BookType.L2_MBP
 
 CLOSE_PRICE_WINNER = Price(1.0, precision=BETFAIR_PRICE_PRECISION)
 CLOSE_PRICE_LOSER = Price(0.0, precision=BETFAIR_PRICE_PRECISION)
-
 
 MARKET_STATUS_MAPPING: dict[tuple[BetfairMarketStatus, bool], MarketStatus] = {
     (BetfairMarketStatus.OPEN, False): MarketStatus.PRE_OPEN,
@@ -39,14 +37,3 @@ MARKET_STATUS_MAPPING: dict[tuple[BetfairMarketStatus, bool], MarketStatus] = {
     (BetfairMarketStatus.CLOSED, False): MarketStatus.CLOSED,
     (BetfairMarketStatus.CLOSED, True): MarketStatus.CLOSED,
 }
-
-# Betfair allows subscribing to
-STRICT_MARKET_DATA_HANDLING = os.environ.get("BETFAIR_STRICT_MARKET_DATA_HANDLING", "1")
-
-
-class MarketDataKind(Enum):
-    """MarketDataKind"""
-
-    ALL = "ALL"
-    BEST = "BEST"
-    DISPLAY = "DISPLAY"

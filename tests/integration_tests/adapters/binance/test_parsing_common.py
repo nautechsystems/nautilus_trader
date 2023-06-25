@@ -19,8 +19,8 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestick
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderType
@@ -36,7 +36,7 @@ class TestBinanceCommonParsing:
         self._spot_enum_parser = BinanceSpotEnumParser()
 
     @pytest.mark.parametrize(
-        "order_type, expected",
+        ("order_type", "expected"),
         [
             [BinanceOrderType.LIMIT, OrderType.LIMIT],
             [BinanceOrderType.MARKET, OrderType.MARKET],
@@ -56,7 +56,7 @@ class TestBinanceCommonParsing:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "resolution, expected_type",
+        ("resolution", "expected_type"),
         [
             [
                 "1m",

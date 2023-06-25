@@ -26,12 +26,13 @@ import pandas as pd
 import pyarrow as pa
 from fsspec.core import OpenFile
 from pyarrow import ArrowInvalid
+from pyarrow import ArrowTypeError
 from pyarrow import dataset as ds
 from pyarrow import parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -110,7 +111,7 @@ def process_files(
     compression: str = "infer",
     executor: Optional[Executor] = None,
     use_rust=False,
-    instrument: Instrument = None,
+    instrument: Optional[Instrument] = None,
     **kwargs,
 ):
     PyCondition.type_or_none(executor, Executor, "executor")
@@ -154,7 +155,7 @@ def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> 
 
 def scan_files(glob_path, compression="infer", **kw) -> list[OpenFile]:
     open_files = fsspec.open_files(glob_path, compression=compression, **kw)
-    return [of for of in open_files]
+    return list(open_files)
 
 
 def split_and_serialize(objs: list) -> dict[type, dict[Optional[str], list]]:
@@ -198,7 +199,7 @@ def dicts_to_dataframes(dicts) -> dict[type, dict[str, pd.DataFrame]]:
     return tables
 
 
-def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[list, None]:
+def determine_partition_cols(cls: type, instrument_id: Optional[str] = None) -> Union[list, None]:
     """
     Determine partition columns (if any) for this type `cls`.
     """
@@ -214,8 +215,9 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
     """
     Handle existing data for instrument subclasses.
 
-    Instruments all live in a single file, so merge with existing data.
-    For all other classes, simply return data unchanged.
+    Instruments all live in a single file, so merge with existing data. For all other
+    classes, simply return data unchanged.
+
     """
     if cls not in Instrument.__subclasses__():
         return df
@@ -251,7 +253,11 @@ def write_tables(
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         path = f"{catalog.path}/data/{class_to_filename(cls)}.parquet"
-        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        if kwargs.get("merge_existing_data") is False:
+            merged = df
+        else:
+            merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        kwargs.pop("merge_existing_data", None)
 
         write_parquet(
             fs=catalog.fs,
@@ -260,7 +266,11 @@ def write_tables(
             partition_cols=partition_cols,
             schema=schema,
             **kwargs,
-            **({"basename_template": "{i}.parquet"} if cls in Instrument.__subclasses__() else {}),
+            **(
+                {"basename_template": "{i}.parquet"}
+                if not kwargs.get("basename_template") and cls in Instrument.__subclasses__()
+                else {}
+            ),
         )
         rows_written += len(df)
 
@@ -316,7 +326,11 @@ def write_parquet(
     df = clean_partition_cols(df=df, mappings=mappings)
 
     # Dataframe -> pyarrow Table
-    table = pa.Table.from_pandas(df, schema=schema)
+    try:
+        table = pa.Table.from_pandas(df, schema)
+    except (ArrowTypeError, ArrowInvalid) as e:
+        logging.error(f"Failed to convert dataframe to pyarrow table with {schema=}, exception={e}")
+        raise
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
         if "bar_type" in df.columns:

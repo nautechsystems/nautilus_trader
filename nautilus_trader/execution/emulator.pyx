@@ -302,12 +302,13 @@ cdef class OrderEmulator(Actor):
             self._cancel_order(matching_core=None, order=order)
             return
 
-        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            instrument = self.cache.instrument(command.instrument_id)
+            instrument = self.cache.instrument(trigger_instrument_id)
             if instrument is None:
                 self._log.error(
-                    f"Cannot emulate order: no instrument for {command.instrument_id}.",
+                    f"Cannot emulate order: no trigger instrument for {trigger_instrument_id}.",
                 )
                 self._cancel_order(matching_core=None, order=order)
                 return
@@ -331,13 +332,13 @@ cdef class OrderEmulator(Actor):
 
         # Check data subscription
         if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
-            if command.instrument_id not in self._subscribed_quotes:
-                self.subscribe_quote_ticks(command.instrument_id)
-                self._subscribed_quotes.add(command.instrument_id)
+            if trigger_instrument_id not in self._subscribed_quotes:
+                self.subscribe_quote_ticks(trigger_instrument_id)
+                self._subscribed_quotes.add(trigger_instrument_id)
         elif emulation_trigger == TriggerType.LAST_TRADE:
-            if command.instrument_id not in self._subscribed_trades:
-                self.subscribe_trade_ticks(command.instrument_id)
-                self._subscribed_trades.add(command.instrument_id)
+            if trigger_instrument_id not in self._subscribed_trades:
+                self.subscribe_trade_ticks(trigger_instrument_id)
+                self._subscribed_trades.add(trigger_instrument_id)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid `TriggerType`, was {emulation_trigger}",  # pragma: no cover (design-time error)
@@ -415,9 +416,10 @@ cdef class OrderEmulator(Actor):
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
-        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            raise RuntimeError(f"Cannot handle `ModifyOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
+            raise RuntimeError(f"Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}.")  # pragma: no cover (design-time error)
 
         matching_core.match_order(order)
         if order.side == OrderSide.BUY:
@@ -426,13 +428,19 @@ cdef class OrderEmulator(Actor):
             matching_core.sort_ask_orders()
 
     cdef void _handle_cancel_order(self, CancelOrder command):
-        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
-        if matching_core is None:
-            raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
-
         cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot cancel order: {repr(command.client_order_id)} not found.",
+            )
+            return
 
-        if not matching_core.order_exists(command.client_order_id):
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
+        if matching_core is None:
+            raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for trigger instrument {trigger_instrument_id}.")  # pragma: no cover (design-time error)
+
+        if not matching_core.order_exists(order.client_order_id):
             # Order not held in the emulator
             self._send_exec_command(command)
         else:
@@ -500,8 +508,9 @@ cdef class OrderEmulator(Actor):
         # Remove emulation trigger
         order.emulation_trigger = TriggerType.NO_TRIGGER
 
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         if matching_core is None:
-            matching_core = self._matching_cores.get(order.instrument_id)
+            matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is not None:
             matching_core.delete_order(order)
 
@@ -593,6 +602,7 @@ cdef class OrderEmulator(Actor):
             SubmitOrderList submit_order_list
             Order contingent_order
             Order spawned_order
+            Order primary_order
             list exec_spawn_orders
             uint64_t raw_filled_qty
             Quantity filled_qty
@@ -603,6 +613,8 @@ cdef class OrderEmulator(Actor):
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order, f"Cannot find child order for {repr(client_order_id)}"
+                if child_order.is_closed_c():
+                    continue
                 if not self.cache.load_submit_order_command(child_order.client_order_id):
                     self._create_new_submit_order(
                         order=child_order,
@@ -611,14 +623,23 @@ cdef class OrderEmulator(Actor):
                     )
                     continue
 
-                # Check if execution algorithm spawned order
+                # Check if execution algorithm spawned order (only update based on primary)
                 if order.exec_spawn_id is None:
+                    return
+
+                primary_order = self.cache.order(order.exec_spawn_id)
+                if primary_order is None:
+                    self._log.error(f"Cannot find primary order {repr(order.exec_spawn_id)}.")
+                    return
+
+                # Check if primary already pending cancel or completed (no need to update)
+                if primary_order.status == OrderStatus.PENDING_CANCEL or primary_order.is_closed_c():
                     return
 
                 raw_filled_qty = 0
                 filled_qty = None
 
-                # Get primary order for execution spawn sequence
+                # Check total size of execution spawn sequence
                 exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
                 for spawned_order in exec_spawn_orders:
                     raw_filled_qty += spawned_order.filled_qty._mem.raw
@@ -651,6 +672,10 @@ cdef class OrderEmulator(Actor):
             matching_core = self._matching_cores.get(order.instrument_id)
             if matching_core is not None:
                 matching_core.delete_order(order)
+
+        if order.exec_spawn_id is not None:
+            # Do not handle contingencies based on spawned execution algorithm orders
+            return
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
@@ -736,9 +761,10 @@ cdef class OrderEmulator(Actor):
 
         self.log.info(f"Releasing {order}...")
 
-        cdef MatchingCore matching_core = self._matching_cores.get(order.instrument_id)
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            raise RuntimeError(f"No matching core for {order.instrument_id}")
+            raise RuntimeError(f"No matching core for trigger instrument {trigger_instrument_id}")
 
         matching_core.delete_order(order)
 
@@ -777,9 +803,10 @@ cdef class OrderEmulator(Actor):
 
         self.log.info(f"Releasing {order}...")
 
-        cdef MatchingCore matching_core = self._matching_cores.get(order.instrument_id)
+        cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            raise RuntimeError(f"No matching core for {order.instrument_id}")
+            raise RuntimeError(f"No matching core for trigger instrument {trigger_instrument_id}")
 
         matching_core.delete_order(order)
 
@@ -809,7 +836,7 @@ cdef class OrderEmulator(Actor):
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
-            self._log.error(f"Cannot handle `QuoteTick`: no matching core for {tick.instrument_id}.")
+            self._log.error(f"Cannot handle `QuoteTick`: no matching core for instrument {tick.instrument_id}.")
             return
 
         matching_core.set_bid_raw(tick._mem.bid.raw)
@@ -823,7 +850,7 @@ cdef class OrderEmulator(Actor):
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
-            self._log.error(f"Cannot handle `TradeTick`: no matching core for {tick.instrument_id}.")
+            self._log.error(f"Cannot handle `TradeTick`: no matching core for instrument {tick.instrument_id}.")
             return
 
         matching_core.set_last_raw(tick._mem.price.raw)

@@ -46,16 +46,16 @@ class TestSimpleMovingAverage:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        self.sma.update_raw(1.00000)
-        self.sma.update_raw(2.00000)
-        self.sma.update_raw(3.00000)
-        self.sma.update_raw(4.00000)
-        self.sma.update_raw(5.00000)
-        self.sma.update_raw(6.00000)
-        self.sma.update_raw(7.00000)
-        self.sma.update_raw(8.00000)
-        self.sma.update_raw(9.00000)
-        self.sma.update_raw(10.00000)
+        self.sma.update_raw(1.0)
+        self.sma.update_raw(2.0)
+        self.sma.update_raw(3.0)
+        self.sma.update_raw(4.0)
+        self.sma.update_raw(5.0)
+        self.sma.update_raw(6.0)
+        self.sma.update_raw(7.0)
+        self.sma.update_raw(8.0)
+        self.sma.update_raw(9.0)
+        self.sma.update_raw(10.0)
 
         # Act, Assert
         assert self.sma.initialized is True
@@ -66,27 +66,27 @@ class TestSimpleMovingAverage:
         # Arrange
         indicator = SimpleMovingAverage(10, PriceType.MID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick()
 
         # Act
         indicator.handle_quote_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00002
+        assert indicator.value == 1.0
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = SimpleMovingAverage(10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         indicator.handle_trade_tick(tick)
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.value == 1.00001
+        assert indicator.value == 1.0
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -103,25 +103,25 @@ class TestSimpleMovingAverage:
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
-        self.sma.update_raw(1.00000)
+        self.sma.update_raw(1.0)
 
         # Act, Assert
         assert self.sma.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
-        self.sma.update_raw(1.00000)
-        self.sma.update_raw(2.00000)
-        self.sma.update_raw(3.00000)
+        self.sma.update_raw(1.0)
+        self.sma.update_raw(2.0)
+        self.sma.update_raw(3.0)
 
         # Act, Assert
         assert self.sma.value == 2.0
 
     def test_value_at_returns_expected_value(self):
         # Arrange
-        self.sma.update_raw(1.00000)
-        self.sma.update_raw(2.00000)
-        self.sma.update_raw(3.00000)
+        self.sma.update_raw(1.0)
+        self.sma.update_raw(2.0)
+        self.sma.update_raw(3.0)
 
         # Act, Assert
         assert self.sma.value == 2.0
@@ -132,7 +132,10 @@ class TestSimpleMovingAverage:
         sma_for_ticks2 = SimpleMovingAverage(10, PriceType.MID)
         sma_for_ticks3 = SimpleMovingAverage(10, PriceType.BID)
 
-        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick(
+            bid=1.00001,
+            ask=1.00003,
+        )
 
         # Act
         sma_for_ticks1.handle_quote_tick(tick)
@@ -151,19 +154,19 @@ class TestSimpleMovingAverage:
         # Arrange
         sma_for_ticks = SimpleMovingAverage(10)
 
-        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick()
 
         # Act
         sma_for_ticks.handle_trade_tick(tick)
 
         # Assert
         assert sma_for_ticks.has_inputs
-        assert sma_for_ticks.value == 1.00001
+        assert sma_for_ticks.value == 1.0
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
         for _i in range(1000):
-            self.sma.update_raw(1.00000)
+            self.sma.update_raw(1.0)
 
         # Act
         self.sma.reset()

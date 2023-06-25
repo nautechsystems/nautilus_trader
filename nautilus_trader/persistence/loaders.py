@@ -38,11 +38,13 @@ class CSVTickDataLoader:
         pd.DataFrame
 
         """
-        return pd.read_csv(
+        df = pd.read_csv(
             file_path,
             index_col="timestamp",
             parse_dates=True,
         )
+        df.index = pd.to_datetime(df.index, format="mixed")
+        return df
 
 
 class CSVBarDataLoader:
@@ -65,11 +67,13 @@ class CSVBarDataLoader:
         pd.DataFrame
 
         """
-        return pd.read_csv(
+        df = pd.read_csv(
             file_path,
             index_col="timestamp",
             parse_dates=True,
         )
+        df.index = pd.to_datetime(df.index, format="mixed")
+        return df
 
 
 def _ts_parser(time_in_secs: str) -> datetime:
@@ -102,7 +106,7 @@ class TardisTradeDataLoader:
             date_parser=_ts_parser,
             parse_dates=True,
         )
-        df.rename(columns={"id": "trade_id", "amount": "quantity"}, inplace=True)
+        df = df.rename(columns={"id": "trade_id", "amount": "quantity"})
         df["side"] = df.side.str.upper()
         df = df[["symbol", "trade_id", "price", "quantity", "side"]]
 
@@ -135,14 +139,13 @@ class TardisQuoteDataLoader:
             date_parser=_ts_parser,
             parse_dates=True,
         )
-        df.rename(
+        df = df.rename(
             columns={
                 "ask_amount": "ask_size",
                 "ask_price": "ask",
                 "bid_price": "bid",
                 "bid_amount": "bid_size",
             },
-            inplace=True,
         )
 
         return df[["bid", "ask", "bid_size", "ask_size"]]
@@ -170,7 +173,7 @@ class ParquetTickDataLoader:
 
         """
         df = pd.read_parquet(file_path)
-        df.set_index(timestamp_column, inplace=True)
+        df = df.set_index(timestamp_column)
         return df
 
 
@@ -195,5 +198,5 @@ class ParquetBarDataLoader:
 
         """
         df = pd.read_parquet(file_path)
-        df.set_index("timestamp", inplace=True)
+        df = df.set_index("timestamp")
         return df

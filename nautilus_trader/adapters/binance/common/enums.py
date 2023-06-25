@@ -12,22 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from enum import Enum
-from enum import unique
-
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.enums import bar_aggregation_to_str
-from nautilus_trader.model.orders import Order
-
-
 """
 Defines `Binance` common enums.
 
@@ -39,9 +23,25 @@ https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
 """
 
 
+from enum import Enum
+from enum import unique
+
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.orders import Order
+
+
 @unique
 class BinanceRateLimitType(Enum):
-    """Represents a `Binance` rate limit type."""
+    """
+    Represents a `Binance` rate limit type."""
 
     REQUEST_WEIGHT = "REQUEST_WEIGHT"
     ORDERS = "ORDERS"
@@ -111,10 +111,10 @@ class BinanceAccountType(Enum):
     """Represents a `Binance` account type."""
 
     SPOT = "SPOT"
-    MARGIN_CROSS = "MARGIN_CROSS"
-    MARGIN_ISOLATED = "MARGIN_ISOLATED"
-    FUTURES_USDT = "FUTURES_USDT"
-    FUTURES_COIN = "FUTURES_COIN"
+    MARGIN = "MARGIN"
+    ISOLATED_MARGIN = "ISOLATED_MARGIN"
+    USDT_FUTURE = "USDT_FUTURE"
+    COIN_FUTURE = "COIN_FUTURE"
 
     @property
     def is_spot(self):
@@ -123,23 +123,23 @@ class BinanceAccountType(Enum):
     @property
     def is_margin(self):
         return self in (
-            BinanceAccountType.MARGIN_CROSS,
-            BinanceAccountType.MARGIN_ISOLATED,
+            BinanceAccountType.MARGIN,
+            BinanceAccountType.ISOLATED_MARGIN,
         )
 
     @property
     def is_spot_or_margin(self):
         return self in (
             BinanceAccountType.SPOT,
-            BinanceAccountType.MARGIN_CROSS,
-            BinanceAccountType.MARGIN_ISOLATED,
+            BinanceAccountType.MARGIN,
+            BinanceAccountType.ISOLATED_MARGIN,
         )
 
     @property
     def is_futures(self) -> bool:
         return self in (
-            BinanceAccountType.FUTURES_USDT,
-            BinanceAccountType.FUTURES_COIN,
+            BinanceAccountType.USDT_FUTURE,
+            BinanceAccountType.COIN_FUTURE,
         )
 
 
@@ -246,6 +246,7 @@ class BinanceEnumParser:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(self) -> None:

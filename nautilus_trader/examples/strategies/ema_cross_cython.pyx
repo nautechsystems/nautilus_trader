@@ -120,7 +120,9 @@ cdef class EMACross(Strategy):
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     cpdef void on_start(self):
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")

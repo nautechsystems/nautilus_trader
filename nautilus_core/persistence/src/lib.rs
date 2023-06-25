@@ -17,15 +17,15 @@ mod kmerge_batch;
 pub mod parquet;
 pub mod session;
 
-use parquet::ParquetType;
+use parquet::NautilusDataType;
 use pyo3::prelude::*;
-use session::{PythonCatalog, PythonQueryResult};
+use session::{DataBackendSession, DataQueryResult};
 
 /// Loaded as nautilus_pyo3.persistence
 #[pymodule]
 pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<ParquetType>()?;
-    m.add_class::<PythonCatalog>()?;
-    m.add_class::<PythonQueryResult>()?;
+    m.add_class::<NautilusDataType>()?;
+    m.add_class::<DataBackendSession>()?;
+    m.add_class::<DataQueryResult>()?;
     Ok(())
 }

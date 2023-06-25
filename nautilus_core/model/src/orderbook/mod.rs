@@ -14,6 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod book;
+pub mod book_api;
 pub mod ladder;
 pub mod level;
-pub mod order;

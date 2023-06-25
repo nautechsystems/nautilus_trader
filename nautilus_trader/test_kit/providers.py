@@ -23,7 +23,7 @@ import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
@@ -43,6 +43,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -328,7 +329,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
+    def default_fx_ccy(symbol: str, venue: Optional[Venue] = None) -> CurrencyPair:
         """
         Return a default FX currency pair instrument from the given symbol and venue.
 
@@ -506,18 +507,34 @@ class TestInstrumentProvider:
             },
         )
 
+    @staticmethod
+    def synthetic_instrument() -> SyntheticInstrument:
+        return SyntheticInstrument(
+            symbol=Symbol("BTC-ETH"),
+            precision=8,
+            components=[
+                TestInstrumentProvider.btcusdt_binance().id,
+                TestInstrumentProvider.ethusdt_binance().id,
+            ],
+            formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+            ts_event=0,
+            ts_init=0,
+        )
+
 
 class TestDataProvider:
     """
-    Provides an API to load data from either the 'test/' directory or the projects GitHub repo.
+    Provides an API to load data from either the 'test/' directory or the projects
+    GitHub repo.
 
     Parameters
     ----------
     branch : str
         The NautilusTrader GitHub branch for the path.
+
     """
 
-    def __init__(self, branch="develop") -> None:
+    def __init__(self, branch: str = "develop") -> None:
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()

@@ -16,9 +16,9 @@
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
@@ -51,6 +51,7 @@ class MyStrategy(Strategy):
     ----------
     config : MyStrategyConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: MyStrategyConfig) -> None:
@@ -60,16 +61,22 @@ class MyStrategy(Strategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
     def on_start(self) -> None:
-        """Actions to be performed when the strategy is started."""
-        pass  # Optionally implement
+        """
+        Actions to be performed when the strategy is started.
+        """
+        # Optionally implement
 
     def on_stop(self) -> None:
-        """Actions to be performed when the strategy is stopped."""
-        pass  # Optionally implement
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        # Optionally implement
 
     def on_reset(self) -> None:
-        """Actions to be performed when the strategy is reset."""
-        pass  # Optionally implement
+        """
+        Actions to be performed when the strategy is reset.
+        """
+        # Optionally implement
 
     def on_dispose(self) -> None:
         """
@@ -78,7 +85,7 @@ class MyStrategy(Strategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_save(self) -> dict[str, bytes]:
         """
@@ -106,12 +113,11 @@ class MyStrategy(Strategy):
             The strategy state dictionary.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -119,7 +125,7 @@ class MyStrategy(Strategy):
             The instrument received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -131,7 +137,7 @@ class MyStrategy(Strategy):
             The tick received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -143,7 +149,7 @@ class MyStrategy(Strategy):
             The tick received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_bar(self, bar: Bar) -> None:
         """
@@ -155,19 +161,19 @@ class MyStrategy(Strategy):
             The bar received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def buy(self) -> None:
         """
         Users simple buy method (example).
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def sell(self) -> None:
         """
         Users simple sell method (example).
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_data(self, data: Data) -> None:
         """
@@ -179,7 +185,7 @@ class MyStrategy(Strategy):
             The data received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement
 
     def on_event(self, event: Event) -> None:
         """
@@ -191,4 +197,4 @@ class MyStrategy(Strategy):
             The event received.
 
         """
-        pass  # Optionally implement
+        # Optionally implement

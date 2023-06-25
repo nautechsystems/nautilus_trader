@@ -59,8 +59,9 @@ pub extern "C" fn unix_timestamp_ns() -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::UNIX_EPOCH;
+
+    use super::*;
 
     #[test]
     fn test_duration_since_unix_epoch() {

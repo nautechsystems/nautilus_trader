@@ -25,10 +25,7 @@ def is_nautilus_class(cls: type) -> bool:
         return True
     elif cls.__module__.startswith("nautilus_trader.test_kit"):
         return False
-    elif any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__):
-        return True
-    else:
-        return False
+    return bool(any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__))
 
 
 def get_size_of(obj) -> int:

@@ -105,7 +105,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
+    base_url_ws : str
         The base URL for the WebSocket client.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
@@ -129,7 +129,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
-        base_url_ws: Optional[str] = None,
+        base_url_ws: str,
         warn_gtd_to_gtc: bool = True,
     ) -> None:
         super().__init__(
@@ -168,7 +168,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
-            loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
@@ -195,9 +194,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     async def _connect(self) -> None:
-        # Connect HTTP client
-        if not self._http_client.connected:
-            await self._http_client.connect()
         try:
             # Initialize instrument provider
             await self._instrument_provider.initialize()
@@ -222,7 +218,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
 
         # Connect WebSocket client
-        self._ws_client.subscribe(key=self._listen_key)
+        await self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
 
     async def _update_account_state(self) -> None:
@@ -248,15 +244,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
-            self._ping_listen_keys_task.done()
+            self._ping_listen_keys_task = None
 
-        # Disconnect WebSocket clients
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
-
-        # Disconnect HTTP client
-        if self._http_client.connected:
-            await self._http_client.disconnect()
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -290,7 +281,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if venue_order_id:
                 binance_order = await self._http_account.query_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 binance_order = await self._http_account.query_order(
@@ -301,12 +292,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
         except BinanceError as e:
             self._log.error(
-                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {client_order_id!r}: {e.message}. Retry {retries}/3",
             )
             retries += 1
             self._generate_order_status_retries[client_order_id] = retries
             if not client_order_id:
-                self.log.warning("Cannot retry without a client order ID.")
+                self._log.warning("Cannot retry without a client order ID.")
             else:
                 order: Optional[Order] = self._cache.order(client_order_id)
                 if order is None:
@@ -370,7 +361,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId = None,
+        instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
@@ -426,8 +417,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_trade_reports(
         self,
-        instrument_id: InstrumentId = None,
-        venue_order_id: VenueOrderId = None,
+        instrument_id: Optional[InstrumentId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
@@ -461,7 +452,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
             if trade.symbol is None:
-                self.log.warning(f"No symbol for trade {trade}.")
+                self._log.warning(f"No symbol for trade {trade}.")
                 continue
             report = trade.parse_to_trade_report(
                 account_id=self.account_id,
@@ -483,7 +474,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId = None,
+        instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
@@ -506,6 +497,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order: Order = command.order
+
+        if order.is_closed:
+            self._log.warning(f"Cannot submit already closed order {order}.")
+            return
 
         # Check validity
         self._check_order_validity(order)
@@ -531,7 +526,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except KeyError:
             raise RuntimeError(f"unsupported order type, was {order.order_type}")
 
-    def _check_order_validity(self, order: Order):
+    def _check_order_validity(self, order: Order) -> None:
         # Implement in child class
         raise NotImplementedError
 
@@ -547,9 +542,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if order.time_in_force == TimeInForce.GTD and time_in_force == BinanceTimeInForce.GTC:
-            if self._warn_gtd_to_gtc:
-                self._log.warning("Converted GTD `time_in_force` to GTC.")
+        if (
+            order.time_in_force == TimeInForce.GTD
+            and time_in_force == BinanceTimeInForce.GTC
+            and self._warn_gtd_to_gtc
+        ):
+            self._log.warning("Converted GTD `time_in_force` to GTC.")
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
@@ -600,7 +598,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        for order in command.order_list:
+        for order in command.order_list.orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -608,7 +606,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
-        for order in command.order_list:
+        for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)
@@ -709,52 +707,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.error("Cannot modify order: not supported by the venue.")
-        # TODO: Below is an experimental WIP (will potentially be removed)
-
-        # order = self._cache.order(command.client_order_id)
-        # if order is None:
-        #     self._log.error(
-        #         f"Cannot modify order: order not found for {repr(command.client_order_id)}",
-        #     )
-        #
-        # self._modifying_orders[order.client_order_id] = order.venue_order_id
-        #
-        # await self._cancel_order_single(
-        #     instrument_id=command.instrument_id,
-        #     client_order_id=command.client_order_id,
-        #     venue_order_id=command.venue_order_id,
-        # )
-        #
-        # try:
-        #     await self._submit_order_method[order.order_type](order)
-        # except BinanceError as e:
-        #     self.generate_order_rejected(
-        #         strategy_id=order.strategy_id,
-        #         instrument_id=order.instrument_id,
-        #         client_order_id=order.client_order_id,
-        #         reason=e.message,
-        #         ts_event=self._clock.timestamp_ns(),
-        #     )
-        #     return
-
-        # now = self._clock.timestamp_ns()
-        # updated = OrderUpdated(
-        #     trader_id=order.trader_id,
-        #     strategy_id=order.strategy_id,
-        #     instrument_id=order.instrument_id,
-        #     client_order_id=order.client_order_id,
-        #     venue_order_id=order.venue_order_id,
-        #     account_id=order.account_id,
-        #     quantity=command.quantity or order.quantity,
-        #     price=command.price,
-        #     trigger_price=command.trigger_price,
-        #     event_id=UUID4(),
-        #     ts_event=now,
-        #     ts_init=now,
-        # )
-        #
-        # order.apply(updated)
-        # self._cache.update_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         await self._cancel_order_single(
@@ -790,7 +742,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         venue_order_id=order.venue_order_id,
                     )
         except BinanceError as e:
-            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+            if "Unknown order sent" in e.message:
+                self._log.info(
+                    "No open orders to cancel according to Binance.",
+                    LogColor.GREEN,
+                )
+            else:
+                self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     async def _cancel_order_single(
         self,
@@ -802,7 +760,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if venue_order_id is not None:
                 await self._http_account.cancel_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    order_id=int(venue_order_id.value),
                 )
             else:
                 await self._http_account.cancel_order(
@@ -812,8 +770,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "
-                f"{repr(client_order_id)}, "
-                f"{repr(venue_order_id)}: "
+                f"{client_order_id!r}, "
+                f"{venue_order_id!r}: "
                 f"{e.message}",
                 e,
             )

@@ -17,7 +17,7 @@ import inspect
 from typing import Optional
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.trading.strategy import Strategy
@@ -31,6 +31,7 @@ class MockStrategy(Strategy):
     ----------
     bar_type : BarType
         The bar type for the strategy.
+
     """
 
     def __init__(self, bar_type: BarType) -> None:

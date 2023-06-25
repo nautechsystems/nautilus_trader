@@ -21,6 +21,7 @@ import fsspec
 import msgspec
 
 from nautilus_trader.common import Environment
+from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -109,7 +110,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
 
 class CacheConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``Cache`` instance.
+    Configuration for ``Cache`` instances.
 
     Parameters
     ----------
@@ -125,7 +126,7 @@ class CacheConfig(NautilusConfig, frozen=True):
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``CacheDatabase`` instance.
+    Configuration for ``CacheDatabase`` instances.
 
     Parameters
     ----------
@@ -156,7 +157,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
     """
-    Configuration for an ``InstrumentProvider`` instance.
+    Configuration for ``InstrumentProvider`` instances.
 
     Parameters
     ----------
@@ -192,7 +193,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
 
 class DataEngineConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``DataEngine`` instance.
+    Configuration for ``DataEngine`` instances.
 
     Parameters
     ----------
@@ -215,7 +216,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
 class RiskEngineConfig(NautilusConfig, frozen=True):
     """
-    Configuration for a ``RiskEngine`` instance.
+    Configuration for ``RiskEngine`` instances.
 
     Parameters
     ----------
@@ -241,7 +242,7 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
 
 class ExecEngineConfig(NautilusConfig, frozen=True):
     """
-    Configuration for an ``ExecutionEngine`` instance.
+    Configuration for ``ExecutionEngine`` instances.
 
     Parameters
     ----------
@@ -249,18 +250,21 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
+    filter_unclaimed_external_orders : bool, default False
+        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = True
+    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
     """
-    Configuration for an ``OrderEmulator`` instance.
+    Configuration for ``OrderEmulator`` instances.
     """
 
 
@@ -280,6 +284,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The flush interval (milliseconds) for writing chunks.
     replace_existing: bool, default False
         If any existing feather files should be replaced.
+
     """
 
     catalog_path: str
@@ -315,6 +320,7 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
         The fsspec storage options for the data catalog.
     use_rust : bool, default False
         If queries will be for Rust schema versions (when implemented).
+
     """
 
     path: str
@@ -332,6 +338,7 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
     component_id : str, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
+
     """
 
     component_id: Optional[str] = None
@@ -349,6 +356,7 @@ class ImportableActorConfig(NautilusConfig, frozen=True):
         The fully qualified name of the Actor Config class.
     config : dict
         The actor configuration.
+
     """
 
     actor_path: str
@@ -403,6 +411,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         how the `ExecutionEngine` handles position IDs (see docs).
     external_order_claims : list[str], optional
         The external order claim instrument IDs.
+
     """
 
     strategy_id: Optional[str] = None
@@ -423,6 +432,7 @@ class ImportableStrategyConfig(NautilusConfig, frozen=True):
         The fully qualified name of the config class.
     config : dict[str, Any]
         The strategy configuration.
+
     """
 
     strategy_path: str
@@ -470,6 +480,7 @@ class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
     exec_algorithm_id : str, optional
         The unique ID for the execution algorithm.
         If not ``None`` then will become the execution algorithm ID.
+
     """
 
     exec_algorithm_id: Optional[str] = None
@@ -487,6 +498,7 @@ class ImportableExecAlgorithmConfig(NautilusConfig, frozen=True):
         The fully qualified name of the config class.
     config : dict[str, Any]
         The execution algorithm configuration.
+
     """
 
     exec_algorithm_path: str
@@ -595,6 +607,16 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If trading strategy state should be saved to the database on stop.
     loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
+    timeout_connection : PositiveFloat (seconds)
+        The timeout for all clients to connect and initialize.
+    timeout_reconciliation : PositiveFloat (seconds)
+        The timeout for execution state to reconcile.
+    timeout_portfolio : PositiveFloat (seconds)
+        The timeout for portfolio to initialize margins and unrealized PnLs.
+    timeout_disconnection : PositiveFloat (seconds)
+        The timeout for all engine clients to disconnect.
+    timeout_post_stop : PositiveFloat (seconds)
+        The timeout after stopping the node to await residual events before final shutdown.
     """
 
     environment: Environment
@@ -614,6 +636,11 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: Optional[LoggingConfig] = None
+    timeout_connection: PositiveFloat = 10.0
+    timeout_reconciliation: PositiveFloat = 10.0
+    timeout_portfolio: PositiveFloat = 10.0
+    timeout_disconnection: PositiveFloat = 10.0
+    timeout_post_stop: PositiveFloat = 10.0
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):
@@ -630,7 +657,8 @@ class ImportableFactoryConfig(NautilusConfig, frozen=True):
 
 class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable configuration (typically live data client or live execution client).
+    Represents an importable configuration (typically live data client or live execution
+    client).
     """
 
     path: str

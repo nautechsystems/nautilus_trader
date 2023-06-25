@@ -30,6 +30,7 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
+from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -41,8 +42,8 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -76,7 +77,7 @@ cdef class Actor(Component):
     cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update)
     cpdef void on_instrument_close(self, InstrumentClose update)
     cpdef void on_instrument(self, Instrument instrument)
-    cpdef void on_order_book_delta(self, OrderBookData delta)
+    cpdef void on_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void on_order_book(self, OrderBook order_book)
     cpdef void on_ticker(self, Ticker ticker)
     cpdef void on_quote_tick(self, QuoteTick tick)
@@ -85,11 +86,6 @@ cdef class Actor(Component):
     cpdef void on_data(self, Data data)
     cpdef void on_historical_data(self, Data data)
     cpdef void on_event(self, Event event)
-
-# -- ACTOR COMMANDS -------------------------------------------------------------------------------
-
-    cpdef dict save(self)
-    cpdef void load(self, dict state)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -103,6 +99,13 @@ cdef class Actor(Component):
 
     cpdef void register_warning_event(self, type event)
     cpdef void deregister_warning_event(self, type event)
+
+# -- ACTOR COMMANDS -------------------------------------------------------------------------------
+
+    cpdef dict save(self)
+    cpdef void load(self, dict state)
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic)
+    cpdef void update_synthetic(self, SyntheticInstrument synthetic)
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -182,7 +185,7 @@ cdef class Actor(Component):
     cpdef void handle_instrument(self, Instrument instrument)
     cpdef void handle_instruments(self, list instruments)
     cpdef void handle_order_book(self, OrderBook order_book)
-    cpdef void handle_order_book_delta(self, OrderBookData data)
+    cpdef void handle_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void handle_ticker(self, Ticker ticker)
     cpdef void handle_quote_tick(self, QuoteTick tick)
     cpdef void handle_quote_ticks(self, list ticks)

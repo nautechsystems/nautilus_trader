@@ -55,6 +55,7 @@ class MockExecutionClient(ExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
     def __init__(
@@ -172,6 +173,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
     def __init__(
@@ -296,7 +298,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId = None,
+        instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
@@ -322,8 +324,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     async def generate_trade_reports(
         self,
-        instrument_id: InstrumentId = None,
-        venue_order_id: VenueOrderId = None,
+        instrument_id: Optional[InstrumentId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
@@ -351,7 +353,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId = None,
+        instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
