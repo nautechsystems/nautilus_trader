@@ -13,5 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod bar;
+pub mod delta;
 pub mod quote;
 pub mod trade;

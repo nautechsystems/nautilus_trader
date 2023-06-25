@@ -39,7 +39,7 @@ pub struct QuoteTickDataWrangler {
 impl QuoteTickDataWrangler {
     #[new]
     fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> Self {
-        QuoteTickDataWrangler {
+        Self {
             instrument_id: InstrumentId::from_str(instrument_id).unwrap(),
             price_precision,
             size_precision,
@@ -67,7 +67,7 @@ impl QuoteTickDataWrangler {
         data: PyDataFrame,
         default_size: f64,
         ts_init_delta: u64,
-    ) -> Vec<QuoteTick> {
+    ) -> PyResult<Vec<QuoteTick>> {
         // Convert DataFrame to Series per column
         let data: DataFrame = data.into();
         let bid: &Series = data.column("bid").unwrap();
@@ -109,7 +109,7 @@ impl QuoteTickDataWrangler {
             .map(Option::unwrap)
             .collect();
 
-        // Map Series to QuoteTick objects
+        // Map Series to Nautilus objects
         let ticks: Vec<QuoteTick> = bid_values
             .into_iter()
             .zip(ask_values.into_iter())
@@ -128,6 +128,7 @@ impl QuoteTickDataWrangler {
                 )
             })
             .collect();
-        ticks
+
+        Ok(ticks)
     }
 }
