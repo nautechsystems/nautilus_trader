@@ -13,38 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 import pyarrow as pa
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
-from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.message import Event
+from nautilus_trader.model.data.base import GenericData
 
 
-cdef dict _PARQUET_TO_DICT_MAP = {}    # type: dict[type, object]
-cdef dict _PARQUET_FROM_DICT_MAP = {}  # type: dict[type, object]
-cdef dict _PARTITION_KEYS = {}
-cdef dict _SCHEMAS = {}
-cdef dict _CLS_TO_TABLE = {}  # type: dict[type, type]
-cdef set _CHUNK = set()
+_PARQUET_SERIALIZER: dict[type, Callable] = {}
+_PARQUET_DESERIALIZER: dict[type, Callable] = {}
+_SCHEMAS: dict[type, pa.Schema] = {}
 
-
-def get_partition_keys(cls: type):
-    return _PARTITION_KEYS.get(cls)
+DATA_OR_EVENTS = Union[Data, Event]
 
 
 def get_schema(cls: type):
-    return _SCHEMAS[get_cls_table(cls)]
+    return _SCHEMAS[cls]
 
 
 def list_schemas():
     return _SCHEMAS
-
-
-def get_cls_table(cls: type):
-    return _CLS_TO_TABLE.get(cls, cls)
 
 
 def _clear_all(**kwargs):
@@ -58,13 +49,11 @@ def _clear_all(**kwargs):
 
 
 def register_parquet(
-    type cls,
-    serializer: Optional[Callable] = None,
+    cls: type,
+    schema: Optional[pa.Schema],
+    serializer: Optional[Callable],
     deserializer: Optional[Callable] = None,
-    schema: Optional[pa.Schema] = None,
-    bint chunk = False,
-    type table = None,
-    **kwargs,
+    # table: Optional[type] = None
 ):
     """
     Register a new class for serialization to parquet.
@@ -81,57 +70,40 @@ def register_parquet(
     schema : pa.Schema, optional
         If the schema cannot be correctly inferred from a subset of the data
         (i.e. if certain values may be missing in the first chunk).
-    chunk : bool, optional
-        Whether to group objects by timestamp and operate together (Used for
-        complex objects where we write each object as multiple rows in parquet,
-        i.e. `OrderBook` or `AccountState`).
     table : type, optional
         An optional table override for `cls`. Used if `cls` is going to be
         transformed and stored in a table other than
         its own.
 
     """
-    Condition.type_or_none(serializer, Callable, "serializer")
-    Condition.type_or_none(deserializer, Callable, "deserializer")
-    Condition.type_or_none(schema, pa.Schema, "schema")
-    Condition.type_or_none(table, type, "table")
-
-    # secret kwarg that allows overriding an existing (de)serialization method.
-    if not kwargs.get("force", False):
-        if serializer is not None:
-            assert (
-                cls not in _PARQUET_TO_DICT_MAP
-            ), f"Serializer already exists for {cls}: {_PARQUET_TO_DICT_MAP[cls]}"
-        if deserializer is not None:
-            assert (
-                cls not in _PARQUET_FROM_DICT_MAP
-            ), f"Deserializer already exists for {cls}: {_PARQUET_TO_DICT_MAP[cls]}"
+    PyCondition.type(schema, pa.Schema, "schema")
+    PyCondition.type(serializer, Callable, "serializer")
+    PyCondition.type_or_none(deserializer, Callable, "deserializer")
 
     if serializer is not None:
-        _PARQUET_TO_DICT_MAP[cls] = serializer
+        _PARQUET_SERIALIZER[cls] = serializer
     if deserializer is not None:
-        _PARQUET_FROM_DICT_MAP[cls] = deserializer
+        _PARQUET_DESERIALIZER[cls] = deserializer
     if schema is not None:
-        _SCHEMAS[table or cls] = schema
-    if chunk:
-        _CHUNK.add(cls)
-    _CLS_TO_TABLE[cls] = table or cls
+        _SCHEMAS[cls] = schema
 
 
-cdef class ParquetSerializer:
+class ParquetSerializer:
     """
     Provides an object serializer for the `Parquet` specification.
     """
 
     @staticmethod
-    def serialize(object obj):
+    def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.Table:
         """
         Serialize the given instrument to `Parquet` specification bytes.
 
         Parameters
         ----------
-        obj : object
+        data : list[Any]
             The object to serialize.
+        cls: type
+            The class of the data
 
         Returns
         -------
@@ -143,23 +115,22 @@ cdef class ParquetSerializer:
             If `obj` cannot be serialized.
 
         """
-        if isinstance(obj, GenericData):
-            obj = obj.data
-        cdef type cls = type(obj)
+        if cls is GenericData:
+            data = [obj.data for obj in data]
 
-        delegate = _PARQUET_TO_DICT_MAP.get(cls)
-        if delegate is None:
-            delegate = _OBJECT_TO_DICT_MAP.get(cls.__name__)
+        delegate = _PARQUET_SERIALIZER.get(cls)
         if delegate is None:
             raise TypeError(
                 f"Cannot serialize object `{cls}`. Register a "
-                f"serialization method via `arrow.serializer.register_parquet()`"
+                f"serialization method via `nautilus_trader.persistence.catalog.parquet.serializers.register_parquet()`",
             )
 
-        return delegate(obj)
+        table = delegate(data)
+        assert isinstance(table, pa.Table)
+        return table
 
     @staticmethod
-    def deserialize(type cls, chunk):
+    def deserialize(cls: type, table: pa.Table):
         """
         Deserialize the given `Parquet` specification bytes to an object.
 
@@ -167,8 +138,8 @@ cdef class ParquetSerializer:
         ----------
         cls : type
             The type to deserialize to.
-        chunk : bytes
-            The chunk to deserialize.
+        table : pyarrow.Table
+            The table to deserialize.
 
         Returns
         -------
@@ -180,16 +151,23 @@ cdef class ParquetSerializer:
             If `chunk` cannot be deserialized.
 
         """
-        delegate = _PARQUET_FROM_DICT_MAP.get(cls)
-        if delegate is None:
-            delegate = _OBJECT_FROM_DICT_MAP.get(cls.__name__)
+        delegate = _PARQUET_DESERIALIZER.get(cls)
         if delegate is None:
             raise TypeError(
                 f"Cannot deserialize object `{cls}`. Register a "
-                f"deserialization method via `arrow.serializer.register_parquet()`"
+                f"deserialization method via `arrow.serializer.register_parquet()`",
             )
 
-        if cls in _CHUNK:
-            return delegate(chunk)
-        else:
-            return [delegate(c) for c in chunk]
+        return delegate(table)
+
+
+def make_dict_serializer(schema: pa.Schema):
+    def inner(data: list[DATA_OR_EVENTS]):
+        dicts = [d.to_dict() for d in data]
+        return dicts_to_table(dicts, schema=schema)
+
+    return inner
+
+
+def dicts_to_table(data: list[dict], schema: pa.Schema) -> pa.Table:
+    return pa.Table.from_pylist(data, schema=schema)

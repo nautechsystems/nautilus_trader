@@ -20,7 +20,7 @@ from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.objects import Money
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow_old.serializer import register_parquet
 
 
 def try_float(x):

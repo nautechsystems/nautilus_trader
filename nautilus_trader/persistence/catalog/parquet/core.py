@@ -23,6 +23,7 @@ from typing import Callable, Optional, Union
 import fsspec
 import pandas as pd
 import pyarrow as pa
+import pyarrow.dataset
 import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
 from fsspec.implementations.memory import MemoryFileSystem
@@ -35,12 +36,12 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.util import camel_to_snake_case
-from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
+from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
+from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
+from nautilus_trader.serialization.arrow_old.util import camel_to_snake_case
+from nautilus_trader.serialization.arrow_old.util import class_to_filename
 
 
 class ParquetDataCatalog(BaseDataCatalog):
@@ -67,12 +68,15 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: str,
         fs_protocol: Optional[str] = "file",
         fs_storage_options: Optional[dict] = None,
+        dataset_kwargs: Optional[dict] = None,
     ):
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
+        self.serializer = ParquetSerializer()
+        self.dataset_kwargs = dataset_kwargs or {}
 
         path = make_path_posix(str(path))
 
@@ -101,50 +105,54 @@ class ParquetDataCatalog(BaseDataCatalog):
         return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
     # -- WRITING -----------------------------------------------------------------------------------
-
-    @staticmethod
-    def _objects_to_table(data: list[Data]) -> pa.Table:
+    def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
         assert len(data) > 0
-        cls = type(data[0])
-        assert issubclass(cls, Data)
         assert all(type(obj) is cls for obj in data)  # same type
+        table = self.serializer.serialize_batch(data, cls=cls)
+        assert table is not None
+        return table
 
-        # Check schema
-        # expected_schema = NAUTILUS_PARQUET_SCHEMA.get(cls)
-        # if expected_schema is None:
-        #     raise RuntimeError(f"Schema not found for class {cls}")
+    def _make_path(self, cls: type[Data], instrument_id: Optional[str] = None) -> str:
+        if instrument_id is not None:
+            return f"{self.path}/{cls}/{instrument_id}"
+        else:
+            return f"{self.path}/{cls}"
 
-        # serializer = RECORD_BATCH_SERIALIZERS.get(cls)
-        # if serializer is None:
-        #     raise KeyError(
-        #         f"Not serializer registered for type={cls}, register in {RECORD_BATCH_SERIALIZERS.__module__}",
-        #     )
+    def write_chunk(
+        self, data: list[Data], cls: type[Data], instrument_id: Optional[str] = None, **kwargs
+    ):
+        table = self._objects_to_table(data, cls=cls)
 
-        # TODO - Add rust BatchEncoder
-        def serializer(x):
-            return data
-
-        batch = serializer(data)
-        assert batch is not None
-        return pa.Table.from_batches([batch])
-
-    def write_data_type(self, data: list[Data]):
-        table = self._objects_to_table(data)
-
-        # Make path
-        path = ""
+        # Make base path
+        path = self._make_path(cls=cls, instrument_id=instrument_id)
 
         # Write parquet file
-        self.fs.makedirs(self.fs._parent(str(path)), exist_ok=True)
-        with pq.ParquetWriter(path, table.schema, version="2.6") as writer:
-            writer.write_table(table)
+        pyarrow.dataset.write_dataset(
+            data=table,
+            base_dir=path,
+            format="parquet",
+            filesystem=self.fs,
+            **self.dataset_kwargs,
+            **kwargs,
+        )
 
-    def write_data(self, data: list[Union[Data, Event]]):
-        for cls, single_type in groupby(
-            sorted(data, key=lambda x: type(x).__name__),
-            key=lambda x: type(x).__name__,
-        ):
-            self.write_data_type(list(single_type))
+    def write_data(self, data: list[Union[Data, Event]], **kwargs):
+        def key(obj) -> tuple[str, Optional[str]]:
+            name = type(obj).__name__
+            if isinstance(obj, Instrument):
+                return name, obj.id
+            elif hasattr(obj, "instrument_id"):
+                return name, obj.instrument_id
+            return name, None
+
+        name_to_cls = {cls.__name__: cls for cls in {type(d) for d in data}}
+        for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
+            self.write_chunk(
+                data=list(single_type),
+                cls=name_to_cls[cls_name],
+                instrument_id=instrument_id,
+                **kwargs,
+            )
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
@@ -369,23 +377,8 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _handle_table_nautilus(
         table: Union[pa.Table, pd.DataFrame],
         cls: type,
-        mappings: Optional[dict],
     ):
-        if isinstance(table, pa.Table):
-            dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
-        elif isinstance(table, pd.DataFrame):
-            dicts = table.to_dict("records")
-        else:
-            raise TypeError(
-                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`",
-            )
-        if not dicts:
-            return []
-        for key, maps in mappings.items():
-            for d in dicts:
-                if d[key] in maps:
-                    d[key] = maps[d[key]]
-        data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
+        data = ParquetSerializer.deserialize(cls=cls, table=table)
         return data
 
     def _query_subclasses(
@@ -487,7 +480,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                 objs = self._handle_table_nautilus(
                     table=df,
                     cls=class_mapping[cls_name],
-                    mappings={},
                 )
                 data[cls_name] = objs
             except Exception as e:

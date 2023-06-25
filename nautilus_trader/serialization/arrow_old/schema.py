@@ -52,7 +52,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow_old.serializer import register_parquet
 
 
 NAUTILUS_PARQUET_SCHEMA = {

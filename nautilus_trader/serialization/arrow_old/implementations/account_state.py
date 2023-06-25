@@ -22,7 +22,7 @@ import pandas as pd
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow_old.serializer import register_parquet
 
 
 def serialize(state: AccountState):

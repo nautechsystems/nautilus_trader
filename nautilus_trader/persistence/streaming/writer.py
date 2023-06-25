@@ -27,12 +27,12 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.serializer import get_cls_table
-from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.serializer import register_parquet
-from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
-from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
+from nautilus_trader.serialization.arrow_old.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow_old.serializer import get_cls_table
+from nautilus_trader.serialization.arrow_old.serializer import list_schemas
+from nautilus_trader.serialization.arrow_old.serializer import register_parquet
+from nautilus_trader.serialization.arrow_old.util import GENERIC_DATA_PREFIX
+from nautilus_trader.serialization.arrow_old.util import list_dicts_to_dict_lists
 
 
 class StreamingFeatherWriter:

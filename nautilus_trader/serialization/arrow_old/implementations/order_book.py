@@ -19,18 +19,18 @@ from typing import Union
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow_old.serializer import register_parquet
 
 
-def _parse_delta(delta: Union[OrderBookDelta, OrderBookDeltas], cls):
-    return dict(**OrderBookDelta.to_dict(delta), _type=cls.__name__)
+def _parse_delta(delta: OrderBookDelta):
+    return dict(**OrderBookDelta.to_dict(delta))
 
 
 def serialize(data: Union[OrderBookDelta, OrderBookDeltas]):
     if isinstance(data, OrderBookDelta):
-        result = [_parse_delta(delta=data, cls=OrderBookDelta)]
+        result = [_parse_delta(delta=data)]
     elif isinstance(data, OrderBookDeltas):
-        result = [_parse_delta(delta=delta, cls=OrderBookDeltas) for delta in data.deltas]
+        result = [_parse_delta(delta=delta) for delta in data.deltas]
     else:  # pragma: no cover (design-time error)
         raise TypeError(f"invalid order book data, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages
@@ -59,10 +59,7 @@ def _build_order_book_snapshot(values):
     deltas = [OrderBookDelta.clear(instrument_id, ts_event, ts_init)]
     deltas += [OrderBookDelta.from_dict(v) for v in values]
 
-    return OrderBookDeltas(
-        instrument_id=instrument_id,
-        deltas=deltas,
-    )
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
 def _build_order_book_deltas(values):
