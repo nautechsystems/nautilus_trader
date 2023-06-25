@@ -16,6 +16,7 @@
 import os
 import pathlib
 import platform
+from io import BytesIO
 from itertools import groupby
 from pathlib import Path
 from typing import Callable, Optional, Union
@@ -36,6 +37,8 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.serializers import RUST_SERIALIZERS
@@ -107,7 +110,16 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- WRITING -----------------------------------------------------------------------------------
     def objects_to_rust_table(self, data: list[Data], cls: type) -> pa.Table:
-        pass
+        session = DataBackendSession()
+        if cls == QuoteTick:
+            batches_bytes = session.quote_ticks_to_batches_bytes(data)
+        elif cls == TradeTick:
+            batches_bytes = session.trade_ticks_to_batches_bytes(data)
+        else:
+            raise NotImplementedError
+        batches_stream = BytesIO(batches_bytes)
+        reader = pa.ipc.open_stream(batches_stream)
+        return reader.read_all()
 
     def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
         assert len(data) > 0
