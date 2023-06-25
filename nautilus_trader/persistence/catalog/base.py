@@ -28,7 +28,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.persistence.external.util import Singleton
+from nautilus_trader.persistence.catalog.singleton import Singleton
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 
 

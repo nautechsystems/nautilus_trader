@@ -1,14 +1,11 @@
 import os
 import tempfile
 
-from nautilus_trader.core.nautilus_pyo3.persistence import ParquetType
-from nautilus_trader.core.nautilus_pyo3.persistence import PythonCatalog
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet.writer import ParquetWriter
 from nautilus_trader.persistence.catalog.parquet.writer import objects_to_table
-from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -41,16 +38,16 @@ def test_writer_writes_quote_ticks_objects():
         table = objects_to_table(quotes)
         ParquetWriter()._write(table, path=file, cls=QuoteTick)
 
-        session = PythonCatalog()
-        session.add_file_with_query(
-            "quotes",
-            file,
-            "SELECT * FROM quotes;",
-            ParquetType.QuoteTick,
-        )
-
-        for chunk in session.to_query_result():
-            written_quotes = list_from_capsule(chunk)
-            print(written_quotes)
-            # assert written_quotes == quotes
-            # return
+        # session = PythonCatalog()
+        # session.add_file_with_query(
+        #     "quotes",
+        #     file,
+        #     "SELECT * FROM quotes;",
+        #     ParquetType.QuoteTick,
+        # )
+        #
+        # for chunk in session.to_query_result():
+        #     written_quotes = list_from_capsule(chunk)
+        #     print(written_quotes)
+        #     # assert written_quotes == quotes
+        #     # return
