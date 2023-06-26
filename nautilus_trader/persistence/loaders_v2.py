@@ -41,12 +41,62 @@ class QuoteTickDataFrameLoader:
 
         """
         dtypes = {
-            "timestamp": pl.Datetime,
-            # Specify other column types here
+            "bid": pl.Float64,
+            "ask": pl.Float64,
+            # "bid_size": pl.Float64,
+            # "ask_size": pl.Float64,
+            "ts_event": pl.Datetime,
+            # "ts_init": pl.Datetime,
         }
-        columns = ["timestamp", "bid", "ask"]
-        df = pl.read_csv(path, dtypes=dtypes, columns=columns)
+        new_columns = ["ts_event", "bid", "ask"]
+        df = pl.read_csv(
+            path,
+            dtypes=dtypes,
+            new_columns=new_columns,
+        )
         return df
+
+
+class TradeTickDataFrameLoader:  # Will become a specific Binance parser (just experimenting)
+    """
+    Provides a means of loading trade tick data polars DataFrames from CSV files.
+    """
+
+    @staticmethod
+    def read_csv(path: str | Path) -> pl.DataFrame:
+        """
+        Return the tick data read from the CSV file.
+
+        Parameters
+        ----------
+        path : str | Path
+            The path to the CSV file.
+
+        Returns
+        -------
+        pl.DataFrame
+
+        """
+        dtypes = {
+            "ts_event": pl.Datetime,
+            "trade_id": pl.Utf8,
+        }
+        new_columns = ["ts_event", "trade_id", "price", "size", "aggressor_side"]
+        df = pl.read_csv(
+            path,
+            dtypes=dtypes,
+            new_columns=new_columns,
+        )
+        df = df.with_columns(
+            pl.col("aggressor_side")
+            .apply(_map_aggressor_side, return_dtype=pl.Utf8)
+            .alias("aggressor_side"),
+        )
+        return df
+
+
+def _map_aggressor_side(val: bool) -> str:
+    return "buyer" if val else "seller"
 
 
 class BarDataFrameLoader:

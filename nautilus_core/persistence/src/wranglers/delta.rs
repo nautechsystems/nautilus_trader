@@ -89,6 +89,8 @@ impl OrderBookDeltaDataWrangler {
             .unwrap()
             .timestamp(TimeUnit::Nanoseconds)
             .unwrap()
+            .cast(&DataType::UInt64)
+            .unwrap()
             .into_series();
         let ts_init: Series = match data.column("ts_init") {
             Ok(column) => column
@@ -97,6 +99,8 @@ impl OrderBookDeltaDataWrangler {
                 .cast(&DataType::UInt64)
                 .unwrap()
                 .timestamp(TimeUnit::Nanoseconds)
+                .unwrap()
+                .cast(&DataType::UInt64)
                 .unwrap()
                 .into_series(),
             Err(_) => {

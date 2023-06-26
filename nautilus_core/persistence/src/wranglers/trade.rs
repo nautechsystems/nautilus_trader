@@ -87,6 +87,8 @@ impl TradeTickDataWrangler {
             .unwrap()
             .timestamp(TimeUnit::Nanoseconds)
             .unwrap()
+            .cast(&DataType::UInt64)
+            .unwrap()
             .into_series();
         let ts_init: Series = match data.column("ts_init") {
             Ok(column) => column
@@ -95,6 +97,8 @@ impl TradeTickDataWrangler {
                 .cast(&DataType::UInt64)
                 .unwrap()
                 .timestamp(TimeUnit::Nanoseconds)
+                .unwrap()
+                .cast(&DataType::UInt64)
                 .unwrap()
                 .into_series(),
             Err(_) => {
