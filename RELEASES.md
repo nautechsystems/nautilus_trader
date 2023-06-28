@@ -9,7 +9,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed parsing of `TriggerType` for Binance, thanks for reporting @davidblom603
 
 ---
 
