@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 import pandas as pd
 
@@ -62,7 +63,7 @@ cdef class BettingInstrument(Instrument):
         str selection_handicap,
         uint64_t ts_event,
         uint64_t ts_init,
-        str tick_scheme_name="BETFAIR",
+        str tick_scheme_name=None,
         int price_precision=7,  # TODO(bm): pending refactor
         Price min_price = None,
         Price max_price = None,
@@ -99,7 +100,7 @@ cdef class BettingInstrument(Instrument):
         cdef Symbol symbol = make_symbol(market_id, selection_id, selection_handicap)
 
         super().__init__(
-            instrument_id=InstrumentId(symbol=symbol, venue=Venue("BETFAIR")),
+            instrument_id=InstrumentId(symbol=symbol, venue=Venue(venue_name)),
             native_symbol=symbol,
             asset_class=AssetClass.SPORTS_BETTING,
             asset_type=AssetType.SPOT,
@@ -223,23 +224,3 @@ def make_symbol(
     )
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
     return Symbol(value)
-
-
-BETFAIR_PRICE_TIERS = [
-    (1.01, 2, 0.01),
-    (2, 3, 0.02),
-    (3, 4, 0.05),
-    (4, 6, 0.1),
-    (6, 10, 0.2),
-    (10, 20, 0.5),
-    (20, 30, 1),
-    (30, 50, 2),
-    (50, 100, 5),
-    (100, 1010, 10),
-]
-
-BETFAIR_TICK_SCHEME = TieredTickScheme("BETFAIR", BETFAIR_PRICE_TIERS)
-BETFAIR_FLOAT_TO_PRICE = {price.as_double(): price for price in BETFAIR_TICK_SCHEME.ticks}
-MAX_BET_PRICE = max(BETFAIR_TICK_SCHEME.ticks)
-MIN_BET_PRICE = min(BETFAIR_TICK_SCHEME.ticks)
-register_tick_scheme(BETFAIR_TICK_SCHEME)
