@@ -25,6 +25,7 @@ import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -485,6 +486,7 @@ class TestInstrumentProvider:
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             ts_event=0,
             ts_init=0,
         )

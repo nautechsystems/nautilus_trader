@@ -21,6 +21,7 @@ from betfair_parser.spec.common import OrderType
 from nautilus_trader.core.rust.model import OrderType as NautilusOrderType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 
 
@@ -89,3 +90,4 @@ BETFAIR_TICK_SCHEME = TieredTickScheme("BETFAIR", BETFAIR_PRICE_TIERS)
 BETFAIR_FLOAT_TO_PRICE = {price.as_double(): price for price in BETFAIR_TICK_SCHEME.ticks}
 MAX_BET_PRICE = max(BETFAIR_TICK_SCHEME.ticks)
 MIN_BET_PRICE = min(BETFAIR_TICK_SCHEME.ticks)
+register_tick_scheme(BETFAIR_TICK_SCHEME)
