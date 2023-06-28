@@ -497,6 +497,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"[RECV][RPT] {mass_status}.")
         self.report_count += 1
 
+        if mass_status is None:
+            self._log.error("Error reconciling mass status (was None).")
+            return False
+
         self._log.info(
             f"Reconciling ExecutionMassStatus for {mass_status.venue}.",
             color=LogColor.BLUE,

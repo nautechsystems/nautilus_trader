@@ -186,11 +186,11 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         )
 
         trigger_price = Decimal(self.stopPrice)
-        trigger_type = None
+        trigger_type = TriggerType.NO_TRIGGER
         if self.workingType is not None:
             trigger_type = enum_parser.parse_binance_trigger_type(self.workingType)
         elif trigger_price > 0:
-            trigger_type = TriggerType.LAST_TRADE if trigger_price > 0 else None
+            trigger_type = TriggerType.LAST_TRADE
 
         trailing_offset = None
         trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
