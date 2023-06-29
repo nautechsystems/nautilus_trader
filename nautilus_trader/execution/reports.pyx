@@ -177,7 +177,7 @@ cdef class OrderStatusReport(ExecutionReport):
     ):
         Condition.positive(quantity, "quantity")
         Condition.not_negative(filled_qty, "filled_qty")
-        if trigger_price is not None:
+        if trigger_price is not None and trigger_price > 0:
             Condition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
             Condition.not_equal(trailing_offset_type, TrailingOffsetType.NO_TRAILING_OFFSET, "trailing_offset_type", "NO_TRAILING_OFFSET")
