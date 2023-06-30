@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    hash::{Hash, Hasher},
+};
 
 use nautilus_core::string::str_to_cstr;
 
@@ -55,6 +59,18 @@ pub extern "C" fn trade_tick_drop(tick: TradeTick) {
 #[no_mangle]
 pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
     tick.clone()
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_eq(lhs: &TradeTick, rhs: &TradeTick) -> u8 {
+    u8::from(lhs == rhs)
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_hash(delta: &TradeTick) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    delta.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Returns a [`TradeTick`] as a C string pointer.

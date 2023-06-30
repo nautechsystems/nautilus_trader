@@ -24,12 +24,16 @@ from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_clone
 from nautilus_trader.core.rust.model cimport quote_tick_drop
+from nautilus_trader.core.rust.model cimport quote_tick_eq
+from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_clone
 from nautilus_trader.core.rust.model cimport trade_tick_drop
+from nautilus_trader.core.rust.model cimport trade_tick_eq
+from nautilus_trader.core.rust.model cimport trade_tick_hash
 from nautilus_trader.core.rust.model cimport trade_tick_new
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -139,10 +143,10 @@ cdef class QuoteTick(Data):
         )
 
     def __eq__(self, QuoteTick other) -> bool:
-        return self.to_str() == other.to_str()
+        return quote_tick_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return quote_tick_hash(&self._mem)
 
     def __str__(self) -> str:
         return self.to_str()
@@ -575,10 +579,10 @@ cdef class TradeTick(Data):
         )
 
     def __eq__(self, TradeTick other) -> bool:
-        return self.to_str() == other.to_str()
+        return trade_tick_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return trade_tick_hash(&self._mem)
 
     def __str__(self) -> str:
         return self.to_str()
