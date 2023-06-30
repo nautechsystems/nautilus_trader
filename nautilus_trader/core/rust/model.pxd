@@ -365,29 +365,47 @@ cdef extern from "../includes/model.h":
 
     # Represents an order in a book.
     cdef struct BookOrder_t:
+        # The order side.
         OrderSide side;
+        # The order price.
         Price_t price;
+        # The order size.
         Quantity_t size;
+        # The order ID.
         uint64_t order_id;
 
     # Represents a single change/delta in an order book.
     cdef struct OrderBookDelta_t:
+        # The instrument ID for the book.
         InstrumentId_t instrument_id;
+        # The order book delta action.
         BookAction action;
+        # The order to apply.
         BookOrder_t order;
+        # A combination of packet end with matching engine status.
         uint8_t flags;
+        # The message sequence number assigned at the venue.
         uint64_t sequence;
+        # The UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
+        # The quotes instrument ID.
         InstrumentId_t instrument_id;
+        # The top of book bid price.
         Price_t bid;
+        # The top of book ask price.
         Price_t ask;
+        # The top of book bid size.
         Quantity_t bid_size;
+        # The top of book ask size.
         Quantity_t ask_size;
+        # The UNIX timestamp (nanoseconds) when the tick event occurred.
         uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
     cdef struct TradeId_t:
@@ -395,32 +413,58 @@ cdef extern from "../includes/model.h":
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
+        # The trade instrument ID.
         InstrumentId_t instrument_id;
+        # The traded price.
         Price_t price;
+        # The traded size.
         Quantity_t size;
+        # The trade aggressor side.
         AggressorSide aggressor_side;
+        # The trade match ID (assigned by the venue).
         TradeId_t trade_id;
+        # The UNIX timestamp (nanoseconds) when the tick event occurred.
         uint64_t ts_event;
+        #  The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Represents a bar aggregation specification including a step, aggregation
+    # method/rule and price type.
     cdef struct BarSpecification_t:
+        # The step for binning samples for bar aggregation.
         uint64_t step;
+        # The type of bar aggregation.
         uint8_t aggregation;
+        # The price type to use for aggregation.
         PriceType price_type;
 
+    # Represents a bar type including the instrument ID, bar specification and
+    # aggregation source.
     cdef struct BarType_t:
+        # The bar types instrument ID.
         InstrumentId_t instrument_id;
+        # The bar types specification.
         BarSpecification_t spec;
+        # The bar types aggregation source.
         AggregationSource aggregation_source;
 
+    # Represents an aggregated bar.
     cdef struct Bar_t:
+        # The bar type for this bar.
         BarType_t bar_type;
+        # The bars open price.
         Price_t open;
+        # The bars high price.
         Price_t high;
+        # The bars low price.
         Price_t low;
+        # The bars close price.
         Price_t close;
+        # The bars volume.
         Quantity_t volume;
+        # The UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
     cpdef enum Data_t_Tag:

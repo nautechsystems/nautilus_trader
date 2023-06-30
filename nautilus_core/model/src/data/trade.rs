@@ -33,12 +33,19 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct TradeTick {
+    /// The trade instrument ID.
     pub instrument_id: InstrumentId,
+    /// The traded price.
     pub price: Price,
+    /// The traded size.
     pub size: Quantity,
+    /// The trade aggressor side.
     pub aggressor_side: AggressorSide,
+    /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
+    /// The UNIX timestamp (nanoseconds) when the tick event occurred.
     pub ts_event: UnixNanos,
+    ///  The UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 

@@ -31,12 +31,19 @@ use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct OrderBookDelta {
+    /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
+    /// The order book delta action.
     pub action: BookAction,
+    /// The order to apply.
     pub order: BookOrder,
+    /// A combination of packet end with matching engine status.
     pub flags: u8,
+    /// The message sequence number assigned at the venue.
     pub sequence: u64,
+    /// The UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 

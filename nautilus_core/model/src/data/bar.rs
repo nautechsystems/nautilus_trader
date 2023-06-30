@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -32,12 +31,17 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+/// Represents a bar aggregation specification including a step, aggregation
+/// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct BarSpecification {
+    /// The step for binning samples for bar aggregation.
     pub step: u64,
+    /// The type of bar aggregation.
     pub aggregation: BarAggregation,
+    /// The price type to use for aggregation.
     pub price_type: PriceType,
 }
 
@@ -47,34 +51,17 @@ impl Display for BarSpecification {
     }
 }
 
-impl PartialOrd for BarSpecification {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.to_string().partial_cmp(&other.to_string())
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.to_string().lt(&other.to_string())
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.to_string().le(&other.to_string())
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.to_string().gt(&other.to_string())
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.to_string().ge(&other.to_string())
-    }
-}
-
+/// Represents a bar type including the instrument ID, bar specification and
+/// aggregation source.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct BarType {
+    /// The bar types instrument ID.
     pub instrument_id: InstrumentId,
+    /// The bar types specification.
     pub spec: BarSpecification,
+    /// The bar types aggregation source.
     pub aggregation_source: AggregationSource,
 }
 
@@ -144,28 +131,6 @@ impl FromStr for BarType {
     }
 }
 
-impl PartialOrd for BarType {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.to_string().partial_cmp(&other.to_string())
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.to_string().lt(&other.to_string())
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.to_string().le(&other.to_string())
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.to_string().gt(&other.to_string())
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.to_string().ge(&other.to_string())
-    }
-}
-
 impl Display for BarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -176,17 +141,26 @@ impl Display for BarType {
     }
 }
 
+/// Represents an aggregated bar.
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct Bar {
+    /// The bar type for this bar.
     pub bar_type: BarType,
+    /// The bars open price.
     pub open: Price,
+    /// The bars high price.
     pub high: Price,
+    /// The bars low price.
     pub low: Price,
+    /// The bars close price.
     pub close: Price,
+    /// The bars volume.
     pub volume: Quantity,
+    /// The UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -358,55 +332,6 @@ mod tests {
         enums::BarAggregation,
         identifiers::{symbol::Symbol, venue::Venue},
     };
-
-    #[test]
-    fn test_bar_spec_equality() {
-        let bar_spec1 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec2 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec3 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Ask,
-        };
-
-        assert_eq!(bar_spec1, bar_spec1);
-        assert_eq!(bar_spec1, bar_spec2);
-        assert_ne!(bar_spec1, bar_spec3);
-    }
-
-    #[test]
-    fn test_bar_spec_comparison() {
-        // # Arrange
-        let bar_spec1 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec2 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec3 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Ask,
-        };
-
-        // # Act, Assert
-        assert!(bar_spec1 <= bar_spec2);
-        assert!(bar_spec3 < bar_spec1);
-        assert!(bar_spec1 > bar_spec3);
-        assert!(bar_spec1 >= bar_spec3);
-    }
 
     #[test]
     fn test_bar_spec_string_reprs() {

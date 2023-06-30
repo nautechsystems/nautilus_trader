@@ -34,9 +34,13 @@ use crate::{
 #[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct BookOrder {
+    /// The order side.
     pub side: OrderSide,
+    /// The order price.
     pub price: Price,
+    /// The order size.
     pub size: Quantity,
+    /// The order ID.
     pub order_id: u64,
 }
 
