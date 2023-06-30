@@ -76,7 +76,7 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
 
     def parse_csv_tick(df, instrument_id):
         yield instrument
-        for r in df.values:
+        for r in df.to_numpy():
             ts = pd.Timestamp(r[0], tz="UTC").value
             tick = QuoteTick(
                 instrument_id=instrument_id,
