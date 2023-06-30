@@ -419,10 +419,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not end:
             end = pd.Timestamp.utcnow()
 
-        if bar_type.spec.timedelta.total_seconds() >= 60:
-            duration_str = "7 D"
-        else:
-            duration_str = "1 D"
+        duration_str = "7 D" if bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
         bars: list[Bar] = []
         while (start and end > start) or (len(bars) < limit):
             self._log.info(f"{start=}", LogColor.MAGENTA)
