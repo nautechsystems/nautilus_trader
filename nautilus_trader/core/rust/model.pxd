@@ -627,12 +627,12 @@ cdef extern from "../includes/model.h":
 
     Bar_t bar_clone(const Bar_t *bar);
 
-    # Returns a [`Bar`] as a C string.
-    const char *bar_to_cstr(const Bar_t *bar);
-
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
     uint64_t bar_hash(const Bar_t *bar);
+
+    # Returns a [`Bar`] as a C string.
+    const char *bar_to_cstr(const Bar_t *bar);
 
     void orderbook_delta_drop(OrderBookDelta_t delta);
 
@@ -687,6 +687,10 @@ cdef extern from "../includes/model.h":
 
     QuoteTick_t quote_tick_clone(const QuoteTick_t *tick);
 
+    uint8_t quote_tick_eq(const QuoteTick_t *lhs, const QuoteTick_t *rhs);
+
+    uint64_t quote_tick_hash(const QuoteTick_t *delta);
+
     # Returns a [`QuoteTick`] as a C string pointer.
     const char *quote_tick_to_cstr(const QuoteTick_t *tick);
 
@@ -703,6 +707,10 @@ cdef extern from "../includes/model.h":
     void trade_tick_drop(TradeTick_t tick);
 
     TradeTick_t trade_tick_clone(const TradeTick_t *tick);
+
+    uint8_t trade_tick_eq(const TradeTick_t *lhs, const TradeTick_t *rhs);
+
+    uint64_t trade_tick_hash(const TradeTick_t *delta);
 
     # Returns a [`TradeTick`] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);

@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::{
+    collections::hash_map::DefaultHasher,
+    ffi::c_char,
+    hash::{Hash, Hasher},
+};
 
 use nautilus_core::{string::str_to_cstr, time::UnixNanos};
 
@@ -56,6 +60,18 @@ pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
 #[no_mangle]
 pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
     tick.clone()
+}
+
+#[no_mangle]
+pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
+    u8::from(lhs == rhs)
+}
+
+#[no_mangle]
+pub extern "C" fn quote_tick_hash(delta: &QuoteTick) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    delta.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Returns a [`QuoteTick`] as a C string pointer.

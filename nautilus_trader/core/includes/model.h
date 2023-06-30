@@ -1059,14 +1059,14 @@ void bar_drop(struct Bar_t bar);
 
 struct Bar_t bar_clone(const struct Bar_t *bar);
 
+uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
+
+uint64_t bar_hash(const struct Bar_t *bar);
+
 /**
  * Returns a [`Bar`] as a C string.
  */
 const char *bar_to_cstr(const struct Bar_t *bar);
-
-uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
-
-uint64_t bar_hash(const struct Bar_t *bar);
 
 void orderbook_delta_drop(struct OrderBookDelta_t delta);
 
@@ -1125,6 +1125,10 @@ void quote_tick_drop(struct QuoteTick_t tick);
 
 struct QuoteTick_t quote_tick_clone(const struct QuoteTick_t *tick);
 
+uint8_t quote_tick_eq(const struct QuoteTick_t *lhs, const struct QuoteTick_t *rhs);
+
+uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
+
 /**
  * Returns a [`QuoteTick`] as a C string pointer.
  */
@@ -1143,6 +1147,10 @@ struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
 void trade_tick_drop(struct TradeTick_t tick);
 
 struct TradeTick_t trade_tick_clone(const struct TradeTick_t *tick);
+
+uint8_t trade_tick_eq(const struct TradeTick_t *lhs, const struct TradeTick_t *rhs);
+
+uint64_t trade_tick_hash(const struct TradeTick_t *delta);
 
 /**
  * Returns a [`TradeTick`] as a C string pointer.

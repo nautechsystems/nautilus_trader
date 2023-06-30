@@ -203,12 +203,6 @@ pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
     bar.clone()
 }
 
-/// Returns a [`Bar`] as a C string.
-#[no_mangle]
-pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
-    str_to_cstr(&bar.to_string())
-}
-
 #[no_mangle]
 pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
     u8::from(lhs == rhs)
@@ -219,4 +213,10 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
     let mut h = DefaultHasher::new();
     bar.hash(&mut h);
     h.finish()
+}
+
+/// Returns a [`Bar`] as a C string.
+#[no_mangle]
+pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
+    str_to_cstr(&bar.to_string())
 }
