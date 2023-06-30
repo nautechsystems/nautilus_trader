@@ -657,9 +657,21 @@ typedef struct Quantity_t {
  * Represents an order in a book.
  */
 typedef struct BookOrder_t {
+    /**
+     * The order side.
+     */
     enum OrderSide side;
+    /**
+     * The order price.
+     */
     struct Price_t price;
+    /**
+     * The order size.
+     */
     struct Quantity_t size;
+    /**
+     * The order ID.
+     */
     uint64_t order_id;
 } BookOrder_t;
 
@@ -667,12 +679,33 @@ typedef struct BookOrder_t {
  * Represents a single change/delta in an order book.
  */
 typedef struct OrderBookDelta_t {
+    /**
+     * The instrument ID for the book.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The order book delta action.
+     */
     enum BookAction action;
+    /**
+     * The order to apply.
+     */
     struct BookOrder_t order;
+    /**
+     * A combination of packet end with matching engine status.
+     */
     uint8_t flags;
+    /**
+     * The message sequence number assigned at the venue.
+     */
     uint64_t sequence;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } OrderBookDelta_t;
 
@@ -680,12 +713,33 @@ typedef struct OrderBookDelta_t {
  * Represents a single quote tick in a financial market.
  */
 typedef struct QuoteTick_t {
+    /**
+     * The quotes instrument ID.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The top of book bid price.
+     */
     struct Price_t bid;
+    /**
+     * The top of book ask price.
+     */
     struct Price_t ask;
+    /**
+     * The top of book bid size.
+     */
     struct Quantity_t bid_size;
+    /**
+     * The top of book ask size.
+     */
     struct Quantity_t ask_size;
+    /**
+     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } QuoteTick_t;
 
@@ -697,35 +751,109 @@ typedef struct TradeId_t {
  * Represents a single trade tick in a financial market.
  */
 typedef struct TradeTick_t {
+    /**
+     * The trade instrument ID.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The traded price.
+     */
     struct Price_t price;
+    /**
+     * The traded size.
+     */
     struct Quantity_t size;
+    /**
+     * The trade aggressor side.
+     */
     enum AggressorSide aggressor_side;
+    /**
+     * The trade match ID (assigned by the venue).
+     */
     struct TradeId_t trade_id;
+    /**
+     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     */
     uint64_t ts_event;
+    /**
+     *  The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } TradeTick_t;
 
+/**
+ * Represents a bar aggregation specification including a step, aggregation
+ * method/rule and price type.
+ */
 typedef struct BarSpecification_t {
+    /**
+     * The step for binning samples for bar aggregation.
+     */
     uint64_t step;
+    /**
+     * The type of bar aggregation.
+     */
     uint8_t aggregation;
+    /**
+     * The price type to use for aggregation.
+     */
     enum PriceType price_type;
 } BarSpecification_t;
 
+/**
+ * Represents a bar type including the instrument ID, bar specification and
+ * aggregation source.
+ */
 typedef struct BarType_t {
+    /**
+     * The bar types instrument ID.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The bar types specification.
+     */
     struct BarSpecification_t spec;
+    /**
+     * The bar types aggregation source.
+     */
     enum AggregationSource aggregation_source;
 } BarType_t;
 
+/**
+ * Represents an aggregated bar.
+ */
 typedef struct Bar_t {
+    /**
+     * The bar type for this bar.
+     */
     struct BarType_t bar_type;
+    /**
+     * The bars open price.
+     */
     struct Price_t open;
+    /**
+     * The bars high price.
+     */
     struct Price_t high;
+    /**
+     * The bars low price.
+     */
     struct Price_t low;
+    /**
+     * The bars close price.
+     */
     struct Price_t close;
+    /**
+     * The bars volume.
+     */
     struct Quantity_t volume;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } Bar_t;
 

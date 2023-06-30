@@ -25,7 +25,7 @@ use nautilus_core::{correctness, string::str_to_cstr};
 use pyo3::prelude::*;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct ComponentId {
     pub value: Box<Arc<String>>,

@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct Venue {
     pub value: Box<Arc<String>>,

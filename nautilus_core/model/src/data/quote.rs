@@ -34,12 +34,19 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct QuoteTick {
+    /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
+    /// The top of book bid price.
     pub bid: Price,
+    /// The top of book ask price.
     pub ask: Price,
+    /// The top of book bid size.
     pub bid_size: Quantity,
+    /// The top of book ask size.
     pub ask_size: Quantity,
+    /// The UNIX timestamp (nanoseconds) when the tick event occurred.
     pub ts_event: UnixNanos,
+    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
