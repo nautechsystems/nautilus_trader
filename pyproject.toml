@@ -162,7 +162,7 @@ select = [
     # "SIM",
     # "ARG",
     # "ERA",
-    # "PD",
+    "PD",
     # "PGH",
     # "PLW",
     "NPY",
@@ -186,6 +186,7 @@ ignore = [
     "D415",  # First line should end with a period, question mark, or exclamation point (not always a first line)
     "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
     "E741",  # Ambiguous variable name (single char)
+    "PD901", # `df` is a bad variable name. Be kinder to your future self
     "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
     "S101",  # Use of assert detected (OK in test suite)
     "S105",  # Use of hardcoded password (spurious)

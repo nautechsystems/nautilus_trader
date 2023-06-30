@@ -663,7 +663,10 @@ class TestDataGenerator:
         quantity = pd.Series(default_quantity + quantity_diffs).astype(int)
 
         index = TestDataGenerator.generate_time_series_index(start_timestamp, max_freq, count)
-        return pd.DataFrame(index=index, data={"price": prices.values, "quantity": quantity.values})
+        return pd.DataFrame(
+            index=index,
+            data={"price": prices.to_numpy(), "quantity": quantity.to_numpy()},
+        )
 
     @staticmethod
     def generate_quote_ticks(

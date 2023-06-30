@@ -131,7 +131,7 @@ class PortfolioStatistic:
         ...  # Override in implementation
 
     def _check_valid_returns(self, returns: pd.Series) -> bool:
-        if returns is None or returns.empty or returns.isnull().all():
+        if returns is None or returns.empty or returns.isna().all():
             return False
         else:
             return True
