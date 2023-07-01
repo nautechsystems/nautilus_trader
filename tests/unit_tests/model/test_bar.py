@@ -61,9 +61,9 @@ class TestBarSpecification:
 
         # Act, Assert
         assert bar_spec1 <= bar_spec2
-        assert bar_spec3 < bar_spec1
-        assert bar_spec1 > bar_spec3
-        assert bar_spec1 >= bar_spec3
+        assert bar_spec3 > bar_spec1
+        assert bar_spec1 < bar_spec3
+        assert bar_spec3 >= bar_spec1
 
     def test_bar_spec_pickle(self):
         # Arrange
