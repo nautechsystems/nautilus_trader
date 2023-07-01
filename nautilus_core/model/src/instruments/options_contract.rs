@@ -15,24 +15,27 @@
 
 #![allow(dead_code)] // Allow for development
 
+use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::Instrument;
 use crate::{
-    enums::{AssetClass, AssetType},
+    enums::{AssetClass, AssetType, OptionKind},
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
-pub struct CurrencyPair {
+pub struct OptionsContract {
     pub id: InstrumentId,
     pub native_symbol: Symbol,
-    pub base_currency: Currency,
-    pub quote_currency: Currency,
+    pub asset_class: AssetClass,
+    pub underlying: String,
+    pub option_kind: OptionKind,
+    pub expiration: UnixNanos,
+    pub strike_price: Price,
+    pub currency: Currency,
     pub price_precision: u8,
-    pub size_precision: u8,
     pub price_increment: Price,
-    pub size_increment: Quantity,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
@@ -44,18 +47,20 @@ pub struct CurrencyPair {
     pub taker_fee: Decimal,
 }
 
-impl CurrencyPair {
+impl OptionsContract {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
         native_symbol: Symbol,
-        base_currency: Currency,
-        quote_currency: Currency,
+        asset_class: AssetClass,
+        underlying: String,
+        option_kind: OptionKind,
+        expiration: UnixNanos,
+        strike_price: Price,
+        currency: Currency,
         price_precision: u8,
-        size_precision: u8,
         price_increment: Price,
-        size_increment: Quantity,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -69,12 +74,14 @@ impl CurrencyPair {
         Self {
             id,
             native_symbol,
-            quote_currency,
-            base_currency,
+            asset_class,
+            underlying,
+            option_kind,
+            expiration,
+            strike_price,
+            currency,
             price_precision,
-            size_precision,
             price_increment,
-            size_increment,
             lot_size,
             max_quantity,
             min_quantity,
@@ -88,7 +95,7 @@ impl CurrencyPair {
     }
 }
 
-impl Instrument for CurrencyPair {
+impl Instrument for OptionsContract {
     fn id(&self) -> &InstrumentId {
         &self.id
     }
@@ -98,23 +105,23 @@ impl Instrument for CurrencyPair {
     }
 
     fn asset_class(&self) -> AssetClass {
-        AssetClass::FX
+        self.asset_class
     }
 
     fn asset_type(&self) -> AssetType {
-        AssetType::Spot
+        AssetType::Option
     }
 
     fn quote_currency(&self) -> &Currency {
-        &self.quote_currency
+        &self.currency
     }
 
     fn base_currency(&self) -> Option<&Currency> {
-        Some(&self.base_currency)
+        None
     }
 
     fn cost_currency(&self) -> &Currency {
-        &self.quote_currency
+        &self.currency
     }
 
     fn is_inverse(&self) -> bool {
@@ -126,7 +133,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn size_precision(&self) -> u8 {
-        self.size_precision
+        0
     }
 
     fn price_increment(&self) -> Price {
@@ -134,7 +141,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn size_increment(&self) -> Quantity {
-        self.size_increment
+        Quantity::new(1.0, 0)
     }
 
     fn multiplier(&self) -> Quantity {

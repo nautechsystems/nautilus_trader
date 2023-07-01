@@ -24,15 +24,15 @@ use crate::{
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
-pub struct CurrencyPair {
+pub struct Equity {
     pub id: InstrumentId,
     pub native_symbol: Symbol,
-    pub base_currency: Currency,
-    pub quote_currency: Currency,
+    /// The instruments ISIN (International Securities Identification Number).
+    pub isin: String,
+    pub currency: Currency,
     pub price_precision: u8,
-    pub size_precision: u8,
     pub price_increment: Price,
-    pub size_increment: Quantity,
+    pub multiplier: Quantity,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
@@ -44,18 +44,17 @@ pub struct CurrencyPair {
     pub taker_fee: Decimal,
 }
 
-impl CurrencyPair {
+impl Equity {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
         native_symbol: Symbol,
-        base_currency: Currency,
-        quote_currency: Currency,
+        isin: String,
+        currency: Currency,
         price_precision: u8,
-        size_precision: u8,
         price_increment: Price,
-        size_increment: Quantity,
+        multiplier: Quantity,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -69,12 +68,11 @@ impl CurrencyPair {
         Self {
             id,
             native_symbol,
-            quote_currency,
-            base_currency,
+            isin,
+            currency,
             price_precision,
-            size_precision,
             price_increment,
-            size_increment,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -88,7 +86,7 @@ impl CurrencyPair {
     }
 }
 
-impl Instrument for CurrencyPair {
+impl Instrument for Equity {
     fn id(&self) -> &InstrumentId {
         &self.id
     }
@@ -98,7 +96,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn asset_class(&self) -> AssetClass {
-        AssetClass::FX
+        AssetClass::Equity
     }
 
     fn asset_type(&self) -> AssetType {
@@ -106,15 +104,15 @@ impl Instrument for CurrencyPair {
     }
 
     fn quote_currency(&self) -> &Currency {
-        &self.quote_currency
+        &self.currency
     }
 
     fn base_currency(&self) -> Option<&Currency> {
-        Some(&self.base_currency)
+        None
     }
 
     fn cost_currency(&self) -> &Currency {
-        &self.quote_currency
+        &self.currency
     }
 
     fn is_inverse(&self) -> bool {
@@ -126,7 +124,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn size_precision(&self) -> u8 {
-        self.size_precision
+        0
     }
 
     fn price_increment(&self) -> Price {
@@ -134,11 +132,11 @@ impl Instrument for CurrencyPair {
     }
 
     fn size_increment(&self) -> Quantity {
-        self.size_increment
+        Quantity::new(1.0, 0)
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::new(1.0, 0)
+        self.multiplier
     }
 
     fn lot_size(&self) -> Option<Quantity> {
