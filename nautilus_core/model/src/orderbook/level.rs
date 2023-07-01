@@ -249,12 +249,7 @@ mod tests {
             Quantity::new(10.0, 0),
             0,
         );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(1.00, 2),
-            Quantity::new(0.0, 0),
-            0,
-        );
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::zero(0), 0);
 
         level.add(order1);
         level.update(order2);

@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-//
+
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use thiserror;
 
@@ -288,7 +288,7 @@ impl From<OrderInitialized> for Order {
             linked_order_ids: value.linked_order_ids,
             parent_order_id: value.parent_order_id,
             tags: value.tags,
-            filled_qty: Quantity::new(0.0, 0),
+            filled_qty: Quantity::zero(value.quantity.precision),
             leaves_qty: value.quantity,
             avg_px: None,
             slippage: None,

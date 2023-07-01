@@ -75,8 +75,8 @@ struct Position {
 }
 
 impl Position {
-    pub fn new(instrument: &Instrument, fill: &OrderFilled) -> Self {
-        assert_eq!(instrument.id, fill.instrument_id);
+    pub fn new(instrument: &dyn Instrument, fill: &OrderFilled) -> Self {
+        assert_eq!(instrument.id(), &fill.instrument_id);
         assert!(fill.position_id.is_some());
         assert!(fill.order_side != OrderSide::NoOrderSide);
 
@@ -85,8 +85,8 @@ impl Position {
             client_order_ids: Vec::<ClientOrderId>::new(),
             venue_order_ids: Vec::<VenueOrderId>::new(),
             trade_ids: Vec::<TradeId>::new(),
-            buy_qty: Quantity::new(0.0, instrument.size_precision),
-            sell_qty: Quantity::new(0.0, instrument.size_precision),
+            buy_qty: Quantity::zero(instrument.size_precision()),
+            sell_qty: Quantity::zero(instrument.size_precision()),
             commissions: HashMap::<Currency, Money>::new(),
             trader_id: fill.trader_id.clone(),
             strategy_id: fill.strategy_id.clone(),
@@ -100,13 +100,13 @@ impl Position {
             signed_qty: 0.0,
             quantity: fill.last_qty,
             peak_qty: fill.last_qty,
-            price_precision: instrument.price_precision,
-            size_precision: instrument.size_precision,
-            multiplier: instrument.multiplier,
-            is_inverse: instrument.is_inverse,
-            quote_currency: instrument.quote_currency.clone(),
-            base_currency: instrument.base_currency.clone(),
-            cost_currency: instrument.cost_currency.clone(),
+            price_precision: instrument.price_precision(),
+            size_precision: instrument.size_precision(),
+            multiplier: instrument.multiplier(),
+            is_inverse: instrument.is_inverse(),
+            quote_currency: instrument.quote_currency().clone(),
+            base_currency: instrument.base_currency().clone().to_owned().cloned(),
+            cost_currency: instrument.cost_currency().clone(),
             ts_init: fill.ts_init,
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,
@@ -129,12 +129,12 @@ impl Position {
             // Reset position
             self.events.clear();
             self.trade_ids.clear();
-            self.buy_qty = Quantity::new(0.0, self.size_precision);
-            self.sell_qty = Quantity::new(0.0, self.size_precision);
+            self.buy_qty = Quantity::zero(self.size_precision);
+            self.sell_qty = Quantity::zero(self.size_precision);
             self.commissions.clear();
             self.opening_order_id = fill.client_order_id.clone();
             self.closing_order_id = None;
-            self.peak_qty = Quantity::new(0.0, self.size_precision);
+            self.peak_qty = Quantity::zero(self.size_precision);
             self.ts_init = fill.ts_init;
             self.ts_opened = fill.ts_event;
             self.duration_ns = None;
