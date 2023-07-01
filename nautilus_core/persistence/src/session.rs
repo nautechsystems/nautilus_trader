@@ -30,7 +30,7 @@ use nautilus_model::data::{
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
-    types::{PyBytes, PyCapsule},
+    types::{PyBytes, PyCapsule, PyDict},
 };
 use pyo3_asyncio::tokio::get_runtime;
 
@@ -241,6 +241,68 @@ impl DataBackendSession {
         // Initialize runtime here
         get_runtime();
         Self::new(chunk_size)
+    }
+
+    pub fn pyobjects_to_batches_bytes(
+        _slf: PyRefMut<'_, Self>,
+        data: Vec<PyObject>,
+    ) -> PyResult<Py<PyBytes>> {
+        if data.is_empty() {
+            return Err(PyErr::new::<PyValueError, _>("Data vector was empty."));
+        }
+
+        Python::with_gil(|py| {
+            let mut data_dicts: Vec<Py<PyDict>> = vec![];
+            for obj in data.into_iter() {
+                let dict: Py<PyDict> = obj
+                    .call_method1(py, "to_dict", (obj.clone(),))?
+                    .extract(py)?;
+                data_dicts.push(dict);
+            }
+
+            let data_type: String = data_dicts
+                .first()
+                .ok_or_else(|| PyErr::new::<PyValueError, _>("Data vector was empty."))?
+                .as_ref(py)
+                .get_item("type")
+                .ok_or_else(|| PyErr::new::<PyValueError, _>("'type' key not found in dict."))?
+                .extract()?;
+
+            match data_type.as_str() {
+                stringify!(QuoteTick) => {
+                    let ticks: Result<Vec<QuoteTick>, _> = data_dicts
+                        .into_iter()
+                        .map(|dict| QuoteTick::from_dict(dict.as_ref(py)))
+                        .collect();
+
+                    let ticks = ticks.map_err(|_| {
+                        PyErr::new::<PyValueError, _>(
+                            "Error converting dicts to QuoteTick objects.",
+                        )
+                    })?;
+
+                    DataBackendSession::pyo3_quote_ticks_to_batches_bytes(_slf, ticks)
+                }
+                stringify!(TradeTick) => {
+                    let ticks: Result<Vec<TradeTick>, _> = data_dicts
+                        .into_iter()
+                        .map(|dict| TradeTick::from_dict(dict.as_ref(py)))
+                        .collect();
+
+                    let ticks = ticks.map_err(|_| {
+                        PyErr::new::<PyValueError, _>(
+                            "Error converting dicts to TradeTick objects.",
+                        )
+                    })?;
+
+                    DataBackendSession::pyo3_trade_ticks_to_batches_bytes(_slf, ticks)
+                }
+                _ => Err(PyErr::new::<PyValueError, _>(format!(
+                    "Unsupported data type: {}",
+                    data_type
+                ))),
+            }
+        })
     }
 
     pub fn pyo3_order_book_deltas_to_batches_bytes(
