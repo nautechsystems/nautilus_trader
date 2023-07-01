@@ -17,10 +17,16 @@ use std::{
     cmp,
     collections::HashMap,
     fmt::{Display, Formatter},
+    str::FromStr,
 };
 
 use nautilus_core::{correctness, serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{
+    exceptions::{PyKeyError, PyValueError},
+    prelude::*,
+    pyclass::CompareOp,
+    types::PyDict,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -222,6 +228,56 @@ impl QuoteTick {
     }
 
     #[staticmethod]
+    fn from_dict(values: &PyDict) -> PyResult<Self> {
+        // Extract values from dictionary
+        let instrument_id: String = values
+            .get_item("instrument_id")
+            .ok_or(PyKeyError::new_err("'instrument_id' not found in `values`"))?
+            .extract()?;
+        let bid: String = values
+            .get_item("bid")
+            .ok_or(PyKeyError::new_err("'bid' not found in `values`"))?
+            .extract()?;
+        let ask: String = values
+            .get_item("ask")
+            .ok_or(PyKeyError::new_err("'ask' not found in `values`"))?
+            .extract()?;
+        let bid_size: String = values
+            .get_item("bid_size")
+            .ok_or(PyKeyError::new_err("'bid_size' not found in `values`"))?
+            .extract()?;
+        let ask_size: String = values
+            .get_item("ask_size")
+            .ok_or(PyKeyError::new_err("'ask_size' not found in `values`"))?
+            .extract()?;
+        let ts_event: UnixNanos = values
+            .get_item("ts_event")
+            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
+            .extract()?;
+        let ts_init: UnixNanos = values
+            .get_item("ts_init")
+            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
+            .extract()?;
+
+        let instrument_id = InstrumentId::from_str(&instrument_id)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let bid = Price::from_str(&bid).map_err(PyValueError::new_err)?;
+        let ask = Price::from_str(&ask).map_err(PyValueError::new_err)?;
+        let bid_size = Quantity::from_str(&bid_size).map_err(PyValueError::new_err)?;
+        let ask_size = Quantity::from_str(&ask_size).map_err(PyValueError::new_err)?;
+
+        Ok(Self::new(
+            instrument_id,
+            bid,
+            ask,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        ))
+    }
+
+    #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
         match Self::from_json_bytes(data) {
             Ok(quote) => Ok(quote),
@@ -263,6 +319,7 @@ impl QuoteTick {
 mod tests {
     use std::str::FromStr;
 
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::{
@@ -309,5 +366,25 @@ mod tests {
 
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_to_dict_and_from_dict() {
+        pyo3::prepare_freethreaded_python();
+        let tick = QuoteTick {
+            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            bid: Price::new(10000.0, 4),
+            ask: Price::new(10001.0, 4),
+            bid_size: Quantity::new(1.0, 8),
+            ask_size: Quantity::new(1.0, 8),
+            ts_event: 0,
+            ts_init: 0,
+        };
+
+        Python::with_gil(|py| {
+            let dict = tick.to_dict();
+            let parsed = QuoteTick::from_dict(dict.as_ref(py)).unwrap();
+            assert_eq!(parsed, tick);
+        });
     }
 }
