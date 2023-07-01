@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod crypto_future;
+mod crypto_perpetual;
 mod currency_pair;
+mod equity;
+mod futures_contract;
+mod options_contract;
 mod synthetic;
 mod synthetic_api;
 
@@ -30,8 +35,8 @@ pub trait Instrument {
     fn native_symbol(&self) -> &Symbol;
     fn asset_class(&self) -> AssetClass;
     fn asset_type(&self) -> AssetType;
-    fn quote_currency(&self) -> &Currency;
     fn base_currency(&self) -> Option<&Currency>;
+    fn quote_currency(&self) -> &Currency;
     fn cost_currency(&self) -> &Currency;
     fn is_inverse(&self) -> bool;
     fn price_precision(&self) -> u8;

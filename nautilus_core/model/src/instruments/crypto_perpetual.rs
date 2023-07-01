@@ -24,11 +24,12 @@ use crate::{
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
-pub struct CurrencyPair {
+pub struct CryptoPerpetual {
     pub id: InstrumentId,
     pub native_symbol: Symbol,
-    pub base_currency: Currency,
     pub quote_currency: Currency,
+    pub base_currency: Currency,
+    pub settlement_currency: Currency,
     pub price_precision: u8,
     pub size_precision: u8,
     pub price_increment: Price,
@@ -44,7 +45,7 @@ pub struct CurrencyPair {
     pub taker_fee: Decimal,
 }
 
-impl CurrencyPair {
+impl CryptoPerpetual {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -52,6 +53,7 @@ impl CurrencyPair {
         native_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
+        settlement_currency: Currency,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -69,8 +71,9 @@ impl CurrencyPair {
         Self {
             id,
             native_symbol,
-            quote_currency,
             base_currency,
+            quote_currency,
+            settlement_currency,
             price_precision,
             size_precision,
             price_increment,
@@ -88,7 +91,7 @@ impl CurrencyPair {
     }
 }
 
-impl Instrument for CurrencyPair {
+impl Instrument for CryptoPerpetual {
     fn id(&self) -> &InstrumentId {
         &self.id
     }
@@ -98,11 +101,11 @@ impl Instrument for CurrencyPair {
     }
 
     fn asset_class(&self) -> AssetClass {
-        AssetClass::FX
+        AssetClass::Cryptocurrency
     }
 
     fn asset_type(&self) -> AssetType {
-        AssetType::Spot
+        AssetType::Swap
     }
 
     fn quote_currency(&self) -> &Currency {
@@ -110,7 +113,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn base_currency(&self) -> Option<&Currency> {
-        Some(&self.base_currency)
+        None
     }
 
     fn cost_currency(&self) -> &Currency {

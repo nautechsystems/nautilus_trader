@@ -15,6 +15,7 @@
 
 #![allow(dead_code)] // Allow for development
 
+use nautilus_core::time::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::Instrument;
@@ -24,11 +25,12 @@ use crate::{
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
-pub struct CurrencyPair {
+pub struct CryptoFuture {
     pub id: InstrumentId,
     pub native_symbol: Symbol,
-    pub base_currency: Currency,
-    pub quote_currency: Currency,
+    pub underlying: String,
+    pub expiration: UnixNanos,
+    pub currency: Currency,
     pub price_precision: u8,
     pub size_precision: u8,
     pub price_increment: Price,
@@ -44,14 +46,15 @@ pub struct CurrencyPair {
     pub taker_fee: Decimal,
 }
 
-impl CurrencyPair {
+impl CryptoFuture {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
         native_symbol: Symbol,
-        base_currency: Currency,
-        quote_currency: Currency,
+        underlying: String,
+        expiration: UnixNanos,
+        currency: Currency,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -69,8 +72,9 @@ impl CurrencyPair {
         Self {
             id,
             native_symbol,
-            quote_currency,
-            base_currency,
+            underlying,
+            expiration,
+            currency,
             price_precision,
             size_precision,
             price_increment,
@@ -88,7 +92,7 @@ impl CurrencyPair {
     }
 }
 
-impl Instrument for CurrencyPair {
+impl Instrument for CryptoFuture {
     fn id(&self) -> &InstrumentId {
         &self.id
     }
@@ -98,23 +102,23 @@ impl Instrument for CurrencyPair {
     }
 
     fn asset_class(&self) -> AssetClass {
-        AssetClass::FX
+        AssetClass::Cryptocurrency
     }
 
     fn asset_type(&self) -> AssetType {
-        AssetType::Spot
+        AssetType::Future
     }
 
     fn quote_currency(&self) -> &Currency {
-        &self.quote_currency
+        &self.currency
     }
 
     fn base_currency(&self) -> Option<&Currency> {
-        Some(&self.base_currency)
+        None
     }
 
     fn cost_currency(&self) -> &Currency {
-        &self.quote_currency
+        &self.currency
     }
 
     fn is_inverse(&self) -> bool {
