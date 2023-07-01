@@ -39,8 +39,8 @@ repos:
     hooks:
       - id: fmt
         name: cargo fmt
-        description: Format files with cargo fmt.
-        entry: cargo fmt
+        description: Format files with cargo fmt (nightly toolchain).
+        entry: cargo +nightly fmt
         language: system
         types: [rust]
         args: ["--manifest-path", "nautilus_core/Cargo.toml", "--all", "--", "--check"]
