@@ -15,9 +15,9 @@
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
-use super::Order;
+use super::base::Order;
 use crate::{
-    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, order_list_id::OrderListId,
         strategy_id::StrategyId, trader_id::TraderId,
@@ -79,58 +79,50 @@ impl LimitOrder for Order {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
-        Self {
-            events: Vec::new(),
-            venue_order_ids: Vec::new(),
-            trade_ids: Vec::new(),
-            previous_status: None,
-            triggered_price: None,
-            status: OrderStatus::Initialized,
+        Order::new(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
-            venue_order_id: None,
-            position_id: None,
-            account_id: None,
-            last_trade_id: None,
-            side: order_side,
-            order_type: OrderType::Limit,
+            order_side,
+            OrderType::Limit,
             quantity,
-            price: Some(price),
-            trigger_price: None,
-            trigger_type: None,
             time_in_force,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            init_id,
+            ts_init,
+            ts_init,     // ts_last
+            None,        // venue_order_id
+            None,        // position_id
+            None,        // account_id
+            None,        // last_trade_id
+            Some(price), // price
+            None,        // trigger_price
+            None,        // trigger_type
             expire_time,
-            liquidity_side: None,
-            is_post_only: post_only,
-            is_reduce_only: reduce_only,
-            is_quote_quantity: quote_quantity,
+            None, // liquidity_side
             display_qty,
-            limit_offset: None,
-            trailing_offset: None,
-            trailing_offset_type: None,
+            None, // limit_offset
+            None, // trailing_offset
+            None, // trailing_offset_type
             emulation_trigger,
             contingency_type,
             order_list_id,
             linked_order_ids,
             parent_order_id,
             tags,
-            filled_qty: Quantity::new(0.0, 0),
-            leaves_qty: quantity,
-            avg_px: None,
-            slippage: None,
-            init_id,
-            ts_triggered: None,
-            ts_init,
-            ts_last: ts_init,
-        }
+            None, // avg_px
+            None, // slippage
+            None, // ts_triggered
+        )
     }
 
     fn price(&self) -> &Price {
         match &self.price {
             Some(price) => price,
-            _ => panic!("Invalid `LimitOrder`: did not have a price"),
+            _ => panic!("Error: `LimitOrder` did not have a price"),
         }
     }
 }
