@@ -182,7 +182,7 @@ impl TradeTick {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn to_dict(&self) -> Py<PyDict> {
+    pub fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -297,6 +297,7 @@ impl TradeTick {
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_core::serialization::Serializable;
     use pyo3::Python;
 
     use crate::{
@@ -306,40 +307,53 @@ mod tests {
         types::{price::Price, quantity::Quantity},
     };
 
-    #[test]
-    fn test_to_string() {
-        let tick = TradeTick {
+    fn create_stub_trade_tick() -> TradeTick {
+        TradeTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789"),
-            ts_event: 0,
+            ts_event: 1,
             ts_init: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn test_to_string() {
+        let tick = create_stub_trade_tick();
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,1"
         );
     }
 
     #[test]
     fn test_to_dict_and_from_dict() {
         pyo3::prepare_freethreaded_python();
-        let tick = TradeTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            price: Price::new(10000.0, 4),
-            size: Quantity::new(1.0, 8),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789"),
-            ts_event: 0,
-            ts_init: 0,
-        };
+
+        let tick = create_stub_trade_tick();
 
         Python::with_gil(|py| {
-            let dict = tick.to_dict();
+            let dict = tick.as_dict();
             let parsed = TradeTick::from_dict(dict.as_ref(py)).unwrap();
             assert_eq!(parsed, tick);
         });
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let tick = create_stub_trade_tick();
+        let serialized = tick.as_json_bytes().unwrap();
+        let deserialized = TradeTick::from_json_bytes(serialized).unwrap();
+        assert_eq!(deserialized, tick);
+    }
+
+    #[test]
+    fn test_msgpack_serialization() {
+        let tick = create_stub_trade_tick();
+        let serialized = tick.as_msgpack_bytes().unwrap();
+        let deserialized = TradeTick::from_msgpack_bytes(serialized).unwrap();
+        assert_eq!(deserialized, tick);
     }
 }

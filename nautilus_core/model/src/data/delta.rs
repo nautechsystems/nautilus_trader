@@ -17,14 +17,24 @@ use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     hash::Hash,
+    str::FromStr,
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{
+    exceptions::{PyKeyError, PyValueError},
+    prelude::*,
+    pyclass::CompareOp,
+    types::PyDict,
+};
 use serde::{Deserialize, Serialize};
 
 use super::order::BookOrder;
-use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
+use crate::{
+    enums::{BookAction, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
@@ -176,7 +186,7 @@ impl OrderBookDelta {
     }
 
     /// Return a dictionary representation of the object.
-    fn to_dict(&self) -> Py<PyDict> {
+    fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -188,8 +198,7 @@ impl OrderBookDelta {
             dict.set_item("price", self.order.price.to_string())
                 .unwrap();
             dict.set_item("size", self.order.size.to_string()).unwrap();
-            dict.set_item("order_id", self.order.order_id.to_string())
-                .unwrap();
+            dict.set_item("order_id", self.order.order_id).unwrap();
             dict.set_item("flags", self.flags).unwrap();
             dict.set_item("sequence", self.sequence).unwrap();
             dict.set_item("ts_event", self.ts_event).unwrap();
@@ -197,6 +206,70 @@ impl OrderBookDelta {
 
             dict.into_py(py)
         })
+    }
+
+    #[staticmethod]
+    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
+        // Extract values from dictionary
+        let instrument_id: String = values
+            .get_item("instrument_id")
+            .ok_or(PyKeyError::new_err("'instrument_id' not found in `values`"))?
+            .extract()?;
+        let action: String = values
+            .get_item("action")
+            .ok_or(PyKeyError::new_err("'action' not found in `values`"))?
+            .extract()?;
+        let side: String = values
+            .get_item("side")
+            .ok_or(PyKeyError::new_err("'side' not found in `values`"))?
+            .extract()?;
+        let price: String = values
+            .get_item("price")
+            .ok_or(PyKeyError::new_err("'price' not found in `values`"))?
+            .extract()?;
+        let size: String = values
+            .get_item("size")
+            .ok_or(PyKeyError::new_err("'size' not found in `values`"))?
+            .extract()?;
+        let order_id: u64 = values
+            .get_item("order_id")
+            .ok_or(PyKeyError::new_err("'order_id' not found in `values`"))?
+            .extract()?;
+        let flags: u8 = values
+            .get_item("flags")
+            .ok_or(PyKeyError::new_err("'flags' not found in `values`"))?
+            .extract()?;
+        let sequence: u64 = values
+            .get_item("sequence")
+            .ok_or(PyKeyError::new_err("'sequence' not found in `values`"))?
+            .extract()?;
+        let ts_event: UnixNanos = values
+            .get_item("ts_event")
+            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
+            .extract()?;
+        let ts_init: UnixNanos = values
+            .get_item("ts_init")
+            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
+            .extract()?;
+
+        let instrument_id = InstrumentId::from_str(&instrument_id)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let action =
+            BookAction::from_str(&action).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let side = OrderSide::from_str(&side).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let price = Price::from_str(&price).map_err(PyValueError::new_err)?;
+        let size = Quantity::from_str(&size).map_err(PyValueError::new_err)?;
+        let order = BookOrder::new(side, price, size, order_id);
+
+        Ok(Self::new(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        ))
     }
 
     #[staticmethod]
@@ -248,8 +321,7 @@ mod tests {
         types::{price::Price, quantity::Quantity},
     };
 
-    #[test]
-    fn test_new() {
+    fn create_stub_delta() -> OrderBookDelta {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let action = BookAction::Add;
         let price = Price::from("100.00");
@@ -262,7 +334,7 @@ mod tests {
         let ts_init = 2;
 
         let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
-        let delta = OrderBookDelta::new(
+        OrderBookDelta::new(
             instrument_id.clone(),
             action,
             order,
@@ -270,22 +342,11 @@ mod tests {
             sequence,
             ts_event,
             ts_init,
-        );
-
-        assert_eq!(delta.instrument_id, instrument_id);
-        assert_eq!(delta.action, action);
-        assert_eq!(delta.order.price, price);
-        assert_eq!(delta.order.size, size);
-        assert_eq!(delta.order.side, side);
-        assert_eq!(delta.order.order_id, order_id);
-        assert_eq!(delta.flags, flags);
-        assert_eq!(delta.sequence, sequence);
-        assert_eq!(delta.ts_event, ts_event);
-        assert_eq!(delta.ts_init, ts_init);
+        )
     }
 
     #[test]
-    fn test_display() {
+    fn test_new() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let action = BookAction::Add;
         let price = Price::from("100.00");
@@ -309,9 +370,53 @@ mod tests {
             ts_init,
         );
 
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.action, action);
+        assert_eq!(delta.order.price, price);
+        assert_eq!(delta.order.size, size);
+        assert_eq!(delta.order.side, side);
+        assert_eq!(delta.order.order_id, order_id);
+        assert_eq!(delta.flags, flags);
+        assert_eq!(delta.sequence, sequence);
+        assert_eq!(delta.ts_event, ts_event);
+        assert_eq!(delta.ts_init, ts_init);
+    }
+
+    #[test]
+    fn test_display() {
+        let delta = create_stub_delta();
         assert_eq!(
             format!("{}", delta),
             "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
         );
+    }
+
+    #[test]
+    fn test_to_dict_and_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let delta = create_stub_delta();
+
+        Python::with_gil(|py| {
+            let dict = delta.as_dict();
+            let parsed = OrderBookDelta::from_dict(dict.as_ref(py)).unwrap();
+            assert_eq!(parsed, delta);
+        });
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let delta = create_stub_delta();
+        let serialized = delta.as_json_bytes().unwrap();
+        let deserialized = OrderBookDelta::from_json_bytes(serialized).unwrap();
+        assert_eq!(deserialized, delta);
+    }
+
+    #[test]
+    fn test_msgpack_serialization() {
+        let delta = create_stub_delta();
+        let serialized = delta.as_msgpack_bytes().unwrap();
+        let deserialized = OrderBookDelta::from_msgpack_bytes(serialized).unwrap();
+        assert_eq!(deserialized, delta);
     }
 }
