@@ -243,7 +243,7 @@ impl DataBackendSession {
         Self::new(chunk_size)
     }
 
-    pub fn order_book_deltas_to_batches_bytes(
+    pub fn pyo3_order_book_deltas_to_batches_bytes(
         _slf: PyRefMut<'_, Self>,
         data: Vec<OrderBookDelta>,
     ) -> PyResult<Py<PyBytes>> {
@@ -270,7 +270,7 @@ impl DataBackendSession {
         DataBackendSession::record_batches_to_pybytes(batches, schema)
     }
 
-    pub fn quote_ticks_to_batches_bytes(
+    pub fn pyo3_quote_ticks_to_batches_bytes(
         _slf: PyRefMut<'_, Self>,
         data: Vec<QuoteTick>,
     ) -> PyResult<Py<PyBytes>> {
@@ -297,7 +297,7 @@ impl DataBackendSession {
         DataBackendSession::record_batches_to_pybytes(batches, schema)
     }
 
-    pub fn trade_ticks_to_batches_bytes(
+    pub fn pyo3_trade_ticks_to_batches_bytes(
         _slf: PyRefMut<'_, Self>,
         data: Vec<TradeTick>,
     ) -> PyResult<Py<PyBytes>> {
@@ -324,7 +324,7 @@ impl DataBackendSession {
         DataBackendSession::record_batches_to_pybytes(batches, schema)
     }
 
-    pub fn bars_to_batches_bytes(
+    pub fn pyo3_bars_to_batches_bytes(
         _slf: PyRefMut<'_, Self>,
         data: Vec<Bar>,
     ) -> PyResult<Py<PyBytes>> {

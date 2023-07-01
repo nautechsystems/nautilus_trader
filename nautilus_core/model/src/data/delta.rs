@@ -20,7 +20,7 @@ use std::{
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use super::order::BookOrder;
@@ -173,6 +173,30 @@ impl OrderBookDelta {
     #[getter]
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+
+    /// Return a dictionary representation of the object.
+    fn to_dict(&self) -> Py<PyDict> {
+        Python::with_gil(|py| {
+            let dict = PyDict::new(py);
+
+            dict.set_item("type", stringify!(OrderBookDelta)).unwrap();
+            dict.set_item("instrument_id", self.instrument_id.to_string())
+                .unwrap();
+            dict.set_item("action", self.action.to_string()).unwrap();
+            dict.set_item("side", self.order.side.to_string()).unwrap();
+            dict.set_item("price", self.order.price.to_string())
+                .unwrap();
+            dict.set_item("size", self.order.size.to_string()).unwrap();
+            dict.set_item("order_id", self.order.order_id.to_string())
+                .unwrap();
+            dict.set_item("flags", self.flags).unwrap();
+            dict.set_item("sequence", self.sequence).unwrap();
+            dict.set_item("ts_event", self.ts_event).unwrap();
+            dict.set_item("ts_init", self.ts_init).unwrap();
+
+            dict.into_py(py)
+        })
     }
 
     #[staticmethod]
