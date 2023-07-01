@@ -207,7 +207,7 @@ impl QuoteTick {
     }
 
     /// Return a dictionary representation of the object.
-    fn to_dict(&self) -> Py<PyDict> {
+    pub fn to_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -228,7 +228,7 @@ impl QuoteTick {
     }
 
     #[staticmethod]
-    fn from_dict(values: &PyDict) -> PyResult<Self> {
+    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
         // Extract values from dictionary
         let instrument_id: String = values
             .get_item("instrument_id")
