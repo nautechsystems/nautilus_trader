@@ -106,7 +106,7 @@ impl Ticker {
     }
 
     /// Return a dictionary representation of the object.
-    fn to_dict(&self) -> Py<PyDict> {
+    fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 

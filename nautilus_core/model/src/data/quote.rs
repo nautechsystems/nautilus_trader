@@ -207,7 +207,7 @@ impl QuoteTick {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn to_dict(&self) -> Py<PyDict> {
+    pub fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -319,6 +319,7 @@ impl QuoteTick {
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_core::serialization::Serializable;
     use pyo3::Python;
     use rstest::rstest;
 
@@ -329,20 +330,24 @@ mod tests {
         types::{price::Price, quantity::Quantity},
     };
 
-    #[test]
-    fn test_to_string() {
-        let tick = QuoteTick {
+    fn create_stub_quote_tick() -> QuoteTick {
+        QuoteTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             bid: Price::new(10000.0, 4),
             ask: Price::new(10001.0, 4),
             bid_size: Quantity::new(1.0, 8),
             ask_size: Quantity::new(1.0, 8),
-            ts_event: 0,
+            ts_event: 1,
             ts_init: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn test_to_string() {
+        let tick = create_stub_quote_tick();
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,1"
         );
     }
 
@@ -354,16 +359,7 @@ mod tests {
         case(PriceType::Mid, 10_000_500_000_000)
     )]
     fn test_extract_price(input: PriceType, expected: i64) {
-        let tick = QuoteTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            bid: Price::new(10000.0, 4),
-            ask: Price::new(10001.0, 4),
-            bid_size: Quantity::new(1.0, 8),
-            ask_size: Quantity::new(1.0, 8),
-            ts_event: 0,
-            ts_init: 0,
-        };
-
+        let tick = create_stub_quote_tick();
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
     }
@@ -371,20 +367,29 @@ mod tests {
     #[test]
     fn test_to_dict_and_from_dict() {
         pyo3::prepare_freethreaded_python();
-        let tick = QuoteTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            bid: Price::new(10000.0, 4),
-            ask: Price::new(10001.0, 4),
-            bid_size: Quantity::new(1.0, 8),
-            ask_size: Quantity::new(1.0, 8),
-            ts_event: 0,
-            ts_init: 0,
-        };
+
+        let tick = create_stub_quote_tick();
 
         Python::with_gil(|py| {
-            let dict = tick.to_dict();
+            let dict = tick.as_dict();
             let parsed = QuoteTick::from_dict(dict.as_ref(py)).unwrap();
             assert_eq!(parsed, tick);
         });
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let tick = create_stub_quote_tick();
+        let serialized = tick.as_json_bytes().unwrap();
+        let deserialized = QuoteTick::from_json_bytes(serialized).unwrap();
+        assert_eq!(deserialized, tick);
+    }
+
+    #[test]
+    fn test_msgpack_serialization() {
+        let tick = create_stub_quote_tick();
+        let serialized = tick.as_msgpack_bytes().unwrap();
+        let deserialized = QuoteTick::from_msgpack_bytes(serialized).unwrap();
+        assert_eq!(deserialized, tick);
     }
 }

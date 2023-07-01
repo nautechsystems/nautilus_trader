@@ -148,7 +148,7 @@ impl Display for BarType {
 
 /// Represents an aggregated bar.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct Bar {
     /// The bar type for this bar.
@@ -293,7 +293,7 @@ impl Bar {
     }
 
     /// Return a dictionary representation of the object.
-    fn to_dict(&self) -> Py<PyDict> {
+    fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -405,6 +405,33 @@ mod tests {
         enums::BarAggregation,
         identifiers::{symbol::Symbol, venue::Venue},
     };
+
+    fn create_stub_bar() -> Bar {
+        let instrument_id = InstrumentId {
+            symbol: Symbol::new("AUDUSD"),
+            venue: Venue::new("SIM"),
+        };
+        let bar_spec = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_type = BarType {
+            instrument_id,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
+        };
+        Bar {
+            bar_type: bar_type.clone(),
+            open: Price::from("1.00001"),
+            high: Price::from("1.00004"),
+            low: Price::from("1.00002"),
+            close: Price::from("1.00003"),
+            volume: Quantity::from("100000"),
+            ts_event: 0,
+            ts_init: 1,
+        }
+    }
 
     #[test]
     fn test_bar_spec_string_reprs() {
@@ -618,35 +645,29 @@ mod tests {
     #[test]
     fn test_to_dict_and_from_dict() {
         pyo3::prepare_freethreaded_python();
-        let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD"),
-            venue: Venue::new("SIM"),
-        };
-        let bar_spec = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_type = BarType {
-            instrument_id,
-            spec: bar_spec,
-            aggregation_source: AggregationSource::External,
-        };
-        let bar = Bar {
-            bar_type: bar_type.clone(),
-            open: Price::from("1.00001"),
-            high: Price::from("1.00004"),
-            low: Price::from("1.00002"),
-            close: Price::from("1.00003"),
-            volume: Quantity::from("100000"),
-            ts_event: 0,
-            ts_init: 0,
-        };
+
+        let bar = create_stub_bar();
 
         Python::with_gil(|py| {
-            let dict = bar.to_dict();
+            let dict = bar.as_dict();
             let parsed = Bar::from_dict(dict.as_ref(py)).unwrap();
             assert_eq!(parsed, bar);
         });
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let bar = create_stub_bar();
+        let serialized = bar.as_json_bytes().unwrap();
+        let deserialized = Bar::from_json_bytes(serialized).unwrap();
+        assert_eq!(deserialized, bar);
+    }
+
+    #[test]
+    fn test_msgpack_serialization() {
+        let bar = create_stub_bar();
+        let serialized = bar.as_msgpack_bytes().unwrap();
+        let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
+        assert_eq!(deserialized, bar);
     }
 }
