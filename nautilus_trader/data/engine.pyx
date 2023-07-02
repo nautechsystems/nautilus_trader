@@ -1730,26 +1730,32 @@ cdef class DataEngine(Component):
         cdef:
             InstrumentId instrument_id
             QuoteTick component_quote
+            Price update_bid
+            Price update_ask
         for instrument_id in components:
             if instrument_id == update.instrument_id:
-                inputs_bid.append(update.bid.as_f64_c())
-                inputs_ask.append(update.ask.as_f64_c())
+                update_bid = update.bid
+                update_ask = update.ask
+                inputs_bid.append(update_bid.as_f64_c())
+                inputs_ask.append(update_ask.as_f64_c())
                 continue
             component_quote = self._cache.quote_tick(instrument_id)
             if component_quote is None:
                 self._log.warning(
-                    f"Cannot calculate synthetic instrument {synthetic.instrument_id} price, "
+                    f"Cannot calculate synthetic instrument {synthetic.id} price, "
                     f"no quotes for {instrument_id} yet...",
                 )
                 return
-            inputs_bid.append(component_quote.bid.as_f64_c())
-            inputs_ask.append(component_quote.ask.as_f64_c())
+            update_bid = component_quote.bid
+            update_ask = component_quote.ask
+            inputs_bid.append(update_bid.as_f64_c())
+            inputs_ask.append(update_ask.as_f64_c())
 
-        cdef Price bid = synthetic.calculate_price(inputs_bid)
-        cdef Price ask = synthetic.calculate_price(inputs_ask)
+        cdef Price bid = synthetic.calculate(inputs_bid)
+        cdef Price ask = synthetic.calculate(inputs_ask)
         cdef Quantity size_one = Quantity(1, 0)  # Placeholder for now
 
-        cdef InstrumentId synthetic_instrument_id = synthetic.instrument_id
+        cdef InstrumentId synthetic_instrument_id = synthetic.id
         cdef QuoteTick synthetic_quote = QuoteTick(
             synthetic_instrument_id,
             bid,
@@ -1779,23 +1785,26 @@ cdef class DataEngine(Component):
         cdef:
             InstrumentId instrument_id
             TradeTick component_quote
+            Price update_price
         for instrument_id in components:
             if instrument_id == update.instrument_id:
-                inputs.append(update.price.as_f64_c())
+                update_price = update.price
+                inputs.append(update_price.as_f64_c())
                 continue
             component_trade = self._cache.trade_tick(instrument_id)
             if component_trade is None:
                 self._log.warning(
-                    f"Cannot calculate synthetic instrument {synthetic.instrument_id} price, "
+                    f"Cannot calculate synthetic instrument {synthetic.id} price, "
                     f"no trades for {instrument_id} yet...",
                 )
                 return
-            inputs.append(component_trade.price.as_f64_c())
+            update_price = component_trade.price
+            inputs.append(update_price.as_f64_c())
 
-        cdef Price price = synthetic.calculate_price(inputs)
+        cdef Price price = synthetic.calculate(inputs)
         cdef Quantity size_one = Quantity(1, 0)  # Placeholder for now
 
-        cdef InstrumentId synthetic_instrument_id = synthetic.instrument_id
+        cdef InstrumentId synthetic_instrument_id = synthetic.id
         cdef TradeTick synthetic_trade = TradeTick(
             synthetic_instrument_id,
             price,
