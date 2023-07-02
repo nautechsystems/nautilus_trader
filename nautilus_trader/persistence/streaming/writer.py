@@ -27,10 +27,10 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.serialization.arrow_old.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow_old.serializer import get_cls_table
-from nautilus_trader.serialization.arrow_old.serializer import list_schemas
-from nautilus_trader.serialization.arrow_old.serializer import register_parquet
+from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
+from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
+from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
+from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
 from nautilus_trader.serialization.arrow_old.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow_old.util import list_dicts_to_dict_lists
 
@@ -88,8 +88,8 @@ class StreamingFeatherWriter:
             },
         )
         self.logger = logger
-        self._files: dict[type, BinaryIO] = {}
-        self._writers: dict[type, RecordBatchStreamWriter] = {}
+        self._files: dict[str, BinaryIO] = {}
+        self._writers: dict[str, RecordBatchStreamWriter] = {}
         self._create_writers()
 
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
@@ -99,7 +99,7 @@ class StreamingFeatherWriter:
     def _create_writer(self, cls):
         if self.include_types is not None and cls.__name__ not in self.include_types:
             return
-        table_name = get_cls_table(cls).__name__
+        table_name = class_to_filename(cls)
         if table_name in self._writers:
             return
         prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
@@ -140,7 +140,7 @@ class StreamingFeatherWriter:
         cls = obj.__class__
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
-        table = get_cls_table(cls).__name__
+        table = class_to_filename(cls)
         if table not in self._writers:
             if table.startswith("Signal"):
                 self._create_writer(cls=cls)
@@ -151,7 +151,7 @@ class StreamingFeatherWriter:
             else:
                 return
         writer: RecordBatchStreamWriter = self._writers[table]
-        serialized = ParquetSerializer.serialize(obj)
+        serialized = ParquetSerializer.serialize_batch([obj], cls=cls)
         if not serialized:
             return
         if isinstance(serialized, dict):

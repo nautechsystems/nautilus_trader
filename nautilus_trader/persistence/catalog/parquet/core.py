@@ -35,10 +35,9 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.serializers import RUST_SERIALIZERS
@@ -110,13 +109,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- WRITING -----------------------------------------------------------------------------------
     def objects_to_rust_table(self, data: list[Data], cls: type) -> pa.Table:
-        session = DataBackendSession()
-        if cls == QuoteTick:
-            batches_bytes = session.quote_ticks_to_batches_bytes(data)
-        elif cls == TradeTick:
-            batches_bytes = session.trade_ticks_to_batches_bytes(data)
-        else:
-            raise NotImplementedError
+        batches_bytes = DataTransformer.pyobjects_to_batches_bytes(data)
         batches_stream = BytesIO(batches_bytes)
         reader = pa.ipc.open_stream(batches_stream)
         return reader.read_all()
@@ -134,9 +127,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def _make_path(self, cls: type[Data], instrument_id: Optional[str] = None) -> str:
         if instrument_id is not None:
-            return f"{self.path}/data/{cls.__name__}/{instrument_id}"
+            return f"{self.path}/data/{class_to_filename(cls)}/{instrument_id}"
         else:
-            return f"{self.path}/data/{cls.__name__}"
+            return f"{self.path}/data/{class_to_filename(cls)}"
 
     def write_chunk(
         self, data: list[Data], cls: type[Data], instrument_id: Optional[str] = None, **kwargs
@@ -276,7 +269,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(
-            f"{self.path}/data/{name}.parquet",
+            f"{self.path}/data/{name}",
             filesystem=self.fs,
         )
         # TODO(cs): Catalog v1 impl below

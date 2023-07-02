@@ -16,6 +16,7 @@
 import datetime
 from decimal import Decimal
 
+import fsspec
 import pyarrow.dataset as ds
 
 from nautilus_trader.model.currencies import USD
@@ -33,6 +34,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -40,16 +42,32 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 class _TestPersistenceCatalog:
+    def setup(self) -> None:
+        self.catalog = data_catalog_setup(protocol=self.fs_protocol)  # type: ignore
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+
+    def teardown(self):
+        # Cleanup
+        path = self.catalog.path
+        fs = self.catalog.fs
+        if fs.exists(path):
+            fs.rm(path, recursive=True)
+
     def test_list_data_types(self, data_catalog, load_betfair_data):
         data_types = data_catalog.list_data_types()
 
-        expected = ["BetfairTicker", "InstrumentStatusUpdate", "OrderBookDeltas", "TradeTick"]
+        expected = [
+            "betfair_ticker",
+            "instrument_status_update",
+            "order_book_deltas",
+            "trade_tick",
+        ]
         assert data_types == expected
 
     def test_list_partitions(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        QuoteTick(
+        tick = QuoteTick(
             instrument_id=instrument.id,
             bid=Price(10, 1),
             ask=Price(11, 1),
@@ -58,8 +76,7 @@ class _TestPersistenceCatalog:
             ts_init=0,
             ts_event=0,
         )
-        raise NotImplementedError("Needs new record batch loader")
-        # write_tables(catalog=self.catalog, tables=tables)
+        self.catalog.write_data([tick])
 
         # Act
         self.catalog.list_partitions(QuoteTick)
@@ -97,8 +114,8 @@ class _TestPersistenceCatalog:
 
     def test_writing_instruments_doesnt_overwrite(self, data_catalog):
         instruments = self.catalog.instruments(as_nautilus=True)
-        data_catalog.write_data(catalog=self.catalog, chunk=[instruments[0]])
-        data_catalog.write_data(catalog=self.catalog, chunk=[instruments[1]])
+        data_catalog.write_data([instruments[0]])
+        data_catalog.write_data([instruments[1]])
         instruments = self.catalog.instruments(as_nautilus=True)
         assert len(instruments) == 2
 
@@ -130,7 +147,7 @@ class _TestPersistenceCatalog:
     def test_data_catalog_currency_with_null_max_price_loads(self, data_catalog):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-        data_catalog.write_data(catalog=self.catalog, chunk=[instrument])
+        data_catalog.write_data([instrument])
 
         # Act
         instrument = self.catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
@@ -150,7 +167,7 @@ class _TestPersistenceCatalog:
             ts_event=0,
             ts_init=0,
         )
-        data_catalog.write_data(catalog=self.catalog, chunk=[instrument, trade_tick])
+        data_catalog.write_data([instrument, trade_tick])
 
         # Act
         self.catalog.instruments()
@@ -222,7 +239,7 @@ class _TestPersistenceCatalog:
     def test_catalog_bar_query_instrument_id(self, data_catalog):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
-        data_catalog.write_data(catalog=self.catalog, chunk=[bar])
+        data_catalog.write_data([bar])
 
         # Act
         objs = self.catalog.bars(instrument_ids=[TestIdStubs.audusd_id().value], as_nautilus=True)
@@ -269,7 +286,7 @@ class _TestPersistenceCatalog:
         )
 
         # Act
-        data_catalog.write_data(catalog=self.catalog, chunk=[instrument, quote_tick])
+        data_catalog.write_data([instrument, quote_tick])
         instrument_from_catalog = self.catalog.instruments(
             as_nautilus=True,
             instrument_ids=[instrument.id.value],
