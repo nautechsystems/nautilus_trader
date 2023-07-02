@@ -109,7 +109,7 @@ pub trait Clock {
     /// Return the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
-    /// Register a default event handler for the clock. If a [Timer]
+    /// Register a default event handler for the clock. If a [`Timer`]
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>);
 
