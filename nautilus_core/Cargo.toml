@@ -32,7 +32,9 @@ rust_decimal = "1.30.0"
 rust_decimal_macros = "1.29.1"
 serde = { version = "1.0.164", features = ["derive"] }
 serde_json = "1.0.99"
-strum = { version = "0.24.1", features = ["derive"] }
+# Pinned strum due derive(FromRepr) broken in 0.25.0 which we use heavily
+# https://github.com/Peternator7/strum/issues/275
+strum = { version = "=0.24.1", features = ["derive"] }
 thiserror = "1.0.40"
 tracing = "0.1.37"
 tokio = { version = "1.29.1", features = ["full"] }
