@@ -1529,6 +1529,136 @@ class TestDataEngine:
         assert handler1 == [tick]
         assert handler2 == [tick]
 
+    def test_process_trade_tick_when_synthetic_then_sends_to_registered_handlers(
+        self,
+    ):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        handler1 = []
+        handler2 = []
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.trades.SYNTH.BTC-ETH", handler=handler2.append)
+
+        subscribe1 = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        subscribe2 = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=synthetic.id.venue,
+            data_type=DataType(TradeTick, metadata={"instrument_id": synthetic.id}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        tick1 = TestDataStubs.trade_tick(instrument=BTCUSDT_BINANCE, price=50_000.0)
+        tick2 = TestDataStubs.trade_tick(instrument=ETHUSDT_BINANCE, price=10_000.0)
+        tick3 = TestDataStubs.trade_tick(instrument=BTCUSDT_BINANCE, price=50_001.0)
+
+        # Act
+        self.data_engine.process(tick1)
+        self.data_engine.process(tick2)
+        self.data_engine.process(tick3)
+
+        # Assert
+        assert handler1 == [tick2]
+        assert len(handler2) == 2
+        synthetic_tick = handler2[-1]
+        assert isinstance(synthetic_tick, TradeTick)
+        assert synthetic_tick.to_dict(synthetic_tick) == {
+            "type": "TradeTick",
+            "instrument_id": "BTC-ETH.SYNTH",
+            "price": "30000.50000000",
+            "size": "1",
+            "aggressor_side": "BUYER",
+            "trade_id": "123456",
+            "ts_event": 0,
+            "ts_init": 0,
+        }
+
+    def test_process_quote_tick_when_synthetic_then_sends_to_registered_handlers(
+        self,
+    ):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        handler1 = []
+        handler2 = []
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.quotes.SYNTH.BTC-ETH", handler=handler2.append)
+
+        subscribe1 = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        subscribe2 = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=synthetic.id.venue,
+            data_type=DataType(QuoteTick, metadata={"instrument_id": synthetic.id}),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        tick1 = TestDataStubs.quote_tick(
+            instrument=BTCUSDT_BINANCE,
+            bid=50_000.0,
+            ask=50_001.0,
+        )
+        tick2 = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_BINANCE,
+            bid=10_000.0,
+            ask=10_000.0,
+        )
+        tick3 = TestDataStubs.quote_tick(
+            instrument=BTCUSDT_BINANCE,
+            bid=50_001.0,
+            ask=50_002.0,
+        )
+
+        # Act
+        self.data_engine.process(tick1)
+        self.data_engine.process(tick2)
+        self.data_engine.process(tick3)
+
+        # Assert
+        assert handler1 == [tick2]
+        assert len(handler2) == 2
+        synthetic_tick = handler2[-1]
+        assert isinstance(synthetic_tick, QuoteTick)
+        assert synthetic_tick.to_dict(synthetic_tick) == {
+            "type": "QuoteTick",
+            "instrument_id": "BTC-ETH.SYNTH",
+            "bid": "30000.50000000",
+            "ask": "30001.00000000",
+            "bid_size": "1",
+            "ask_size": "1",
+            "ts_event": 0,
+            "ts_init": 0,
+        }
+
     def test_subscribe_bar_type_then_subscribes(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
