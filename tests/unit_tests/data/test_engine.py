@@ -40,14 +40,12 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
@@ -1321,15 +1319,7 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bid=Price.from_str("100.003"),
-            ask=Price.from_str("100.003"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
-        )
+        tick = TestDataStubs.quote_tick(instrument=ETHUSDT_BINANCE)
 
         # Act
         self.data_engine.process(tick)
@@ -1369,15 +1359,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe1)
         self.data_engine.execute(subscribe2)
 
-        tick = QuoteTick(
-            instrument_id=ETHUSDT_BINANCE.id,
-            bid=Price.from_str("100.003"),
-            ask=Price.from_str("100.003"),
-            bid_size=Quantity.from_int(1),
-            ask_size=Quantity.from_int(1),
-            ts_event=0,
-            ts_init=0,
-        )
+        tick = TestDataStubs.quote_tick(instrument=ETHUSDT_BINANCE)
 
         # Act
         self.data_engine.process(tick)
@@ -1499,15 +1481,7 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        tick = TradeTick(
-            instrument_id=ETHUSDT_BINANCE.id,
-            price=Price.from_str("1050.00000"),
-            size=Quantity.from_int(100),
-            aggressor_side=AggressorSide.BUYER,
-            trade_id=TradeId("123456789"),
-            ts_event=0,
-            ts_init=0,
-        )
+        tick = TestDataStubs.trade_tick(instrument=ETHUSDT_BINANCE)
 
         # Act
         self.data_engine.process(tick)
@@ -1546,15 +1520,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe1)
         self.data_engine.execute(subscribe2)
 
-        tick = TradeTick(
-            instrument_id=ETHUSDT_BINANCE.id,
-            price=Price.from_str("1050.00000"),
-            size=Quantity.from_int(100),
-            aggressor_side=AggressorSide.BUYER,
-            trade_id=TradeId("123456789"),
-            ts_event=0,
-            ts_init=0,
-        )
+        tick = TestDataStubs.trade_tick(instrument=ETHUSDT_BINANCE)
 
         # Act
         self.data_engine.process(tick)
