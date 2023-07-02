@@ -227,9 +227,9 @@ impl QuoteTick {
         })
     }
 
+    /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(values: &PyDict) -> PyResult<Self> {
-        // Extract values from dictionary
         let instrument_id: String = values
             .get_item("instrument_id")
             .ok_or(PyKeyError::new_err("'instrument_id' not found in `values`"))?
