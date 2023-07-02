@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::data::{quote::QuoteTick, trade::TradeTick, Data};
-use nautilus_persistence::session::{DataBackendSession, QueryResult};
+use nautilus_persistence::backend::session::{DataBackendSession, QueryResult};
 
 // Note: "current_thread" configuration hangs up for some reason
 #[tokio::test(flavor = "multi_thread")]

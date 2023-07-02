@@ -19,7 +19,7 @@ from pathlib import Path
 import polars as pl
 import pyarrow as pa
 
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
 from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
@@ -40,10 +40,8 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
     ticks = wrangler.process(tick_data)
 
-    session = DataBackendSession()
-
     # Act
-    batches_bytes = session.pyo3_quote_ticks_to_batches_bytes(ticks)
+    batches_bytes = DataTransformer.pyo3_quote_ticks_to_batches_bytes(ticks)
     batches_stream = BytesIO(batches_bytes)
     reader = pa.ipc.open_stream(batches_stream)
 
@@ -59,10 +57,8 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
     ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
 
-    session = DataBackendSession()
-
     # Act
-    batches_bytes = session.pyobjects_to_batches_bytes(ticks)
+    batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)
     batches_stream = BytesIO(batches_bytes)
     reader = pa.ipc.open_stream(batches_stream)
 
