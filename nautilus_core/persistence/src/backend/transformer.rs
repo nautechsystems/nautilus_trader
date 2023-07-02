@@ -20,7 +20,7 @@ use datafusion::arrow::{
 };
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
+    exceptions::{PyKeyError, PyRuntimeError, PyValueError},
     prelude::*,
     types::{PyBytes, PyDict},
 };
@@ -84,19 +84,18 @@ impl DataTransformer {
     ) -> PyResult<Py<PyBytes>> {
         // Create a cursor to write to a byte array in memory
         let mut cursor = Cursor::new(Vec::new());
-
         {
             let mut writer = StreamWriter::try_new(&mut cursor, &schema)
-                .map_err(|err| PyErr::new::<PyRuntimeError, _>(format!("{}", err)))?;
+                .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
             for batch in batches {
                 writer
                     .write(&batch)
-                    .map_err(|err| PyErr::new::<PyRuntimeError, _>(format!("{}", err)))?;
+                    .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
             }
 
             writer
                 .finish()
-                .map_err(|err| PyErr::new::<PyRuntimeError, _>(format!("{}", err)))?;
+                .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
         }
 
         let buffer = cursor.into_inner();
@@ -115,7 +114,7 @@ impl DataTransformer {
         data: Vec<PyObject>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("`data` was empty."));
+            return Err(PyValueError::new_err("`data` was empty."));
         }
 
         // Iterate over all objects calling the legacy 'to_dict' method
@@ -132,7 +131,7 @@ impl DataTransformer {
             .unwrap() // Safety: already checked that `data` not empty above
             .as_ref(py)
             .get_item("type")
-            .ok_or_else(|| PyErr::new::<PyValueError, _>("'type' key not found in dict."))?
+            .ok_or_else(|| PyKeyError::new_err("'type' key not found in dict."))?
             .extract()?;
 
         match data_type.as_str() {
@@ -152,9 +151,8 @@ impl DataTransformer {
                 let bars = Self::pydicts_to_bars(py, data_dicts)?;
                 Self::pyo3_bars_to_batches_bytes(py, bars)
             }
-            _ => Err(PyErr::new::<PyValueError, _>(format!(
-                "unsupported data type: {}",
-                data_type
+            _ => Err(PyValueError::new_err(format!(
+                "unsupported data type: {data_type}"
             ))),
         }
     }
@@ -165,7 +163,7 @@ impl DataTransformer {
         data: Vec<OrderBookDelta>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("`data` was empty."));
+            return Err(PyValueError::new_err("`data` was empty."));
         }
 
         // Take first element and extract metadata
@@ -192,7 +190,7 @@ impl DataTransformer {
         data: Vec<QuoteTick>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("`data` was empty."));
+            return Err(PyValueError::new_err("`data` was empty."));
         }
 
         // Take first element and extract metadata
@@ -219,7 +217,7 @@ impl DataTransformer {
         data: Vec<TradeTick>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("`data` was empty."));
+            return Err(PyValueError::new_err("`data` was empty."));
         }
 
         // Take first element and extract metadata
@@ -243,7 +241,7 @@ impl DataTransformer {
     #[staticmethod]
     pub fn pyo3_bars_to_batches_bytes(py: Python<'_>, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("`data` was empty."));
+            return Err(PyValueError::new_err("`data` was empty."));
         }
 
         // Take first element and extract metadata
