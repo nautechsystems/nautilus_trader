@@ -41,7 +41,7 @@ clean:
 	git clean -fxd
 
 .PHONY: docs
-docs:
+docs: install-just-deps-all
 	poetry run sphinx-build docs docs/build/html -b html
 
 .PHONY: format
