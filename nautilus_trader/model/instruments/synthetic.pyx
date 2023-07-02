@@ -86,6 +86,10 @@ cdef class SyntheticInstrument(Data):
     ValueError
         If the `formula` is not a valid expression.
 
+    Warnings
+    --------
+    All component instruments should already be defined and exist in the cache prior to defining
+    a new synthetic instrument.
     """
 
     def __init__(

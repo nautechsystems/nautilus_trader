@@ -3,14 +3,15 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `SyntheticInstrument` capability, including dynamic derivation formulas
 
 ### Breaking Changes
 None
 
 ### Fixes
-- Fixed parsing of `TriggerType` for Binance, thanks for reporting @davidblom603
-- Fixed parsing of invalid Binance orders in execution reports, thanks for reporting @graceyangfan
+- Fixed parsing of `TriggerType` for Binance #1154, thanks for reporting @davidblom603
+- Fixed parsing of invalid Binance orders in execution reports #1157, thanks for reporting @graceyangfan
+- Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
 
 ---
 
