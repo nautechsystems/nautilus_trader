@@ -522,7 +522,7 @@ class TestInstrumentProvider:
     def synthetic_instrument() -> SyntheticInstrument:
         return SyntheticInstrument(
             symbol=Symbol("BTC-ETH"),
-            precision=8,
+            price_precision=8,
             components=[
                 TestInstrumentProvider.btcusdt_binance().id,
                 TestInstrumentProvider.ethusdt_binance().id,

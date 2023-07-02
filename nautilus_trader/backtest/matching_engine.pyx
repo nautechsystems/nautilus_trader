@@ -182,7 +182,8 @@ cdef class OrderMatchingEngine:
 
         # Market
         self._core = MatchingCore(
-            instrument=instrument,
+            instrument_id=instrument.id,
+            price_increment=instrument.price_increment,
             trigger_stop_order=self.trigger_stop_order,
             fill_market_order=self.fill_market_order,
             fill_limit_order=self.fill_limit_order,
@@ -1088,7 +1089,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_trailing_stop_order(self, Order order):
         cdef tuple output = TrailingStopCalculator.calculate(
-            instrument=self.instrument,
+            price_increment=self.instrument.price_increment,
             order=order,
             bid=self._core.bid,
             ask=self._core.ask,

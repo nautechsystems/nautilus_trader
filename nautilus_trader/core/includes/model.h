@@ -1773,7 +1773,7 @@ uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
  * - Assumes `formula_ptr` is a valid C string pointer.
  */
 struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
-                                                        uint8_t precision,
+                                                        uint8_t price_precision,
                                                         const char *components_ptr,
                                                         const char *formula_ptr,
                                                         uint64_t ts_event,
@@ -1783,7 +1783,9 @@ void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
 
 struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
 
-uint8_t synthetic_instrument_precision(const struct SyntheticInstrument_API *synth);
+uint8_t synthetic_instrument_price_precision(const struct SyntheticInstrument_API *synth);
+
+struct Price_t synthetic_instrument_price_increment(const struct SyntheticInstrument_API *synth);
 
 const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
 

@@ -14,18 +14,21 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.enums_c cimport LiquiditySide
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class MatchingCore:
-    cdef Instrument _instrument
+    cdef InstrumentId _instrument_id
+    cdef Price _price_increment
+    cdef uint8_t _price_precision
     cdef readonly int64_t bid_raw
     cdef readonly int64_t ask_raw
     cdef readonly int64_t last_raw

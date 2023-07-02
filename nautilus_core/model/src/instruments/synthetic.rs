@@ -28,7 +28,8 @@ use crate::{
 /// formula.
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
-    pub precision: u8,
+    pub price_precision: u8,
+    pub price_increment: Price,
     pub components: Vec<InstrumentId>,
     pub formula: String,
     pub context: HashMapContext,
@@ -41,13 +42,13 @@ pub struct SyntheticInstrument {
 impl SyntheticInstrument {
     pub fn new(
         symbol: Symbol,
-        precision: u8,
+        price_precision: u8,
         components: Vec<InstrumentId>,
         formula: String,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Result<Self, anyhow::Error> {
-        let context = HashMapContext::new();
+        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
 
         // Extract variables from the component instruments
         let variables: Vec<String> = components
@@ -59,10 +60,11 @@ impl SyntheticInstrument {
 
         Ok(SyntheticInstrument {
             id: InstrumentId::new(symbol, Venue::synthetic()),
-            precision,
+            price_precision,
+            price_increment,
             components,
             formula,
-            context,
+            context: HashMapContext::new(),
             variables,
             operator_tree,
             ts_event,
@@ -118,7 +120,7 @@ impl SyntheticInstrument {
         let result: Value = self.operator_tree.eval_with_context(&self.context)?;
 
         match result {
-            Value::Float(price) => Ok(Price::new(price, self.precision)),
+            Value::Float(price) => Ok(Price::new(price, self.price_precision)),
             _ => Err(anyhow::anyhow!(
                 "Failed to evaluate formula to a floating point number"
             )),

@@ -254,14 +254,20 @@ cdef class OrderEmulator(Actor):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cpdef MatchingCore create_matching_core(self, Instrument instrument):
+    cpdef MatchingCore create_matching_core(
+        self,
+        InstrumentId instrument_id,
+        Price price_increment,
+    ):
         """
         Create an internal matching core for the given `instrument`.
 
         Parameters
         ----------
-        instrument : Instrument
-            The instrument for the matching core.
+        instrument_id : InstrumentId
+            The instrument ID for the matching core.
+        price_increment : Price
+            The minimum price increment (tick size) for the matching core.
 
         Returns
         -------
@@ -270,21 +276,22 @@ cdef class OrderEmulator(Actor):
         Raises
         ------
         RuntimeError
-            If a matching core for the given `instrument` already exists.
+            If a matching core for the given `instrument_id` already exists.
 
         """
-        if instrument.id in self._matching_cores:
-            raise RuntimeError(f"A matching core already exists for {instrument.id}.")
+        if instrument_id in self._matching_cores:
+            raise RuntimeError(f"A matching core already exists for {instrument_id}.")
 
         matching_core = MatchingCore(
-            instrument=instrument,
+            instrument_id=instrument_id,
+            price_increment=price_increment,
             trigger_stop_order=self._trigger_stop_order,
             fill_market_order=self._fill_market_order,
             fill_limit_order=self._fill_limit_order,
         )
 
-        self._matching_cores[instrument.id] = matching_core
-        self._log.debug(f"Created matching core for {instrument.id.to_str()}.")
+        self._matching_cores[instrument_id] = matching_core
+        self._log.debug(f"Created matching core for {instrument_id}.")
 
         return matching_core
 
@@ -305,14 +312,24 @@ cdef class OrderEmulator(Actor):
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            instrument = self.cache.instrument(trigger_instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot emulate order: no trigger instrument for {trigger_instrument_id}.",
-                )
-                self._cancel_order(matching_core=None, order=order)
-                return
-            matching_core = self.create_matching_core(instrument)
+            if trigger_instrument_id.is_synthetic():
+                synthetic = self.cache.synthetic(trigger_instrument_id)
+                if synthetic is None:
+                    self._log.error(
+                        f"Cannot emulate order: no synthetic instrument {trigger_instrument_id} for trigger.",
+                    )
+                    self._cancel_order(matching_core=None, order=order)
+                    return
+                matching_core = self.create_matching_core(synthetic.id, synthetic.price_increment)
+            else:
+                instrument = self.cache.instrument(trigger_instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot emulate order: no instrument {trigger_instrument_id} for trigger.",
+                    )
+                    self._cancel_order(matching_core=None, order=order)
+                    return
+                matching_core = self.create_matching_core(instrument.id, instrument.price_increment)
 
         # Update trailing stop
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
@@ -874,26 +891,19 @@ cdef class OrderEmulator(Actor):
                 self._update_trailing_stop_order(matching_core, order)
 
     cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order):
-        cdef Instrument instrument = self.cache.instrument(order.instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot update order: no instrument for {order.instrument_id}.",
-            )
-            return
-
         # TODO(cs): Improve efficiency of this ---------------------------------
         cdef Price bid = None
         cdef Price ask = None
         cdef Price last = None
         if matching_core.is_bid_initialized:
-            bid = Price.from_raw_c(matching_core.bid_raw, instrument.price_precision)
+            bid = Price.from_raw_c(matching_core.bid_raw, matching_core.price_precision)
         if matching_core.is_ask_initialized:
-            ask = Price.from_raw_c(matching_core.ask_raw, instrument.price_precision)
+            ask = Price.from_raw_c(matching_core.ask_raw, matching_core.price_precision)
         if matching_core.is_last_initialized:
-            last = Price.from_raw_c(matching_core.last_raw, instrument.price_precision)
+            last = Price.from_raw_c(matching_core.last_raw, matching_core.price_precision)
 
-        cdef QuoteTick quote_tick = self.cache.quote_tick(instrument.id)
-        cdef TradeTick trade_tick = self.cache.trade_tick(instrument.id)
+        cdef QuoteTick quote_tick = self.cache.quote_tick(matching_core.instrument_id)
+        cdef TradeTick trade_tick = self.cache.trade_tick(matching_core.instrument_id)
         if bid is None and quote_tick is not None:
             bid = quote_tick.bid
         if ask is None and quote_tick is not None:
@@ -905,7 +915,7 @@ cdef class OrderEmulator(Actor):
         cdef tuple output
         try:
             output = TrailingStopCalculator.calculate(
-                instrument=instrument,
+                price_increment=matching_core.price_increment,
                 order=order,
                 bid=bid,
                 ask=ask,
