@@ -15,7 +15,11 @@
 
 #![allow(dead_code)] // Allow for development
 
+use std::hash::{Hash, Hasher};
+
+use pyo3::prelude::*;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
@@ -24,6 +28,9 @@ use crate::{
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
+#[repr(C)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[pyclass]
 pub struct CurrencyPair {
     pub id: InstrumentId,
     pub native_symbol: Symbol,
@@ -88,6 +95,20 @@ impl CurrencyPair {
     }
 }
 
+impl PartialEq<Self> for CurrencyPair {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for CurrencyPair {}
+
+impl Hash for CurrencyPair {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl Instrument for CurrencyPair {
     fn id(&self) -> &InstrumentId {
         &self.id
@@ -113,7 +134,7 @@ impl Instrument for CurrencyPair {
         Some(&self.base_currency)
     }
 
-    fn cost_currency(&self) -> &Currency {
+    fn settlement_currency(&self) -> &Currency {
         &self.quote_currency
     }
 

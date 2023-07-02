@@ -13,11 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+};
 
 use anyhow;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::time::UnixNanos;
+use pyo3::prelude::*;
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
@@ -26,6 +30,8 @@ use crate::{
 
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
+#[derive(Clone, Debug)]
+#[pyclass]
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
     pub price_precision: u8,
@@ -125,6 +131,20 @@ impl SyntheticInstrument {
                 "Failed to evaluate formula to a floating point number"
             )),
         }
+    }
+}
+
+impl PartialEq<Self> for SyntheticInstrument {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for SyntheticInstrument {}
+
+impl Hash for SyntheticInstrument {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 
