@@ -29,8 +29,9 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
@@ -46,7 +47,7 @@ cdef class OrderEmulator(Actor):
     cdef set _monitored_positions
 
     cpdef void execute(self, TradingCommand command)
-    cpdef MatchingCore create_matching_core(self, Instrument instrument)
+    cpdef MatchingCore create_matching_core(self, InstrumentId instrument_id, Price price_increment)
     cdef void _handle_submit_order(self, SubmitOrder command)
     cdef void _handle_submit_order_list(self, SubmitOrderList command)
     cdef void _handle_modify_order(self, ModifyOrder command)

@@ -18,6 +18,7 @@ from typing import Optional
 
 import msgspec
 
+from libc.math cimport pow
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -200,7 +201,7 @@ cdef class Instrument(Data):
         self.quote_currency = quote_currency
         self.is_inverse = is_inverse
         self.price_precision = price_precision
-        self.price_increment = price_increment
+        self.price_increment = price_increment or Price(pow(10.0, -price_precision), price_precision)
         self.tick_scheme_name = tick_scheme_name
         self.size_precision = size_precision
         self.size_increment = size_increment

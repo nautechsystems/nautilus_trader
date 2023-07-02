@@ -1194,7 +1194,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
     # - Assumes `formula_ptr` is a valid C string pointer.
     SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
-                                                     uint8_t precision,
+                                                     uint8_t price_precision,
                                                      const char *components_ptr,
                                                      const char *formula_ptr,
                                                      uint64_t ts_event,
@@ -1204,7 +1204,9 @@ cdef extern from "../includes/model.h":
 
     InstrumentId_t synthetic_instrument_id(const SyntheticInstrument_API *synth);
 
-    uint8_t synthetic_instrument_precision(const SyntheticInstrument_API *synth);
+    uint8_t synthetic_instrument_price_precision(const SyntheticInstrument_API *synth);
+
+    Price_t synthetic_instrument_price_increment(const SyntheticInstrument_API *synth);
 
     const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
 
