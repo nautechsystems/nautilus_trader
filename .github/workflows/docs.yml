@@ -35,13 +35,12 @@ jobs:
         uses: tj-actions/branch-names@v6
 
       - name: Build Python docs
-        run: make docs
+        run: make docs-python
 
       - name: Build Rust docs
         run: |
-          cd nautilus_core
-          RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps
-          cp -r target/doc ../docs/build/html/core
+          make docs-rust
+          cp -r nautilus_core/target/doc docs/build/html/core
 
       - name: Add nojeckyll
         run: touch docs/build/html/.nojekyll
