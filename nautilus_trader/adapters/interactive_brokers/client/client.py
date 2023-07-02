@@ -286,7 +286,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._accounts = set()
 
     def _stop(self):
-        if not self.registered_nautilus_clients == set():
+        if self.registered_nautilus_clients != set():
             self._log.warning(
                 f"Any registered Clients from {self.registered_nautilus_clients} will disconnect.",
             )
@@ -322,7 +322,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # 2104, 2158, 2106: Data connectivity restored
         # 10197: No market data during competing live session
-        if not req_id == -1:
+        if req_id != -1:
             # TODO: Order events & Cleanup/split the Error method
             # Error 10147 req_id=195: OrderId 195 that needs to be cancelled is not found.  # Send cancel event
             # Warning 202 req_id=2078: Order Canceled - reason:  # Send cancel event
@@ -354,7 +354,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             elif request := self.requests.get(req_id=req_id):
                 self._log.warning(f"{error_code}: {error_string}, {request}")
                 self._end_request(req_id, success=False)
-            elif req_id in self._order_id_to_order.keys():
+            elif req_id in self._order_id_to_order:
                 if error_code == 321:
                     # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
                     order = self._order_id_to_order.get(req_id, None)
@@ -924,14 +924,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
 
         name = f"execDetails-{execution.acctNumber}"
-        if handler := self._event_subscriptions.get(name, None):
-            if cache.get("commission_report"):
-                handler(
-                    order_ref=cache["order_ref"],
-                    execution=cache["execution"],
-                    commission_report=cache["commission_report"],
-                )
-                cache.pop(execution.execId, None)
+        if (handler := self._event_subscriptions.get(name, None)) and cache.get(
+            "commission_report",
+        ):
+            handler(
+                order_ref=cache["order_ref"],
+                execution=cache["execution"],
+                commission_report=cache["commission_report"],
+            )
+            cache.pop(execution.execId, None)
 
     def commissionReport(  # : Override the EWrapper
         self,

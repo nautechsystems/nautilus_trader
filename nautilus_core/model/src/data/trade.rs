@@ -16,10 +16,16 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
+    str::FromStr,
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{
+    exceptions::{PyKeyError, PyValueError},
+    prelude::*,
+    pyclass::CompareOp,
+    types::PyDict,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -33,12 +39,19 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct TradeTick {
+    /// The trade instrument ID.
     pub instrument_id: InstrumentId,
+    /// The traded price.
     pub price: Price,
+    /// The traded size.
     pub size: Quantity,
+    /// The trade aggressor side.
     pub aggressor_side: AggressorSide,
+    /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
+    /// The UNIX timestamp (nanoseconds) when the tick event occurred.
     pub ts_event: UnixNanos,
+    ///  The UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -169,7 +182,7 @@ impl TradeTick {
     }
 
     /// Return a dictionary representation of the object.
-    fn to_dict(&self) -> Py<PyDict> {
+    pub fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -187,6 +200,59 @@ impl TradeTick {
 
             dict.into_py(py)
         })
+    }
+
+    #[staticmethod]
+    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
+        // Extract values from dictionary
+        let instrument_id: String = values
+            .get_item("instrument_id")
+            .ok_or(PyKeyError::new_err("'instrument_id' not found in `values`"))?
+            .extract()?;
+        let price: String = values
+            .get_item("price")
+            .ok_or(PyKeyError::new_err("'price' not found in `values`"))?
+            .extract()?;
+        let size: String = values
+            .get_item("size")
+            .ok_or(PyKeyError::new_err("'size' not found in `values`"))?
+            .extract()?;
+        let aggressor_side: String = values
+            .get_item("aggressor_side")
+            .ok_or(PyKeyError::new_err(
+                "'aggressor_side' not found in `values`",
+            ))?
+            .extract()?;
+        let trade_id: String = values
+            .get_item("trade_id")
+            .ok_or(PyKeyError::new_err("'trade_id' not found in `values`"))?
+            .extract()?;
+        let ts_event: UnixNanos = values
+            .get_item("ts_event")
+            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
+            .extract()?;
+        let ts_init: UnixNanos = values
+            .get_item("ts_init")
+            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
+            .extract()?;
+
+        let instrument_id = InstrumentId::from_str(&instrument_id)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let price = Price::from_str(&price).map_err(PyValueError::new_err)?;
+        let size = Quantity::from_str(&size).map_err(PyValueError::new_err)?;
+        let aggressor_side = AggressorSide::from_str(&aggressor_side)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let trade_id = TradeId::new(&trade_id);
+
+        Ok(Self::new(
+            instrument_id,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_init,
+        ))
     }
 
     #[staticmethod]
@@ -231,6 +297,9 @@ impl TradeTick {
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_core::serialization::Serializable;
+    use pyo3::Python;
+
     use crate::{
         data::trade::TradeTick,
         enums::AggressorSide,
@@ -238,20 +307,53 @@ mod tests {
         types::{price::Price, quantity::Quantity},
     };
 
-    #[test]
-    fn test_to_string() {
-        let tick = TradeTick {
+    fn create_stub_trade_tick() -> TradeTick {
+        TradeTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789"),
-            ts_event: 0,
+            ts_event: 1,
             ts_init: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn test_to_string() {
+        let tick = create_stub_trade_tick();
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,1"
         );
+    }
+
+    #[test]
+    fn test_to_dict_and_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let tick = create_stub_trade_tick();
+
+        Python::with_gil(|py| {
+            let dict = tick.as_dict();
+            let parsed = TradeTick::from_dict(dict.as_ref(py)).unwrap();
+            assert_eq!(parsed, tick);
+        });
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let tick = create_stub_trade_tick();
+        let serialized = tick.as_json_bytes().unwrap();
+        let deserialized = TradeTick::from_json_bytes(serialized).unwrap();
+        assert_eq!(deserialized, tick);
+    }
+
+    #[test]
+    fn test_msgpack_serialization() {
+        let tick = create_stub_trade_tick();
+        let serialized = tick.as_msgpack_bytes().unwrap();
+        let deserialized = TradeTick::from_msgpack_bytes(serialized).unwrap();
+        assert_eq!(deserialized, tick);
     }
 }

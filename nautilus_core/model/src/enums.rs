@@ -31,7 +31,19 @@ pub trait FromU8 {
 /// An account type provided by a trading venue or broker.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -48,7 +60,19 @@ pub enum AccountType {
 /// An aggregation source for derived data.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -63,7 +87,19 @@ pub enum AggregationSource {
 /// The side for the aggressing order of a trade in a market.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -80,7 +116,19 @@ pub enum AggressorSide {
 /// A broad financial market asset class.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -110,7 +158,19 @@ pub enum AssetClass {
 /// The asset type for a financial market product.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -135,7 +195,19 @@ pub enum AssetType {
 /// The aggregation method through which a bar is generated and closed.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -178,7 +250,19 @@ pub enum BarAggregation {
 /// The type of order book action for an order book event.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -209,7 +293,19 @@ impl FromU8 for BookAction {
 /// The order book type, representing the type of levels granularity and delta updating heuristics.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -240,7 +336,19 @@ impl FromU8 for BookType {
 /// [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -259,7 +367,19 @@ pub enum ContingencyType {
 /// The broad currency type.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -274,7 +394,19 @@ pub enum CurrencyType {
 /// The type of event for an instrument close.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -289,7 +421,19 @@ pub enum InstrumentCloseType {
 /// The liqudity side for a trade in a financial market.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -307,7 +451,19 @@ pub enum LiquiditySide {
 /// The status of an individual market on a trading venue.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -328,7 +484,19 @@ pub enum MarketStatus {
 /// The order management system (OMS) type for a trading venue or trading strategy.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -347,7 +515,19 @@ pub enum OmsType {
 /// The kind of options contract.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -362,7 +542,19 @@ pub enum OptionKind {
 /// The order side for a specific order, or action related to orders.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -411,7 +603,19 @@ impl FromU8 for OrderSide {
 ///  - `FILLED`
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -446,7 +650,19 @@ pub enum OrderStatus {
 /// The type of order.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -475,7 +691,19 @@ pub enum OrderType {
 /// The market side for a specific position, or action related to positions.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -495,7 +723,19 @@ pub enum PositionSide {
 /// The type of price for an instrument in a financial market.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -514,7 +754,19 @@ pub enum PriceType {
 /// The 'Time in Force' instruction for an order in the financial market.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -539,7 +791,19 @@ pub enum TimeInForce {
 /// The trading state for a node.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -556,7 +820,19 @@ pub enum TradingState {
 /// The trailing offset type for an order type which specifies a trailing stop/trigger or limit price.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -577,7 +853,19 @@ pub enum TrailingOffsetType {
 /// The trigger type for the stop/trigger price of an order.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumString,
+    Display,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]

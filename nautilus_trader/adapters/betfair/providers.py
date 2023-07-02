@@ -29,6 +29,7 @@ from betfair_parser.spec.navigation import flatten_nav_tree
 from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
@@ -217,6 +218,7 @@ def market_catalog_to_instruments(
             selection_name=runner.runner_name,
             selection_handicap=parse_handicap(runner.handicap),
             currency=currency,
+            tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             ts_event=time.time_ns(),
             ts_init=time.time_ns(),
             info=msgspec.json.decode(bf_encode(market_catalog).decode()),
@@ -251,6 +253,7 @@ def market_definition_to_instruments(
             selection_id=str(runner.selection_id or runner.id),
             selection_name=runner.name or "",
             selection_handicap=parse_handicap(runner.hc),
+            tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             currency=currency,
             ts_event=time.time_ns(),
             ts_init=time.time_ns(),

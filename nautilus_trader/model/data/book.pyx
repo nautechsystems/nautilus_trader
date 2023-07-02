@@ -229,8 +229,8 @@ cdef class OrderBookDelta(Data):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     sequence : uint64_t, default 0
         The unique sequence number for the update. If default 0 then will increment the `sequence`.
-    flags : uint8_t, default 0
-        The unique sequence number for the update. If default 0 then will increment the `sequence`.
+    flags : uint8_t, default 0 (no flags)
+        A combination of packet end with matching engine status.
     """
 
     def __init__(

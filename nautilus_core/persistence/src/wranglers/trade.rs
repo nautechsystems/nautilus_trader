@@ -71,19 +71,47 @@ impl TradeTickDataWrangler {
         // Convert DataFrame to Series per column
         let data: DataFrame = data.into();
         let price: &Series = data.column("price").unwrap();
-        let size: &Series = data.column("quantity").unwrap(); // TODO: Change to 'size'
-        let aggressor_side: &Series = data.column("side").unwrap();
-        let trade_id: &Series = data.column("trade_id").unwrap();
+        let size: &Series = data.column("size").unwrap();
+        let aggressor_side: &Series = data.column("aggressor_side").unwrap();
+        let trade_id: Series = data
+            .column("trade_id")
+            .unwrap()
+            .cast(&DataType::Utf8)
+            .unwrap();
         let ts_event: Series = data
-            .column("timestamp")
+            .column("ts_event")
             .unwrap()
             .datetime()
             .unwrap()
-            .cast(&DataType::Int64)
+            .cast(&DataType::UInt64)
             .unwrap()
             .timestamp(TimeUnit::Nanoseconds)
             .unwrap()
+            .cast(&DataType::UInt64)
+            .unwrap()
             .into_series();
+        let ts_init: Series = match data.column("ts_init") {
+            Ok(column) => column
+                .datetime()
+                .unwrap()
+                .cast(&DataType::UInt64)
+                .unwrap()
+                .timestamp(TimeUnit::Nanoseconds)
+                .unwrap()
+                .cast(&DataType::UInt64)
+                .unwrap()
+                .into_series(),
+            Err(_) => {
+                let ts_event_plus_delta: Series = ts_event
+                    .u64()
+                    .unwrap()
+                    .into_iter()
+                    .map(|ts| ts.map(|ts| ts + ts_init_delta))
+                    .collect::<ChunkedArray<UInt64Type>>()
+                    .into_series();
+                ts_event_plus_delta
+            }
+        };
 
         // Convert Series to Rust native types
         let price_values: Vec<f64> = price
@@ -110,8 +138,14 @@ impl TradeTickDataWrangler {
             .into_iter()
             .map(|val| TradeId::from_str(val.unwrap()).unwrap())
             .collect();
-        let ts_event_values: Vec<i64> = ts_event
-            .i64()
+        let ts_event_values: Vec<u64> = ts_event
+            .u64()
+            .unwrap()
+            .into_iter()
+            .map(Option::unwrap)
+            .collect();
+        let ts_init_values: Vec<u64> = ts_init
+            .u64()
             .unwrap()
             .into_iter()
             .map(Option::unwrap)
@@ -124,17 +158,20 @@ impl TradeTickDataWrangler {
             .zip(aggressor_side_values.into_iter())
             .zip(trade_id_values.into_iter())
             .zip(ts_event_values.into_iter())
-            .map(|((((price, size), aggressor_side), trade_id), ts_event)| {
-                TradeTick::new(
-                    self.instrument_id.clone(),
-                    Price::new(price, self.price_precision),
-                    Quantity::new(size, self.size_precision),
-                    aggressor_side,
-                    trade_id,
-                    ts_event as UnixNanos,
-                    (ts_event as u64 + ts_init_delta) as UnixNanos,
-                )
-            })
+            .zip(ts_init_values.into_iter())
+            .map(
+                |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| {
+                    TradeTick::new(
+                        self.instrument_id.clone(),
+                        Price::new(price, self.price_precision),
+                        Quantity::new(size, self.size_precision),
+                        aggressor_side,
+                        trade_id,
+                        ts_event as UnixNanos,
+                        ts_init as UnixNanos,
+                    )
+                },
+            )
             .collect();
 
         Ok(ticks)

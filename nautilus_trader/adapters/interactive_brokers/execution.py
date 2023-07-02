@@ -286,10 +286,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         price = (
             None if ib_order.lmtPrice == UNSET_DOUBLE else Price.from_str(str(ib_order.lmtPrice))
         )
-        if ib_order.tif == "GTD":
-            expire_time = timestring_to_timestamp(ib_order.goodTillDate)
-        else:
-            expire_time = None
+        expire_time = (
+            timestring_to_timestamp(ib_order.goodTillDate) if ib_order.tif == "GTD" else None
+        )
 
         # TODO: Testing for advanced Open orders
         order_status = OrderStatusReport(
@@ -483,19 +482,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if value := getattr(order, key, None):
                 setattr(ib_order, field, fn(value))
 
-        if isinstance(order, TrailingStopLimitOrder) or isinstance(order, TrailingStopMarketOrder):
+        if isinstance(order, (TrailingStopLimitOrder, TrailingStopMarketOrder)):
             ib_order.auxPrice = float(order.trailing_offset)
             if order.trigger_price:
                 ib_order.trailStopPrice = order.trigger_price.as_double()
                 ib_order.triggerMethod = map_trigger_method[order.trigger_type]
         elif (
-            isinstance(order, MarketIfTouchedOrder)
-            or isinstance(order, LimitIfTouchedOrder)
-            or isinstance(order, StopLimitOrder)
-            or isinstance(order, StopMarketOrder)
-        ):
-            if order.trigger_price:
-                ib_order.auxPrice = order.trigger_price.as_double()
+            isinstance(
+                order,
+                (MarketIfTouchedOrder, LimitIfTouchedOrder, StopLimitOrder, StopMarketOrder),
+            )
+        ) and order.trigger_price:
+            ib_order.auxPrice = order.trigger_price.as_double()
 
         details = self.instrument_provider.contract_details[order.instrument_id.value]
         ib_order.contract = details.contract
@@ -637,7 +635,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         except ValueError:
             self._account_summary[currency][tag] = value
 
-        for currency in self._account_summary.keys():
+        for currency in self._account_summary:
             if not currency:
                 continue
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():

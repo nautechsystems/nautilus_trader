@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 from typing import Optional
 
 import pandas as pd
@@ -319,8 +320,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     )
             return None  # Error now handled
 
-        if not binance_order:
+        if not binance_order or (binance_order.origQty and Decimal(binance_order.origQty) == 0):
             # Cannot proceed to generating report
+            self._log.error(
+                f"Cannot generate `OrderStatusReport` for {client_order_id=!r}, {venue_order_id=!r}: "
+                "order not found.",
+            )
             return None
 
         report: OrderStatusReport = binance_order.parse_to_order_status_report(
@@ -399,6 +404,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             #         continue
             #     if end is not None and timestamp > end:
             #         continue
+            if order.origQty and Decimal(order.origQty) == 0:
+                continue  # Cannot parse zero quantity order (filter for Binance)
             report = order.parse_to_order_status_report(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(order.symbol),

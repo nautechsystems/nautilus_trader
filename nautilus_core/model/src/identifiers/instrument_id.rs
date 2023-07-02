@@ -29,7 +29,7 @@ use thiserror;
 use crate::identifiers::{symbol::Symbol, venue::Venue};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Default)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,

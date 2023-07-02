@@ -13,12 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
 import polars as pl
 from fsspec.utils import pathlib
 
-from nautilus_trader.persistence.loaders import TardisTradeDataLoader
 from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
+from nautilus_trader.persistence.loaders_v2 import TradeTickDataFrameLoader
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -27,6 +26,7 @@ from tests import TESTS_PACKAGE_ROOT
 
 TEST_DATA_DIR = pathlib.Path(TESTS_PACKAGE_ROOT).joinpath("test_data")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 def test_quote_tick_data_wrangler() -> None:
@@ -47,15 +47,15 @@ def test_quote_tick_data_wrangler() -> None:
 
 def test_trade_tick_data_wrangler() -> None:
     # Arrange
-    path = TEST_DATA_DIR / "tardis_trades.csv"
-    tick_data: pd.DataFrame = TardisTradeDataLoader.load(path)
+    path = TEST_DATA_DIR / "binance-ethusdt-trades.csv"
+    tick_data: pl.DataFrame = TradeTickDataFrameLoader.read_csv(path)
 
-    wrangler = TradeTickDataWrangler(instrument=AUDUSD_SIM)
+    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
 
     # Act
-    ticks = wrangler.process_from_pandas(tick_data)
+    ticks = wrangler.process(tick_data)
 
     # Assert
-    assert len(ticks) == 9999
-    assert str(ticks[0]) == "AUD/USD.SIM,9682.00000,0,BUYER,42377944,1582329602418379000"
-    assert str(ticks[-1]) == "AUD/USD.SIM,9666.84000,0,SELLER,42387942,1582337147852384000"
+    assert len(ticks) == 69806
+    assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000"
+    assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000"

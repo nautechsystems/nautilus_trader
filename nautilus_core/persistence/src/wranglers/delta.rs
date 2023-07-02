@@ -21,7 +21,12 @@ use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
-use polars::{prelude::DataFrame, series::Series};
+use polars::{
+    prelude::{
+        ChunkCast, ChunkedArray, DataFrame, DataType, TemporalMethods, TimeUnit, UInt64Type,
+    },
+    series::{IntoSeries, Series},
+};
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
 
@@ -58,7 +63,12 @@ impl OrderBookDeltaDataWrangler {
         self.size_precision
     }
 
-    fn process(&self, _py: Python, data: PyDataFrame) -> PyResult<Vec<OrderBookDelta>> {
+    fn process(
+        &self,
+        _py: Python,
+        data: PyDataFrame,
+        ts_init_delta: u64,
+    ) -> PyResult<Vec<OrderBookDelta>> {
         // Convert DataFrame to Series per column
         let data: DataFrame = data.into();
 
@@ -70,8 +80,40 @@ impl OrderBookDeltaDataWrangler {
         let order_id: &Series = data.column("order_id").unwrap();
         let flags: &Series = data.column("flags").unwrap();
         let sequence: &Series = data.column("sequence").unwrap();
-        let ts_event: &Series = data.column("ts_event").unwrap();
-        let ts_init: &Series = data.column("ts_init").unwrap();
+        let ts_event: Series = data
+            .column("ts_event")
+            .unwrap()
+            .datetime()
+            .unwrap()
+            .cast(&DataType::UInt64)
+            .unwrap()
+            .timestamp(TimeUnit::Nanoseconds)
+            .unwrap()
+            .cast(&DataType::UInt64)
+            .unwrap()
+            .into_series();
+        let ts_init: Series = match data.column("ts_init") {
+            Ok(column) => column
+                .datetime()
+                .unwrap()
+                .cast(&DataType::UInt64)
+                .unwrap()
+                .timestamp(TimeUnit::Nanoseconds)
+                .unwrap()
+                .cast(&DataType::UInt64)
+                .unwrap()
+                .into_series(),
+            Err(_) => {
+                let ts_event_plus_delta: Series = ts_event
+                    .u64()
+                    .unwrap()
+                    .into_iter()
+                    .map(|ts| ts.map(|ts| ts + ts_init_delta))
+                    .collect::<ChunkedArray<UInt64Type>>()
+                    .into_series();
+                ts_event_plus_delta
+            }
+        };
 
         // Extract values from Series as Rust native types
         let action_values: Vec<u8> = action

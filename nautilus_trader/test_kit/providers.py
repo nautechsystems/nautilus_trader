@@ -25,6 +25,7 @@ import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -481,6 +482,7 @@ class TestInstrumentProvider:
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             ts_event=0,
             ts_init=0,
         )
@@ -657,7 +659,10 @@ class TestDataGenerator:
         quantity = pd.Series(default_quantity + quantity_diffs).astype(int)
 
         index = TestDataGenerator.generate_time_series_index(start_timestamp, max_freq, count)
-        return pd.DataFrame(index=index, data={"price": prices.values, "quantity": quantity.values})
+        return pd.DataFrame(
+            index=index,
+            data={"price": prices.to_numpy(), "quantity": quantity.to_numpy()},
+        )
 
     @staticmethod
     def generate_quote_ticks(

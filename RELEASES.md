@@ -9,7 +9,8 @@ None
 None
 
 ### Fixes
-None
+- Fixed parsing of `TriggerType` for Binance, thanks for reporting @davidblom603
+- Fixed parsing of invalid Binance orders in execution reports, thanks for reporting @graceyangfan
 
 ---
 

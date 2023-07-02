@@ -13,32 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, io::Cursor, vec::IntoIter};
+use std::{collections::HashMap, vec::IntoIter};
 
 use compare::Compare;
-use datafusion::{
-    arrow::{datatypes::SchemaRef, ipc::writer::StreamWriter, record_batch::RecordBatch},
-    error::Result,
-    physical_plan::SendableRecordBatchStream,
-    prelude::*,
-};
+use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
 use futures::{executor::block_on, Stream, StreamExt};
-use nautilus_core::cvec::CVec;
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data,
 };
-use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
-    prelude::*,
-    types::{PyBytes, PyCapsule},
-};
+use pyo3::prelude::*;
 use pyo3_asyncio::tokio::get_runtime;
 
+use super::query::DataQueryResult;
 use crate::{
     kmerge_batch::{KMerge, PeekElementBatchStream},
     parquet::{
-        ArrowSchemaProvider, DataStreamingError, DecodeFromRecordBatch, EncodeToRecordBatch,
-        NautilusDataType, WriteStream,
+        DataStreamingError, DecodeFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
+        WriteStream,
     },
 };
 
@@ -59,6 +50,18 @@ where
     }
 }
 
+pub struct QueryResult<T = Data> {
+    data: Box<dyn Stream<Item = Vec<T>> + Unpin>,
+}
+
+impl Iterator for QueryResult {
+    type Item = Vec<Data>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        block_on(self.data.next())
+    }
+}
+
 /// Provides a DataFusion session and registers DataFusion queries.
 ///
 /// The session is used to register data sources and make queries on them. A
@@ -68,7 +71,7 @@ where
 pub struct DataBackendSession {
     session_ctx: SessionContext,
     batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
-    chunk_size: usize,
+    pub chunk_size: usize,
 }
 
 impl DataBackendSession {
@@ -182,55 +185,14 @@ impl DataBackendSession {
             data: Box::new(kmerge.chunks(self.chunk_size)),
         }
     }
-
-    fn record_batches_to_pybytes(
-        batches: Vec<RecordBatch>,
-        schema: SchemaRef,
-    ) -> PyResult<Py<PyBytes>> {
-        // Create a cursor to write to a byte array in memory
-        let mut cursor = Cursor::new(Vec::new());
-
-        {
-            let mut writer = StreamWriter::try_new(&mut cursor, &schema)
-                .map_err(|err| PyErr::new::<PyRuntimeError, _>(format!("{}", err)))?;
-            for batch in batches {
-                writer
-                    .write(&batch)
-                    .map_err(|err| PyErr::new::<PyRuntimeError, _>(format!("{}", err)))?;
-            }
-
-            writer
-                .finish()
-                .map_err(|err| PyErr::new::<PyRuntimeError, _>(format!("{}", err)))?;
-        }
-
-        let buffer = cursor.into_inner();
-
-        Python::with_gil(|py| {
-            let pybytes = PyBytes::new(py, &buffer);
-            Ok(pybytes.into())
-        })
-    }
 }
-
-pub struct QueryResult<T = Data> {
-    data: Box<dyn Stream<Item = Vec<T>> + Unpin>,
-}
-
-impl Iterator for QueryResult {
-    type Item = Vec<Data>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        block_on(self.data.next())
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-/// Python API
-////////////////////////////////////////////////////////////////////////////////
 
 // Note: Intended to be used on a single python thread
 unsafe impl Send for DataBackendSession {}
+
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
 
 #[pymethods]
 impl DataBackendSession {
@@ -241,114 +203,6 @@ impl DataBackendSession {
         // Initialize runtime here
         get_runtime();
         Self::new(chunk_size)
-    }
-
-    pub fn order_book_deltas_to_batches_bytes(
-        _slf: PyRefMut<'_, Self>,
-        data: Vec<OrderBookDelta>,
-    ) -> PyResult<Py<PyBytes>> {
-        if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("Data vector was empty."));
-        }
-
-        // Take first element and extract metadata
-        let first = data.first().unwrap();
-        let metadata = OrderBookDelta::get_metadata(
-            &first.instrument_id,
-            first.order.price.precision,
-            first.order.size.precision,
-        );
-
-        // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
-            .into_iter()
-            .map(|delta| OrderBookDelta::encode_batch(&metadata, &[delta]))
-            .collect();
-
-        let schema = OrderBookDelta::get_schema(metadata);
-
-        DataBackendSession::record_batches_to_pybytes(batches, schema)
-    }
-
-    pub fn quote_ticks_to_batches_bytes(
-        _slf: PyRefMut<'_, Self>,
-        data: Vec<QuoteTick>,
-    ) -> PyResult<Py<PyBytes>> {
-        if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("Data vector was empty."));
-        }
-
-        // Take first element and extract metadata
-        let first = data.first().unwrap();
-        let metadata = QuoteTick::get_metadata(
-            &first.instrument_id,
-            first.bid.precision,
-            first.bid_size.precision,
-        );
-
-        // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
-            .into_iter()
-            .map(|quote| QuoteTick::encode_batch(&metadata, &[quote]))
-            .collect();
-
-        let schema = QuoteTick::get_schema(metadata);
-
-        DataBackendSession::record_batches_to_pybytes(batches, schema)
-    }
-
-    pub fn trade_ticks_to_batches_bytes(
-        _slf: PyRefMut<'_, Self>,
-        data: Vec<TradeTick>,
-    ) -> PyResult<Py<PyBytes>> {
-        if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("Data vector was empty."));
-        }
-
-        // Take first element and extract metadata
-        let first = data.first().unwrap();
-        let metadata = TradeTick::get_metadata(
-            &first.instrument_id,
-            first.price.precision,
-            first.size.precision,
-        );
-
-        // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
-            .into_iter()
-            .map(|trade| TradeTick::encode_batch(&metadata, &[trade]))
-            .collect();
-
-        let schema = TradeTick::get_schema(metadata);
-
-        DataBackendSession::record_batches_to_pybytes(batches, schema)
-    }
-
-    pub fn bars_to_batches_bytes(
-        _slf: PyRefMut<'_, Self>,
-        data: Vec<Bar>,
-    ) -> PyResult<Py<PyBytes>> {
-        if data.is_empty() {
-            return Err(PyErr::new::<PyValueError, _>("Data vector was empty."));
-        }
-
-        // Take first element and extract metadata
-        let first = data.first().unwrap();
-        let metadata = Bar::get_metadata(
-            &first.bar_type,
-            first.open.precision,
-            first.volume.precision,
-        );
-
-        // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
-            .into_iter()
-            .map(|bar| Bar::encode_batch(&metadata, &[bar]))
-            .collect();
-
-        let schema = TradeTick::get_schema(metadata);
-
-        DataBackendSession::record_batches_to_pybytes(batches, schema)
     }
 
     pub fn add_file(
@@ -444,61 +298,5 @@ impl DataBackendSession {
 
         let query_result = slf.get_query_result();
         DataQueryResult::new(query_result)
-    }
-}
-
-#[pyclass]
-pub struct DataQueryResult {
-    result: QueryResult<Data>,
-    chunk: Option<CVec>,
-}
-
-#[pymethods]
-impl DataQueryResult {
-    /// The reader implements an iterator.
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    /// Each iteration returns a chunk of values read from the parquet file.
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
-        slf.drop_chunk();
-
-        let rt = get_runtime();
-        let _guard = rt.enter();
-
-        slf.result.next().map(|chunk| {
-            let cvec = chunk.into();
-            Python::with_gil(|py| PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
-        })
-    }
-}
-
-// Note: Intended to be used on a single python thread
-unsafe impl Send for DataQueryResult {}
-
-impl DataQueryResult {
-    fn new(result: QueryResult<Data>) -> Self {
-        Self {
-            result,
-            chunk: None,
-        }
-    }
-
-    /// Chunks generated by iteration must be dropped after use, otherwise
-    /// it will leak memory. Current chunk is held by the reader,
-    /// drop if exists and reset the field.
-    fn drop_chunk(&mut self) {
-        if let Some(CVec { ptr, len, cap }) = self.chunk.take() {
-            let data: Vec<Data> =
-                unsafe { Vec::from_raw_parts(ptr.cast::<nautilus_model::data::Data>(), len, cap) };
-            drop(data);
-        }
-    }
-}
-
-impl Drop for DataQueryResult {
-    fn drop(&mut self) {
-        self.drop_chunk();
     }
 }

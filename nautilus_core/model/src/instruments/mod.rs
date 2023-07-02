@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod crypto_future;
+mod crypto_perpetual;
+mod currency_pair;
+mod equity;
+mod futures_contract;
+mod options_contract;
 mod synthetic;
 mod synthetic_api;
 
@@ -24,27 +30,27 @@ use crate::{
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
-pub struct Instrument {
-    pub id: InstrumentId,
-    pub native_symbol: Symbol,
-    pub asset_class: AssetClass,
-    pub asset_type: AssetType,
-    pub quote_currency: Currency,
-    pub base_currency: Option<Currency>,
-    pub cost_currency: Currency,
-    pub is_inverse: bool,
-    pub price_precision: u8,
-    pub size_precision: u8,
-    pub price_increment: Price,
-    pub size_increment: Quantity,
-    pub multiplier: Quantity,
-    pub lot_size: Option<Quantity>,
-    pub max_quantity: Option<Quantity>,
-    pub min_quantity: Option<Quantity>,
-    pub max_price: Option<Price>,
-    pub min_price: Option<Price>,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
+pub trait Instrument {
+    fn id(&self) -> &InstrumentId;
+    fn native_symbol(&self) -> &Symbol;
+    fn asset_class(&self) -> AssetClass;
+    fn asset_type(&self) -> AssetType;
+    fn base_currency(&self) -> Option<&Currency>;
+    fn quote_currency(&self) -> &Currency;
+    fn cost_currency(&self) -> &Currency;
+    fn is_inverse(&self) -> bool;
+    fn price_precision(&self) -> u8;
+    fn size_precision(&self) -> u8;
+    fn price_increment(&self) -> Price;
+    fn size_increment(&self) -> Quantity;
+    fn multiplier(&self) -> Quantity;
+    fn lot_size(&self) -> Option<Quantity>;
+    fn max_quantity(&self) -> Option<Quantity>;
+    fn min_quantity(&self) -> Option<Quantity>;
+    fn max_price(&self) -> Option<Price>;
+    fn min_price(&self) -> Option<Price>;
+    fn margin_init(&self) -> Decimal;
+    fn margin_maint(&self) -> Decimal;
+    fn maker_fee(&self) -> Decimal;
+    fn taker_fee(&self) -> Decimal;
 }

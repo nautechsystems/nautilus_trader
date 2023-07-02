@@ -497,6 +497,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"[RECV][RPT] {mass_status}.")
         self.report_count += 1
 
+        if mass_status is None:
+            self._log.error("Error reconciling mass status (was None).")
+            return False
+
         self._log.info(
             f"Reconciling ExecutionMassStatus for {mass_status.venue}.",
             color=LogColor.BLUE,
@@ -804,13 +808,12 @@ class LiveExecutionEngine(ExecutionEngine):
             tags = None
 
         # Check if filtering
-        if self.filter_unclaimed_external_orders:
-            if strategy_id.value == "EXTERNAL":
-                # Experimental: will call this out with a warning log for now
-                self._log.warning(
-                    f"Filtering report for unclaimed EXTERNAL order, {report}.",
-                )
-                return None  # No further reconciliation
+        if self.filter_unclaimed_external_orders and strategy_id.value == "EXTERNAL":
+            # Experimental: will call this out with a warning log for now
+            self._log.warning(
+                f"Filtering report for unclaimed EXTERNAL order, {report}.",
+            )
+            return None  # No further reconciliation
 
         initialized = OrderInitialized(
             trader_id=self.trader_id,

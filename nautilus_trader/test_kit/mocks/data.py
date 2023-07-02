@@ -15,7 +15,15 @@
 
 from pathlib import Path
 
+import pandas as pd
+
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.singleton import clear_singleton_instances
 from nautilus_trader.trading.filters import NewsEvent
@@ -52,32 +60,32 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
     from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
     venue = Venue("SIM")
-    TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)
-    # TODO - new tick loader
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)
+
+    def parse_csv_tick(df, instrument_id):
+        yield instrument
+        for r in df.to_numpy():
+            ts = pd.Timestamp(r[0], tz="UTC").value
+            tick = QuoteTick(
+                instrument_id=instrument_id,
+                bid=Price(r[1], 5),
+                ask=Price(r[2], 5),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            yield tick
+
+    clock = TestClock()
+    logger = Logger(clock)
+
+    instrument_provider = InstrumentProvider(
+        venue=venue,
+        logger=logger,
+    )
+    instrument_provider.add(instrument)
     raise NotImplementedError
-    # def parse_csv_tick(df, instrument_id):
-    #     yield instrument
-    #     for r in df.values:
-    #         ts = pd.Timestamp(r[0], tz="UTC").value
-    #         tick = QuoteTick(
-    #             instrument_id=instrument_id,
-    #             bid=Price(r[1], 5),
-    #             ask=Price(r[2], 5),
-    #             bid_size=Quantity.from_int(1_000_000),
-    #             ask_size=Quantity.from_int(1_000_000),
-    #             ts_event=ts,
-    #             ts_init=ts,
-    #         )
-    #         yield tick
-    #
-    # clock = TestClock()
-    # logger = Logger(clock)
-    #
-    # instrument_provider = InstrumentProvider(
-    #     venue=venue,
-    #     logger=logger,
-    # )
-    # instrument_provider.add(instrument)
     # process_files(
     #     glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
     #     reader=CSVReader(

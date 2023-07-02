@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -22,7 +21,12 @@ use std::{
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
+use pyo3::{
+    exceptions::{PyKeyError, PyValueError},
+    prelude::*,
+    pyclass::CompareOp,
+    types::PyDict,
+};
 use serde::{Deserialize, Serialize};
 use thiserror;
 
@@ -32,12 +36,17 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+/// Represents a bar aggregation specification including a step, aggregation
+/// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct BarSpecification {
+    /// The step for binning samples for bar aggregation.
     pub step: u64,
+    /// The type of bar aggregation.
     pub aggregation: BarAggregation,
+    /// The price type to use for aggregation.
     pub price_type: PriceType,
 }
 
@@ -47,34 +56,17 @@ impl Display for BarSpecification {
     }
 }
 
-impl PartialOrd for BarSpecification {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.to_string().partial_cmp(&other.to_string())
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.to_string().lt(&other.to_string())
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.to_string().le(&other.to_string())
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.to_string().gt(&other.to_string())
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.to_string().ge(&other.to_string())
-    }
-}
-
+/// Represents a bar type including the instrument ID, bar specification and
+/// aggregation source.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct BarType {
+    /// The bar types instrument ID.
     pub instrument_id: InstrumentId,
+    /// The bar types specification.
     pub spec: BarSpecification,
+    /// The bar types aggregation source.
     pub aggregation_source: AggregationSource,
 }
 
@@ -144,28 +136,6 @@ impl FromStr for BarType {
     }
 }
 
-impl PartialOrd for BarType {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.to_string().partial_cmp(&other.to_string())
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.to_string().lt(&other.to_string())
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.to_string().le(&other.to_string())
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.to_string().gt(&other.to_string())
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.to_string().ge(&other.to_string())
-    }
-}
-
 impl Display for BarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -176,17 +146,26 @@ impl Display for BarType {
     }
 }
 
+/// Represents an aggregated bar.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct Bar {
+    /// The bar type for this bar.
     pub bar_type: BarType,
+    /// The bars open price.
     pub open: Price,
+    /// The bars high price.
     pub high: Price,
+    /// The bars low price.
     pub low: Price,
+    /// The bars close price.
     pub close: Price,
+    /// The bars volume.
     pub volume: Quantity,
+    /// The UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
+    /// The UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
@@ -313,6 +292,74 @@ impl Bar {
         self.ts_init
     }
 
+    /// Return a dictionary representation of the object.
+    fn as_dict(&self) -> Py<PyDict> {
+        Python::with_gil(|py| {
+            let dict = PyDict::new(py);
+
+            dict.set_item("type", stringify!(Bar)).unwrap();
+            dict.set_item("bar_type", self.bar_type.to_string())
+                .unwrap();
+            dict.set_item("open", self.open.to_string()).unwrap();
+            dict.set_item("high", self.high.to_string()).unwrap();
+            dict.set_item("low", self.low.to_string()).unwrap();
+            dict.set_item("close", self.close.to_string()).unwrap();
+            dict.set_item("volume", self.volume.to_string()).unwrap();
+            dict.set_item("ts_event", self.ts_event).unwrap();
+            dict.set_item("ts_init", self.ts_init).unwrap();
+
+            dict.into_py(py)
+        })
+    }
+
+    #[staticmethod]
+    fn from_dict(values: &PyDict) -> PyResult<Self> {
+        let bar_type: String = values
+            .get_item("bar_type")
+            .ok_or(PyKeyError::new_err("'bar_type' not found in `values`"))?
+            .extract()?;
+        let open: String = values
+            .get_item("open")
+            .ok_or(PyKeyError::new_err("'open' not found in `values`"))?
+            .extract()?;
+        let high: String = values
+            .get_item("high")
+            .ok_or(PyKeyError::new_err("'high' not found in `values`"))?
+            .extract()?;
+        let low: String = values
+            .get_item("low")
+            .ok_or(PyKeyError::new_err("'low' not found in `values`"))?
+            .extract()?;
+        let close: String = values
+            .get_item("close")
+            .ok_or(PyKeyError::new_err("'close' not found in `values`"))?
+            .extract()?;
+        let volume: String = values
+            .get_item("volume")
+            .ok_or(PyKeyError::new_err("'volume' not found in `values`"))?
+            .extract()?;
+        let ts_event: UnixNanos = values
+            .get_item("ts_event")
+            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
+            .extract()?;
+        let ts_init: UnixNanos = values
+            .get_item("ts_init")
+            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
+            .extract()?;
+
+        let bar_type =
+            BarType::from_str(&bar_type).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let open = Price::from_str(&open).map_err(PyValueError::new_err)?;
+        let high = Price::from_str(&high).map_err(PyValueError::new_err)?;
+        let low = Price::from_str(&low).map_err(PyValueError::new_err)?;
+        let close = Price::from_str(&close).map_err(PyValueError::new_err)?;
+        let volume = Quantity::from_str(&volume).map_err(PyValueError::new_err)?;
+
+        Ok(Self::new(
+            bar_type, open, high, low, close, volume, ts_event, ts_init,
+        ))
+    }
+
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
         match Self::from_json_bytes(data) {
@@ -359,53 +406,31 @@ mod tests {
         identifiers::{symbol::Symbol, venue::Venue},
     };
 
-    #[test]
-    fn test_bar_spec_equality() {
-        let bar_spec1 = BarSpecification {
+    fn create_stub_bar() -> Bar {
+        let instrument_id = InstrumentId {
+            symbol: Symbol::new("AUDUSD"),
+            venue: Venue::new("SIM"),
+        };
+        let bar_spec = BarSpecification {
             step: 1,
             aggregation: BarAggregation::Minute,
             price_type: PriceType::Bid,
         };
-        let bar_spec2 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
+        let bar_type = BarType {
+            instrument_id,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
         };
-        let bar_spec3 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Ask,
-        };
-
-        assert_eq!(bar_spec1, bar_spec1);
-        assert_eq!(bar_spec1, bar_spec2);
-        assert_ne!(bar_spec1, bar_spec3);
-    }
-
-    #[test]
-    fn test_bar_spec_comparison() {
-        // # Arrange
-        let bar_spec1 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec2 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid,
-        };
-        let bar_spec3 = BarSpecification {
-            step: 1,
-            aggregation: BarAggregation::Minute,
-            price_type: PriceType::Ask,
-        };
-
-        // # Act, Assert
-        assert!(bar_spec1 <= bar_spec2);
-        assert!(bar_spec3 < bar_spec1);
-        assert!(bar_spec1 > bar_spec3);
-        assert!(bar_spec1 >= bar_spec3);
+        Bar {
+            bar_type: bar_type.clone(),
+            open: Price::from("1.00001"),
+            high: Price::from("1.00004"),
+            low: Price::from("1.00002"),
+            close: Price::from("1.00003"),
+            volume: Quantity::from("100000"),
+            ts_event: 0,
+            ts_init: 1,
+        }
     }
 
     #[test]
@@ -615,5 +640,34 @@ mod tests {
         };
         assert_eq!(bar1, bar1);
         assert_ne!(bar1, bar2);
+    }
+
+    #[test]
+    fn test_to_dict_and_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let bar = create_stub_bar();
+
+        Python::with_gil(|py| {
+            let dict = bar.as_dict();
+            let parsed = Bar::from_dict(dict.as_ref(py)).unwrap();
+            assert_eq!(parsed, bar);
+        });
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let bar = create_stub_bar();
+        let serialized = bar.as_json_bytes().unwrap();
+        let deserialized = Bar::from_json_bytes(serialized).unwrap();
+        assert_eq!(deserialized, bar);
+    }
+
+    #[test]
+    fn test_msgpack_serialization() {
+        let bar = create_stub_bar();
+        let serialized = bar.as_msgpack_bytes().unwrap();
+        let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
+        assert_eq!(deserialized, bar);
     }
 }

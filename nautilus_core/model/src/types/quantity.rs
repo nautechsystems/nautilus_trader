@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_qty_is_zero() {
-        let qty = Quantity::new(0.0, 8);
+        let qty = Quantity::zero(8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
