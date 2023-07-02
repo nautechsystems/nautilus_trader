@@ -17,7 +17,7 @@ jobs:
       - name: Set up Rust tool-chain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
           components: rustfmt, clippy
 
       # Python setup
@@ -38,9 +38,16 @@ jobs:
         id: branch-name
         uses: tj-actions/branch-names@v6
 
-      # Build docs
+      # Build Python docs
       - name: Build docs
         run: make docs
+
+      # Build Rust docs
+      - name: Build Rust docs
+        run: |
+          cd nautilus_core
+          RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps
+          cp -r target/doc ../docs/build/html/core
 
       # Add nojeckyll
       - name: Add nojeckyll
