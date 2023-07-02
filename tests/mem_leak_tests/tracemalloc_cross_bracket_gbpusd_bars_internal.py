@@ -17,8 +17,6 @@
 import tracemalloc
 from decimal import Decimal
 
-import pandas as pd
-
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
@@ -42,7 +40,7 @@ def run_single_backtest():
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggingConfig(log_level="INFO", bypass_logging=True),
         risk_engine=RiskEngineConfig(
             bypass=True,  # Example of bypassing pre-trade risk checks for backtests
         ),
@@ -112,17 +110,17 @@ def run_single_backtest():
     engine.run()
 
     # Optionally view reports
-    with pd.option_context(
-        "display.max_rows",
-        100,
-        "display.max_columns",
-        None,
-        "display.width",
-        300,
-    ):
-        print(engine.trader.generate_account_report(SIM))
-        print(engine.trader.generate_order_fills_report())
-        print(engine.trader.generate_positions_report())
+    # with pd.option_context(
+    #     "display.max_rows",
+    #     100,
+    #     "display.max_columns",
+    #     None,
+    #     "display.width",
+    #     300,
+    # ):
+    #     print(engine.trader.generate_account_report(SIM))
+    #     print(engine.trader.generate_order_fills_report())
+    #     print(engine.trader.generate_positions_report())
 
     # For repeated backtest runs make sure to reset the engine
     engine.reset()
@@ -132,7 +130,8 @@ def run_single_backtest():
 
 
 def run_n_backtests(n: int) -> None:
-    for _ in range(n):
+    for i in range(n):
+        print(f"Running backtest {i}...")
         run_single_backtest()
 
 
