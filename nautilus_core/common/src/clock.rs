@@ -115,7 +115,7 @@ pub trait Clock {
 
     fn register_default_handler_py(&mut self, callback_py: PyObject);
 
-    /// Set a [Timer] to alert at a particular time. Optional
+    /// Set a [`Timer`] to alert at a particular time. Optional
     /// callback gets used to handle generated events.
     fn set_time_alert_ns_py(
         &mut self,
@@ -124,7 +124,7 @@ pub trait Clock {
         callback_py: Option<PyObject>,
     );
 
-    /// Set a [Timer] to start alerting at every interval
+    /// Set a [`Timer`] to start alerting at every interval
     /// between start and stop time. Optional callback gets
     /// used to handle generated event.
     fn set_timer_ns_py(
