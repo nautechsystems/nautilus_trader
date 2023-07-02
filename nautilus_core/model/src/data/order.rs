@@ -189,7 +189,7 @@ impl BookOrder {
     }
 
     /// Return a dictionary representation of the object.
-    fn as_dict(&self) -> Py<PyDict> {
+    pub fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -203,9 +203,9 @@ impl BookOrder {
         })
     }
 
+    /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(values: &PyDict) -> PyResult<Self> {
-        // Extract values from dictionary
         let side: String = values
             .get_item("side")
             .ok_or(PyKeyError::new_err("'side' not found in `values`"))?

@@ -293,7 +293,7 @@ impl Bar {
     }
 
     /// Return a dictionary representation of the object.
-    fn as_dict(&self) -> Py<PyDict> {
+    pub fn as_dict(&self) -> Py<PyDict> {
         Python::with_gil(|py| {
             let dict = PyDict::new(py);
 
@@ -312,8 +312,9 @@ impl Bar {
         })
     }
 
+    /// Return a new object from the given dictionary representation.
     #[staticmethod]
-    fn from_dict(values: &PyDict) -> PyResult<Self> {
+    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
         let bar_type: String = values
             .get_item("bar_type")
             .ok_or(PyKeyError::new_err("'bar_type' not found in `values`"))?
