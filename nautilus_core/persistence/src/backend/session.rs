@@ -66,7 +66,7 @@ impl Iterator for QueryResult {
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
-/// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
+/// a Vec of data by types that implement [`DecodeFromRecordBatch`].
 #[pyclass]
 pub struct DataBackendSession {
     session_ctx: SessionContext,
