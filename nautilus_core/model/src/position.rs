@@ -75,7 +75,7 @@ struct Position {
 }
 
 impl Position {
-    pub fn new(instrument: &dyn Instrument, fill: &OrderFilled) -> Self {
+    pub fn new<T: Instrument>(instrument: &T, fill: &OrderFilled) -> Self {
         assert_eq!(instrument.id(), &fill.instrument_id);
         assert!(fill.position_id.is_some());
         assert!(fill.order_side != OrderSide::NoOrderSide);
