@@ -131,7 +131,7 @@ def run_single_backtest():
     engine.dispose()
 
 
-def run_n_backtests(n: int):
+def run_n_backtests(n: int) -> None:
     for _ in range(n):
         run_single_backtest()
 
