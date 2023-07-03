@@ -67,6 +67,12 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     reconciliation_lookback_mins : NonNegativeInt, optional
         The maximum lookback minutes to reconcile state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
+    filter_unclaimed_external_orders : bool, default False
+        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
+    filter_position_reports : bool, default False
+        If `PositionStatusReport`s are filtered from reconciliation.
+        This may be applicable when other nodes are trading the same instrument(s), on the same
+        account - which could cause conflicts in position status.
     inflight_check_interval_ms : NonNegativeInt, default 2_000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
@@ -82,6 +88,8 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
 
     reconciliation: bool = True
     reconciliation_lookback_mins: Optional[NonNegativeInt] = None
+    filter_unclaimed_external_orders: bool = False
+    filter_position_reports: bool = False
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     qsize: PositiveInt = 10_000
