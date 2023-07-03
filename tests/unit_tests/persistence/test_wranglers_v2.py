@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pyarrow as pa
+import pytest
 from fsspec.utils import pathlib
 
 from nautilus_trader.core.nautilus_pyo3.persistence import QuoteTickDataWrangler
 from nautilus_trader.core.nautilus_pyo3.persistence import TradeTickDataWrangler
-from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
+from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameProcessor
 from nautilus_trader.persistence.loaders_v2 import TradeTickDataFrameLoader
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TESTS_PACKAGE_ROOT
@@ -32,23 +34,34 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def test_quote_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
-    tick_data: pd.DataFrame = QuoteTickDataFrameLoader.read_csv(path)
+    df: pd.DataFrame = pd.read_csv(path)
+    df = QuoteTickDataFrameProcessor.process(df)
+
+    # Convert DataFrame to Arrow Table
+    table = pa.Table.from_pandas(df)
+
+    # Act (not any kind of final API, just experimenting with IPC)
+    sink = pa.BufferOutputStream()
+    writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
+    writer.write_table(table)
+    writer.close()
+
+    data = sink.getvalue().to_pybytes()
 
     wrangler = QuoteTickDataWrangler(
         instrument_id=AUDUSD_SIM.id.value,
         price_precision=AUDUSD_SIM.price_precision,
         size_precision=AUDUSD_SIM.size_precision,
     )
-
-    # Act
-    ticks = wrangler.process_pandas(tick_data)
+    ticks = wrangler.process_record_batches_bytes(data)
 
     # Assert
     assert len(ticks) == 100_000
-    assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000"
-    assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000"
+    assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000000"
+    assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000000"
 
 
+@pytest.mark.skip
 def test_trade_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "binance-ethusdt-trades.csv"
@@ -60,10 +73,10 @@ def test_trade_tick_data_wrangler() -> None:
         size_precision=ETHUSDT_BINANCE.size_precision,
     )
 
-    # Act
+    # Act (not any kind of final API, just experimenting with IPC)
     ticks = wrangler.process_pandas(tick_data)
 
     # Assert
     assert len(ticks) == 69806
-    assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000"
-    assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000"
+    assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000000"
+    assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000000"

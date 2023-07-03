@@ -25,7 +25,7 @@ use pyo3::{
     types::{PyBytes, PyDict},
 };
 
-use crate::parquet::{ArrowSchemaProvider, EncodeToRecordBatch};
+use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
 
 const ERROR_EMPTY_DATA: &str = "`data` was empty";
 

@@ -28,7 +28,7 @@ use nautilus_model::{
 };
 
 use super::DecodeDataFromRecordBatch;
-use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef {

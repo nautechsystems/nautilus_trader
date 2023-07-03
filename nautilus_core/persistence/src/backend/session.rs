@@ -26,11 +26,11 @@ use pyo3_asyncio::tokio::get_runtime;
 
 use super::query::DataQueryResult;
 use crate::{
-    kmerge_batch::{KMerge, PeekElementBatchStream},
-    parquet::{
+    arrow::{
         DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
         WriteStream,
     },
+    kmerge_batch::{KMerge, PeekElementBatchStream},
 };
 
 #[derive(Debug, Default)]

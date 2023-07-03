@@ -19,7 +19,7 @@ use datafusion::arrow::ipc::reader::StreamReader;
 use nautilus_model::data::bar::{Bar, BarType};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
-use crate::parquet::DecodeFromRecordBatch;
+use crate::arrow::DecodeFromRecordBatch;
 
 #[pyclass]
 pub struct BarDataWrangler {
