@@ -393,7 +393,7 @@ class LiveExecutionClient(ExecutionClient):
     async def generate_mass_status(
         self,
         lookback_mins: Optional[int] = None,
-    ) -> ExecutionMassStatus:
+    ) -> Optional[ExecutionMassStatus]:
         """
         Generate an `ExecutionMassStatus` report.
 
@@ -404,7 +404,7 @@ class LiveExecutionClient(ExecutionClient):
 
         Returns
         -------
-        ExecutionMassStatus
+        ExecutionMassStatus or ``None``
 
         """
         self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
@@ -439,6 +439,7 @@ class LiveExecutionClient(ExecutionClient):
             return mass_status
         except Exception as e:
             self._log.exception("Cannot reconcile execution state", e)
+        return None
 
     async def _query_order(self, command: QueryOrder) -> None:
         self._log.debug(f"Synchronizing order status {command}.")
