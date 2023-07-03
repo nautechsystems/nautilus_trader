@@ -123,6 +123,8 @@ class LiveExecutionEngine(ExecutionEngine):
         # Settings
         self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
+        self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
+        self.filter_position_reports: bool = config.filter_position_reports
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -520,12 +522,13 @@ class LiveExecutionEngine(ExecutionEngine):
                 result = False
             results.append(result)
 
-        position_reports: list[PositionStatusReport]
-        # Reconcile all reported positions
-        for position_reports in mass_status.position_reports().values():
-            for report in position_reports:
-                result = self._reconcile_position_report(report)
-                results.append(result)
+        if not self.filter_position_reports:
+            position_reports: list[PositionStatusReport]
+            # Reconcile all reported positions
+            for position_reports in mass_status.position_reports().values():
+                for report in position_reports:
+                    result = self._reconcile_position_report(report)
+                    results.append(result)
 
         # Publish mass status
         self._msgbus.publish(
@@ -607,6 +610,10 @@ class LiveExecutionEngine(ExecutionEngine):
         # Reconcile all trades
         for trade in trades:
             self._reconcile_trade_report(order, trade, instrument)
+
+        if report.avg_px is None:
+            self._log.error("report.avg_px was `None`, expected a value.")
+            return False  # Failed
 
         # Check reported filled qty against order filled qty
         if report.filled_qty != order.filled_qty:
@@ -982,18 +989,19 @@ class LiveExecutionEngine(ExecutionEngine):
     def _should_update(self, order: Order, report: OrderStatusReport) -> bool:
         if report.quantity != order.quantity:
             return True
-        elif order.order_type == OrderType.LIMIT:
-            if report.price != order.price:
-                return True
-        elif (
-            order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_MARKET
-        ):
-            if report.trigger_price != order.trigger_price:
-                return True
-        elif (
-            order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ) and (report.trigger_price != order.trigger_price or report.price != order.price):
+
+        if order.order_type == OrderType.LIMIT and report.price != order.price:
             return True
+
+        if (
+            order.order_type in [OrderType.STOP_MARKET, OrderType.TRAILING_STOP_MARKET]
+            and report.trigger_price != order.trigger_price
+        ):
+            return True
+
+        if order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT] and (
+            report.trigger_price != order.trigger_price or report.price != order.price
+        ):
+            return True
+
         return False

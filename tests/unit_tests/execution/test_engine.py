@@ -121,10 +121,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig(
-            debug=True,
-            filter_unclaimed_external_orders=True,
-        )
+        config = ExecEngineConfig(debug=True)
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,

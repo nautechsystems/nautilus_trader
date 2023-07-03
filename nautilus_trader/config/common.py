@@ -253,15 +253,12 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
-    filter_unclaimed_external_orders : bool, default False
-        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = True
-    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
@@ -414,6 +411,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         how the `ExecutionEngine` handles position IDs (see docs).
     external_order_claims : list[str], optional
         The external order claim instrument IDs.
+        External orders for matching instrument IDs will be associated with (claimed by) the strategy.
 
     """
 

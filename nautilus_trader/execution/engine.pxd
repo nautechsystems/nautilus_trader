@@ -53,8 +53,6 @@ cdef class ExecutionEngine(Component):
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly bint allow_cash_positions
     """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
-    cdef readonly bint filter_unclaimed_external_orders
-    """If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.\n\n:returns `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
