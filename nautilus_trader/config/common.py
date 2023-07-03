@@ -27,10 +27,10 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
-def resolve_path(path: str):
-    module, cls = path.rsplit(":", maxsplit=1)
+def resolve_path(path: str) -> type:
+    module, cls_str = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
-    cls = getattr(mod, cls)
+    cls: type = getattr(mod, cls_str)
     return cls
 
 
@@ -144,6 +144,8 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should use an SSL enabled connection.
     flush : bool, default False
         If database should be flushed before start.
+    timestamps_as_iso8601, default False
+        If timestamps should be persisted as ISO 8601 strings.
     """
 
     type: str = "in-memory"
@@ -153,6 +155,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     password: Optional[str] = None
     ssl: bool = False
     flush: bool = False
+    timestamps_as_iso8601: bool = False
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):

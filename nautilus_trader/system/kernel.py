@@ -193,7 +193,10 @@ class NautilusKernel:
             cache_db = RedisCacheDatabase(
                 trader_id=self._trader_id,
                 logger=self._logger,
-                serializer=MsgPackSerializer(timestamps_as_str=True),
+                serializer=MsgPackSerializer(
+                    timestamps_as_str=True,  # Hardcoded for now
+                    timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
+                ),
                 config=config.cache_database,
             )
         else:
