@@ -28,7 +28,7 @@ use nautilus_model::{
 };
 
 use super::DecodeDataFromRecordBatch;
-use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for TradeTick {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {

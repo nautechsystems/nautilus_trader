@@ -17,53 +17,62 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import polars as pl
+import pandas as pd
 
 
-class QuoteTickDataFrameLoader:
+class QuoteTickDataFrameProcessor:
     """
-    Provides a means of loading quote tick data polars DataFrames from CSV files.
+    Provides a means of pre-processing quote tick pandas DataFrames.
     """
 
     @staticmethod
-    def read_csv(path: str | Path) -> pl.DataFrame:
+    def process(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Return the tick data read from the CSV file.
+        Return the pre-processed data from the given dataframe.
 
         Parameters
         ----------
-        path : str | Path
-            The path to the CSV file.
+        df : DataFrame
+            The pandas dataframe to pre-process.
 
         Returns
         -------
-        pl.DataFrame
+        pd.DataFrame
 
         """
-        dtypes = {
-            "bid": pl.Float64,
-            "ask": pl.Float64,
-            # "bid_size": pl.Float64,
-            # "ask_size": pl.Float64,
-            "ts_event": pl.Datetime,
-            # "ts_init": pl.Datetime,
-        }
-        new_columns = ["ts_event", "bid", "ask"]
-        df = pl.read_csv(
-            path,
-            dtypes=dtypes,
-            new_columns=new_columns,
+        # Rename column
+        df = df.rename(columns={"timestamp": "ts_event"})
+
+        # Multiply by 1e9 and convert to int
+        df["bid"] = (df["bid"] * 1e9).astype(pd.Int64Dtype())
+        df["ask"] = (df["ask"] * 1e9).astype(pd.Int64Dtype())
+
+        # Create bid_size and ask_size columns
+        df["bid_size"] = pd.Series([1_000_000 * 1e9] * len(df), dtype=pd.UInt64Dtype())
+        df["ask_size"] = pd.Series([1_000_000 * 1e9] * len(df), dtype=pd.UInt64Dtype())
+
+        df["ts_event"] = (
+            pd.to_datetime(df["ts_event"], utc=True, format="mixed")
+            .dt.tz_localize(None)
+            .view("int64")
+            .astype("uint64")
         )
+        df["ts_init"] = df["ts_event"]
+
+        # Reorder the columns and drop index column
+        df = df[["bid", "ask", "bid_size", "ask_size", "ts_event", "ts_init"]]
+        df = df.reset_index(drop=True)
+
         return df
 
 
 class TradeTickDataFrameLoader:  # Will become a specific Binance parser (just experimenting)
     """
-    Provides a means of loading trade tick data polars DataFrames from CSV files.
+    Provides a means of loading trade tick data pandas DataFrames from CSV files.
     """
 
     @staticmethod
-    def read_csv(path: str | Path) -> pl.DataFrame:
+    def read_csv(path: str | Path) -> pd.DataFrame:
         """
         Return the tick data read from the CSV file.
 
@@ -74,50 +83,24 @@ class TradeTickDataFrameLoader:  # Will become a specific Binance parser (just e
 
         Returns
         -------
-        pl.DataFrame
+        pd.DataFrame
 
         """
         dtypes = {
-            "ts_event": pl.Datetime,
-            "trade_id": pl.Utf8,
+            "ts_event": pd.Timestamp,
+            "trade_id": str,
         }
         new_columns = ["ts_event", "trade_id", "price", "size", "aggressor_side"]
-        df = pl.read_csv(
+        df = pd.read_csv(
             path,
-            dtypes=dtypes,
-            new_columns=new_columns,
+            # dtype=dtypes,
+            usecols=list(dtypes.keys()) + new_columns[2:],
+            parse_dates=["ts_event"],
+            names=new_columns,
         )
-        df = df.with_columns(
-            pl.col("aggressor_side")
-            .apply(_map_aggressor_side, return_dtype=pl.Utf8)
-            .alias("aggressor_side"),
-        )
+        df["aggressor_side"] = df["aggressor_side"].map(_map_aggressor_side)
         return df
 
 
 def _map_aggressor_side(val: bool) -> str:
     return "buyer" if val else "seller"
-
-
-class BarDataFrameLoader:
-    """
-    Provides a means of loading bar data polars DataFrames from CSV files.
-    """
-
-    @staticmethod
-    def read_csv(path: str | Path) -> pl.DataFrame:
-        """
-        Return the bar data read from the CSV file.
-
-        Parameters
-        ----------
-        path : str | Path
-            The path to the CSV file.
-
-        Returns
-        -------
-        pl.DataFrame
-
-        """
-        df = pl.read_csv(path)
-        return df
