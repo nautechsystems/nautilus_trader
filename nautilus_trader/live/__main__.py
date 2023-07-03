@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from __future__ import annotations
 
 import click
 import fsspec
@@ -28,10 +28,10 @@ from nautilus_trader.live.node import TradingNode
 @click.option("--fsspec-url", help="A fsspec url to read config from")
 @click.option("--start", default=True, help="Start the live node")
 def main(
-    raw: Optional[str] = None,
-    fsspec_url: Optional[str] = None,
+    raw: str | None = None,
+    fsspec_url: str | None = None,
     start: bool = True,
-):
+) -> None:
     assert raw is not None or fsspec_url is not None, "Must pass one of `raw` or `fsspec_url`"
     if fsspec_url and raw is None:
         with fsspec.open(fsspec_url, "rb") as f:

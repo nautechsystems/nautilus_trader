@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from datetime import datetime
 from datetime import timedelta
 from enum import Enum
 from enum import unique
-from typing import Optional
 
 import pandas as pd
 import pytz
@@ -120,7 +121,7 @@ class ForexSessionFilter:
         PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
-        next_start: Optional[datetime] = None
+        next_start: datetime | None = None
 
         # Local days session start
         if session == ForexSession.SYDNEY:
@@ -188,7 +189,7 @@ class ForexSessionFilter:
         PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
-        prev_start: Optional[datetime] = None
+        prev_start: datetime | None = None
 
         # Local days session start
         if session == ForexSession.SYDNEY:
@@ -256,7 +257,7 @@ class ForexSessionFilter:
         PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
-        next_end: Optional[datetime] = None
+        next_end: datetime | None = None
 
         # Local days session end
         if session == ForexSession.SYDNEY:
@@ -324,7 +325,7 @@ class ForexSessionFilter:
         PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
-        prev_end: Optional[datetime] = None
+        prev_end: datetime | None = None
 
         # Local days session end
         if session == ForexSession.SYDNEY:
@@ -500,7 +501,7 @@ class EconomicNewsEventFilter:
         """
         return self._impacts
 
-    def next_event(self, time_now: datetime) -> Optional[NewsEvent]:
+    def next_event(self, time_now: datetime) -> NewsEvent | None:
         """
         Return the next news event matching the filter conditions. Will return None if
         no news events match the filter conditions.
@@ -555,7 +556,7 @@ class EconomicNewsEventFilter:
             ts_event,
         )
 
-    def prev_event(self, time_now: datetime) -> Optional[NewsEvent]:
+    def prev_event(self, time_now: datetime) -> NewsEvent | None:
         """
         Return the previous news event matching the initial filter conditions. Will
         return None if no news events match the filter conditions.

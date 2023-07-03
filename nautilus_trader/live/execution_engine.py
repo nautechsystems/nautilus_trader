@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 import math
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -101,7 +103,7 @@ class LiveExecutionEngine(ExecutionEngine):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[LiveExecEngineConfig] = None,
+        config: LiveExecEngineConfig | None = None,
     ) -> None:
         if config is None:
             config = LiveExecEngineConfig()
@@ -126,9 +128,9 @@ class LiveExecutionEngine(ExecutionEngine):
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
         # Async tasks
-        self._cmd_queue_task: Optional[asyncio.Task] = None
-        self._evt_queue_task: Optional[asyncio.Task] = None
-        self._inflight_check_task: Optional[asyncio.Task] = None
+        self._cmd_queue_task: asyncio.Task | None = None
+        self._evt_queue_task: asyncio.Task | None = None
+        self._inflight_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
         # Register endpoints
@@ -166,7 +168,7 @@ class LiveExecutionEngine(ExecutionEngine):
         for client in self._clients.values():
             client.disconnect()
 
-    def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
+    def get_cmd_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal command queue task for the engine.
 
@@ -177,7 +179,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         return self._cmd_queue_task
 
-    def get_evt_queue_task(self) -> Optional[asyncio.Task]:
+    def get_evt_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal event queue task for the engine.
 
@@ -188,7 +190,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         return self._evt_queue_task
 
-    def get_inflight_check_task(self) -> Optional[asyncio.Task]:
+    def get_inflight_check_task(self) -> asyncio.Task | None:
         """
         Return the internal in-flight check task for the engine.
 
@@ -333,7 +335,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         try:
             while True:
-                command: Optional[TradingCommand] = await self._cmd_queue.get()
+                command: TradingCommand | None = await self._cmd_queue.get()
                 if command is self._sentinel:
                     break
                 self._execute_command(command)
@@ -352,7 +354,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         try:
             while True:
-                event: Optional[OrderEvent] = await self._evt_queue.get()
+                event: OrderEvent | None = await self._evt_queue.get()
                 if event is self._sentinel:
                     break
                 self._handle_event(event)
@@ -425,7 +427,7 @@ class LiveExecutionEngine(ExecutionEngine):
         results: list[bool] = []
 
         # Request execution mass status report from clients
-        reconciliation_lookback_mins: Optional[int] = (
+        reconciliation_lookback_mins: int | None = (
             self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
         )
         mass_status_coros = [
@@ -594,7 +596,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         # Order has some fills from this point
-        instrument: Optional[Instrument] = self._cache.instrument(order.instrument_id)
+        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot reconcile order {order.client_order_id}: "
@@ -622,7 +624,7 @@ class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     def _reconcile_trade_report_single(self, report: TradeReport) -> bool:
-        client_order_id: Optional[ClientOrderId] = self._cache.client_order_id(
+        client_order_id: ClientOrderId | None = self._cache.client_order_id(
             report.venue_order_id,
         )
         if client_order_id is None:
@@ -631,14 +633,14 @@ class LiveExecutionEngine(ExecutionEngine):
             )
             return False  # Failed
 
-        order: Optional[Order] = self._cache.order(client_order_id)
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
             self._log.error(
                 "Cannot reconcile TradeReport: no order for client order ID {client_order_id}",
             )
             return False  # Failed
 
-        instrument: Optional[Instrument] = self._cache.instrument(order.instrument_id)
+        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot reconcile order {order.client_order_id}: "
@@ -675,7 +677,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return self._reconcile_position_report_netting(report)
 
     def _reconcile_position_report_hedging(self, report: PositionStatusReport) -> bool:
-        position: Optional[Position] = self._cache.position(report.venue_position_id)
+        position: Position | None = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
                 f"Cannot reconcile position: position ID {report.venue_position_id} not found.",
@@ -770,7 +772,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.warning(f"Generated inferred {filled}.")
         return filled
 
-    def _generate_external_order(self, report: OrderStatusReport) -> Optional[Order]:
+    def _generate_external_order(self, report: OrderStatusReport) -> Order | None:
         self._log.info(
             f"Generating external order {report.client_order_id!r}",
             color=LogColor.BLUE,
