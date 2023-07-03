@@ -82,7 +82,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
-            self.fs_protocol, **self.fs_storage_options
+            self.fs_protocol,
+            **self.fs_storage_options,
         )
 
         path = make_path_posix(str(path))
@@ -236,7 +237,10 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if as_dataframe:
             return self._handle_table_dataframe(
-                table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
+                table=table,
+                mappings=mappings,
+                raise_on_empty=raise_on_empty,
+                **kwargs,
             )
         else:
             return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)

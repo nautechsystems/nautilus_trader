@@ -232,7 +232,9 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
 
 
 def write_tables(
-    catalog: ParquetDataCatalog, tables: dict[type, dict[str, pd.DataFrame]], **kwargs
+    catalog: ParquetDataCatalog,
+    tables: dict[type, dict[str, pd.DataFrame]],
+    **kwargs,
 ):
     """
     Write tables to catalog.

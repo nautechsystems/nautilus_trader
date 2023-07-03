@@ -263,7 +263,7 @@ class TestBetfairParsingStreaming:
                 instrument_id = update.instrument_id
                 if instrument_id not in books:
                     instrument = TestInstrumentProvider.betting_instrument(
-                        *instrument_id.value.split("|")
+                        *instrument_id.value.split("|"),
                     )
                     books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)

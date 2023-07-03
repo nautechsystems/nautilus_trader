@@ -167,6 +167,7 @@ class ParquetTickDataLoader:
             The path to the Parquet file.
         timestamp_column: str
             Name of the timestamp column in the parquet data
+
         Returns
         -------
         pd.DataFrame
