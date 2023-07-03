@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -86,7 +87,7 @@ class BacktestNode:
         """
         return self._configs
 
-    def get_engine(self, run_config_id: str) -> Optional[BacktestEngine]:
+    def get_engine(self, run_config_id: str) -> BacktestEngine | None:
         """
         Return the backtest engine associated with the given run config ID (if found).
 
@@ -165,7 +166,7 @@ class BacktestNode:
 
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
-            base_currency: Optional[str] = config.base_currency
+            base_currency: str | None = config.base_currency
             leverages = (
                 {InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()}
                 if config.leverages
@@ -215,7 +216,7 @@ class BacktestNode:
         engine_config: BacktestEngineConfig,
         venue_configs: list[BacktestVenueConfig],
         data_configs: list[BacktestDataConfig],
-        batch_size_bytes: Optional[int] = None,
+        batch_size_bytes: int | None = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             run_config_id=run_config_id,

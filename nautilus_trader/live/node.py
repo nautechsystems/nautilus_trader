@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 import signal
 import time
 from datetime import timedelta
-from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.enums import LogColor
@@ -50,8 +51,8 @@ class TradingNode:
 
     def __init__(
         self,
-        config: Optional[TradingNodeConfig] = None,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
+        config: TradingNodeConfig | None = None,
+        loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         if config is None:
             config = TradingNodeConfig()
@@ -182,7 +183,7 @@ class TradingNode:
         """
         return self._is_built
 
-    def get_event_loop(self) -> Optional[asyncio.AbstractEventLoop]:
+    def get_event_loop(self) -> asyncio.AbstractEventLoop | None:
         """
         Return the event loop of the trading node.
 
