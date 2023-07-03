@@ -43,7 +43,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class CacheFacade:
 
-# -- GENERAL --------------------------------------------------------------------------------------  # noqa
+# -- GENERAL --------------------------------------------------------------------------------------
 
     cpdef bytes get(self, str key)
     cpdef void add(self, str key, bytes value)
