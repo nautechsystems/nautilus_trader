@@ -58,12 +58,12 @@ pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn book_order_exposure(order: &BookOrder) -> f64 {
-    order.exposure_f64()
+    order.exposure()
 }
 
 #[no_mangle]
 pub extern "C" fn book_order_signed_size(order: &BookOrder) -> f64 {
-    order.signed_size_f64()
+    order.signed_size()
 }
 
 /// Returns a [`BookOrder`] display string as a C string pointer.

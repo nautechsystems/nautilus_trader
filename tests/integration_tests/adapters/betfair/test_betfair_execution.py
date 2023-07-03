@@ -781,7 +781,11 @@ async def test_various_betfair_order_fill_scenarios(
     # Act
     for raw in updates:
         order_change_message = BetfairStreaming.generate_order_change_message(
-            price=price, size=size, side=side, status=status, **raw
+            price=price,
+            size=size,
+            side=side,
+            status=status,
+            **raw,
         )
         exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
         await asyncio.sleep(0)

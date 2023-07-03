@@ -228,6 +228,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         OrderStatusReport or ``None``
+
         Raises
         ------
         ValueError

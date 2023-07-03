@@ -67,12 +67,12 @@ impl BookOrder {
     }
 
     #[must_use]
-    pub fn exposure_f64(&self) -> f64 {
+    pub fn exposure(&self) -> f64 {
         self.price.as_f64() * self.size.as_f64()
     }
 
     #[must_use]
-    pub fn signed_size_f64(&self) -> f64 {
+    pub fn signed_size(&self) -> f64 {
         match self.side {
             OrderSide::Buy => self.size.as_f64(),
             OrderSide::Sell => -(self.size.as_f64()),
@@ -180,12 +180,14 @@ impl BookOrder {
         self.order_id
     }
 
-    fn exposure(&self) -> f64 {
-        self.exposure_f64()
+    #[pyo3(name = "exposure")]
+    fn py_exposure(&self) -> f64 {
+        self.exposure()
     }
 
-    fn signed_size(&self) -> f64 {
-        self.signed_size_f64()
+    #[pyo3(name = "signed_size")]
+    fn py_signed_size(&self) -> f64 {
+        self.signed_size()
     }
 
     /// Return a dictionary representation of the object.
@@ -327,7 +329,7 @@ mod tests {
         let order_id = 123456;
 
         let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
-        let exposure = order.exposure_f64();
+        let exposure = order.exposure();
 
         assert_eq!(exposure, price.as_f64() * size.as_f64());
     }
@@ -339,11 +341,11 @@ mod tests {
         let order_id = 123456;
 
         let order_buy = BookOrder::new(OrderSide::Buy, price.clone(), size.clone(), order_id);
-        let signed_size_buy = order_buy.signed_size_f64();
+        let signed_size_buy = order_buy.signed_size();
         assert_eq!(signed_size_buy, size.as_f64());
 
         let order_sell = BookOrder::new(OrderSide::Sell, price.clone(), size.clone(), order_id);
-        let signed_size_sell = order_sell.signed_size_f64();
+        let signed_size_sell = order_sell.signed_size();
         assert_eq!(signed_size_sell, -(size.as_f64()));
     }
 
