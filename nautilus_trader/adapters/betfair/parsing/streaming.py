@@ -39,6 +39,7 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
@@ -547,6 +548,7 @@ async def generate_trades_list(
                 str(fill.selectionId),
                 str(fill.handicap),
             ),
+            order_side=OrderSide.NO_ORDER_SIDE,  # TODO: Needs this
             venue_order_id=VenueOrderId(fill.betId),
             venue_position_id=None,  # Can be None
             trade_id=TradeId(fill.lastMatchedDate),
@@ -554,6 +556,7 @@ async def generate_trades_list(
             last_px=betfair_float_to_price(fill.priceMatched),
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+            report_id=UUID4(),
             ts_event=ts_event,
             ts_init=ts_event,
         ),

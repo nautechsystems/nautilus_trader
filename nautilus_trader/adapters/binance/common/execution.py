@@ -353,7 +353,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _get_binance_position_status_reports(
         self,
         symbol: Optional[str] = None,
-    ) -> list[str]:
+    ) -> list[PositionStatusReport]:
         # Implement in child class
         raise NotImplementedError
 

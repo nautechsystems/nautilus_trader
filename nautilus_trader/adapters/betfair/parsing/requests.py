@@ -47,6 +47,7 @@ from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -319,13 +320,17 @@ async def generate_trades_list(
     return [
         TradeReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
+            instrument_id=None,  # TODO: Needs this
+            account_id=None,  # TODO: Needs this
             venue_order_id=VenueOrderId(fill["betId"]),
             venue_position_id=None,  # Can be None
+            order_side=OrderSide.NO_ORDER_SIDE,  # TODO: Stub value
             trade_id=TradeId(fill["lastMatchedDate"]),
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+            report_id=UUID4(),
             ts_event=ts_event,
             ts_init=ts_event,
         ),

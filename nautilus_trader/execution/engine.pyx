@@ -34,6 +34,8 @@ from typing import Optional
 
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import ExecutionReport
 
 from libc.stdint cimport uint64_t
 
@@ -59,11 +61,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.execution.reports cimport ExecutionReport
-from nautilus_trader.execution.reports cimport OrderStatusReport
-from nautilus_trader.execution.reports cimport PositionStatusReport
-from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport ContingencyType
