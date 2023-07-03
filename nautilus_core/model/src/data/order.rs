@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::hash_map::DefaultHasher,
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
     str::FromStr,
@@ -150,6 +151,12 @@ impl BookOrder {
             CompareOp::Ne => self.ne(other).into_py(py),
             _ => py.NotImplemented(),
         }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
     }
 
     fn __str__(&self) -> String {

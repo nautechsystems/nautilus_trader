@@ -82,6 +82,12 @@ impl Ticker {
         }
     }
 
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
     fn __str__(&self) -> String {
         self.to_string()
     }

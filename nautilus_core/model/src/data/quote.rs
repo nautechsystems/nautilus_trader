@@ -15,8 +15,9 @@
 
 use std::{
     cmp,
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
+    hash::{Hash, Hasher},
     str::FromStr,
 };
 
@@ -157,6 +158,12 @@ impl QuoteTick {
             CompareOp::Ne => self.ne(other).into_py(py),
             _ => py.NotImplemented(),
         }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
     }
 
     fn __str__(&self) -> String {
