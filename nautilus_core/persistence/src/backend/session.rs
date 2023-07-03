@@ -28,7 +28,7 @@ use super::query::DataQueryResult;
 use crate::{
     kmerge_batch::{KMerge, PeekElementBatchStream},
     parquet::{
-        DataStreamingError, DecodeFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
+        DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
         WriteStream,
     },
 };
@@ -102,7 +102,7 @@ impl DataBackendSession {
         file_path: &str,
     ) -> Result<()>
     where
-        T: DecodeFromRecordBatch + Into<Data>,
+        T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
@@ -136,7 +136,7 @@ impl DataBackendSession {
         sql_query: &str,
     ) -> Result<()>
     where
-        T: DecodeFromRecordBatch + Into<Data>,
+        T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
@@ -159,17 +159,17 @@ impl DataBackendSession {
 
     fn add_batch_stream<T>(&mut self, stream: SendableRecordBatchStream)
     where
-        T: DecodeFromRecordBatch + Into<Data>,
+        T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let transform = stream.map(|result| match result {
-            Ok(batch) => T::decode_batch(batch.schema().metadata(), batch).into_iter(),
+            Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch).into_iter(),
             Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
         });
 
         self.batch_streams.push(Box::new(transform));
     }
 
-    // Consumes the registered queries and returns a [QueryResult].
+    // Consumes the registered queries and returns a [`QueryResult].
     // Passes the output of the query though the a KMerge which sorts the
     // queries in ascending order of `ts_init`.
     // QueryResult is an iterator that return Vec<Data>.
