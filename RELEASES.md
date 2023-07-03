@@ -4,9 +4,11 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
+- Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 
 ### Breaking Changes
-None
+- Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 
 ### Fixes
 - Fixed parsing of `TriggerType` for Binance #1154, thanks for reporting @davidblom603
