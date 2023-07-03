@@ -25,8 +25,6 @@ compare = "0.1.0"
 # FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
 datafusion = { version = "27.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions"] }
 pin-project-lite = "0.2.9"
-polars = { version = "0.30.0", features = ["dtype-datetime", "lazy"] }
-pyo3-polars = "0.4.1"
 
 [features]
 extension-module = [

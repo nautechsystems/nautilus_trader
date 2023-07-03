@@ -27,6 +27,8 @@ use pyo3::{
 
 use crate::parquet::{ArrowSchemaProvider, EncodeToRecordBatch};
 
+const ERROR_EMPTY_DATA: &str = "`data` was empty";
+
 #[pyclass]
 pub struct DataTransformer {}
 
@@ -40,6 +42,7 @@ impl DataTransformer {
             .into_iter()
             .map(|dict| OrderBookDelta::from_dict(dict.as_ref(py)))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
+
         Ok(deltas)
     }
 
@@ -52,6 +55,7 @@ impl DataTransformer {
             .into_iter()
             .map(|dict| QuoteTick::from_dict(dict.as_ref(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
+
         Ok(ticks)
     }
 
@@ -64,6 +68,7 @@ impl DataTransformer {
             .into_iter()
             .map(|dict| TradeTick::from_dict(dict.as_ref(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
+
         Ok(ticks)
     }
 
@@ -73,6 +78,7 @@ impl DataTransformer {
             .into_iter()
             .map(|dict| Bar::from_dict(dict.as_ref(py)))
             .collect::<PyResult<Vec<Bar>>>()?;
+
         Ok(bars)
     }
 
@@ -100,6 +106,7 @@ impl DataTransformer {
 
         let buffer = cursor.into_inner();
         let pybytes = PyBytes::new(py, &buffer);
+
         Ok(pybytes.into())
     }
 }
@@ -114,7 +121,7 @@ impl DataTransformer {
         data: Vec<PyObject>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err("`data` was empty."));
+            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
         // Iterate over all objects calling the legacy 'to_dict' method
@@ -163,7 +170,7 @@ impl DataTransformer {
         data: Vec<OrderBookDelta>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err("`data` was empty."));
+            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
@@ -190,7 +197,7 @@ impl DataTransformer {
         data: Vec<QuoteTick>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err("`data` was empty."));
+            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
@@ -217,7 +224,7 @@ impl DataTransformer {
         data: Vec<TradeTick>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err("`data` was empty."));
+            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
@@ -241,7 +248,7 @@ impl DataTransformer {
     #[staticmethod]
     pub fn pyo3_bars_to_batches_bytes(py: Python<'_>, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err("`data` was empty."));
+            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
