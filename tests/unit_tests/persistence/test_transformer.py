@@ -20,9 +20,8 @@ import pandas as pd
 import pyarrow as pa
 
 from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
-from nautilus_trader.core.nautilus_pyo3.persistence import QuoteTickDataWrangler
-from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameProcessor
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
@@ -36,24 +35,10 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
     path = Path(TEST_DATA_DIR) / "truefx-audusd-ticks.csv"
     df: pd.DataFrame = pd.read_csv(path)
-    df = QuoteTickDataFrameProcessor.process(df)
 
-    # Convert DataFrame to Arrow Table
-    table = pa.Table.from_pandas(df)
-
-    # Act (not any kind of final API, just experimenting with IPC)
-    sink = pa.BufferOutputStream()
-    writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
-    writer.write_table(table)
-    writer.close()
-
-    data = sink.getvalue().to_pybytes()
-    wrangler = QuoteTickDataWrangler(
-        instrument_id=AUDUSD_SIM.id.value,
-        price_precision=AUDUSD_SIM.price_precision,
-        size_precision=AUDUSD_SIM.size_precision,
-    )
-    ticks = wrangler.process_record_batches_bytes(data)
+    # Act
+    wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+    ticks = wrangler.from_pandas(df)
 
     # Act
     batches_bytes = DataTransformer.pyo3_quote_ticks_to_batches_bytes(ticks)
@@ -78,6 +63,6 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     reader = pa.ipc.open_stream(batches_stream)
 
     # Assert
-    assert len(ticks) == 69806
+    assert len(ticks) == 69_806
     assert len(reader.read_all()) == len(ticks)
     reader.close()
