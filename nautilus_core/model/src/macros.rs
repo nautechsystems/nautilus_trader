@@ -13,27 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::{Deserialize, Serialize};
+#[macro_export]
+macro_rules! strum_serde {
+    ($type:ty) => {
+        impl Serialize for $type {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                serializer.serialize_str(&self.to_string())
+            }
+        }
 
-/// Represents types which are serializable for JSON and MsgPack specifications.
-pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
-    /// Deserialize an object from JSON encoded bytes.
-    fn from_json_bytes(data: Vec<u8>) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(&data)
-    }
-
-    /// Deserialize an object from MsgPack encoded bytes.
-    fn from_msgpack_bytes(data: Vec<u8>) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(&data)
-    }
-
-    /// Serialize an object to JSON encoded bytes.
-    fn as_json_bytes(&self) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec(self)
-    }
-
-    /// Serialize an object to MsgPack encoded bytes.
-    fn as_msgpack_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec_named(self)
-    }
+        impl<'de> Deserialize<'de> for $type {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                <$type>::from_str(&s).map_err(serde::de::Error::custom)
+            }
+        }
+    };
 }
