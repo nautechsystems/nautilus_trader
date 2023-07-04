@@ -40,7 +40,7 @@ impl DataTransformer {
     ) -> PyResult<Vec<OrderBookDelta>> {
         let deltas: Vec<OrderBookDelta> = data_dicts
             .into_iter()
-            .map(|dict| OrderBookDelta::from_dict(dict.as_ref(py)))
+            .map(|dict| OrderBookDelta::from_dict(py, dict))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
 
         Ok(deltas)
@@ -53,7 +53,7 @@ impl DataTransformer {
     ) -> PyResult<Vec<QuoteTick>> {
         let ticks: Vec<QuoteTick> = data_dicts
             .into_iter()
-            .map(|dict| QuoteTick::from_dict(dict.as_ref(py)))
+            .map(|dict| QuoteTick::from_dict(py, dict))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
 
         Ok(ticks)
@@ -66,7 +66,7 @@ impl DataTransformer {
     ) -> PyResult<Vec<TradeTick>> {
         let ticks: Vec<TradeTick> = data_dicts
             .into_iter()
-            .map(|dict| TradeTick::from_dict(dict.as_ref(py)))
+            .map(|dict| TradeTick::from_dict(py, dict))
             .collect::<PyResult<Vec<TradeTick>>>()?;
 
         Ok(ticks)
@@ -76,7 +76,7 @@ impl DataTransformer {
     fn pydicts_to_bars(py: Python<'_>, data_dicts: Vec<Py<PyDict>>) -> PyResult<Vec<Bar>> {
         let bars: Vec<Bar> = data_dicts
             .into_iter()
-            .map(|dict| Bar::from_dict(dict.as_ref(py)))
+            .map(|dict| Bar::from_dict(py, dict))
             .collect::<PyResult<Vec<Bar>>>()?;
 
         Ok(bars)

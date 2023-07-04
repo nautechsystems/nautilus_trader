@@ -17,16 +17,10 @@ use std::{
     collections::hash_map::DefaultHasher,
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
-    str::FromStr,
 };
 
 use nautilus_core::serialization::Serializable;
-use pyo3::{
-    exceptions::{PyKeyError, PyValueError},
-    prelude::*,
-    pyclass::CompareOp,
-    types::PyDict,
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
@@ -198,79 +192,52 @@ impl BookOrder {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn as_dict(&self) -> Py<PyDict> {
-        Python::with_gil(|py| {
-            let dict = PyDict::new(py);
-
-            dict.set_item("type", stringify!(BookOrder)).unwrap();
-            dict.set_item("side", self.side.to_string()).unwrap();
-            dict.set_item("price", self.price.to_string()).unwrap();
-            dict.set_item("size", self.size.to_string()).unwrap();
-            dict.set_item("order_id", self.order_id).unwrap();
-
-            dict.into_py(py)
-        })
+    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("decode", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
-    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
-        let side: String = values
-            .get_item("side")
-            .ok_or(PyKeyError::new_err("'side' not found in `values`"))?
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Serialize to JSON bytes
+        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("encode", (values,), None)?
             .extract()?;
-        let price: String = values
-            .get_item("price")
-            .ok_or(PyKeyError::new_err("'price' not found in `values`"))?
-            .extract()?;
-        let size: String = values
-            .get_item("size")
-            .ok_or(PyKeyError::new_err("'size' not found in `values`"))?
-            .extract()?;
-        let order_id: u64 = values
-            .get_item("order_id")
-            .ok_or(PyKeyError::new_err("'order_id' not found in `values`"))?
-            .extract()?;
-
-        let side = OrderSide::from_str(&side).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let price = Price::from_str(&price).map_err(PyValueError::new_err)?;
-        let size = Quantity::from_str(&size).map_err(PyValueError::new_err)?;
-
-        Ok(Self::new(side, price, size, order_id))
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_bytes)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_json_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize JSON: {}",
-                err
-            ))),
-        }
+        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_msgpack_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize MsgPack: {}",
-                err
-            ))),
-        }
+        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self) -> Py<PyAny> {
+    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+        self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self) -> Py<PyAny> {
+    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
+        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
 
@@ -432,14 +399,28 @@ mod tests {
     }
 
     #[test]
-    fn test_to_dict_and_from_dict() {
+    fn test_as_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let delta = create_stub_book_order();
+
+        Python::with_gil(|py| {
+            let dict_string = delta.as_dict(py).unwrap().to_string();
+            let expected_string =
+                r#"{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}"#;
+            assert_eq!(dict_string, expected_string);
+        });
+    }
+
+    #[test]
+    fn test_from_dict() {
         pyo3::prepare_freethreaded_python();
 
         let order = create_stub_book_order();
 
         Python::with_gil(|py| {
-            let dict = order.as_dict();
-            let parsed = BookOrder::from_dict(dict.as_ref(py)).unwrap();
+            let dict = order.as_dict(py).unwrap();
+            let parsed = BookOrder::from_dict(py, dict).unwrap();
             assert_eq!(parsed, order);
         });
     }

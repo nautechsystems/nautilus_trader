@@ -83,7 +83,7 @@ cargo-update:
 
 .PHONY: cargo-test
 cargo-test:
-	(cd nautilus_core && cargo test)
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo test)
 
 .PHONY: cargo-bench
 cargo-bench:
