@@ -25,8 +25,8 @@ use pyo3::prelude::*;
 pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<arrow::NautilusDataType>()?;
     m.add_class::<backend::session::DataBackendSession>()?;
+    m.add_class::<backend::session::DataQueryResult>()?;
     m.add_class::<backend::transformer::DataTransformer>()?;
-    m.add_class::<backend::query::DataQueryResult>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;
     m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
     m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
