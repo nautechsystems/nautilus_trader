@@ -14,14 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pyarrow as pa
-import pytest
 from fsspec.utils import pathlib
 
-from nautilus_trader.core.nautilus_pyo3.persistence import QuoteTickDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import TradeTickDataWrangler
-from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameProcessor
-from nautilus_trader.persistence.loaders_v2 import TradeTickDataFrameLoader
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TESTS_PACKAGE_ROOT
 
@@ -35,25 +31,10 @@ def test_quote_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
     df: pd.DataFrame = pd.read_csv(path)
-    df = QuoteTickDataFrameProcessor.process(df)
 
-    # Convert DataFrame to Arrow Table
-    table = pa.Table.from_pandas(df)
-
-    # Act (not any kind of final API, just experimenting with IPC)
-    sink = pa.BufferOutputStream()
-    writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
-    writer.write_table(table)
-    writer.close()
-
-    data = sink.getvalue().to_pybytes()
-
-    wrangler = QuoteTickDataWrangler(
-        instrument_id=AUDUSD_SIM.id.value,
-        price_precision=AUDUSD_SIM.price_precision,
-        size_precision=AUDUSD_SIM.size_precision,
-    )
-    ticks = wrangler.process_record_batches_bytes(data)
+    # Act
+    wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+    ticks = wrangler.from_pandas(df)
 
     # Assert
     assert len(ticks) == 100_000
@@ -61,20 +42,14 @@ def test_quote_tick_data_wrangler() -> None:
     assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000000"
 
 
-@pytest.mark.skip
 def test_trade_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "binance-ethusdt-trades.csv"
-    tick_data: pd.DataFrame = TradeTickDataFrameLoader.read_csv(path)
+    df: pd.DataFrame = pd.read_csv(path)
 
-    wrangler = TradeTickDataWrangler(
-        instrument_id=ETHUSDT_BINANCE.id.value,
-        price_precision=ETHUSDT_BINANCE.price_precision,
-        size_precision=ETHUSDT_BINANCE.size_precision,
-    )
-
-    # Act (not any kind of final API, just experimenting with IPC)
-    ticks = wrangler.process_pandas(tick_data)
+    # Act
+    wrangler = TradeTickDataWrangler(ETHUSDT_BINANCE)
+    ticks = wrangler.from_pandas(df)
 
     # Assert
     assert len(ticks) == 69806
