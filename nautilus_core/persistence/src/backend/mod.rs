@@ -13,6 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod query;
 pub mod session;
 pub mod transformer;
