@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import hashlib
 import importlib
 import sys
 from decimal import Decimal
-from typing import Callable
+from typing import Callable, Optional, Union
 
 import msgspec
 import pandas as pd
@@ -45,16 +43,16 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     oms_type: str
     account_type: str
     starting_balances: list[str]
-    base_currency: str | None = None
+    base_currency: Optional[str] = None
     default_leverage: float = 1.0
-    leverages: dict[str, float] | None = None
+    leverages: Optional[dict[str, float]] = None
     book_type: str = "L1_TBBO"
     routing: bool = False
     frozen_account: bool = False
     bar_execution: bool = True
     reject_stop_orders: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
-    modules: list[ImportableConfig] | None = None
+    modules: Optional[list[ImportableConfig]] = None
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
@@ -64,17 +62,17 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
 
     catalog_path: str
     data_cls: str
-    catalog_fs_protocol: str | None = None
-    catalog_fs_storage_options: dict | None = None
-    instrument_id: str | None = None
-    start_time: str | int | None = None
-    end_time: str | int | None = None
-    filter_expr: str | None = None
-    client_id: str | None = None
-    metadata: dict | None = None
-    bar_spec: str | None = None
-    use_rust: bool | None = False
-    batch_size: int | None = 10_000
+    catalog_fs_protocol: Optional[str] = None
+    catalog_fs_storage_options: Optional[dict] = None
+    instrument_id: Optional[str] = None
+    start_time: Optional[Union[str, int]] = None
+    end_time: Optional[Union[str, int]] = None
+    filter_expr: Optional[str] = None
+    client_id: Optional[str] = None
+    metadata: Optional[dict] = None
+    bar_spec: Optional[str] = None
+    use_rust: Optional[bool] = False
+    batch_size: Optional[int] = 10_000
 
     @property
     def data_type(self):
@@ -127,8 +125,8 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
 
     def load(
         self,
-        start_time: pd.Timestamp | None = None,
-        end_time: pd.Timestamp | None = None,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
         as_nautilus: bool = True,
     ):
         query = self.query
@@ -223,17 +221,17 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
 
     """
 
-    engine: BacktestEngineConfig | None = None
-    venues: list[BacktestVenueConfig] | None = None
-    data: list[BacktestDataConfig] | None = None
-    batch_size_bytes: int | None = None
+    engine: Optional[BacktestEngineConfig] = None
+    venues: Optional[list[BacktestVenueConfig]] = None
+    data: Optional[list[BacktestDataConfig]] = None
+    batch_size_bytes: Optional[int] = None
 
     @property
     def id(self):
         return tokenize_config(self.dict())
 
 
-def parse_filters_expr(s: str | None):
+def parse_filters_expr(s: Optional[str]):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
     """
     Parse a pyarrow.dataset filter expression from a string.
