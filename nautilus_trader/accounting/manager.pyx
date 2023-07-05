@@ -282,13 +282,6 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(orders_open, "orders_open")
 
-        if not orders_open:
-            account.clear_margin_init(instrument.id)
-            return self._generate_account_state(
-                account=account,
-                ts_event=ts_event,
-            )
-
         cdef double total_margin_init = 0.0
         cdef double base_xrate = 0.0
 
@@ -298,9 +291,9 @@ cdef class AccountsManager:
             double margin_init
         for order in orders_open:
             assert order.instrument_id == instrument.id, f"order not for instrument {instrument}"
-            assert order.is_open_c(), f"order not open {repr(order)}"
 
-            if not order.has_price_c() and not order.has_trigger_price_c():
+            if not order.is_open_c() or (not order.has_price_c() and not order.has_trigger_price_c()):
+                # Does not contribute to initial margin
                 continue
 
             # Calculate initial margin
@@ -335,7 +328,10 @@ cdef class AccountsManager:
             total_margin_init += margin_init
 
         cdef Money margin_init_money = Money(total_margin_init, currency)
-        account.update_margin_init(instrument.id, margin_init_money)
+        if total_margin_init == 0.0:
+            account.clear_margin_init(instrument.id)
+        else:
+            account.update_margin_init(instrument.id, margin_init_money)
 
         self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
 
@@ -376,13 +372,6 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(positions_open, "positions_open")
 
-        if not positions_open:
-            account.clear_margin_maint(instrument.id)
-            return self._generate_account_state(
-                account=account,
-                ts_event=ts_event,
-            )
-
         cdef double total_margin_maint = 0.0
         cdef double base_xrate = 0.0
 
@@ -392,7 +381,10 @@ cdef class AccountsManager:
             double margin_maint
         for position in positions_open:
             assert position.instrument_id == instrument.id
-            assert position.is_open_c()
+
+            if not position.is_open_c():
+                # Does not contribute to maintenance margin
+                continue
 
             # Calculate margin
             margin_maint = account.calculate_margin_maint(
@@ -427,9 +419,12 @@ cdef class AccountsManager:
             total_margin_maint += margin_maint
 
         cdef Money margin_maint_money = Money(total_margin_maint, currency)
-        account.update_margin_maint(instrument.id, margin_maint_money)
+        if total_margin_maint == 0.0:
+            account.clear_margin_maint(instrument.id)
+        else:
+            account.update_margin_maint(instrument.id, margin_maint_money)
 
-        # self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
+        self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
 
         return self._generate_account_state(
             account=account,
