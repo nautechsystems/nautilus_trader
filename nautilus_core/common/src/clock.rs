@@ -24,7 +24,7 @@ use pyo3::{prelude::*, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 
-const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
+const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub struct MonotonicClock {
     /// The last recorded duration value from the clock.
@@ -40,7 +40,7 @@ impl MonotonicClock {
     fn monotonic_duration_since_unix_epoch(&mut self) -> Duration {
         let now = duration_since_unix_epoch();
         let output = if now <= self.last {
-            self.last + ONE_NANOSECOND_DURATION
+            self.last + ONE_NANOSECOND
         } else {
             now
         };
