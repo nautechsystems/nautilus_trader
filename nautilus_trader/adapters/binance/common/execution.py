@@ -555,7 +555,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             and time_in_force == BinanceTimeInForce.GTC
             and self._warn_gtd_to_gtc
         ):
-            self._log.warning("Converted GTD `time_in_force` to GTC.")
+            self._log.info("Converted GTD `time_in_force` to GTC.", LogColor.BLUE)
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
