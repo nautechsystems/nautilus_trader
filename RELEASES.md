@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 
 ### Fixes
+- Fixed Binance execution submitting of order lists
 - Fixed fill handling of `reduce_only` orders when partially filled
 - Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
 - Fixed parsing of `TriggerType` for Binance #1154, thanks for reporting @davidblom603

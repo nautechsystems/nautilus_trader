@@ -503,8 +503,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        order: Order = command.order
+        await self._submit_order_inner(command.order)
 
+    async def _submit_order_inner(self, order: Order) -> None:
         if order.is_closed:
             self._log.warning(f"Cannot submit already closed order {order}.")
             return
@@ -616,7 +617,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
-            await self._submit_order(order)
+            await self._submit_order_inner(order)
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
