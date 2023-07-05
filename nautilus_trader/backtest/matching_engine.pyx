@@ -1468,11 +1468,8 @@ cdef class OrderMatchingEngine:
             )
 
         cdef:
-            uint64_t raw_org_qty
-            uint64_t raw_adj_qty
             Price fill_px
             Quantity fill_qty
-            Quantity updated_qty
             bint initial_market_to_limit_fill = False
         for fill_px, fill_qty in fills:
             if order.filled_qty._mem.raw == 0:
@@ -1495,6 +1492,7 @@ cdef class OrderMatchingEngine:
 
             if order.is_reduce_only and order.leaves_qty._mem.raw == 0:
                 return  # Done early
+
             if self.book_type == BookType.L1_TBBO and self._fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
                     fill_px = fill_px.add(self.instrument.price_increment)
@@ -1504,23 +1502,25 @@ cdef class OrderMatchingEngine:
                     raise ValueError(  # pragma: no cover (design-time error)
                         f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                     )
+
+            # Check reduce only order
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
+                if position.quantity._mem.raw == 0:
+                    return  # Done
+
                 # Adjust fill to honor reduce only execution
-                raw_org_qty = fill_qty._mem.raw
-                raw_adj_qty = fill_qty._mem.raw - (fill_qty._mem.raw - position.quantity._mem.raw)
-                fill_qty = Quantity.from_raw_c(raw_adj_qty, fill_qty._mem.precision)
-                updated_qty = Quantity.from_raw_c(
-                    order.quantity._mem.raw - (raw_org_qty - raw_adj_qty),
-                    fill_qty._mem.precision)
-                if updated_qty._mem.raw > 0:
-                    self._generate_order_updated(
-                        order=order,
-                        qty=updated_qty,
-                        price=None,
-                        trigger_price=None,
-                    )
-            if not fill_qty._mem.raw > 0:
+                fill_qty = Quantity.from_raw_c(position.quantity._mem.raw, fill_qty._mem.precision)
+
+                self._generate_order_updated(
+                    order=order,
+                    qty=fill_qty,
+                    price=None,
+                    trigger_price=None,
+                )
+
+            if fill_qty._mem.raw == 0:
                 return  # Done
+
             self.fill_order(
                 order=order,
                 last_px=fill_px,
