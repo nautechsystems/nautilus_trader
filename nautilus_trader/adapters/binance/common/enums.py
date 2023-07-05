@@ -161,6 +161,8 @@ class BinanceExecutionType(Enum):
     REJECTED = "REJECTED"
     TRADE = "TRADE"
     EXPIRED = "EXPIRED"
+    AMENDMENT = "AMENDMENT"
+    TRADE_PREVENTION = "TRADE_PREVENTION"
 
 
 @unique
