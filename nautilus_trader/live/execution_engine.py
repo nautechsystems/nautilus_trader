@@ -129,6 +129,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
+        self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
         self._log.info(f"{config.reconciliation_lookback_mins=}", LogColor.BLUE)
         self._log.info(f"{config.filter_unclaimed_external_orders=}", LogColor.BLUE)
         self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
@@ -618,7 +619,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._reconcile_trade_report(order, trade, instrument)
 
         if report.avg_px is None:
-            self._log.error("report.avg_px was `None`, expected a value.")
+            self._log.error("report.avg_px was `None` when a value was expected.")
             return False  # Failed
 
         # Check reported filled qty against order filled qty
@@ -753,7 +754,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if order.avg_px is None:
             last_px: Price = instrument.make_price(report.avg_px)
         else:
-            report_cost: float = float(report.avg_px) * float(report.filled_qty)
+            report_cost: float = float(report.avg_px or 0.0) * float(report.filled_qty)
             filled_cost = order.avg_px * float(order.filled_qty)
             last_px = instrument.make_price((report_cost - filled_cost) / float(last_qty))
 
