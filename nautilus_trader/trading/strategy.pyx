@@ -1061,6 +1061,10 @@ cdef class Strategy(Actor):
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id):
         return f"GTD-EXPIRY:{client_order_id.to_str()}"
 
+    cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id):
+        cdef str timer_name = self._get_gtd_expiry_timer_name(client_order_id)
+        return timer_name in self._clock.timer_names
+
     cdef void _set_gtd_expiry(self, Order order):
         self._log.info(
             f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
@@ -1331,7 +1335,7 @@ cdef class Strategy(Actor):
         cdef Order order
         if self._manage_gtd_expiry and isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
-            if order is not None and order.is_closed_c():
+            if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
 
         if self._fsm.state == ComponentState.RUNNING:
