@@ -1033,14 +1033,14 @@ cdef class Strategy(Actor):
 
     cpdef void cancel_gtd_expiry(self, Order order):
         """
-        Cancel the managed GTD expiration for the given order.
+        Cancel the managed GTD expiry for the given order.
 
-        If there is no current GTD expiration timer, then an error will be logged.
+        If there is no current GTD expiry timer, then an error will be logged.
 
         Parameters
         ----------
         order : Order
-            The order to cancel the GTD expiration for.
+            The order to cancel the GTD expiry for.
 
         """
         Condition.not_none(order, "order")
