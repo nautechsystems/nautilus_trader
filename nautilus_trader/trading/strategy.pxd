@@ -113,6 +113,7 @@ cdef class Strategy(Actor):
     cpdef void query_order(self, Order order, ClientId client_id=*)
     cpdef void cancel_gtd_expiry(self, Order order)
 
+    cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id)
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
     cdef void _set_gtd_expiry(self, Order order)
     cpdef void _expire_gtd_order(self, TimeEvent event)
