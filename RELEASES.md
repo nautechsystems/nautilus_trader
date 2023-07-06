@@ -7,6 +7,8 @@ Released on TBD (UTC).
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
+- Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
+- Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
