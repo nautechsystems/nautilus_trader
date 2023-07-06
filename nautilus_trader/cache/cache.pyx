@@ -263,7 +263,7 @@ cdef class Cache(CacheFacade):
         # Assign position IDs to contingent orders
         cdef Order order
         for order in self._orders.values():
-            if order.contingency_type == ContingencyType.OTO:
+            if order.contingency_type == ContingencyType.OTO and order.position_id is not None:
                 self._assign_position_id_to_contingencies(order)
 
         cdef int count = len(self._orders)
