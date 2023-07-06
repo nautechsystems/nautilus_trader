@@ -290,9 +290,10 @@ class TestOrderEmulatorWithOrderLists:
             contingency_type=ContingencyType.OUO,
         )
 
+        position_id = PositionId("P-001")
         self.strategy.submit_order_list(
             order_list=bracket,
-            position_id=PositionId("P-001"),
+            position_id=position_id,
         )
 
         # Act
@@ -316,6 +317,9 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[0] not in matching_core
         assert bracket.orders[1] in matching_core
         assert bracket.orders[2] in matching_core
+        assert bracket.orders[0].position_id == position_id
+        assert bracket.orders[1].position_id == position_id
+        assert bracket.orders[2].position_id == position_id
         assert self.exec_engine.command_count == 1
 
     def test_modify_emulated_sl_quantity_also_updates_tp(self):
@@ -330,9 +334,10 @@ class TestOrderEmulatorWithOrderLists:
             contingency_type=ContingencyType.OUO,
         )
 
+        position_id = PositionId("P-001")
         self.strategy.submit_order_list(
             order_list=bracket,
-            position_id=PositionId("P-001"),
+            position_id=position_id,
         )
 
         # Act
@@ -364,6 +369,9 @@ class TestOrderEmulatorWithOrderLists:
         assert self.exec_engine.command_count == 1
         assert bracket.orders[1].quantity == 5
         assert bracket.orders[2].quantity == 5
+        assert bracket.orders[0].position_id == position_id
+        assert bracket.orders[1].position_id == position_id
+        assert bracket.orders[2].position_id == position_id
 
     def test_modify_emulated_tp_price(self):
         # Arrange
@@ -377,9 +385,10 @@ class TestOrderEmulatorWithOrderLists:
             contingency_type=ContingencyType.OUO,
         )
 
+        position_id = PositionId("P-001")
         self.strategy.submit_order_list(
             order_list=bracket,
-            position_id=PositionId("P-001"),
+            position_id=position_id,
         )
 
         # Act
@@ -410,6 +419,9 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[2] in matching_core
         assert self.exec_engine.command_count == 1
         assert bracket.orders[2].price == 5050
+        assert bracket.orders[0].position_id == position_id
+        assert bracket.orders[1].position_id == position_id
+        assert bracket.orders[2].position_id == position_id
 
     def test_submit_bracket_when_stop_limit_entry_filled_then_emulates_sl_and_tp(self):
         # Arrange

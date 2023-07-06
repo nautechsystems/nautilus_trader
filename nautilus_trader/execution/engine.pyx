@@ -880,7 +880,7 @@ cdef class ExecutionEngine(Component):
             oms_type = self._determine_oms_type(event)
             self._determine_position_id(event, oms_type)
             self._apply_event_to_order(order, event)
-            self._handle_order_fill(event, oms_type)
+            self._handle_order_fill(order, event, oms_type)
         else:
             self._apply_event_to_order(order, event)
 
@@ -949,7 +949,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cpdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type):
+    cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -972,13 +972,30 @@ cdef class ExecutionEngine(Component):
 
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
-            self._open_position(instrument, position, fill, oms_type)
+            position = self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
 
-    cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
+        cdef:
+            ClientOrderId client_order_id
+            Order contingent_order
+        if order.contingency_type == ContingencyType.OTO and position is not None and position.is_open_c():
+            for client_order_id in order.linked_order_ids or []:
+                contingent_order = self._cache.order(client_order_id)
+                if contingent_order is not None and contingent_order.position_id is None:
+                    if contingent_order.is_reduce_only and contingent_order.quantity._mem.raw > position.quantity._mem.raw:
+                        return  # Cannot yet assign position ID as will reject `reduce_only` orders
+                    contingent_order.position_id = position.id
+                    self._cache.add_position_id(
+                        order.position_id,
+                        contingent_order.instrument_id.venue,
+                        contingent_order.client_order_id,
+                        contingent_order.strategy_id,
+                    )
+
+    cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
@@ -1003,6 +1020,8 @@ cdef class ExecutionEngine(Component):
             topic=f"events.position.{event.strategy_id.to_str()}",
             msg=event,
         )
+
+        return position
 
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         try:
