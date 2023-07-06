@@ -32,6 +32,7 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceTicker
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
@@ -87,9 +88,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         The account type for the client.
     base_url_ws : str
         The base URL for the WebSocket client.
-    use_agg_trade_ticks : bool, default False
-        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
-        TradeId of ticks will be the Aggregate tradeId returned by Binance.
+    config : BinanceDataClientConfig
+        The configuration for the client.
 
     Warnings
     --------
@@ -109,7 +109,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType,
         base_url_ws: str,
-        use_agg_trade_ticks: bool = False,
+        config: BinanceDataClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -123,8 +123,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
 
         self._binance_account_type = account_type
-        self._use_agg_trade_ticks = use_agg_trade_ticks
+        self._use_agg_trade_ticks = config.use_agg_trade_ticks
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
+        self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None

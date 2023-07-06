@@ -85,6 +85,14 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If the client is connecting to a Binance testnet.
     warn_gtd_to_gtc : bool, default True
         If log warning for GTD time in force transformed to GTC.
+    use_position_ids: bool, default True
+        If Binance Futures hedging position IDs should be used.
+        If False then order event `position_id`(s) from the execution client will be `None`, which
+        allows *virtual* positions with `OmsType.HEDGING`.
+    treat_expired_as_canceled : bool, default False
+        If the `EXPIRED` execution type is semantically treated as `CANCELED`.
+        Binance treats cancels with certain combinations of order type and time in force as expired
+        events. This config option allows you to treat these uniformally as cancels.
     """
 
     api_key: Optional[str] = None
@@ -96,3 +104,5 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     testnet: bool = False
     clock_sync_interval_secs: int = 0
     warn_gtd_to_gtc: bool = True
+    use_position_ids: bool = True
+    treat_expired_as_canceled: bool = False

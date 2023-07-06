@@ -304,12 +304,16 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 # Commission in margin collateral currency
                 commission = Money(0, instrument.quote_currency)
 
+            venue_position_id: Optional[PositionId] = None
+            if exec_client.use_position_ids:
+                venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
+
             exec_client.generate_order_filled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
-                venue_position_id=PositionId(f"{instrument_id}-{self.ps.value}"),
+                venue_position_id=venue_position_id,
                 trade_id=TradeId(str(self.t)),  # Trade ID
                 order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
                 order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
@@ -320,7 +324,9 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
                 ts_event=ts_event,
             )
-        elif self.x == BinanceExecutionType.CANCELED:
+        elif self.x == BinanceExecutionType.CANCELED or (
+            exec_client.treat_expired_as_canceled and self.x == BinanceExecutionType.EXPIRED
+        ):
             exec_client.generate_order_canceled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
