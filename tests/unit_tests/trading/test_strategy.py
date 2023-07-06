@@ -1150,6 +1150,35 @@ class TestStrategy:
         assert bracket.orders[1].status == OrderStatus.ACCEPTED
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
 
+    def test_cancel_gtd_expiry(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            price=Price.from_str("100.000"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        strategy.submit_order(order, manage_gtd_expiry=True)
+
+        # Act
+        strategy.cancel_gtd_expiry(order)
+
+        # Assert
+        assert strategy.clock.timer_count == 0
+
     def test_cancel_order(self):
         # Arrange
         strategy = Strategy()
