@@ -262,19 +262,9 @@ cdef class Cache(CacheFacade):
 
         # Assign position IDs to contingent orders
         cdef Order order
-        cdef Order contingent_order
-        cdef ClientOrderId client_order_id
         for order in self._orders.values():
             if order.contingency_type == ContingencyType.OTO:
-                for client_order_id in order.linked_order_ids or []:
-                    contingent_order = self._orders.get(client_order_id)
-                    if contingent_order is None:
-                        self._log.error(f"Contingency order {client_order_id!r} not found.")
-                        continue
-                    # Assign the parents position ID
-                    if contingent_order.position_id is None:
-                        self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
-                        contingent_order.position_id = order.position_id
+                self._assign_position_id_to_contingencies(order)
 
         cdef int count = len(self._orders)
         self._log.info(
@@ -902,6 +892,25 @@ cdef class Cache(CacheFacade):
 
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
+
+    cdef void _assign_position_id_to_contingencies(self, Order order):
+        cdef:
+            ClientOrderId client_order_id
+            Order contingent_order
+        for client_order_id in order.linked_order_ids or []:
+            contingent_order = self._orders.get(client_order_id)
+            if contingent_order is None:
+                self._log.error(f"Contingency order {client_order_id!r} not found.")
+                continue
+            if contingent_order.position_id is None:
+                # Assign the parents position ID
+                self.add_position_id(
+                    order.position_id,
+                    order.instrument_id.venue,
+                    contingent_order.client_order_id,
+                    order.strategy_id,
+                )
+                self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
 
     cpdef void load_actor(self, Actor actor):
         """
@@ -1777,6 +1786,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
 
+        # Update venue order ID
         if order.venue_order_id is not None:
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id

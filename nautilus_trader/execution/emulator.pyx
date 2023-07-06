@@ -617,7 +617,7 @@ cdef class OrderEmulator(Actor):
         cdef:
             ClientOrderId client_order_id
             SubmitOrderList submit_order_list
-            Order contingent_order
+            Order child_order
             Order spawned_order
             Order primary_order
             list exec_spawn_orders

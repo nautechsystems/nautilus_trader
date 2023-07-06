@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 
 ### Fixes
+- Fixed assignment of position IDs for contingency orders (when parent filled)
 - Fixed Binance execution submitting of order lists
 - Fixed fill handling of `reduce_only` orders when partially filled
 - Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
