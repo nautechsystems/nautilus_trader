@@ -264,7 +264,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
-                use_agg_trade_ticks=config.use_agg_trade_ticks,
+                config=config,
             )
         else:
             # Get instrument provider singleton
@@ -287,7 +287,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
-                use_agg_trade_ticks=config.use_agg_trade_ticks,
+                config=config,
             )
 
 
@@ -376,7 +376,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
-                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
+                config=config,
             )
         else:
             # Get instrument provider singleton
@@ -399,7 +399,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
-                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
+                config=config,
             )
 
 

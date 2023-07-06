@@ -129,6 +129,12 @@ class LiveExecutionEngine(ExecutionEngine):
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
+        self._log.info(f"{config.reconciliation_lookback_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.filter_unclaimed_external_orders=}", LogColor.BLUE)
+        self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
+
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
         self._evt_queue_task: asyncio.Task | None = None
