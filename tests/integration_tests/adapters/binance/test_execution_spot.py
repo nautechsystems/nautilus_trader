@@ -22,6 +22,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
@@ -121,6 +122,8 @@ class TestBinanceSpotExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.provider,
+            base_url_ws="",  # Not required for testing
+            config=BinanceExecClientConfig(),
             account_type=BinanceAccountType.SPOT,
         )
 
