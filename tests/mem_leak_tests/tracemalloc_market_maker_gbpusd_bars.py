@@ -14,9 +14,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import tracemalloc
 from datetime import datetime
 from decimal import Decimal
+
+from tracemalloc_snapshot_fixture import snapshot_memory
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -36,7 +37,8 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-def run_single_backtest():
+@snapshot_memory(5)
+def run():
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
@@ -126,34 +128,5 @@ def run_single_backtest():
     engine.dispose()
 
 
-def run_n_backtests(n: int) -> None:
-    for i in range(n):
-        print(f"Running backtest {i}...")
-        run_single_backtest()
-
-
 if __name__ == "__main__":
-    # Start tracemalloc
-    tracemalloc.start()
-
-    # Take initial snapshot of memory
-    initial_memory_snapshot = tracemalloc.take_snapshot()
-
-    # Run n backtests
-    n = 10
-    run_n_backtests(n)
-
-    # Take final snapshot of memory
-    final_memory_snapshot = tracemalloc.take_snapshot()
-
-    # Compute difference and display statistics
-    top_stats = final_memory_snapshot.compare_to(initial_memory_snapshot, "lineno")
-    print("[ Top 10 differences ]")
-    for stat in top_stats[:10]:
-        print(stat)
-
-    # Find and display largest memory block
-    stat = top_stats[0]
-    print(f"{stat.count} memory blocks: {stat.size / 1024:.1f} KiB")
-    for line in stat.traceback.format():
-        print(line)
+    run()
