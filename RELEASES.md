@@ -9,9 +9,14 @@ Released on TBD (UTC).
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
 - Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
+- Added `MessageBus.is_pending_request(...)` method
+- Added `Actor.is_pending_request(...)` convenience method
+- Added `Actor.has_pending_requests()` convenience method
+- Added `Actor.pending_requests()` convenience method
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
+- All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 
 ### Fixes
 - Fixed assignment of position IDs for contingency orders (when parent filled)
