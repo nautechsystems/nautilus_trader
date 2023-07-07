@@ -1895,7 +1895,7 @@ cdef class Actor(Component):
 
     cpdef bint is_pending_request(self, UUID4 request_id):
         """
-        Return whether the given `request_id` is pending a response.
+        Return whether the request for the given identifier is pending processing.
 
         Parameters
         ----------
@@ -1908,11 +1908,11 @@ cdef class Actor(Component):
             True if request is pending, else False.
 
         """
-        return self.msgbus.is_pending_request(request_id)
+        return request_id in self._request_ids
 
     cpdef bint has_pending_requests(self):
         """
-        Return whether the actor is pending *any* responses.
+        Return whether the actor is pending processing for any requests.
 
         Returns
         -------
@@ -1924,7 +1924,7 @@ cdef class Actor(Component):
 
     cpdef set pending_requests(self):
         """
-        Return the set of currently pending request IDs.
+        Return the request IDs which are currently pending processing.
 
         Returns
         -------
@@ -2386,34 +2386,33 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response):
-        self._request_ids.discard(response.correlation_id)
-
         cdef Data data
         if isinstance(response.data, list):
             for data in response.data:
                 self.handle_historical_data(data)
         else:
             self.handle_historical_data(response.data)
+        self._request_ids.discard(response.correlation_id)
 
     cpdef void _handle_instrument_response(self, DataResponse response):
-        self._request_ids.discard(response.correlation_id)
         self.handle_instrument(response.data)
+        self._request_ids.discard(response.correlation_id)
 
     cpdef void _handle_instruments_response(self, DataResponse response):
-        self._request_ids.discard(response.correlation_id)
         self.handle_instruments(response.data)
+        self._request_ids.discard(response.correlation_id)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
-        self._request_ids.discard(response.correlation_id)
         self.handle_quote_ticks(response.data)
+        self._request_ids.discard(response.correlation_id)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
-        self._request_ids.discard(response.correlation_id)
         self.handle_trade_ticks(response.data)
+        self._request_ids.discard(response.correlation_id)
 
     cpdef void _handle_bars_response(self, DataResponse response):
-        self._request_ids.discard(response.correlation_id)
         self.handle_bars(response.data)
+        self._request_ids.discard(response.correlation_id)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
