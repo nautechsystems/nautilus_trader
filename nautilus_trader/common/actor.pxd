@@ -48,6 +48,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class Actor(Component):
+    cdef set _request_ids
     cdef set _warning_events
     cdef dict _signal_classes
 
@@ -152,33 +153,33 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, ClientId client_id, DataType data_type, UUID4 request_id=*)
-    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*, UUID4 request_id=*)
-    cpdef void request_instruments(self, Venue venue, ClientId client_id=*, UUID4 request_id=*)
-    cpdef void request_quote_ticks(
+    cpdef UUID4 request_data(self, DataType data_type, ClientId client_id)
+    cpdef UUID4 request_instrument(self, InstrumentId instrument_id, ClientId client_id=*)
+    cpdef UUID4 request_instruments(self, Venue venue, ClientId client_id=*)
+    cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
-        UUID4 request_id=*,
     )
-    cpdef void request_trade_ticks(
+    cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
-        UUID4 request_id= *,
     )
-    cpdef void request_bars(
+    cpdef UUID4 request_bars(
         self,
         BarType bar_type,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
-        UUID4 request_id= *,
     )
+    cpdef bint is_pending_request(self, UUID4 request_id)
+    cpdef bint has_pending_requests(self)
+    cpdef set pending_requests(self)
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 

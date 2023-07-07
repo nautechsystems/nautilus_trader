@@ -152,17 +152,18 @@ class TestMessageBus:
 
         self.msgbus.register(endpoint="mailbox", handler=endpoint.append)
 
-        correlation_id = UUID4()
+        request_id = UUID4()
         request = Request(
             callback=handler.append,
-            request_id=correlation_id,
+            request_id=request_id,
             ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.request(endpoint="mailbox", request=request)
+        assert self.msgbus.is_pending_request(request_id)
 
         response = Response(
-            correlation_id=correlation_id,
+            correlation_id=request_id,
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -174,6 +175,7 @@ class TestMessageBus:
         assert response in handler
         assert self.msgbus.req_count == 1
         assert self.msgbus.res_count == 1
+        assert not self.msgbus.is_pending_request(request_id)  # Already responded
 
     def test_subscribe_then_returns_topics_list_including_topic(self):
         # Arrange

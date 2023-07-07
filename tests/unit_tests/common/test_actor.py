@@ -27,6 +27,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import EUR
@@ -165,6 +166,9 @@ class TestActor:
         # Act, Assert
         assert actor.state == ComponentState.READY
         assert actor.is_initialized
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(UUID4())
+        assert actor.pending_requests() == set()
 
     def test_register_warning_event(self):
         # Arrange
@@ -1896,10 +1900,13 @@ class TestActor:
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
 
         # Act
-        actor.request_data(ClientId("BLOOMBERG-01"), data_type)
+        request_id = actor.request_data(data_type, ClientId("BLOOMBERG-01"))
 
         # Assert
         assert self.data_engine.request_count == 1
+        assert actor.has_pending_requests()
+        assert actor.is_pending_request(request_id)
+        assert request_id in actor.pending_requests()
 
     def test_request_quote_ticks_sends_request_to_data_engine(self):
         # Arrange
@@ -1912,10 +1919,13 @@ class TestActor:
         )
 
         # Act
-        actor.request_quote_ticks(AUDUSD_SIM.id)
+        request_id = actor.request_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
         assert self.data_engine.request_count == 1
+        assert actor.has_pending_requests()
+        assert actor.is_pending_request(request_id)
+        assert request_id in actor.pending_requests()
 
     def test_request_trade_ticks_sends_request_to_data_engine(self):
         # Arrange
@@ -1928,10 +1938,13 @@ class TestActor:
         )
 
         # Act
-        actor.request_trade_ticks(AUDUSD_SIM.id)
+        request_id = actor.request_trade_ticks(AUDUSD_SIM.id)
 
         # Assert
         assert self.data_engine.request_count == 1
+        assert actor.has_pending_requests()
+        assert actor.is_pending_request(request_id)
+        assert request_id in actor.pending_requests()
 
     def test_request_bars_sends_request_to_data_engine(self):
         # Arrange
@@ -1946,10 +1959,13 @@ class TestActor:
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
 
         # Act
-        actor.request_bars(bar_type)
+        request_id = actor.request_bars(bar_type)
 
         # Assert
         assert self.data_engine.request_count == 1
+        assert actor.has_pending_requests()
+        assert actor.is_pending_request(request_id)
+        assert request_id in actor.pending_requests()
 
     @pytest.mark.parametrize(
         ("start", "stop"),

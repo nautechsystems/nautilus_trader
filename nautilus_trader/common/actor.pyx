@@ -111,6 +111,7 @@ cdef class Actor(Component):
             config=config.dict(),
         )
 
+        self._request_ids: set[UUID4] = set()
         self._warning_events: set[type] = set()
         self._signal_classes: dict[str, type] = {}
 
@@ -713,6 +714,7 @@ cdef class Actor(Component):
         self.on_resume()
 
     cpdef void _reset(self):
+        self._request_ids.clear()
         self.on_reset()
 
     cpdef void _dispose(self):
@@ -1601,37 +1603,43 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, ClientId client_id, DataType data_type, UUID4 request_id = None):
+    cpdef UUID4 request_data(self, DataType data_type, ClientId client_id):
         """
         Request custom data for the given data type from the given data client.
 
         Parameters
         ----------
-        client_id : ClientId
-            The data client ID.
         data_type : DataType
             The data type for the request.
-        request_id : UUID4, optional
-            The specific request ID for the command.
-            If ``None`` then will be generated.
+        client_id : ClientId
+            The data client ID.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
 
         """
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
+        cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=None,
             data_type=data_type,
             callback=self._handle_data_response,
-            request_id=request_id or UUID4(),
+            request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._request_ids.add(request_id)
         self._send_data_req(request)
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id = None, UUID4 request_id = None):
+        return request_id
+
+    cpdef UUID4 request_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Request `Instrument` data for the given instrument ID.
 
@@ -1642,13 +1650,16 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        request_id : UUID4, optional
-            The specific request ID for the command.
-            If ``None`` then will be generated.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=instrument_id.venue,
@@ -1656,13 +1667,16 @@ cdef class Actor(Component):
                 "instrument_id": instrument_id,
             }),
             callback=self._handle_instrument_response,
-            request_id=request_id or UUID4(),
+            request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._request_ids.add(request_id)
         self._send_data_req(request)
 
-    cpdef void request_instruments(self, Venue venue, ClientId client_id = None, UUID4 request_id = None):
+        return request_id
+
+    cpdef UUID4 request_instruments(self, Venue venue, ClientId client_id = None):
         """
         Request all `Instrument` data for the given venue.
 
@@ -1673,13 +1687,16 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        request_id : UUID4, optional
-            The specific request ID for the command.
-            If ``None`` then will be generated.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
 
         """
         Condition.not_none(venue, "venue")
 
+        cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=venue,
@@ -1687,19 +1704,21 @@ cdef class Actor(Component):
                 "venue": venue,
             }),
             callback=self._handle_instruments_response,
-            request_id=request_id or UUID4(),
+            request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._request_ids.add(request_id)
         self._send_data_req(request)
 
-    cpdef void request_quote_ticks(
+        return request_id
+
+    cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
-        UUID4 request_id = None,
     ):
         """
         Request historical `QuoteTick` data.
@@ -1718,9 +1737,11 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        request_id : UUID4, optional
-            The specific request ID for the command.
-            If ``None`` then will be generated.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
 
         Raises
         ------
@@ -1733,6 +1754,7 @@ cdef class Actor(Component):
             Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
+        cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=instrument_id.venue,
@@ -1742,19 +1764,21 @@ cdef class Actor(Component):
                 "end": end,
             }),
             callback=self._handle_quote_ticks_response,
-            request_id=request_id or UUID4(),
+            request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._request_ids.add(request_id)
         self._send_data_req(request)
 
-    cpdef void request_trade_ticks(
+        return request_id
+
+    cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
-        UUID4 request_id = None,
     ):
         """
         Request historical `TradeTick` data.
@@ -1773,9 +1797,11 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        request_id : UUID4, optional
-            The specific request ID for the command.
-            If ``None`` then will be generated.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
 
         Raises
         ------
@@ -1788,6 +1814,7 @@ cdef class Actor(Component):
             Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
+        cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=instrument_id.venue,
@@ -1797,19 +1824,21 @@ cdef class Actor(Component):
                 "end": end,
             }),
             callback=self._handle_trade_ticks_response,
-            request_id=request_id or UUID4(),
+            request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._request_ids.add(request_id)
         self._send_data_req(request)
 
-    cpdef void request_bars(
+        return request_id
+
+    cpdef UUID4 request_bars(
         self,
         BarType bar_type,
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
-        UUID4 request_id = None,
     ):
         """
         Request historical `Bar` data.
@@ -1828,9 +1857,11 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        request_id : UUID4, optional
-            The specific request ID for the command.
-            If ``None`` then will be generated.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
 
         Raises
         ------
@@ -1843,6 +1874,7 @@ cdef class Actor(Component):
             Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
+        cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
@@ -1852,11 +1884,54 @@ cdef class Actor(Component):
                 "end": end,
             }),
             callback=self._handle_bars_response,
-            request_id=request_id or UUID4(),
+            request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._request_ids.add(request_id)
         self._send_data_req(request)
+
+        return request_id
+
+    cpdef bint is_pending_request(self, UUID4 request_id):
+        """
+        Return whether the given `request_id` is pending a response.
+
+        Parameters
+        ----------
+        request_id : UUID4
+            The request ID to check.
+
+        Returns
+        -------
+        bool
+            True if request is pending, else False.
+
+        """
+        return self.msgbus.is_pending_request(request_id)
+
+    cpdef bint has_pending_requests(self):
+        """
+        Return whether the actor is pending *any* responses.
+
+        Returns
+        -------
+        bool
+            True if any requests are pending, else False.
+
+        """
+        return len(self._request_ids) > 0
+
+    cpdef set pending_requests(self):
+        """
+        Return the set of currently pending request IDs.
+
+        Returns
+        -------
+        set[UUID4]
+
+        """
+        return self._request_ids.copy()
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
@@ -2311,6 +2386,8 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response):
+        self._request_ids.discard(response.correlation_id)
+
         cdef Data data
         if isinstance(response.data, list):
             for data in response.data:
@@ -2319,18 +2396,23 @@ cdef class Actor(Component):
             self.handle_historical_data(response.data)
 
     cpdef void _handle_instrument_response(self, DataResponse response):
+        self._request_ids.discard(response.correlation_id)
         self.handle_instrument(response.data)
 
     cpdef void _handle_instruments_response(self, DataResponse response):
+        self._request_ids.discard(response.correlation_id)
         self.handle_instruments(response.data)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
+        self._request_ids.discard(response.correlation_id)
         self.handle_quote_ticks(response.data)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
+        self._request_ids.discard(response.correlation_id)
         self.handle_trade_ticks(response.data)
 
     cpdef void _handle_bars_response(self, DataResponse response):
+        self._request_ids.discard(response.correlation_id)
         self.handle_bars(response.data)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
