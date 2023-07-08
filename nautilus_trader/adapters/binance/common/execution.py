@@ -587,7 +587,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             and self._warn_gtd_to_gtc
         ):
             self._log.info(
-                f"Converted GTD `time_in_force` to GTC for {order.client_order_id!r}.",
+                f"Converted GTD `time_in_force` to GTC for {order.client_order_id}.",
                 LogColor.BLUE,
             )
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
