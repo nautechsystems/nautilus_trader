@@ -77,6 +77,7 @@ config_node = TradingNodeConfig(
     timeout_disconnection=10.0,
     timeout_post_stop=5.0,
 )
+
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
@@ -91,6 +92,7 @@ strat_config = EMACrossConfig(
     order_id_tag="001",
     oms_type="HEDGING",
 )
+
 # Instantiate your strategy
 strategy = EMACross(config=strat_config)
 

@@ -77,6 +77,7 @@ config_node = TradingNodeConfig(
     timeout_disconnection=10.0,
     timeout_post_stop=3.0,
 )
+
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
@@ -95,6 +96,7 @@ strat_config = EMACrossBracketAlgoConfig(
     entry_exec_algorithm_id="TWAP",
     entry_exec_algorithm_params={"horizon_secs": 5.0, "interval_secs": 0.5},
 )
+
 # Instantiate your strategy and execution algorithm
 strategy = EMACrossBracketAlgo(config=strat_config)
 exec_algorithm = TWAPExecAlgorithm()
