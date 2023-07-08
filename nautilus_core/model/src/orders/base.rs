@@ -327,8 +327,8 @@ impl OrderCore {
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             previous_status: None,
-            has_price: true,          // TODO!
-            has_trigger_price: false, // TODO!
+            has_price: true,          // TODO
+            has_trigger_price: false, // TODO
             status: OrderStatus::Initialized,
             trader_id,
             strategy_id,

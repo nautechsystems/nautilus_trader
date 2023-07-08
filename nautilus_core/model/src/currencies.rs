@@ -84,6 +84,7 @@ pub fn currency_map() -> Mutex<HashMap<String, Currency>> {
             (String::from("SOL"), SOL.clone()),
             (String::from("TRX"), TRX.clone()),
             (String::from("TRYB"), TRYB.clone()),
+            (String::from("TUSD"), TUSD.clone()),
             (String::from("VTC"), VTC.clone()),
             (String::from("WSB"), WSB.clone()),
             (String::from("XBT"), XBT.clone()),
@@ -93,6 +94,7 @@ pub fn currency_map() -> Mutex<HashMap<String, Currency>> {
             (String::from("XRP"), XRP.clone()),
             (String::from("XTZ"), XTZ.clone()),
             (String::from("USDC"), USDC.clone()),
+            (String::from("USDP"), USDP.clone()),
             (String::from("USDT"), USDT.clone()),
             (String::from("ZEC"), ZEC.clone()),
         ]
@@ -497,6 +499,13 @@ lazy_static! {
         name: Box::new(Arc::new(String::from("BiLira"))),
         currency_type: CurrencyType::Crypto,
     };
+    pub static ref TUSD: Currency = Currency {
+        code: Box::new(Arc::new(String::from("TUSD"))),
+        precision: 4,
+        iso4217: 0,
+        name: Box::new(Arc::new(String::from("TrueUSD"))),
+        currency_type: CurrencyType::Crypto,
+    };
     pub static ref VTC: Currency = Currency {
         code: Box::new(Arc::new(String::from("VTC"))),
         precision: 8,
@@ -558,6 +567,13 @@ lazy_static! {
         precision: 8,
         iso4217: 0,
         name: Box::new(Arc::new(String::from("USD Coin"))),
+        currency_type: CurrencyType::Crypto,
+    };
+    pub static ref USDP: Currency = Currency {
+        code: Box::new(Arc::new(String::from("USDP"))),
+        precision: 4,
+        iso4217: 0,
+        name: Box::new(Arc::new(String::from("Pax Dollar"))),
         currency_type: CurrencyType::Crypto,
     };
     pub static ref USDT: Currency = Currency {
