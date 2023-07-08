@@ -643,7 +643,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         if client_order_id is None:
             self._log.error(
-                "Cannot reconcile TradeReport: client order ID {client_order_id} not found.",
+                f"Cannot reconcile TradeReport: client order ID {client_order_id} not found.",
             )
             return False  # Failed
 
@@ -714,13 +714,13 @@ class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
+
         position_signed_decimal_qty: Decimal = Decimal()
         for position in positions_open:
             position_signed_decimal_qty += position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
-                f"Cannot reconcile position: "
-                f"{report.instrument_id} "
+                f"Cannot reconcile {report}: "
                 f"position signed decimal qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}.",
             )
             return False  # Failed
