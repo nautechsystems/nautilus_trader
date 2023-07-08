@@ -300,6 +300,7 @@ cdef class Strategy(Actor):
             trader_id=self.trader_id,
             strategy_id=self.id,
             clock=self.clock,
+            cache=self.cache,
         )
 
         # Required subscriptions

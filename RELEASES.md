@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 
 ### Fixes
+- Fixed race condition on `OrderFactory` order identifiers generation
 - Fixed `Currency` registration with core global map on creation
 - Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
 - Fixed assignment of position IDs for contingency orders (when parent filled)

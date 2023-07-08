@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.generators cimport OrderListIdGenerator
@@ -60,6 +61,8 @@ cdef class OrderFactory:
         The strategy ID (only numerical tag sent to venue).
     clock : Clock
         The clock for the factory.
+    cache : CacheFacade, optional
+        The cache facade for the order factory.
     initial_order_id_count : int, optional
         The initial order ID count for the factory.
     initial_order_list_id_count : int, optional
@@ -78,10 +81,12 @@ cdef class OrderFactory:
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         Clock clock not None,
+        CacheFacade cache: Optional[CacheFacade]=None,
         int initial_order_id_count=0,
         int initial_order_list_id_count=0,
     ):
         self._clock = clock
+        self._cache = cache
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
@@ -141,7 +146,12 @@ cdef class OrderFactory:
         ClientOrderId
 
         """
-        return self._order_id_generator.generate()
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
+        if self._cache is not None:
+            while self._cache.order(client_order_id) is not None:
+                client_order_id = self._order_id_generator.generate()
+
+        return client_order_id
 
     cpdef OrderListId generate_order_list_id(self):
         """
@@ -154,7 +164,12 @@ cdef class OrderFactory:
         OrderListId
 
         """
-        return self._order_list_id_generator.generate()
+        cdef OrderListId order_list_id = self._order_list_id_generator.generate()
+        if self._cache is not None:
+            while self._cache.order_list(order_list_id) is not None:
+                order_list_id = self._order_list_id_generator.generate()
+
+        return order_list_id
 
     cpdef void reset(self):
         """
