@@ -91,9 +91,10 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         report_id: UUID4,
         ts_init: int,
+        use_position_ids: bool = True,
     ) -> TradeReport:
-        venue_position_id = None
-        if self.positionSide is not None:
+        venue_position_id: Optional[PositionId] = None
+        if self.positionSide is not None and use_position_ids:
             venue_position_id = PositionId(f"{instrument_id}-{self.positionSide}")
 
         order_side = OrderSide.BUY if self.isBuyer or self.buyer else OrderSide.SELL
