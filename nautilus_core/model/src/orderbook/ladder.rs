@@ -196,7 +196,9 @@ impl Ladder {
                 if cumulative_denominator + current >= target {
                     // This order has filled us, add fill and return
                     let remainder = target - cumulative_denominator;
-                    fills.push((book_order.price, remainder));
+                    if remainder.is_positive() {
+                        fills.push((book_order.price, remainder));
+                    }
                     return fills;
                 } else {
                     // Add this fill and continue
@@ -215,6 +217,8 @@ impl Ladder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::{
         data::order::BookOrder,
         enums::OrderSide,
@@ -499,21 +503,48 @@ mod tests {
         assert_eq!(ladder.top(), None)
     }
 
-    #[test]
-    fn test_simulate_order_fills_buy_when_far_from_market() {
-        let mut ladder = Ladder::new(OrderSide::Sell);
+    #[rstest]
+    #[case(OrderSide::Buy, Price::max(2), OrderSide::Sell)]
+    #[case(OrderSide::Sell, Price::min(2), OrderSide::Buy)]
+    fn test_simulate_order_fills_with_no_size(
+        #[case] side: OrderSide,
+        #[case] price: Price,
+        #[case] ladder_side: OrderSide,
+    ) {
+        let ladder = Ladder::new(ladder_side);
+        let order = BookOrder {
+            price, // <-- Simulate a MARKET order
+            size: Quantity::new(500.0, 0),
+            side,
+            order_id: 2,
+        };
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert!(fills.is_empty());
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, OrderSide::Sell, Price::new(60.0, 2))]
+    #[case(OrderSide::Sell, OrderSide::Buy, Price::new(40.0, 2))]
+    fn test_simulate_order_fills_buy_when_far_from_market(
+        #[case] order_side: OrderSide,
+        #[case] ladder_side: OrderSide,
+        #[case] ladder_price: Price,
+    ) {
+        let mut ladder = Ladder::new(ladder_side);
 
         ladder.add(BookOrder {
-            price: Price::new(100.00, 2),
+            price: ladder_price,
             size: Quantity::new(100.0, 0),
-            side: OrderSide::Sell,
+            side: ladder_side,
             order_id: 1,
         });
 
         let order = BookOrder {
-            price: Price::new(50.00, 2), // <-- Simulate a MARKET order
+            price: Price::new(50.00, 2),
             size: Quantity::new(500.0, 0),
-            side: OrderSide::Buy,
+            side: order_side,
             order_id: 2,
         };
 
