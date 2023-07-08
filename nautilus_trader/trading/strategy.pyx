@@ -1046,7 +1046,7 @@ cdef class Strategy(Actor):
         Condition.not_none(order, "order")
 
         cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
-        cdef str expire_time_str = f" @ {order.expire_time}" if hasattr(order, "expire_time") else ""
+        cdef str expire_time_str = f" @ {order.expire_time.isoformat()}" if hasattr(order, "expire_time") else ""
 
         if timer_name not in self._clock.timer_names:
             self._log.error(f"Cannot find managed GTD timer for order {order.client_order_id!r}")
@@ -1067,7 +1067,7 @@ cdef class Strategy(Actor):
 
     cdef void _set_gtd_expiry(self, Order order):
         self._log.info(
-            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
             LogColor.BLUE,
         )
         cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
