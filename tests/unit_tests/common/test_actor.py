@@ -1889,6 +1889,7 @@ class TestActor:
 
     def test_request_data_sends_request_to_data_engine(self):
         # Arrange
+        handler = []
         actor = MockActor()
         actor.register_base(
             msgbus=self.msgbus,
@@ -1900,7 +1901,11 @@ class TestActor:
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
 
         # Act
-        request_id = actor.request_data(data_type, ClientId("BLOOMBERG-01"))
+        request_id = actor.request_data(
+            data_type,
+            ClientId("BLOOMBERG-01"),
+            callback=handler.append,
+        )
 
         # Assert
         assert self.data_engine.request_count == 1
