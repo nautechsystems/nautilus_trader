@@ -1471,7 +1471,13 @@ cdef class OrderMatchingEngine:
             Price fill_px
             Quantity fill_qty
             bint initial_market_to_limit_fill = False
+            int fill_counter = 0
+            Price last_fill_px = None
         for fill_px, fill_qty in fills:
+            if fill_counter == 0 and fill_qty._mem.raw == 0:
+                self._log.error("Cannot fill order: `fill_qty` was zero (check sizes in data).")
+                return
+
             if order.filled_qty._mem.raw == 0:
                 if order.order_type == OrderType.MARKET_TO_LIMIT:
                     self._generate_order_updated(
@@ -1532,6 +1538,9 @@ cdef class OrderMatchingEngine:
             if order.order_type == OrderType.MARKET_TO_LIMIT and initial_market_to_limit_fill:
                 return  # Filled initial level
 
+            last_fill_px = fill_px
+            fill_counter += 1
+
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_TBBO
@@ -1547,11 +1556,12 @@ cdef class OrderMatchingEngine:
                 return
 
             # Exhausted simulated book volume (continue aggressive filling into next level)
-            fill_px = fills[-1][0]
+            # This is a very basic implementation of slipping by a single tick, in the future
+            # we will implement more detailed fill modeling.
             if order.side == OrderSide.BUY:
-                fill_px = fill_px.add(self.instrument.price_increment)
+                fill_px = last_fill_px.add(self.instrument.price_increment)
             elif order.side == OrderSide.SELL:
-                fill_px = fill_px.sub(self.instrument.price_increment)
+                fill_px = last_fill_px.sub(self.instrument.price_increment)
             else:
                 raise ValueError(  # pragma: no cover (design-time error)
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
