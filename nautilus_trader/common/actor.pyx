@@ -111,9 +111,9 @@ cdef class Actor(Component):
             config=config.dict(),
         )
 
-        self._request_ids: set[UUID4] = set()
         self._warning_events: set[type] = set()
         self._signal_classes: dict[str, type] = {}
+        self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
 
         # Configuration
         self.config = config
@@ -714,7 +714,7 @@ cdef class Actor(Component):
         self.on_resume()
 
     cpdef void _reset(self):
-        self._request_ids.clear()
+        self._pending_requests.clear()
         self.on_reset()
 
     cpdef void _dispose(self):
@@ -1603,7 +1603,12 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef UUID4 request_data(self, DataType data_type, ClientId client_id):
+    cpdef UUID4 request_data(
+        self,
+        DataType data_type,
+        ClientId client_id,
+        callback: Callable[[UUID4], None] | None = None,
+    ):
         """
         Request custom data for the given data type from the given data client.
 
@@ -1613,6 +1618,8 @@ cdef class Actor(Component):
             The data type for the request.
         client_id : ClientId
             The data client ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called when the response has completed processing.
 
         Returns
         -------
@@ -1623,6 +1630,7 @@ cdef class Actor(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
@@ -1634,12 +1642,17 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._request_ids.add(request_id)
+        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
         return request_id
 
-    cpdef UUID4 request_instrument(self, InstrumentId instrument_id, ClientId client_id = None):
+    cpdef UUID4 request_instrument(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+    ):
         """
         Request `Instrument` data for the given instrument ID.
 
@@ -1650,6 +1663,8 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called when the response has completed processing.
 
         Returns
         -------
@@ -1658,6 +1673,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
@@ -1671,12 +1687,17 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._request_ids.add(request_id)
+        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
         return request_id
 
-    cpdef UUID4 request_instruments(self, Venue venue, ClientId client_id = None):
+    cpdef UUID4 request_instruments(
+        self,
+        Venue venue,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+    ):
         """
         Request all `Instrument` data for the given venue.
 
@@ -1687,6 +1708,8 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called when the response has completed processing.
 
         Returns
         -------
@@ -1695,6 +1718,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(venue, "venue")
+        Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
@@ -1708,7 +1732,7 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._request_ids.add(request_id)
+        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
         return request_id
@@ -1719,6 +1743,7 @@ cdef class Actor(Component):
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
     ):
         """
         Request historical `QuoteTick` data.
@@ -1737,6 +1762,8 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called when the response has completed processing.
 
         Returns
         -------
@@ -1753,6 +1780,7 @@ cdef class Actor(Component):
         if start is not None and end is not None:
             Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
@@ -1768,7 +1796,7 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._request_ids.add(request_id)
+        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
         return request_id
@@ -1779,6 +1807,7 @@ cdef class Actor(Component):
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
     ):
         """
         Request historical `TradeTick` data.
@@ -1797,6 +1826,8 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called when the response has completed processing.
 
         Returns
         -------
@@ -1813,6 +1844,7 @@ cdef class Actor(Component):
         if start is not None and end is not None:
             Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
@@ -1828,7 +1860,7 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._request_ids.add(request_id)
+        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
         return request_id
@@ -1839,6 +1871,7 @@ cdef class Actor(Component):
         datetime start = None,
         datetime end = None,
         ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
     ):
         """
         Request historical `Bar` data.
@@ -1857,6 +1890,8 @@ cdef class Actor(Component):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called when the response has completed processing.
 
         Returns
         -------
@@ -1867,12 +1902,15 @@ cdef class Actor(Component):
         ------
         ValueError
             If `start` is not less than `end`.
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.not_none(bar_type, "bar_type")
         if start is not None and end is not None:
             Condition.true(start < end, "start was >= end")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
         cdef DataRequest request = DataRequest(
@@ -1888,7 +1926,7 @@ cdef class Actor(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._request_ids.add(request_id)
+        self._pending_requests[request_id] = callback
         self._send_data_req(request)
 
         return request_id
@@ -1908,7 +1946,7 @@ cdef class Actor(Component):
             True if request is pending, else False.
 
         """
-        return request_id in self._request_ids
+        return request_id in self._pending_requests
 
     cpdef bint has_pending_requests(self):
         """
@@ -1920,7 +1958,7 @@ cdef class Actor(Component):
             True if any requests are pending, else False.
 
         """
-        return len(self._request_ids) > 0
+        return len(self._pending_requests) > 0
 
     cpdef set pending_requests(self):
         """
@@ -1931,7 +1969,7 @@ cdef class Actor(Component):
         set[UUID4]
 
         """
-        return self._request_ids.copy()
+        return set(self._pending_requests.keys())
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
@@ -2392,27 +2430,32 @@ cdef class Actor(Component):
                 self.handle_historical_data(data)
         else:
             self.handle_historical_data(response.data)
-        self._request_ids.discard(response.correlation_id)
+        self._finish_response(response.correlation_id)
 
     cpdef void _handle_instrument_response(self, DataResponse response):
         self.handle_instrument(response.data)
-        self._request_ids.discard(response.correlation_id)
+        self._finish_response(response.correlation_id)
 
     cpdef void _handle_instruments_response(self, DataResponse response):
         self.handle_instruments(response.data)
-        self._request_ids.discard(response.correlation_id)
+        self._finish_response(response.correlation_id)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
         self.handle_quote_ticks(response.data)
-        self._request_ids.discard(response.correlation_id)
+        self._finish_response(response.correlation_id)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
         self.handle_trade_ticks(response.data)
-        self._request_ids.discard(response.correlation_id)
+        self._finish_response(response.correlation_id)
 
     cpdef void _handle_bars_response(self, DataResponse response):
         self.handle_bars(response.data)
-        self._request_ids.discard(response.correlation_id)
+        self._finish_response(response.correlation_id)
+
+    cpdef void _finish_response(self, UUID4 request_id):
+        callback: Callable = self._pending_requests.pop(request_id, None)
+        if callback is not None:
+            callback()
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
