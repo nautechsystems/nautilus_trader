@@ -2453,7 +2453,7 @@ cdef class Actor(Component):
         self._finish_response(response.correlation_id)
 
     cpdef void _finish_response(self, UUID4 request_id):
-        callback: Callable = self._pending_requests.pop(request_id, None)
+        callback: Callable | None = self._pending_requests.pop(request_id, None)
         if callback is not None:
             callback()
 
