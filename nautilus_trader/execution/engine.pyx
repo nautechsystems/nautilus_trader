@@ -903,7 +903,8 @@ cdef class ExecutionEngine(Component):
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if self.debug:
             self._log.debug(
-                f"Determining position ID for {repr(fill.client_order_id)} = {repr(position_id)}.",
+                f"Determining position ID for {repr(fill.client_order_id)}, "
+                f"position_id={repr(position_id)}.",
                 LogColor.MAGENTA,
             )
         if position_id is not None:
@@ -915,6 +916,8 @@ cdef class ExecutionEngine(Component):
                 )
             # Assign position ID to fill
             fill.position_id = position_id
+            if self.debug:
+                self._log.debug(f"Assigned {repr(position_id)} to fill {fill}.", LogColor.MAGENTA)
             return
 
         if oms_type == OmsType.HEDGING:
@@ -922,7 +925,10 @@ cdef class ExecutionEngine(Component):
                 # Already assigned
                 return
             # Assign new position ID
-            fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+            position_id = self._pos_id_generator.generate(fill.strategy_id)
+            if self.debug:
+                self._log.debug(f"Generated {repr(position_id)} for fill {fill}.", LogColor.MAGENTA)
+            fill.position_id = position_id
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
             fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
