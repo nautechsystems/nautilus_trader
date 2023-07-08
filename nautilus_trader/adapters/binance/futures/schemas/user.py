@@ -293,7 +293,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             )
         elif self.x == BinanceExecutionType.TRADE:
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            assert instrument is not None
+            if instrument is None:
+                raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
 
             # Determine commission
             commission_asset: Optional[str] = self.N
@@ -317,8 +318,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 trade_id=TradeId(str(self.t)),  # Trade ID
                 order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
                 order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
-                last_qty=Quantity.from_str(self.l),
-                last_px=Price.from_str(self.L),
+                last_qty=Quantity(float(self.l), instrument.size_precision),
+                last_px=Price(float(self.L), instrument.price_precision),
                 quote_currency=instrument.quote_currency,
                 commission=commission,
                 liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
