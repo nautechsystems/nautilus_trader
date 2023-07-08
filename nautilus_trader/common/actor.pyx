@@ -2480,7 +2480,7 @@ cdef class Actor(Component):
     cpdef void _finish_response(self, UUID4 request_id):
         callback: Callable | None = self._pending_requests.pop(request_id, None)
         if callback is not None:
-            callback()
+            callback(request_id)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
