@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.generators cimport OrderListIdGenerator
@@ -48,6 +49,7 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 
 cdef class OrderFactory:
     cdef Clock _clock
+    cdef CacheFacade _cache
     cdef ClientOrderIdGenerator _order_id_generator
     cdef OrderListIdGenerator _order_list_id_generator
 
