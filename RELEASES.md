@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Added `Actor.is_pending_request(...)` convenience method
 - Added `Actor.has_pending_requests()` convenience method
 - Added `Actor.pending_requests()` convenience method
+- Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`

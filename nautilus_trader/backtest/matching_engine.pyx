@@ -1424,6 +1424,8 @@ cdef class OrderMatchingEngine:
         Apply the given list of fills to the given order. Optionally provide
         existing position details.
 
+        If the `fills` list is empty, then an error will be logged.
+
         Parameters
         ----------
         order : Order
@@ -1454,6 +1456,9 @@ cdef class OrderMatchingEngine:
         order.liquidity_side = liquidity_side
 
         if not fills:
+            self._log.error(
+                "Cannot fill order: no fills from book when fills were expected (check sizes in data).",
+            )
             return  # No fills
 
         if self.oms_type == OmsType.NETTING:
@@ -1471,13 +1476,8 @@ cdef class OrderMatchingEngine:
             Price fill_px
             Quantity fill_qty
             bint initial_market_to_limit_fill = False
-            int fill_counter = 0
             Price last_fill_px = None
         for fill_px, fill_qty in fills:
-            if fill_counter == 0 and fill_qty._mem.raw == 0:
-                self._log.error("Cannot fill order: `fill_qty` was zero (check sizes in data).")
-                return
-
             if order.filled_qty._mem.raw == 0:
                 if order.order_type == OrderType.MARKET_TO_LIMIT:
                     self._generate_order_updated(
@@ -1496,9 +1496,6 @@ cdef class OrderMatchingEngine:
                 self.cancel_order(order)
                 return
 
-            if order.is_reduce_only and order.leaves_qty._mem.raw == 0:
-                return  # Done early
-
             if self.book_type == BookType.L1_TBBO and self._fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
                     fill_px = fill_px.add(self.instrument.price_increment)
@@ -1514,7 +1511,7 @@ cdef class OrderMatchingEngine:
                 if position.quantity._mem.raw == 0:
                     return  # Done
 
-                # Adjust fill to honor reduce only execution
+                # Adjust fill to honor reduce only execution (fill remaining position size only)
                 fill_qty = Quantity.from_raw_c(position.quantity._mem.raw, fill_qty._mem.precision)
 
                 self._generate_order_updated(
@@ -1539,7 +1536,6 @@ cdef class OrderMatchingEngine:
                 return  # Filled initial level
 
             last_fill_px = fill_px
-            fill_counter += 1
 
         if (
             order.is_open_c()
