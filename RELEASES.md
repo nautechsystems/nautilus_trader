@@ -20,7 +20,10 @@ Released on TBD (UTC).
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 
 ### Fixes
+- Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
 - Fixed assignment of position IDs for contingency orders (when parent filled)
+- Fixed Binance Futures `PositionStatusReport` parsing of position side
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
 - Fixed Binance execution submitting of order lists
 - Fixed fill handling of `reduce_only` orders when partially filled
 - Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
