@@ -333,7 +333,7 @@ class VolatilityMarketMaker(Strategy):
             self.log.info("No quotes yet...")
             return
 
-        # If order filled then replace order at atr multiple distance from the market
+        # If order filled then replace order at ATR multiple distance from the market
         if isinstance(event, OrderFilled):
             if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:
