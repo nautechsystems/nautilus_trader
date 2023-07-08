@@ -1619,12 +1619,18 @@ cdef class Actor(Component):
         client_id : ClientId
             The data client ID.
         callback : Callable[[UUID4], None], optional
-            The registered callback, to be called when the response has completed processing.
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
 
         Returns
         -------
         UUID4
             The `request_id` for the request.
+
+        Raises
+        ------
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.not_none(client_id, "client_id")
@@ -1664,12 +1670,18 @@ cdef class Actor(Component):
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
-            The registered callback, to be called when the response has completed processing.
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
 
         Returns
         -------
         UUID4
             The `request_id` for the request.
+
+        Raises
+        ------
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1709,12 +1721,18 @@ cdef class Actor(Component):
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
-            The registered callback, to be called when the response has completed processing.
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
 
         Returns
         -------
         UUID4
             The `request_id` for the request.
+
+        Raises
+        ------
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.not_none(venue, "venue")
@@ -1763,7 +1781,8 @@ cdef class Actor(Component):
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
-            The registered callback, to be called when the response has completed processing.
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
 
         Returns
         -------
@@ -1774,6 +1793,8 @@ cdef class Actor(Component):
         ------
         ValueError
             If `start` is not less than `end`.
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1827,7 +1848,8 @@ cdef class Actor(Component):
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
-            The registered callback, to be called when the response has completed processing.
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
 
         Returns
         -------
@@ -1838,6 +1860,8 @@ cdef class Actor(Component):
         ------
         ValueError
             If `start` is not less than `end`.
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1891,7 +1915,8 @@ cdef class Actor(Component):
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
-            The registered callback, to be called when the response has completed processing.
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
 
         Returns
         -------
