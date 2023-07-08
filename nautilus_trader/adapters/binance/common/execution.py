@@ -496,6 +496,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 instrument_id=self._get_cached_instrument_id(trade.symbol),
                 report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                use_position_ids=self._use_position_ids,
             )
             self._log.debug(f"Received {report}.")
             reports.append(report)
