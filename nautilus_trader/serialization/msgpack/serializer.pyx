@@ -117,7 +117,7 @@ cdef class MsgPackSerializer(Serializer):
             uint64_t value_uint64
         if self.timestamps_as_iso8601 or self.timestamps_as_str:
             for key, value in timestamp_kvs.items():
-                if re.match(r'^\d+$', value):  # Check if value is an integer-like string
+                if re.match(r"^\d+$", value):  # Check if value is an integer-like string
                     value_uint64 = int(value)
                     obj_dict[key] = value_uint64
                 else:  # Else assume the value is in ISO 8601 format
