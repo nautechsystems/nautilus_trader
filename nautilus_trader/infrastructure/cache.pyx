@@ -886,7 +886,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_position(self, Position position):
         """
-        Add the given position associated with the given strategy ID.
+        Add the given position to the database.
 
         Parameters
         ----------
