@@ -504,7 +504,10 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         self._reconcile_mass_status(report)
 
-    def _reconcile_mass_status(self, mass_status: ExecutionMassStatus) -> bool:
+    def _reconcile_mass_status(  # noqa: C901 (too complex)
+        self,
+        mass_status: ExecutionMassStatus,
+    ) -> bool:
         self._log.debug(f"[RECV][RPT] {mass_status}.")
         self.report_count += 1
 
@@ -518,16 +521,37 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         results: list[bool] = []
+        reconciled_orders: set[ClientOrderId] = set()
+        reconciled_trades: set[TradeId] = set()
 
         # Reconcile all reported orders
         for venue_order_id, order_report in mass_status.order_reports().items():
             trades = mass_status.trade_reports().get(venue_order_id, [])
+
+            # Check and handle duplicate client order IDs
+            client_order_id = order_report.client_order_id
+            if client_order_id is not None and client_order_id in reconciled_orders:
+                self._log.warning(f"Duplicated {client_order_id!r} detected.")
+                client_order_id = ClientOrderId(client_order_id.value + "-DUP")
+                self._log.warning(f"Reassigned {client_order_id!r}.")
+                order_report.client_order_id = client_order_id
+                for trade in trades:
+                    trade.client_order_id = client_order_id
+
+            # Check for duplicate trade IDs
+            for trade in trades:
+                if trade.trade_id in reconciled_trades:
+                    # Determine how to handle this
+                    self._log.error(f"Duplicated {trade.trade_id!r} detected (bad data).")
+                reconciled_trades.add(trade.trade_id)
+
             try:
                 result = self._reconcile_order_report(order_report, trades)
             except InvalidStateTrigger as e:
                 self._log.error(str(e))
                 result = False
             results.append(result)
+            reconciled_orders.add(order_report.client_order_id)
 
         if not self.filter_position_reports:
             position_reports: list[PositionStatusReport]
@@ -558,6 +582,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 client_order_id = self._generate_client_order_id()
             # Assign to report
             report.client_order_id = client_order_id
+
+        self._log.info(f"Reconciling order for {client_order_id!r}...", LogColor.BLUE)
 
         order: Order = self._cache.order(client_order_id)
         if order is None:
@@ -700,9 +726,8 @@ class LiveExecutionEngine(ExecutionEngine):
         position_signed_decimal_qty: Decimal = position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
-                f"Cannot reconcile position: "
-                f"position ID {report.venue_position_id} "
-                f"position signed qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}. "
+                f"Cannot reconcile {report.instrument_id} {report.venue_position_id}: position "
+                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}. "
                 f"{report}.",
             )
             return False  # Failed
@@ -720,8 +745,9 @@ class LiveExecutionEngine(ExecutionEngine):
             position_signed_decimal_qty += position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
-                f"Cannot reconcile {report}: "
-                f"position signed decimal qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}.",
+                f"Cannot reconcile {report.instrument_id}: position "
+                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}. "
+                f"{report}.",
             )
             return False  # Failed
 
@@ -788,7 +814,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _generate_external_order(self, report: OrderStatusReport) -> Order | None:
         self._log.info(
-            f"Generating external order {report.client_order_id!r}",
+            f"Generating order {report.client_order_id!r}",
             color=LogColor.BLUE,
         )
 
