@@ -2366,6 +2366,7 @@ cdef class OrderFilled(OrderEvent):
     cdef OrderFilled from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str position_id_str = values["position_id"]
+        cdef bytes info_bytes = values["info"]
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2385,7 +2386,7 @@ cdef class OrderFilled(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=msgspec.json.decode(values["info"]),
+            info=msgspec.json.decode(info_bytes) if info_bytes is not None else None,
             reconciliation=values.get("reconciliation", False),
         )
 
@@ -2412,7 +2413,7 @@ cdef class OrderFilled(OrderEvent):
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": msgspec.json.encode(obj.info),
+            "info": msgspec.json.encode(obj.info) if obj.info is not None else None,
             "reconciliation": obj.reconciliation,
         }
 
