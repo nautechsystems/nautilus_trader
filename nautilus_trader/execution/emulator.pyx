@@ -192,9 +192,7 @@ cdef class OrderEmulator(Actor):
             else:
                 command = self.cache.load_submit_order_command(order.client_order_id)
                 if command is None:
-                    self._log.error(
-                        f"Cannot load `SubmitOrder` command for {repr(order.client_order_id)}: not found in cache."
-                    )
+                    # Order not yet held in emulator
                     continue
                 self._log.info(f"Loaded {command}.", LogColor.BLUE)
                 self._handle_submit_order(command)
