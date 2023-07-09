@@ -120,8 +120,6 @@ cdef class Cache(CacheFacade):
         self._order_lists: dict[OrderListId, OrderList] = {}
         self._positions: dict[PositionId, Position] = {}
         self._position_snapshots: dict[PositionId, list[bytes]] = {}
-        self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
-        self._submit_order_list_commands: dict[OrderListId, SubmitOrderList] = {}
 
         # Cache index
         self._index_venue_account: dict[Venue, AccountId] = {}
@@ -257,6 +255,9 @@ cdef class Cache(CacheFacade):
 
         if self._database is not None:
             self._orders = self._database.load_orders()
+            orders_pos_map = self._database.load_orders_position_map()
+            for client_order_id, position_id in orders_pos_map.items():
+                self._index_order_position[client_order_id] = position_id
         else:
             self._orders = {}
 
@@ -327,32 +328,6 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
         )
 
-    cpdef void cache_commands(self):
-        """
-        Clear the current submit order commands cache and load commands from the
-        cache database.
-        """
-        self._log.debug(f"Loading commands from database...")
-
-        if self._database is not None:
-            self._submit_order_commands = self._database.load_submit_order_commands()
-            self._submit_order_list_commands = self._database.load_submit_order_list_commands()
-        else:
-            self._submit_order_commands = {}
-            self._submit_order_list_commands = {}
-
-        cdef int count = len(self._submit_order_commands)
-        self._log.info(
-            f"Cached {count} submit_order command{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._submit_order_commands else LogColor.NORMAL
-        )
-
-        count = len(self._submit_order_list_commands)
-        self._log.info(
-            f"Cached {count} submit_order_list command{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._submit_order_list_commands else LogColor.NORMAL
-        )
-
     cpdef void build_index(self):
         """
         Clear the current cache index and re-build.
@@ -392,9 +367,10 @@ cdef class Cache(CacheFacade):
 
         # Needed type defs
         # ----------------
-        cdef AccountId account_id
-        cdef Order order
-        cdef Position position
+        cdef:
+            AccountId account_id
+            Order order
+            Position position
 
         # Check object caches
         # -------------------
@@ -746,8 +722,6 @@ cdef class Cache(CacheFacade):
         self._order_lists.clear()
         self._positions.clear()
         self._position_snapshots.clear()
-        self._submit_order_commands.clear()
-        self._submit_order_list_commands.clear()
         self.clear_index()
 
         self._log.debug(f"Reset cache.")
@@ -1067,42 +1041,6 @@ cdef class Cache(CacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._positions.get(position_id)
-
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
-        """
-        Load the command associated with the given client order ID (if found).
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order ID for the command to load.
-
-        Returns
-        -------
-        SubmitOrder or ``None``
-
-        """
-        Condition.not_none(client_order_id, "client_order_id")
-
-        return self._submit_order_commands.get(client_order_id)
-
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
-        """
-        Load the command associated with the given order list ID (if found).
-
-        Parameters
-        ----------
-        order_list_id : OrderListId
-            The order list ID for the command to load.
-
-        Returns
-        -------
-        SubmitOrderList or ``None``
-
-        """
-        Condition.not_none(order_list_id, "order_list_id")
-
-        return self._submit_order_list_commands.get(order_list_id)
 
     cpdef void add(self, str key, bytes value):
         """
@@ -1536,7 +1474,7 @@ cdef class Cache(CacheFacade):
 
         # Update database
         if self._database is not None:
-            self._database.add_order(order)  # Logs
+            self._database.add_order(order, position_id)
 
         if position_id is not None:
             self.add_position_id(
@@ -1706,58 +1644,6 @@ cdef class Cache(CacheFacade):
             self._position_snapshots[position_id] = [position_pickled]
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
-
-    cpdef void add_submit_order_command(self, SubmitOrder command):
-        """
-        Add the given command to the cache.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to add to the cache.
-
-        """
-        Condition.not_none(command, "command")
-        Condition.not_in(
-            command.order.client_order_id,
-            self._submit_order_commands,
-            "command.order.client_order_id",
-            "self._submit_order_commands",
-        )
-
-        self._submit_order_commands[command.order.client_order_id] = command
-
-        self._log.debug(f"Added command {command}")
-
-        # Update database
-        if self._database is not None:
-            self._database.add_submit_order_command(command)
-
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
-        """
-        Add the given command to the cache.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to add to the cache.
-
-        """
-        Condition.not_none(command, "command")
-        Condition.not_in(
-            command.order_list.id,
-            self._submit_order_list_commands,
-            "command.order_list.id",
-            "self._submit_order_list_commands",
-        )
-
-        self._submit_order_list_commands[command.order_list.id] = command
-
-        self._log.debug(f"Added command {command}")
-
-        # Update database
-        if self._database is not None:
-            self._database.add_submit_order_list_command(command)
 
     cpdef void update_account(self, Account account):
         """

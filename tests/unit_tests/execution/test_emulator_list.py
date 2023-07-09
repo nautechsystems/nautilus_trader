@@ -196,7 +196,7 @@ class TestOrderEmulatorWithOrderLists:
         )
 
         # Assert
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 3
         assert stop1 in self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
         assert stop2 in self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
         assert stop3 in self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
@@ -222,7 +222,7 @@ class TestOrderEmulatorWithOrderLists:
         )
 
         # Assert
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders() == [
             bracket.first,
         ]
@@ -250,7 +250,7 @@ class TestOrderEmulatorWithOrderLists:
         )
 
         # Assert
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders() == [
             bracket.first,
         ]
@@ -274,7 +274,6 @@ class TestOrderEmulatorWithOrderLists:
         )
 
         # Assert
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
         assert self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id) is None
         assert self.exec_engine.command_count == 1
 
@@ -313,7 +312,7 @@ class TestOrderEmulatorWithOrderLists:
 
         # Assert
         matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 3
         assert bracket.orders[0] not in matching_core
         assert bracket.orders[1] in matching_core
         assert bracket.orders[2] in matching_core
@@ -362,7 +361,7 @@ class TestOrderEmulatorWithOrderLists:
 
         # Assert
         matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 3
         assert bracket.orders[0] not in matching_core
         assert bracket.orders[1] in matching_core
         assert bracket.orders[2] in matching_core
@@ -413,7 +412,7 @@ class TestOrderEmulatorWithOrderLists:
 
         # Assert
         matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 3
         assert bracket.orders[0] not in matching_core
         assert bracket.orders[1] in matching_core
         assert bracket.orders[2] in matching_core
@@ -463,7 +462,7 @@ class TestOrderEmulatorWithOrderLists:
 
         # Assert
         matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 0
         assert bracket.orders[0] not in matching_core
         assert bracket.orders[1] not in matching_core
         assert bracket.orders[2] not in matching_core
@@ -712,8 +711,7 @@ class TestOrderEmulatorWithOrderLists:
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert self.exec_engine.command_count == 2
-        assert len(self.emulator.get_submit_order_commands()) == 1
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 2
         assert entry_order.status == OrderStatus.FILLED
         assert not matching_core.order_exists(entry_order.client_order_id)
         assert matching_core.order_exists(sl_order.client_order_id)
@@ -781,7 +779,6 @@ class TestOrderEmulatorWithOrderLists:
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert self.exec_engine.command_count == 1
         assert len(self.emulator.get_submit_order_commands()) == 2
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
         assert entry_order.status == OrderStatus.FILLED
         assert not matching_core.order_exists(entry_order.client_order_id)
         assert matching_core.order_exists(sl_order.client_order_id)
@@ -858,8 +855,7 @@ class TestOrderEmulatorWithOrderLists:
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert self.exec_engine.command_count == 2
-        assert len(self.emulator.get_submit_order_commands()) == 0
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.cache.orders_open_count() == 0
         assert entry_order.status == OrderStatus.FILLED
         assert sl_order.status == OrderStatus.CANCELED
@@ -929,8 +925,7 @@ class TestOrderEmulatorWithOrderLists:
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert self.exec_engine.command_count == 2
-        assert len(self.emulator.get_submit_order_commands()) == 0
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.cache.orders_open_count() == 1
         assert entry_order.status == OrderStatus.FILLED
         assert sl_order.status == OrderStatus.PARTIALLY_FILLED
@@ -1001,8 +996,7 @@ class TestOrderEmulatorWithOrderLists:
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert self.exec_engine.command_count == 2
-        assert len(self.emulator.get_submit_order_commands()) == 1
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 2
         assert self.cache.orders_emulated_count() == 1
         assert entry_order.status == OrderStatus.FILLED
         assert sl_order.status == OrderStatus.PARTIALLY_FILLED
@@ -1049,7 +1043,6 @@ class TestOrderEmulatorWithOrderLists:
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert self.exec_engine.command_count == 1
         assert len(self.emulator.get_submit_order_commands()) == 0
-        assert len(self.emulator.get_submit_order_list_commands()) == 1
         assert self.cache.orders_emulated_count() == 2
         assert not entry_order.is_quote_quantity
         assert not sl_order.is_quote_quantity

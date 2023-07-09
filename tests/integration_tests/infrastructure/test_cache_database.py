@@ -23,17 +23,13 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.execution.messages import SubmitOrder
-from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -42,11 +38,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecAlgorithmId
-from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -244,32 +236,6 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert self.database.load_position(position.id) == position
-
-    def test_add_submit_order_command(self):
-        # Arrange
-        order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-            Price.from_str("1.00000"),
-        )
-
-        command = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER-001"),
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.database.add_submit_order_command(command)
-
-        # Act
-        result = self.database.load_submit_order_command(order.client_order_id)
-
-        # Assert
-        assert result == command
 
     def test_update_account(self):
         # Arrange
@@ -886,82 +852,6 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert result == {}
-
-    def test_load_submit_order_command_when_not_in_database(self):
-        # Arrange, Act
-        result = self.cache.load_submit_order_command(ClientOrderId("O-123456789"))
-
-        # Assert
-        assert result is None
-
-    def test_load_submit_order_list_command_when_not_in_database(self):
-        # Arrange, Act
-        result = self.cache.load_submit_order_list_command(OrderListId("1"))
-
-        # Assert
-        assert result is None
-
-    def test_load_submit_order_command(self):
-        # Arrange
-        order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-            Price.from_str("1.00000"),
-        )
-
-        command = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER-001"),
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.database.add_submit_order_command(command)
-        self.cache.add_submit_order_command(command)
-
-        # Act
-        result = self.cache.load_submit_order_command(order.client_order_id)
-
-        # Assert
-        assert result == command
-
-    def test_load_submit_order_list_command(self):
-        order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
-            clock=self.clock,
-        )
-
-        bracket = order_factory.bracket(
-            instrument_id=AUDUSD_SIM.id,
-            order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(100_000),
-            sl_trigger_price=Price.from_str("1.00000"),
-            tp_price=Price.from_str("1.00100"),
-            entry_exec_algorithm_id=ExecAlgorithmId("VWAP"),
-            entry_exec_algorithm_params={"max_percentage": 100.0, "start": 0, "end": 1},
-        )
-
-        command = SubmitOrderList(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
-            order_list=bracket,
-            position_id=PositionId("P-001"),
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.database.add_submit_order_list_command(command)
-        self.cache.add_submit_order_list_command(command)
-
-        # Act
-        result = self.cache.load_submit_order_list_command(bracket.id)
-
-        # Assert
-        assert result == command
 
     def test_flush(self):
         # Arrange

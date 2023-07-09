@@ -223,13 +223,6 @@ class TestOrderEmulatorWithSingleOrders:
         # Assert
         assert commands == {}
 
-    def test_get_submit_order_list_commands_when_no_emulations_returns_empty_dict(self) -> None:
-        # Arrange, Act
-        commands = self.emulator.get_submit_order_list_commands()
-
-        # Assert
-        assert commands == {}
-
     def test_get_matching_core_when_no_emulations_returns_none(self) -> None:
         # Arrange, Act
         matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
