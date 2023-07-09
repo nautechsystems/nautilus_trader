@@ -917,7 +917,7 @@ cdef class ExecutionEngine(Component):
             # Assign position ID to fill
             fill.position_id = position_id
             if self.debug:
-                self._log.debug(f"Assigned {repr(position_id)} to fill {fill}.", LogColor.MAGENTA)
+                self._log.debug(f"Assigned {repr(position_id)} to {fill}.", LogColor.MAGENTA)
             return
 
         if oms_type == OmsType.HEDGING:
@@ -926,9 +926,9 @@ cdef class ExecutionEngine(Component):
                 return
             # Assign new position ID
             position_id = self._pos_id_generator.generate(fill.strategy_id)
-            if self.debug:
-                self._log.debug(f"Generated {repr(position_id)} for fill {fill}.", LogColor.MAGENTA)
             fill.position_id = position_id
+            if self.debug:
+                self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
             fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
