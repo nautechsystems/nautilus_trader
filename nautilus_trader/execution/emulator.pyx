@@ -173,13 +173,13 @@ cdef class OrderEmulator(Actor):
             self._log.info("No emulated orders to reactivate.")
             return
 
-        cdef int emulated_count = len(emulated_orders)
-        self._log.info(f"Reactivating {emulated_count} emulated order{'' if emulated_count == 1 else 's'}...")
-
         cdef:
             Order order
             TradingCommand command
         for order in emulated_orders:
+            if order.status != OrderStatus.INITIALIZED:
+                continue  # No longer emulated
+            self._log.info(f"Reactivating emulated order {order}.", LogColor.BLUE)
             if order.order_list_id is not None and order.order_list_id not in self._commands_submit_order_list:
                 command = self.cache.load_submit_order_list_command(order.order_list_id)
                 if command is None:
