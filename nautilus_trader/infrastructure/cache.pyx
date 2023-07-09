@@ -606,6 +606,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef OrderEvent event
         for event_bytes in events:
             event = self._serializer.deserialize(event_bytes)
+
+            # Check event integrity
+            if event in order._events:
+                raise RuntimeError(f"Corrupt cache with duplicate event for order {event}")
+
             if event_count > 0 and isinstance(event, OrderInitialized):
                 if event.order_type == OrderType.MARKET:
                     order = MarketOrder.transform(order, event.ts_init)
@@ -658,9 +663,22 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef Position position = Position(instrument, initial_fill)
 
-        cdef bytes event_bytes
+        cdef:
+            bytes event_bytes
+            OrderFilled fill
         for event_bytes in events:
-            position.apply(self._serializer.deserialize(event_bytes))
+            event = self._serializer.deserialize(event_bytes)
+
+            # Check event integrity
+            if event in position._events:
+                raise RuntimeError(f"Corrupt cache with duplicate event for position {event}")
+            if event.trade_id in position._trade_ids:
+                raise RuntimeError(
+                    f"Duplicate {event.trade_id!r}, "
+                    f"existing {position.id!r} trade_ids={position._trade_ids}",
+                )
+
+            position.apply(event)
 
         return position
 
