@@ -563,17 +563,14 @@ cdef class ExecutionEngine(Component):
         """
         cdef uint64_t ts = unix_timestamp_ms()
 
-        # ***** WARNING *****
-        # Cache commands early so that `SubmitOrder` commands don't revert
-        # orders back to their initialized state.
         self._cache.cache_general()
-        self._cache.cache_commands()
         self._cache.cache_currencies()
         self._cache.cache_instruments()
         self._cache.cache_accounts()
         self._cache.cache_orders()
         self._cache.cache_order_lists()
         self._cache.cache_positions()
+
         self._cache.build_index()
         self._cache.check_integrity()
         self._set_position_id_counts()

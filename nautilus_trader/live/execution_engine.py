@@ -504,7 +504,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         self._reconcile_mass_status(report)
 
-    def _reconcile_mass_status(  # noqa: C901 (too complex)
+    def _reconcile_mass_status(
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
@@ -531,19 +531,16 @@ class LiveExecutionEngine(ExecutionEngine):
             # Check and handle duplicate client order IDs
             client_order_id = order_report.client_order_id
             if client_order_id is not None and client_order_id in reconciled_orders:
-                self._log.warning(f"Duplicated {client_order_id!r} detected.")
-                client_order_id = ClientOrderId(client_order_id.value + "-DUP")
-                self._log.warning(f"Reassigned {client_order_id!r}.")
-                order_report.client_order_id = client_order_id
-                for trade in trades:
-                    trade.client_order_id = client_order_id
+                self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
+                continue  # Determine how to handle this
 
             # Check for duplicate trade IDs
-            for trade in trades:
-                if trade.trade_id in reconciled_trades:
-                    # Determine how to handle this
-                    self._log.error(f"Duplicated {trade.trade_id!r} detected (bad data).")
-                reconciled_trades.add(trade.trade_id)
+            for trade_report in trades:
+                if trade_report.trade_id in reconciled_trades:
+                    self._log.error(
+                        f"Duplicate {trade_report.trade_id!r} detected: {trade_report}.",
+                    )
+                reconciled_trades.add(trade_report.trade_id)
 
             try:
                 result = self._reconcile_order_report(order_report, trades)

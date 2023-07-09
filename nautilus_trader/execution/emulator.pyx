@@ -98,7 +98,6 @@ cdef class OrderEmulator(Actor):
 
         self._matching_cores: dict[InstrumentId, MatchingCore]  = {}
         self._commands_submit_order: dict[ClientOrderId, SubmitOrder] = {}
-        self._commands_submit_order_list: dict[OrderListId, SubmitOrderList] = {}
 
         self._subscribed_quotes: set[InstrumentId] = set()
         self._subscribed_trades: set[InstrumentId] = set()
@@ -143,17 +142,6 @@ cdef class OrderEmulator(Actor):
         """
         return self._commands_submit_order.copy()
 
-    def get_submit_order_list_commands(self) -> dict[OrderListId, SubmitOrderList]:
-        """
-        Return the emulators cached submit order list commands.
-
-        Returns
-        -------
-        dict[OrderListId, SubmitOrderList]
-
-        """
-        return self._commands_submit_order_list.copy()
-
     def get_matching_core(self, InstrumentId instrument_id) -> Optional[MatchingCore]:
         """
         Return the emulators matching core for the given instrument ID.
@@ -175,27 +163,23 @@ cdef class OrderEmulator(Actor):
 
         cdef:
             Order order
-            TradingCommand command
+            SubmitOrder command
         for order in emulated_orders:
             if order.status != OrderStatus.INITIALIZED:
                 continue  # No longer emulated
-            self._log.info(f"Reactivating emulated order {order}.", LogColor.BLUE)
-            if order.order_list_id is not None and order.order_list_id not in self._commands_submit_order_list:
-                command = self.cache.load_submit_order_list_command(order.order_list_id)
-                if command is None:
-                    self._log.error(
-                        f"Cannot load `SubmitOrderList` command for {repr(order.order_list_id)}: not found in cache."
-                    )
-                    continue
-                self._log.info(f"Loaded {command}.", LogColor.BLUE)
-                self._handle_submit_order_list(command)
-            else:
-                command = self.cache.load_submit_order_command(order.client_order_id)
-                if command is None:
-                    # Order not yet held in emulator
-                    continue
-                self._log.info(f"Loaded {command}.", LogColor.BLUE)
-                self._handle_submit_order(command)
+
+            position_id = self.cache.position_id(order.client_order_id)
+            command = SubmitOrder(
+                trader_id=self.trader_id,
+                strategy_id=order.strategy_id,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+                position_id=position_id,
+                # client_id=client_id,  # Not yet supported
+            )
+
+            self._handle_submit_order(command)
 
     cpdef void on_event(self, Event event):
         self._log.info(f"Received {event}.", LogColor.MAGENTA)
@@ -217,7 +201,6 @@ cdef class OrderEmulator(Actor):
 
     cpdef void on_reset(self):
         self._commands_submit_order.clear()
-        self._commands_submit_order_list.clear()
         self._matching_cores.clear()
 
     cpdef void on_dispose(self):
@@ -368,11 +351,6 @@ cdef class OrderEmulator(Actor):
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
-        Condition.not_in(command.order_list.id, self._commands_submit_order_list, "command.order_list.id", "self._commands_submit_order_list")
-
-        # Cache command
-        self._commands_submit_order_list[command.order_list.id] = command
-
         # Setup event monitoring
         if command.strategy_id not in self._subscribed_strategies:
             # Subscribe to all strategy events
@@ -394,7 +372,7 @@ cdef class OrderEmulator(Actor):
             self._create_new_submit_order(
                 order=order,
                 position_id=command.position_id,
-                client_id=command.client_id,
+                client_id=None,  # Not yet supported
             )
 
     cdef void _handle_modify_order(self, ModifyOrder command):
@@ -489,20 +467,20 @@ cdef class OrderEmulator(Actor):
         PositionId position_id,
         ClientId client_id,
     ):
-        cdef SubmitOrder submit = self.cache.load_submit_order_command(order.client_order_id)
-        if submit is None:
-            submit = SubmitOrder(
-                trader_id=order.trader_id,
-                strategy_id=order.strategy_id,
-                order=order,
-                position_id=position_id,
-                client_id=client_id,
-                command_id=UUID4(),
-                ts_init=self.clock.timestamp_ns(),
-            )
-            self.cache.add_submit_order_command(submit)
+        cdef SubmitOrder submit = SubmitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            order=order,
+            position_id=position_id,
+            client_id=client_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
 
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
+            # Cache command
+            self._commands_submit_order[order.client_order_id] = submit
+
             if order.exec_algorithm_id is not None:
                 self._send_algo_command(submit)
             else:
@@ -613,6 +591,7 @@ cdef class OrderEmulator(Actor):
 
         cdef dict exec_algorithm_index = {}
         cdef:
+            PositionId position_id
             ClientOrderId client_order_id
             SubmitOrderList submit_order_list
             Order child_order
@@ -623,18 +602,17 @@ cdef class OrderEmulator(Actor):
             Quantity filled_qty
         if order.contingency_type == ContingencyType.OTO:
             assert order.linked_order_ids
-            submit_order_list = self._commands_submit_order_list.get(order.order_list_id)
-            assert submit_order_list
+            position_id = self.cache.position_id(order.client_order_id)
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order, f"Cannot find child order for {repr(client_order_id)}"
                 if child_order.is_closed_c():
                     continue
-                if not self.cache.load_submit_order_command(child_order.client_order_id):
+                if not child_order.client_order_id in self._commands_submit_order:
                     self._create_new_submit_order(
                         order=child_order,
-                        position_id=submit_order_list.position_id,
-                        client_id=submit_order_list.client_id,
+                        position_id=position_id,
+                        client_id=None,  # Not yet supported
                     )
                     continue
 

@@ -497,8 +497,6 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self.cache.add_submit_order_command(command)
-
         if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
             self._set_gtd_expiry(order)
 
@@ -596,8 +594,6 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
-
-        self.cache.add_submit_order_list_command(command)
 
         if manage_gtd_expiry:
             for order in command.order_list.orders:

@@ -67,8 +67,6 @@ cdef class Cache(CacheFacade):
     cdef dict _order_lists
     cdef dict _positions
     cdef dict _position_snapshots
-    cdef dict _submit_order_commands
-    cdef dict _submit_order_list_commands
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
@@ -109,7 +107,6 @@ cdef class Cache(CacheFacade):
     cpdef void cache_orders(self)
     cpdef void cache_order_lists(self)
     cpdef void cache_positions(self)
-    cpdef void cache_commands(self)
     cpdef void build_index(self)
     cpdef bint check_integrity(self)
     cpdef bint check_residuals(self)
@@ -135,8 +132,6 @@ cdef class Cache(CacheFacade):
     cpdef Position load_position(self, PositionId position_id)
     cpdef void load_actor(self, Actor actor)
     cpdef void load_strategy(self, Strategy strategy)
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
     cpdef void add_order_book(self, OrderBook order_book)
     cpdef void add_ticker(self, Ticker ticker)
@@ -155,8 +150,6 @@ cdef class Cache(CacheFacade):
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
     cpdef void add_position(self, Position position, OmsType oms_type)
     cpdef void snapshot_position(self, Position position)
-    cpdef void add_submit_order_command(self, SubmitOrder command)
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command)
 
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
