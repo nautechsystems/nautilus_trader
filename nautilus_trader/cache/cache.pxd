@@ -30,6 +30,7 @@ from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -74,6 +75,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_order_ids
     cdef dict _index_order_position
     cdef dict _index_order_strategy
+    cdef dict _index_order_client
     cdef dict _index_position_strategy
     cdef dict _index_position_orders
     cdef dict _index_instrument_orders
@@ -145,7 +147,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_instrument(self, Instrument instrument)
     cpdef void add_synthetic(self, SyntheticInstrument synthetic)
     cpdef void add_account(self, Account account)
-    cpdef void add_order(self, Order order, PositionId position_id, bint override=*)
+    cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*, bint override=*)
     cpdef void add_order_list(self, OrderList order_list)
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
     cpdef void add_position(self, Position position, OmsType oms_type)

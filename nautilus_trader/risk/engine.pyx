@@ -794,7 +794,7 @@ cdef class RiskEngine(Component):
             return
 
         if not self._cache.order_exists(order.client_order_id):
-            self._cache.add_order(order, position_id=None)
+            self._cache.add_order(order)
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(

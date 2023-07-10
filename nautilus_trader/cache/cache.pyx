@@ -46,6 +46,7 @@ from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -128,6 +129,7 @@ cdef class Cache(CacheFacade):
         self._index_order_ids: dict[VenueOrderId, ClientOrderId] = {}
         self._index_order_position: dict[ClientOrderId, PositionId] = {}
         self._index_order_strategy: dict[ClientOrderId, StrategyId] = {}
+        self._index_order_client: dict[ClientOrderId, ClientId] = {}
         self._index_position_strategy: dict[PositionId, StrategyId] = {}
         self._index_position_orders: dict[PositionId, set[ClientOrderId]] = {}
         self._index_instrument_orders: dict[InstrumentId, set[ClientOrderId]] = {}
@@ -255,9 +257,8 @@ cdef class Cache(CacheFacade):
 
         if self._database is not None:
             self._orders = self._database.load_orders()
-            orders_pos_map = self._database.load_orders_position_map()
-            for client_order_id, position_id in orders_pos_map.items():
-                self._index_order_position[client_order_id] = position_id
+            self._index_order_position = self._database.load_index_order_position()
+            self._index_order_client = self._database.load_index_order_client()
         else:
             self._orders = {}
 
@@ -675,6 +676,7 @@ cdef class Cache(CacheFacade):
         self._index_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
+        self._index_order_client.clear()
         self._index_position_strategy.clear()
         self._index_position_orders.clear()
         self._index_instrument_orders.clear()
@@ -1381,7 +1383,13 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
-    cpdef void add_order(self, Order order, PositionId position_id, bint override = False):
+    cpdef void add_order(
+        self,
+        Order order,
+        PositionId position_id = None,
+        ClientId client_id = None,
+        bint override = False,
+    ):
         """
         Add the given order to the cache indexed with the given position
         ID.
@@ -1390,8 +1398,10 @@ cdef class Cache(CacheFacade):
         ----------
         order : Order
             The order to add.
-        position_id : PositionId
+        position_id : PositionId, optional
             The position ID to index for the order.
+        client_id : ClientId, optional
+            The execution client ID for order routing.
         override : bool, default False
             If the added order should 'override' any existing order and replace
             it in the cache. This is currently used for emulated orders which are
@@ -1474,9 +1484,12 @@ cdef class Cache(CacheFacade):
 
         # Update database
         if self._database is not None:
-            self._database.add_order(order, position_id)
+            self._database.add_order(order, position_id, client_id)
+
+        self._log.debug(f"Added {order}.")
 
         if position_id is not None:
+            # Index position ID
             self.add_position_id(
                 position_id,
                 order.instrument_id.venue,
@@ -1484,8 +1497,10 @@ cdef class Cache(CacheFacade):
                 order.strategy_id,
             )
 
-        cdef str position_id_str = f", for {position_id.to_str()}" if position_id is not None else ""
-        self._log.debug(f"Added {order}{position_id_str}.")
+        # Index: ClientOrderId -> ClientId (execution client routing)
+        if client_id is not None:
+            self._index_order_client[order.client_order_id] = client_id
+            self._log.debug(f"Indexed {client_id!r}.")
 
     cpdef void add_order_list(self, OrderList order_list):
         """
@@ -1557,7 +1572,7 @@ cdef class Cache(CacheFacade):
             strategy_positions.add(position_id)
 
         self._log.debug(
-            f"Indexed {repr(position_id)}, "
+            f"Indexed {position_id!r}, "
             f"client_order_id={client_order_id}, "
             f"strategy_id={strategy_id}).",
         )
@@ -2952,6 +2967,19 @@ cdef class Cache(CacheFacade):
         if order is None:
             return None
         return order.venue_order_id
+
+    cpdef ClientId client_id(self, ClientOrderId client_order_id):
+        """
+        Return the specific execution client ID matching the given client order ID (if found).
+
+        Returns
+        -------
+        ClientId or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        self._index_order_client.get(client_order_id)
 
     cpdef list orders(
         self,

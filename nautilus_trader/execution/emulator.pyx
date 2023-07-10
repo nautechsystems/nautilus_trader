@@ -164,11 +164,14 @@ cdef class OrderEmulator(Actor):
         cdef:
             Order order
             SubmitOrder command
+            PositionId position_id
+            ClientId client_id
         for order in emulated_orders:
             if order.status != OrderStatus.INITIALIZED:
                 continue  # No longer emulated
 
             position_id = self.cache.position_id(order.client_order_id)
+            client_id = self.cache.client_id(order.client_order_id)
             command = SubmitOrder(
                 trader_id=self.trader_id,
                 strategy_id=order.strategy_id,
@@ -176,7 +179,7 @@ cdef class OrderEmulator(Actor):
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
                 position_id=position_id,
-                # client_id=client_id,  # Not yet supported
+                client_id=client_id,
             )
 
             self._handle_submit_order(command)
@@ -372,7 +375,7 @@ cdef class OrderEmulator(Actor):
             self._create_new_submit_order(
                 order=order,
                 position_id=command.position_id,
-                client_id=None,  # Not yet supported
+                client_id=command.client_id,
             )
 
     cdef void _handle_modify_order(self, ModifyOrder command):
@@ -592,6 +595,7 @@ cdef class OrderEmulator(Actor):
         cdef dict exec_algorithm_index = {}
         cdef:
             PositionId position_id
+            ClientId client_id
             ClientOrderId client_order_id
             SubmitOrderList submit_order_list
             Order child_order
@@ -603,6 +607,7 @@ cdef class OrderEmulator(Actor):
         if order.contingency_type == ContingencyType.OTO:
             assert order.linked_order_ids
             position_id = self.cache.position_id(order.client_order_id)
+            client_id = self.cache.client_id(order.client_order_id)
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order, f"Cannot find child order for {repr(client_order_id)}"
@@ -612,7 +617,7 @@ cdef class OrderEmulator(Actor):
                     self._create_new_submit_order(
                         order=child_order,
                         position_id=position_id,
-                        client_id=None,  # Not yet supported
+                        client_id=client_id,
                     )
                     continue
 
@@ -765,7 +770,12 @@ cdef class OrderEmulator(Actor):
 
         # Cast to writable cache
         cdef Cache cache = <Cache>self.cache
-        cache.add_order(transformed, command.position_id, override=True)
+        cache.add_order(
+            transformed,
+            command.position_id,
+            command.client_id,
+            override=True,
+        )
 
         # Replace commands order with transformed order
         command.order = transformed
@@ -807,7 +817,12 @@ cdef class OrderEmulator(Actor):
 
         # Cast to writable cache
         cdef Cache cache = <Cache>self.cache
-        cache.add_order(transformed, command.position_id, override=True)
+        cache.add_order(
+            transformed,
+            command.position_id,
+            command.client_id,
+            override=True,
+        )
 
         # Replace commands order with transformed order
         command.order = transformed

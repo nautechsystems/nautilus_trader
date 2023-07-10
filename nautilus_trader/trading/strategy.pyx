@@ -485,7 +485,7 @@ cdef class Strategy(Actor):
             self._deny_order(order, f"duplicate {repr(order.client_order_id)}")
             return
 
-        self.cache.add_order(order, position_id)
+        self.cache.add_order(order, position_id, client_id)
 
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
@@ -583,7 +583,7 @@ cdef class Strategy(Actor):
                 return
 
         for order in order_list.orders:
-            self.cache.add_order(order, position_id)
+            self.cache.add_order(order, position_id, client_id)
 
         cdef SubmitOrderList command = SubmitOrderList(
             trader_id=self.trader_id,
@@ -1419,7 +1419,7 @@ cdef class Strategy(Actor):
         self._log.error(f"Order denied: {reason}.")
 
         if not self.cache.order_exists(order.client_order_id):
-            self.cache.add_order(order, position_id=None)
+            self.cache.add_order(order)
 
         # Generate event
         cdef OrderDenied event = self._generate_order_denied(order, reason)

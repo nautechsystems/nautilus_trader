@@ -20,6 +20,7 @@ from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
@@ -52,7 +53,8 @@ class MockCacheDatabase(CacheDatabase):
         self.accounts: dict[AccountId, Account] = {}
         self.orders: dict[ClientOrderId, Order] = {}
         self.positions: dict[PositionId, Position] = {}
-        self.orders_position_map: dict[ClientOrderId, PositionId] = {}
+        self.index_order_position: dict[ClientOrderId, PositionId] = {}
+        self.index_order_client: dict[ClientOrderId, ClientId] = {}
 
     def flush(self) -> None:
         self.general.clear()
@@ -62,6 +64,8 @@ class MockCacheDatabase(CacheDatabase):
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
+        self.index_order_position.clear()
+        self.index_order_client.clear()
 
     def load(self) -> dict:
         return self.general.copy()
@@ -99,8 +103,11 @@ class MockCacheDatabase(CacheDatabase):
     def load_order(self, client_order_id: ClientOrderId) -> Optional[Order]:
         return self.orders.get(client_order_id)
 
-    def load_orders_position_map(self) -> dict[ClientOrderId, PositionId]:
-        return self.orders_position_map
+    def load_index_order_position(self) -> dict[ClientOrderId, PositionId]:
+        return self.index_order_position
+
+    def load_index_order_client(self) -> dict[ClientOrderId, ClientId]:
+        return self.index_order_client
 
     def load_position(self, position_id: PositionId) -> Optional[Position]:
         return self.positions.get(position_id)
@@ -123,8 +130,15 @@ class MockCacheDatabase(CacheDatabase):
     def add_account(self, account: Account) -> None:
         self.accounts[account.id] = account
 
-    def add_order(self, order: Order, position_id: Optional[PositionId] = None) -> None:
+    def add_order(
+        self,
+        order: Order,
+        position_id: Optional[PositionId] = None,
+        client_id: Optional[ClientId] = None,
+    ) -> None:
         self.orders[order.client_order_id] = order
+        self.index_order_position[order.client_order_id] = position_id
+        self.index_order_client[order.client_order_id] = client_id
 
     def add_position(self, position: Position) -> None:
         self.positions[position.id] = position

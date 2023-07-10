@@ -20,6 +20,7 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -44,7 +45,8 @@ cdef class CacheDatabase:
     cpdef dict load_accounts(self)
     cpdef dict load_orders(self)
     cpdef dict load_positions(self)
-    cpdef dict load_orders_position_map(self)
+    cpdef dict load_index_order_position(self)
+    cpdef dict load_index_order_client(self)
     cpdef Currency load_currency(self, str code)
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)
@@ -61,7 +63,7 @@ cdef class CacheDatabase:
     cpdef void add_instrument(self, Instrument instrument)
     cpdef void add_synthetic(self, SyntheticInstrument instrument)
     cpdef void add_account(self, Account account)
-    cpdef void add_order(self, Order order, PositionId position_id=*)
+    cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
     cpdef void add_position(self, Position position)
 
     cpdef void update_account(self, Account account)
