@@ -134,7 +134,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                     "no instrument ID in `data_type` metadata.",
                 )
                 return
-            self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
+            await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
         else:
             self._log.error(
                 f"Cannot subscribe to {data_type.type} (not implemented).",

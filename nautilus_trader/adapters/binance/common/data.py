@@ -130,7 +130,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
-        self._connect_websockets_interval: int = 4  # Retry websocket connection every 4 seconds
+        self._connect_websockets_delay: float = 0.0  # Delay for bulk subscriptions to come in
         self._connect_websockets_task: Optional[asyncio.Task] = None
 
         # HTTP API
@@ -180,31 +180,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
     async def _connect(self) -> None:
-        self._log.info("Initialising instruments...")
+        self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
-
-        # Connect WebSocket clients
-        self._connect_websockets_task = self.create_task(self._connect_websockets())
-
-    async def _connect_websockets(self) -> None:
-        try:
-            while True:
-                self._log.debug(
-                    f"Scheduled `connect_websockets` to run in "
-                    f"{self._connect_websockets_interval}s.",
-                )
-                await asyncio.sleep(self._connect_websockets_interval)
-
-                if self._ws_client.has_subscriptions:
-                    await self._ws_client.connect()
-                    break
-                else:
-                    self._log.info("Awaiting subscriptions...")
-        except asyncio.CancelledError:
-            self._log.debug("`connect_websockets` task was canceled.")
 
     async def _update_instruments(self) -> None:
         try:
@@ -226,20 +206,13 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
-        # Cancel WebSocket connect task
-        if self._connect_websockets_task:
-            self._log.debug("Canceling `connect_websockets` task...")
-            self._connect_websockets_task.cancel()
-            self._connect_websockets_task = None
-
-        if self._ws_client.is_connected:
-            await self._ws_client.disconnect()
+        await self._ws_client.disconnect()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, data_type: DataType) -> None:
         # Replace method in child class, for exchange specific data types.
-        raise NotImplementedError("Cannot subscribe to {data_type.type} (not implemented).")
+        raise NotImplementedError(f"Cannot subscribe to {data_type.type} (not implemented).")
 
     async def _subscribe_instruments(self) -> None:
         pass  # Do nothing further
@@ -326,7 +299,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     "Valid depths are 5, 10 or 20.",
                 )
                 return
-            self._ws_client.subscribe_partial_book_depth(
+            await self._ws_client.subscribe_partial_book_depth(
                 symbol=instrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
@@ -339,7 +312,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             self._handle_data(snapshot)
         else:
-            self._ws_client.subscribe_diff_book_depth(
+            await self._ws_client.subscribe_diff_book_depth(
                 symbol=instrument_id.symbol.value,
                 speed=update_speed,
             )
@@ -351,16 +324,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._handle_data(deltas)
 
     async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        self._ws_client.subscribe_ticker(instrument_id.symbol.value)
+        await self._ws_client.subscribe_ticker(instrument_id.symbol.value)
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
+        await self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         if self._use_agg_trade_ticks:
-            self._ws_client.subscribe_agg_trades(instrument_id.symbol.value)
+            await self._ws_client.subscribe_agg_trades(instrument_id.symbol.value)
         else:
-            self._ws_client.subscribe_trades(instrument_id.symbol.value)
+            await self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
@@ -385,7 +358,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        self._ws_client.subscribe_bars(
+        await self._ws_client.subscribe_bars(
             symbol=bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
