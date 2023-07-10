@@ -35,6 +35,7 @@ from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -67,10 +68,11 @@ cdef str _SYNTHETICS = "synthetics"
 cdef str _ACCOUNTS = "accounts"
 cdef str _TRADER = "trader"
 cdef str _ORDERS = "orders"
-cdef str _ORDERS_POS = "orders_pos"
 cdef str _POSITIONS = "positions"
 cdef str _ACTORS = "actors"
 cdef str _STRATEGIES = "strategies"
+cdef str _INDEX_ORDER_POSITION = "index:order_position"
+cdef str _INDEX_ORDER_CLIENT = "index:order_client"
 
 
 cdef class RedisCacheDatabase(CacheDatabase):
@@ -127,10 +129,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_synthetics  = f"{self._key_trader}:{_SYNTHETICS}:"  # noqa
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
         self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
-        self._key_orders_pos  = f"{self._key_trader}:{_ORDERS_POS}:"  # noqa
         self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
         self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
+        self._key_index_order_position  = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"  # noqa
+        self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"  # noqa
 
         # Serializers
         self._serializer = serializer
@@ -354,29 +357,31 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return positions
 
-    cpdef dict load_orders_position_map(self):
+    cpdef dict load_index_order_position(self):
         """
-        Load the order to position map from the database.
+        Load the order to position index from the database.
 
         Returns
         -------
         dict[ClientOrderId, PositionId]
 
         """
-        cdef dict orders_pos_map = {}
+        cdef dict raw_index = self._redis.hgetall(self._key_index_order_position)
 
-        cdef list orders_pos_keys = self._redis.keys(f"{self._key_orders_pos}*")
-        if not orders_pos_keys:
-            return orders_pos_map
+        return {ClientOrderId(k.decode("utf-8")): PositionId(v.decode("utf-8")) for k, v in raw_index.items()}
 
-        cdef bytes key_bytes
-        cdef str key_str
-        for key_bytes in orders_pos_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            value_str = self._redis.get(key_str)
-            orders_pos_map[ClientOrderId(key_str)] = PositionId(value_str)
+    cpdef dict load_index_order_client(self):
+        """
+        Load the order to execution client index from the database.
 
-        return orders_pos_map
+        Returns
+        -------
+        dict[ClientOrderId, ClientId]
+
+        """
+        cdef dict raw_index = self._redis.hgetall(self._key_index_order_client)
+
+        return {ClientOrderId(k.decode("utf-8")): ClientId(v.decode("utf-8")) for k, v in raw_index.items()}
 
     cpdef Currency load_currency(self, str code):
         """
@@ -782,7 +787,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added {account}).")
 
-    cpdef void add_order(self, Order order, PositionId position_id = None):
+    cpdef void add_order(self, Order order, PositionId position_id = None, ClientId client_id = None):
         """
         Add the given order to the database.
 
@@ -792,6 +797,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
             The order to add.
         position_id : PositionId, optional
             The position ID to associate with this order.
+        client_id : ClientId, optional
+            The execution client ID to associate with this order.
 
         """
         Condition.not_none(order, "order")
@@ -809,7 +816,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._log.debug(f"Added Order(id={order.client_order_id.to_str()}).")
 
         if position_id is not None:
-            self._redis.set(self._key_orders_pos + order.client_order_id.to_str(), position_id.value)
+            self._redis.hset(self._key_index_order_position, order.client_order_id.to_str(), position_id.to_str())
+            self._log.debug(f"Indexed {order.client_order_id!r} -> {position_id!r}")
+        if client_id is not None:
+            self._redis.hset(self._key_index_order_client, order.client_order_id.to_str(), client_id.to_str())
+            self._log.debug(f"Indexed {order.client_order_id!r} -> {client_id!r}")
 
     cpdef void add_position(self, Position position):
         """

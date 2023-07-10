@@ -749,7 +749,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = command.order
         if not self._cache.order_exists(order.client_order_id):
             # Cache order
-            self._cache.add_order(order, command.position_id)
+            self._cache.add_order(order, command.position_id, command.client_id)
 
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -778,7 +778,7 @@ cdef class ExecutionEngine(Component):
         for order in command.order_list.orders:
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
-                self._cache.add_order(order, position_id=None)
+                self._cache.add_order(order, command.position_id, command.client_id)
 
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:

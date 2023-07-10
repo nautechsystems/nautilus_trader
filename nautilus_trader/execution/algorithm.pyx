@@ -628,6 +628,7 @@ cdef class ExecAlgorithm(Actor):
 
         cdef Order primary = None
         cdef PositionId position_id = None
+        cdef ClientId client_id = None
         cdef SubmitOrder command = None
 
         if order.exec_spawn_id is not None:
@@ -641,6 +642,7 @@ cdef class ExecAlgorithm(Actor):
                 return
 
             position_id = self.cache.position_id(primary.client_order_id)
+            client_id = self.cache.client_id(primary.client_order_id)
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
@@ -663,7 +665,7 @@ cdef class ExecAlgorithm(Actor):
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
                 position_id=primary.position_id,
-                client_id=None,  # Not yet supported
+                client_id=client_id,
             )
 
             self._send_risk_command(command)
@@ -673,7 +675,7 @@ cdef class ExecAlgorithm(Actor):
         position_id = self.cache.position_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
         if cached_order.order_type != order.order_type:
-            self.cache.add_order(order, position_id, override=True)
+            self.cache.add_order(order, position_id, client_id, override=True)
 
         command = SubmitOrder(
             trader_id=self.trader_id,

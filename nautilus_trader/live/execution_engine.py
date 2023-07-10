@@ -589,7 +589,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 # External order dropped
                 return True  # No further reconciliation
             # Add to cache without determining any position ID initially
-            self._cache.add_order(order, position_id=None)
+            self._cache.add_order(order)
 
         if report.order_status == OrderStatus.REJECTED:
             if order.status != OrderStatus.REJECTED:
