@@ -222,7 +222,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -347,8 +347,8 @@ class VolatilityMarketMaker(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        # self.cancel_all_orders(self.instrument_id)
-        # self.close_all_positions(self.instrument_id)
+        self.cancel_all_orders(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
